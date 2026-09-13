@@ -63,6 +63,6 @@
 
 ## 9. Підписи
 - [ ] Андрій (GitHub: @Hukyl)
-- [ ] Злата (GitHub: @t-zlata)
+- [x] Злата (GitHub: @t-zlata)
 - [x] Валерія (GitHub: @v-missirova)
 - [ ] Денис (GitHub: @SquidBow)
