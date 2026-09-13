@@ -7,10 +7,10 @@ assignees: ''
 
 ---
 
-### Опис проблеми
+### Problem description
 
 
-### Критерій виконання
+### Acceptance criteria
 - [ ]
 
-### Додатковий контекст
+### Additional context
