@@ -65,4 +65,4 @@
 - [x] Андрій (GitHub: @Hukyl)
 - [x] Злата (GitHub: @t-zlata)
 - [x] Валерія (GitHub: @v-missirova)
-- [ ] Денис (GitHub: @SquidBow)
+- [x] Денис (GitHub: @SquidBow)
