@@ -28,10 +28,35 @@ Each story must have acceptance criteria.
   - Acceptance criteria:
     - [ ] Given the user has the email-notes option enabled, when the meeting notes are ready, then the user receives an email with the notes text and a link to the meeting.
 
-- US-001: As a ..., I want ..., so that ...
+- US-005: As a User, I want to be able to upload meeting recordings, so that I can obtain the meeting transcript and notes even from platforms which the System doesn't support.
   - Acceptance criteria:
-    - [ ] Given ..., when ..., then ...
-    - [ ] ...
+    - [ ] Given the User has logged in, when they open one of their Projects, then they can upload a meeting recording to it.
+    - [ ] Given the User has uploaded a meeting recording, when the upload finishes, then the System starts processing it and shows the meeting in the Project as being processed.
+    - [ ] Given the meeting recording has been uploaded, when the System has finished processing it, then the meeting's transcript and notes are presented to the User.
+    - [ ] Given the User selects a file that is not a supported audio recording, when they try to upload it, then the System rejects it with an error message and no meeting is created.
+    - [ ] Given an uploaded recording is being processed, when the processing fails, then the meeting is shown in the Project as failed to process.
+
+- US-006: As a Member, I want to download a meeting's transcript and notes as Markdown, so that I can keep them in my own notes.
+  - Acceptance criteria:
+    - [ ] Given the Member has access to a processed meeting, when they export its transcript, then they download a Markdown file with the transcript split by speaker labels.
+    - [ ] Given the meeting's notes have been generated, when the Member exports them, then they download a Markdown file with the notes.
+    - [ ] Given the meeting's notes have not been generated yet, when the Member opens the export options, then only the transcript export is available.
+    - [ ] Given the transcript has been corrected in the System, when the Member exports it, then the file contains the corrected version.
+
+- US-007: As a Moderator, I want to restrict access to a meeting to selected Project members, so that sensitive meetings (such as one-on-ones or interviews) are not visible to the whole Project.
+  - Acceptance criteria:
+    - [ ] Given the Moderator has restricted a meeting to selected Project members, when a Project member who was not selected opens the Project, then the meeting is not shown to them.
+    - [ ] Given a meeting is restricted, when a Project member who was not selected opens the meeting's direct link, then the System denies access without showing any of its content.
+    - [ ] Given a meeting is restricted, when a selected Project member opens it, then they can view its transcript and notes.
+    - [ ] Given a meeting is restricted, when a Project member who was not selected requests meetings through their MCP client, then the restricted meeting is not returned.
+    - [ ] Given a Project member has only the Member role, when they view a meeting, then they have no option to restrict its access.
+
+- US-008: As an Owner, I want to invite people to my Project with a chosen role, so that my team can work with the Project's meetings and glossary together.
+  - Acceptance criteria:
+    - [ ] Given the Owner is in their Project, when they invite a person and choose their role, then that person receives an invitation to the Project.
+    - [ ] Given a person has received an invitation, when they accept it, then they join the Project with the chosen role and see the meetings accessible to them.
+    - [ ] Given a person has received an invitation, when they decline it, then they do not join the Project.
+    - [ ] Given a Project member has the Member or Moderator role, when they open the Project, then they have no option to invite people.
 
 ## INVEST Check
 For each story confirm: Independent, Negotiable, Valuable, Estimable, Small, Testable.
@@ -39,3 +64,4 @@ For each story confirm: Independent, Negotiable, Valuable, Estimable, Small, Tes
 # AI Usage
 This document was prepared with the assistance of AI for text paraphrasing and translation. 
 The authors provided the original ideas, manually reviewed and edited the content, and verified the accuracy of the final version.
+US-006–US-008 and the extra acceptance criteria of US-005 were drafted with Claude Code (Claude Opus 5) from Andrii's outline and reviewed by Andrii before committing.
