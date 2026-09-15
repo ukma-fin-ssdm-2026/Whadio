@@ -20,6 +20,14 @@ Each story must have acceptance criteria.
     - [ ] Given the user is configuring LLM settings, when they open the model selection, then they can choose from the available models via a dropdown menu.
     - [ ] Given the system is processing text with an external API, when an API error occurs, then the system displays an error message and offers a fallback option to use the local model.
     
+- US-003: As a user, I want to receive a recording prompt when I join a Google Meet meeting, so that I don't forget to record the meeting for notes.
+  - Acceptance criteria:
+    - [ ] Given the user has the Google Chrome extension installed, when they join a Google Meet meeting, then the extension displays a prompt with "Record" and "Dismiss" buttons.
+
+- US-004: As a user, I want to have the option to receive notes via email when they are ready, so that I get the result immediately without returning to the platform.
+  - Acceptance criteria:
+    - [ ] Given the user has the email-notes option enabled, when the meeting notes are ready, then the user receives an email with the notes text and a link to the meeting.
+
 - US-001: As a ..., I want ..., so that ...
   - Acceptance criteria:
     - [ ] Given ..., when ..., then ...
