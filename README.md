@@ -19,5 +19,11 @@ Whadio is an open-source meeting recording and transcription service focused on 
 - [Team Charter](TeamCharter.md)
 - [Project Description](Project-Description.md)
 
+## Requirements Artifacts
+All requirements documentation is maintained in the [`/docs/requirements/`](docs/requirements/) directory. 
+- [User Stories](docs/requirements/user-stories.md)
+- [Requirements](docs/requirements/requirements.md)
+- [Requirements Traceability Matrix (RTM)](docs/requirements/rtm.md)
+
 ## AI usage
 The document was prepared with the help of Claude Code (Claude Opus 5 model) based on the team's decisions; the content was manually checked and edited, and the document is reviewed via a pull request before merging.
