@@ -162,7 +162,51 @@ restriction, never by where a meeting is filed.
 
 ## Non-functional requirements (NFR)
 
-TBD.
+### Performance efficiency
+
+* NFR-001 (Time behaviour): Pages containing a user's workspaces, folders and meetings load in under 2 seconds for at least 90% of requests.
+
+* NFR-002 (Time behaviour): For a recording of up to one hour, the system generates the transcript within 15 minutes in at least 90% of processing runs.
+
+* NFR-003 (Capacity): The hosted service supports up to 1000 meetings per user. When a new meeting would exceed this limit, the oldest meeting is deleted.
+
+### Compatibility
+
+* NFR-004 (Co-existence): While recording a Google Meet call, the extension captures the meeting audio without affecting the operation of the meeting or the functionality of the browser environment in which the call is running.
+
+### Usability
+
+* NFR-005 (User error protection): An accidental user action that changes a meeting's project or folder, or applies an incorrect note preset, can be reversed without losing the meeting, its transcript or its previously generated notes.
+
+* NFR-006 (User error protection): When a transcript has been edited, the system clearly indicates that it differs from the original and allows the user to switch between the original and edited versions.
+
+### Security
+
+* NFR-007 (Confidentiality): Meeting recordings, transcripts and notes are accessible only to authenticated users who have permission to access the corresponding meeting.
+
+* NFR-008 (Confidentiality): A user who receives access to a shared meeting cannot forward, copy or download its content unless the sharing permissions explicitly allow the corresponding action.
+
+* NFR-009 (Confidentiality): The system does not expose a meeting's recording, transcript or notes to users outside the access rules defined for the meeting, including through direct links, exports or connected services.
+
+* NFR-010 (Accountability): Every change to a meeting that can affect its content or access is associated with the account that performed the action, without exposing unnecessary personal information in the record.
+
+* NFR-011 (Integrity): An edited transcript is never presented as the original transcript; whenever an edited version is displayed or exported, the system indicates that the transcript has been edited.
+
+* NFR-012 (Authenticity): User accounts are authenticated by their registered credentials, and a user cannot access another user's account by impersonating that user.
+
+* NFR-013 (Confidentiality): API keys configured for an external LLM provider are available only to the workspace Owner and are not exposed to other workspace members.
+
+### Reliability
+
+* NFR-014 (Recoverability): If a processing component of the system becomes unavailable, meetings already received by the system remain stored and available for download or later processing.
+
+* NFR-015 (Fault tolerance): A failure of the transcription or note-generation component does not make the entire Whadio service unavailable; functionality unrelated to the failed component remains accessible.
+
+### Portability
+
+* NFR-016 (Adaptability): The open-source version of Whadio can be deployed in an environment that satisfies the documented CPU, RAM, disk-space and, where required, GPU requirements.
+
+* NFR-017 (Installability): Deployment requirements and resource requirements for running Whadio are documented so that the system can be installed and operated outside the team's hosted environment.
 
 ## AI Usage
 
