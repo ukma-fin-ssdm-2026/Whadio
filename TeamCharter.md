@@ -1,68 +1,73 @@
-# Командний статут
+## 1. General Information
+- Team Name: sztorm@localhost:3000
+- Members:
+    - Andrii Shalaiev (GitHub: @Hukyl, NaUKMA email: a.shalaiev@ukma.edu.ua)
+    - Zlata Tsepkalo (GitHub: @t-zlata, NaUKMA email: z.tsepkalo@ukma.edu.ua)
+    - Valeriia Missirova (GitHub: @v-missirova, NaUKMA email: v.missirova@ukma.edu.ua)
+    - Denys Zabiiaka (GitHub: @SquidBow, NaUKMA email: d.zabiiaka@ukma.edu.ua)
 
-## 1. Основна інформація
-- Назва команди: sztorm@localhost:3000
-- Учасники:
-    - Андрій (GitHub: @Hukyl, електронна пошта НаУКМА: a.shalaiev@ukma.edu.ua)
-    - Злата (GitHub: @t-zlata, електронна пошта НаУКМА: z.tsepkalo@ukma.edu.ua)
-    - Валерія (GitHub: @v-missirova, електронна пошта НаУКМА: v.missirova@ukma.edu.ua)
-    - Денис (GitHub: @SquidBow, електронна пошта НаУКМА: d.zabiiaka@ukma.edu.ua)
+## 2. Roles and Responsibilities
+- Repository Maintainer, Quality Lead: Zlata
+- CI Maintainer, Requirements Lead: Andrii
+- Documentation Lead: Valeriia
+- Issue Tracker Lead, Traceability Lead: Denys
 
-## 2. Ролі та відповідальності
-- Супроводжувач репозиторію: Злата
-- Супроводжувач CI: Андрій
-- Керівник документації: Валерія
-- Керівник трекера завдань: Денис
+## 3. Communication Plan
+- Primary channel: Telegram chat, Google Meet calls
+- Meeting schedule: online meetings on demand, approximately once a week
+- Response expectations: 
+    - no more than 6 hours during working hours; 
+    - if less than 24 hours to the deadline -> 1 hour
+    - *soft deadline*: assigned tasks should preferably be completed 24 hours before the deadline 
 
-## 3. План комунікації
-- Основний канал: чат в Телеграм, мітінги в Google Meet
-- Розклад зустрічей: онлайн-зустрічі за потребою, орієнтовно раз на тиждень
-- Очікування щодо відповідей: 
-    - не більше 6-ти годин в робочий час; 
-    - якщо до дедлайну менше 24 годин -> 1 година
-    - *soft deadline*: назначені завдання бажано доробити за 24 години до дедлайну 
+## 4. Collaboration and Workflow
+- Branching strategy: branches for issues (resolves / relates to) + pull requests to main.
+- Branch naming: `type/#<issue-number>-short-description` format is used (e.g., `docs/#3-teamcharter-setup`).
+- Commit practices:
+    - intermediate results that pass tests and do not break the core system; 
+    - final results.
+- Commit conventions: `<type>(#<issue-number>): short message` format is used (e.g., `docs(#3): add TeamCharter.md`).
+- Code review rules: each PR requires at least one approval. Automated review is done by CodeRabbit.
+- Issue workflow: open issue -> assign -> work -> pull request -> AI checks -> fix or address all issues highlighted by the AI code checker -> PR -> close.
+- Definition of Done: every issue lists clear acceptance criteria before work starts on it. A task is considered completed when the code meets these criteria, passes all tests and automated checks, receives reviewer approval, and is successfully merged into the `main` branch.
+- Task priority labels:
+    - `high priority` — critical tasks that block the work of other members, stop CI/CD pipelines, or are mandatory for the nearest deadline. These are taken into work first.
+    - `low priority` — minor improvements, refactoring, or non-critical tasks that do not block the team. Executed in the background when free time is available.
 
-## 4. Співпраця та робочий процес
-- Стратегія гілкування: гілки під issues (resolves / relates to) + pull requests до main
-- Практики комітів: 
-    - проміжні результати, що проходять тести та не ламають основну систему; 
-    - фінальні результати; 
-    - повідомлення до комітів вимагають короткого опису вмісту коміта
-- Правила огляду коду: всі злиття вимагають PR та принаймні 1 схвалення
-- Робочий процес завдань: відкрити issue -> призначити -> працювати -> pull request -> AI checks -> пофіксити або відповісти на всі нюанси, що підсвітив AI code checker -> PR -> закрити
+## 5. Conflict Resolution
+- Conflict resolution plan:
+    - joint discussion -> majority vote, 
+    - upon failure -> appeal to the instructor
 
+## 6. Availability and Workload
+- Member availability:
+    - Andrii: 6 hours/week, can be disturbed anytime
+    - Zlata: 5-6 hours/week, disturb only during working hours
+    - Valeriia: 6 hours/week, can be disturbed anytime
+    - Denys: 5 hours/week, disturb only during working hours
 
-## 5. Вирішення конфліктів
-- План вирішення конфліктів:
-    - сумісне дискутування -> голосування більшості, 
-    - при невдачі - звернення до викладача
+Working hours = 08:00-22:00
+Overload -> notify in the primary channel -> brief discussion and selection of an available person to help
 
-## 6. Доступність та робоче навантаження
-- Доступність учасників:
-    - Андрій: 6 годин/тиждень, турбувати в будь-який час
-    - Злата: 5-6 годин/тиждень, турбувати в робочий час
-    - Валерія: 6 годин/тиждень, турбувати в будь-який час
-    - Денис: 5 годин/тиждень, турбувати в робочий час
+## 7. Ethical and Professional Conduct
+- Core principles:
+    - adhere to academic integrity rules and the ACM Code of Ethics;
+    - zero plagiarism: all borrowed materials must have proper attribution to the author;
+    - mutual respect
 
-Робочий час = 08:00-22:00
-Перевантаження -> звернення в основний канал -> коротке обговорення та вибір людини, що має змогу допомогти
+## 8. AI Usage
+- Tools: coding agents, chat models
+- Disclosure rules: indication of AI usage in files
+- Verification rules: 
+    - generated code must undergo review and testing before merging;
+    - unverified generated code cannot be merged into the main branch;
+    - responsibility for anything generated lies solely with the person who generated it
 
-## 7. Етична та професійна поведінка
-- Спільні принципи:
-    - дотримуватися правил академічної доброчесності та Кодексу етики ACМ;
-    - без плагіату: усе позичене має мати відповідне посилання на автора;
-    - взаємоповага
+## 9. Signatures
+- [x] Andrii (GitHub: @Hukyl)
+- [x] Zlata (GitHub: @t-zlata)
+- [x] Valeriia (GitHub: @v-missirova)
+- [x] Denys (GitHub: @SquidBow)
 
-## 8. Використання ШІs
-- Інструменти: кодові агенти, чат-моделі
-- Правила розкриття: вказання в файлах використання ШІ
-- Правило верифікації: 
-    - згенерований код проходить перегляд і тести перед злиттям;
-    - неперевірений згенерований код не потрапляє в основну гілку;
-    - відповідальність за будь-що згенероване лежатиме лише на плечах людини, що генерувала
-
-## 9. Підписи
-- [x] Андрій (GitHub: @Hukyl)
-- [x] Злата (GitHub: @t-zlata)
-- [x] Валерія (GitHub: @v-missirova)
-- [x] Денис (GitHub: @SquidBow)
+## AI Usage
+This document was prepared with the assistance of AI (Gemini 3.1 Pro). The author reviewed and edited the content, and the document is reviewed through a pull request before merging.

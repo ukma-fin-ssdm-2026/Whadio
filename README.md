@@ -6,9 +6,18 @@ Whadio is an open-source meeting recording and transcription service focused on 
 
 # Members
 
-| **Name** | **GitHub** |
-|----------|----------|
-| Andrii Shalaiev | @Hukyl |
-| Denys Zabiiaka  | @SquidBow |
-| Valeriia Missirova | @v-missirova |
-| Zlata Tsepkalo | @t-zlata |
+| **Name** | **GitHub** | **Role** |
+|----------|----------|----------|
+| Andrii Shalaiev | @Hukyl | CI Maintainer, Requirements Lead |
+| Denys Zabiiaka  | @SquidBow | Issue Tracker Lead, Traceability Lead |
+| Valeriia Missirova | @v-missirova | Documentation Lead |
+| Zlata Tsepkalo | @t-zlata | Repository Maintainer, Quality Lead |
+
+
+# Documentation
+
+- [Team Charter](TeamCharter.md)
+- [Project Description](Project-Description.md)
+
+## AI usage
+The document was prepared with the help of Claude Code (Claude Opus 5 model) based on the team's decisions; the content was manually checked and edited, and the document is reviewed via a pull request before merging.
