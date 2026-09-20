@@ -33,6 +33,15 @@
 - Task priority labels:
     - `high priority` — critical tasks that block the work of other members, stop CI/CD pipelines, or are mandatory for the nearest deadline. These are taken into work first.
     - `low priority` — minor improvements, refactoring, or non-critical tasks that do not block the team. Executed in the background when free time is available.
+    - `documentation` — improvements or additions to documentation.
+    - `enhancement` — new feature or request.
+    - `feedback` — instructor's feedback; not included in the tracker grading.
+    - `bug` — something isn't working.
+    - `disregarded` — this will not be worked on.
+    - `duplicate` — this issue or pull request already exists.
+    - `help wanted` — extra attention to the problem is needed.
+    - `invalid` — this doesn't seem right.
+    - `question` — further information is requested.
 
 ## 5. Conflict Resolution
 - Conflict resolution plan:
