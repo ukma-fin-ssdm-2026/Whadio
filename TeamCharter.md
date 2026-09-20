@@ -62,7 +62,7 @@
     - відповідальність за будь-що згенероване лежатиме лише на плечах людини, що генерувала
 
 ## 9. Підписи
-- [ ] Андрій (GitHub: @Hukyl)
-- [ ] Злата (GitHub: @t-zlata)
+- [x] Андрій (GitHub: @Hukyl)
+- [x] Злата (GitHub: @t-zlata)
 - [x] Валерія (GitHub: @v-missirova)
-- [ ] Денис (GitHub: @SquidBow)
+- [x] Денис (GitHub: @SquidBow)
