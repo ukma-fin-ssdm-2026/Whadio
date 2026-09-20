@@ -42,6 +42,13 @@
     - `help wanted` — extra attention to the problem is needed.
     - `invalid` — this doesn't seem right.
     - `question` — further information is requested.
+- Requirements Collaboration Practices:
+    - Joint analysis of requirements and tasks during team meetings.
+    - User stories are subject to peer review before being merged into the `main` branch.
+    - Non-functional requirements (NFRs) are verified through joint review sessions and checked against defined measurable criteria.
+- Artifact Management:
+    - All requirement documents must be stored in the `/docs/requirements/` directory of the repository.
+    - The team is responsible for maintaining the `README.md` with up-to-date links to all relevant documentation.
 
 ## 5. Conflict Resolution
 - Conflict resolution plan:
@@ -64,7 +71,12 @@ Overload -> notify in the primary channel -> brief discussion and selection of a
     - zero plagiarism: all borrowed materials must have proper attribution to the author;
     - mutual respect
 
-## 8. AI Usage
+## 8. Individual Responsibility
+- Loom Presentations: Each member must record a Loom video demonstrating their specific contributions to the project, such as formulated user stories, non-functional requirements (NFRs), etc.
+- Mutual Acknowledgment: During their individual Loom presentations, every member must mention the other team members and briefly acknowledge their respective contributions to the project.
+- Evidence Collection and verification: All project changes and individual contributions are openly discussed and validated during regular team meetings. Additionally, the team will review each other's drafts prior to final recording to ensure the accuracy of the claimed contributions and mutual acknowledgments.
+
+## 9. AI Usage
 - Tools: coding agents, chat models
 - Disclosure rules: indication of AI usage in files
 - Verification rules: 
@@ -72,7 +84,7 @@ Overload -> notify in the primary channel -> brief discussion and selection of a
     - unverified generated code cannot be merged into the main branch;
     - responsibility for anything generated lies solely with the person who generated it
 
-## 9. Signatures
+## 10. Signatures
 - [x] Andrii (GitHub: @Hukyl)
 - [x] Zlata (GitHub: @t-zlata)
 - [x] Valeriia (GitHub: @v-missirova)
