@@ -29,13 +29,13 @@ The model covers the data required for these key project functions:
 | Entity | Primary key | Purpose | Personal or sensitive data |
 | --- | --- | --- | --- |
 | `USER` | `user_id` | Registered account that can create workspaces, meetings, exports, shares, and MCP keys; `is_administrator` marks system administrators. | `email`, `name` are personal. `password_hash` is sensitive. |
-| `WORKSPACE` | `workspace_id` | Collaboration boundary for members, folders, glossary terms, meetings, the default notes template, and LLM configuration. | Usually not personal, but the workspace name may reveal an organization or project. |
+| `WORKSPACE` | `workspace_id` | Collaboration boundary for members, folders, glossary terms, meetings, the default notes template, and LLM configuration. `is_personal` marks the personal workspace created during registration. | Usually not personal, but the workspace name may reveal an organization or project. |
 | `WORKSPACE_MEMBERSHIP` | `workspace_membership_id` | Connects users to workspaces and stores their cumulative role: `Member`, `Moderator`, or `Owner`. | Membership and role data can be sensitive organizational metadata. |
 | `INVITATION` | `invitation_id` | Pending, accepted, or declined workspace invitation for an email address with a chosen role. | `invited_email` is personal data. Invitation metadata can reveal team membership. |
 | `FOLDER` | `folder_id` | Organizes meetings inside a workspace. Folders do not define permissions. | Folder names may reveal topics or projects. |
 | `MEETING` | `meeting_id` | Meeting metadata, generated-name state, source type, recording completeness, meeting-level processing state, consent confirmation, recording location, retention state, and access mode. | `name`, `storage_path`, timestamps, duration, and consent-confirmation metadata can be sensitive; the recording path points to highly sensitive audio. |
 | `CAPTURE_SESSION` | `capture_session_id` | Browser recording session used by the extension for chunked upload, idle-timeout recovery, and partial recording assembly. | Links a user to a recording action and may reveal meeting timing. |
-| `CAPTURE_CHUNK` | `capture_chunk_id` | Acknowledged uploaded audio chunk with sequence number, object-storage key, and speaker events observed by the extension. | `storage_key` is sensitive. `speaker_events` may contain participant names and active-speaker timing. |
+| `CAPTURE_CHUNK` | `capture_chunk_id` | Acknowledged uploaded audio chunk with sequence number, object-storage key, and speaker events observed by the extension. | `storage_key` references audio chunks containing personal voice data and sensitive meeting content. `speaker_events` may contain participant names and active-speaker timing. |
 | `MEETING_ACCESS_GRANT` | `access_grant_id` | Explicit access list used when a meeting is restricted to selected workspace members. | Reveals who can access a specific meeting. |
 | `EXTERNAL_SHARE` | `share_id` | Read-only signed-in sharing outside the workspace, with revocation and optional speaker-name redaction. | `token_hash` is sensitive. Share metadata reveals external disclosure. |
 | `TRANSCRIPT` | `transcript_id` | Transcript container for one meeting, including language, recognition model, and current revision. | Transcript metadata may be sensitive. |
@@ -80,7 +80,7 @@ The model covers the data required for these key project functions:
 - `MEETING.recording_status = partial` means the capture ended without a complete stop event, for example after a lost connection or closed tab, but already acknowledged chunks were stored. Partial recordings must be shown as partial and must not be treated as complete meeting records.
 - `MEETING.processing_state` is the meeting-level state shown in the SPA: `recording`, `queued`, `processing`, `processed`, or `failed`.
 - `MEETING.consent_confirmed_at` and `MEETING.consent_confirmed_by_user_id` are optional because extension recordings require consent confirmation, while uploaded recordings do not have the extension consent step.
-- `CAPTURE_SESSION.last_chunk_seq` and `CAPTURE_SESSION.last_chunk_at` let the scheduler find captures that have been idle past the timeout.
+- `CAPTURE_SESSION.last_chunk_seq` and `CAPTURE_SESSION.last_chunk_at` are optional until the first chunk arrives; after that, they let the scheduler find captures that have been idle past the timeout.
 - `CAPTURE_CHUNK` must be unique by `(capture_session_id, seq)`, so chunk upload retries are idempotent.
 - A workspace must always have exactly one membership with `role = Owner`.
 - `WORKSPACE_MEMBERSHIP` must be unique by `(workspace_id, user_id)`, so one user has at most one role in a workspace.

@@ -25,7 +25,7 @@ entity "WORKSPACE" as Workspace {
   * name : string
   * default_template : enum (summary | detailed | interview)
   * created_at : datetime
-  * is_default : boolean
+  * is_personal : boolean
 }
 
 entity "WORKSPACE_MEMBERSHIP" as WorkspaceMember {
@@ -85,8 +85,8 @@ entity "CAPTURE_SESSION" as CaptureSession {
   * meeting_id : UUID <<FK>>
   * opened_by_user_id : UUID <<FK>>
   * status : enum (recording | idle | assembled | abandoned)
-  * last_chunk_seq : integer
-  * last_chunk_at : datetime
+  last_chunk_seq : integer <<nullable>>
+  last_chunk_at : datetime <<nullable>>
   * created_at : datetime
   closed_at : datetime <<nullable>>
 }
@@ -96,7 +96,7 @@ entity "CAPTURE_CHUNK" as CaptureChunk {
   --
   * capture_session_id : UUID <<FK>>
   * seq : integer
-  * storage_key : string <<S>>
+  * storage_key : string <<P/S>>
   speaker_events : json <<P, nullable>>
   * received_at : datetime
 }
@@ -229,8 +229,9 @@ Workspace ||--|{ WorkspaceMember : has members
 Workspace ||--|{ Folder : contains
 Folder ||--o{ Meeting : files
 User ||--o{ Meeting : creates
-User ||--o{ CaptureSession : opens
-User ||--o{ Invitation : sends
+User |o--o{ Meeting : confirms consent
+User ||-left-o{ CaptureSession : opens
+User ||-down-o{ Invitation : sends
 Workspace ||--o{ Invitation : has invitations
 
 Meeting ||--o| CaptureSession : receives capture
@@ -256,7 +257,7 @@ User ||--o{ GlossaryTerm : creates term
 Meeting |o--o{ GlossaryTerm : source
 
 Meeting ||--o{ Note : produces
-User ||--o{ Note
+User |o--o{ Note : requests
 Note ||--o{ NoteContextMeeting : records context
 Meeting |o--o{ NoteContextMeeting : context source
 Workspace ||--o| LLMConfig : configures
