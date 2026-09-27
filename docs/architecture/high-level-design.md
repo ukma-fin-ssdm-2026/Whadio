@@ -75,11 +75,11 @@ Source: [uml/component-diagram.puml](uml/component-diagram.puml)
 | Capture | Capture sessions, idempotent chunk storage, assembling the recording, validating uploaded files, finalising interrupted captures. | FR-009, FR-010, FR-012, FR-013 |
 | MCP Server | The MCP interface: authenticates personal keys and exposes the key owner's meetings as tools. | FR-043, FR-044 |
 | Accounts & Workspaces | Registration, sign-in, workspaces, membership and roles, LLM provider configuration, MCP keys. Checks workspace-administration permissions against the member's role. | FR-001–FR-003, FR-005–FR-008, FR-021, FR-043 |
-| Access Policy | Decides who may read which meeting: workspace role, per-meeting restriction, share grants and redaction. | FR-004, FR-037–FR-039, FR-044, NFR-007–NFR-009 |
+| Access Policy | Decides who may read which meeting: workspace role, per-meeting restriction, share grants and redaction. A share grants reading only to the account its creator approved; opening its link otherwise records an access request for the creator. | FR-004, FR-037–FR-039, FR-044, NFR-007–NFR-009 |
 | Meetings | Meetings, folders, transcript and notes versions, speaker labels, naming, glossary, playback. The single read path for meeting content. | FR-017, FR-027–FR-036 |
 | Processing | The pipeline's orchestrator: publishes jobs, consumes results, tracks processing state, assembles the context set, limits regeneration. | FR-012, FR-014, FR-015, FR-018–FR-020, FR-022, FR-023, FR-025, FR-026 |
 | Export | Markdown and VTT export with the consent notice and attribution. | FR-040–FR-042 |
-| Notifications | Email to members when processing finishes or fails, and before recordings expire. | FR-024, FR-046 |
+| Notifications | Email to members when processing finishes or fails, before recordings expire, and to a share's creator when an account requests access. | FR-024, FR-038, FR-046 |
 | Retention | Deletes recordings three months after the meeting and triggers the advance warning. | FR-046 |
 | Admin & Monitoring | The administrator dashboard: queue, failures, load and model usage, without meeting content. | FR-045 |
 

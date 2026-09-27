@@ -64,7 +64,7 @@ Recorded with the reason, so that the boundary is a decision rather than an omis
 | **Preset** | A named note format — a summary with action items, a detailed write-up, an interview. Each preset is a fixed prompt; users do not write their own. |
 | **Context set** | The transcripts supplied to the model alongside a meeting's own when its notes are generated: the other meetings in the same folder, minus any whose access is restricted. |
 | **Glossary (project)** | The workspace's list of terms and names supplied to the recognition step to improve accuracy on the workspace's own vocabulary. Distinct from this section. |
-| **Share** | A grant of read access to one meeting for a signed-in person outside the workspace, created as a link and revocable. A share carries no download, export or onward-share right. |
+| **Share** | A grant of read access to one meeting for a signed-in person outside the workspace, created as a link and revocable. Opening the link only requests access; the share is bound to the one account its creator approves. A share carries no download, export or onward-share right. |
 | **Diarization** | Splitting a transcript by who spoke when. Produces numbered speakers before any names are attached. |
 | **BYOK** | Bring Your Own Key — a workspace Owner connecting their own LLM provider API key in place of the built-in model. |
 | **MCP** | Model Context Protocol — the integration through which a user's own AI assistant reaches the meetings they have access to. |
@@ -144,7 +144,7 @@ restriction, never by where a meeting is filed.
 ### Sharing
 
 - FR-037: A Moderator can restrict a meeting to selected workspace members. A restricted meeting is withheld from every other member on every path that returns meeting content — the meeting list, direct links, a connected assistant, and the context set of other meetings' notes. Members are not offered the action.
-- FR-038: A Member can share a meeting outside the workspace by link. The recipient must be signed in and may read the transcript and notes only, with no download, export or onward share. A share can be revoked, after which the link denies access.
+- FR-038: A Member can share a meeting outside the workspace by link. The recipient must be signed in and may read the transcript and notes only, with no download, export or onward share. Access is granted only after the Member who created the share approves the requesting account; the share is then bound to that account, and any other account opening the link sees none of the content. The creator is notified of each request; the notification names the requesting account and carries none of the meeting's content. A share can be revoked, after which the link denies access.
 - FR-039: A share can redact speaker names to Speaker 1, Speaker 2 and so on. A redacted share carries no recording.
 
 ### Export and operations

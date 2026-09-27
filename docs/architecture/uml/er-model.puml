@@ -119,7 +119,18 @@ entity "EXTERNAL_SHARE" as ExternalShare {
   * redact_speaker_names : boolean
   * include_recording : boolean
   * created_at : datetime
+  recipient_user_id : UUID <<FK, P, nullable>>
   revoked_at : datetime <<nullable>>
+}
+
+entity "SHARE_ACCESS_REQUEST" as ShareAccessRequest {
+  * share_access_request_id : UUID <<PK>>
+  --
+  * share_id : UUID <<FK>>
+  * requester_user_id : UUID <<FK, P>>
+  * status : enum (pending | approved | declined)
+  * requested_at : datetime
+  decided_at : datetime <<nullable>>
 }
 
 entity "TRANSCRIPT" as Transcript {
@@ -243,6 +254,9 @@ User ||--o{ MeetingAccessGrant : grants access
 
 Meeting ||--o{ ExternalShare : shared by link
 User ||--o{ ExternalShare : creates share
+User |o--o{ ExternalShare : receives share
+ExternalShare ||--o{ ShareAccessRequest : receives requests
+User ||--o{ ShareAccessRequest : requests access
 
 Meeting ||--o| Transcript : has transcript
 Transcript ||--|{ TranscriptRevision : keeps revisions
@@ -313,10 +327,20 @@ end note
 
 note bottom of ExternalShare
   External shares are read-only links for
-  signed-in recipients. Token is stored
-  only as a hash. Speaker names may be
-  redacted; redacted shares do not include
-  the recording.
+  signed-in recipients. Opening the link
+  creates an access request; the share is
+  bound to the one account its creator
+  approves. Token is stored only as a
+  hash. Speaker names may be redacted;
+  redacted shares do not include the
+  recording.
+end note
+
+note right of ShareAccessRequest
+  Unique: (share_id, requester_user_id).
+  Only the share's creator decides;
+  once a recipient is bound, further
+  requests can only be declined.
 end note
 
 note bottom of TranscriptRevision
