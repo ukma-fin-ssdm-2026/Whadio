@@ -1,0 +1,281 @@
+@startuml
+hide circle
+skinparam linetype ortho
+
+skinparam entity {
+  BackgroundColor #F8F9FA
+  BorderColor #495057
+}
+
+title Whadio - ER Data Model
+
+entity "USER" as User {
+  * user_id : UUID <<PK>>
+  --
+  * email : string <<P>>
+  * name : string <<P>>
+  * password_hash : string <<S>>
+  * created_at : datetime
+}
+
+entity "WORKSPACE" as Workspace {
+  * workspace_id : UUID <<PK>>
+  --
+  * name : string
+  * owner_id : UUID <<FK>>
+  * created_at : datetime
+  * is_default : boolean
+}
+
+entity "WORKSPACE_MEMBERSHIP" as WorkspaceMember {
+  * workspace_membership_id : UUID <<PK>>
+  --
+  * workspace_id : UUID <<FK>>
+  * user_id : UUID <<FK>>
+  * role : enum <<Member, Moderator, Owner>>
+  * joined_at : datetime
+}
+
+entity "FOLDER" as Folder {
+  * folder_id : UUID <<PK>>
+  --
+  * workspace_id : UUID <<FK>>
+  * name : string
+  * created_at : datetime
+  * is_default : boolean
+}
+
+entity "MEETING" as Meeting {
+  * meeting_id : UUID <<PK>>
+  --
+  * workspace_id : UUID <<FK>>
+  * folder_id : UUID <<FK>>
+  * created_by_user_id : UUID <<FK>>
+  * title : string
+  * name_is_generated : boolean
+  * source_type : enum <<extension, upload>>
+  * recording_status : enum <<complete, partial>>
+  * storage_path : string <<S>>
+  * duration_seconds : integer
+  * recorded_at : datetime
+  * created_at : datetime
+  * recording_delete_after : datetime
+  * recording_deleted_at : datetime <<nullable>>
+  * access_mode : enum <<workspace, restricted>>
+}
+
+entity "MEETING_ACCESS_GRANT" as MeetingAccessGrant {
+  * access_grant_id : UUID <<PK>>
+  --
+  * meeting_id : UUID <<FK>>
+  * user_id : UUID <<FK>>
+  * granted_by_user_id : UUID <<FK>>
+  * granted_at : datetime
+}
+
+entity "EXTERNAL_SHARE" as ExternalShare {
+  * share_id : UUID <<PK>>
+  --
+  * meeting_id : UUID <<FK>>
+  * created_by_user_id : UUID <<FK>>
+  * token_hash : string <<S>>
+  * redact_speaker_names : boolean
+  * include_recording : boolean
+  * created_at : datetime
+  * revoked_at : datetime <<nullable>>
+  * expires_at : datetime <<nullable>>
+}
+
+entity "TRANSCRIPT" as Transcript {
+  * transcript_id : UUID <<PK>>
+  --
+  * meeting_id : UUID <<FK>>
+  * language : string
+  * model_name : string
+  * created_at : datetime
+  * current_revision_id : UUID <<FK>>
+}
+
+entity "TRANSCRIPT_REVISION" as TranscriptRevision {
+  * revision_id : UUID <<PK>>
+  --
+  * transcript_id : UUID <<FK>>
+  * revision_type : enum <<original, edited>>
+  * edited_by_user_id : UUID <<FK, nullable>>
+  * created_at : datetime
+}
+
+entity "SPEAKER" as Speaker {
+  * speaker_id : UUID <<PK>>
+  --
+  * meeting_id : UUID <<FK>>
+  * display_name : string <<P>>
+  * original_display_name : string <<P, nullable>>
+}
+
+entity "TRANSCRIPT_SEGMENT" as Segment {
+  * segment_id : UUID <<PK>>
+  --
+  * revision_id : UUID <<FK>>
+  * speaker_id : UUID <<FK, nullable>>
+  * start_time_seconds : decimal
+  * end_time_seconds : decimal
+  * text : text <<P/S>>
+}
+
+entity "GLOSSARY_TERM" as GlossaryTerm {
+  * term_id : UUID <<PK>>
+  --
+  * workspace_id : UUID <<FK>>
+  * term : string <<P/S>>
+  * preferred_form : string <<P/S>>
+  * description : text <<P/S>>
+  * created_by_user_id : UUID <<FK>>
+  * created_at : datetime
+}
+
+entity "NOTE" as Note {
+  * note_id : UUID <<PK>>
+  --
+  * meeting_id : UUID <<FK>>
+  * template : enum <<summary, detailed, interview>>
+  * content : text <<P/S>>
+  * model_name : string
+  * provider : enum <<Whadio, Anthropic, OpenAI, Google>>
+  * created_by_user_id : UUID <<FK>>
+  * created_at : datetime
+}
+
+entity "LLM_PROVIDER_CONFIG" as LLMConfig {
+  * provider_config_id : UUID <<PK>>
+  --
+  * workspace_id : UUID <<FK>>
+  * is_enabled : boolean
+  * provider : enum <<Whadio, Anthropic, OpenAI, Google>>
+  * api_key_encrypted : string <<S>>
+  * created_at : datetime
+}
+
+entity "MCP_KEY" as MCPKey {
+  * mcp_key_id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK>>
+  * key_hash : string <<S>>
+  * created_at : datetime
+  expires_at : datetime <<nullable>>
+  revoked_at : datetime <<nullable>>
+}
+
+entity "EXPORT_JOB" as ExportJob {
+  * export_job_id : UUID <<PK>>
+  --
+  * meeting_id : UUID <<FK>>
+  * requested_by_user_id : UUID <<FK>>
+  * format : enum <<markdown, vtt>>
+  * status : enum <<queued, ready, failed>>
+  * storage_path : string <<S, nullable>>
+  * created_at : datetime
+}
+
+entity "PROCESSING_JOB" as ProcessingJob {
+  * processing_job_id : UUID <<PK>>
+  --
+  * meeting_id : UUID <<FK>>
+  * job_type : enum <<transcription, diarization, notes>>
+  * status : enum <<queued, running, succeeded, failed>>
+  * failure_reason : text <<S, nullable>>
+  * started_at : datetime <<nullable>>
+  * finished_at : datetime <<nullable>>
+}
+
+User ||--o{ Workspace : owns
+User ||--o{ WorkspaceMember : joins
+Workspace ||--o{ WorkspaceMember : has members
+
+Workspace ||--o{ Folder : contains
+Workspace ||--o{ Meeting : contains
+Folder ||--o{ Meeting : files
+User ||--o{ Meeting : creates
+
+Meeting ||--o{ MeetingAccessGrant : restricts to
+User ||--o{ MeetingAccessGrant : receives access
+User ||--o{ MeetingAccessGrant : grants access
+
+Meeting ||--o{ ExternalShare : shared by link
+User ||--o{ ExternalShare : creates share
+
+Meeting ||--o| Transcript : has transcript
+Transcript ||--|{ TranscriptRevision : keeps revisions
+TranscriptRevision ||--o{ Segment : contains
+Meeting ||--o{ Speaker : has speakers
+Speaker ||--o{ Segment : labels
+User ||--o{ TranscriptRevision : edits
+
+Workspace ||--o{ GlossaryTerm : defines
+User ||--o{ GlossaryTerm : creates term
+
+Meeting ||--o{ Note : produces
+User ||--o{ Note : requests note
+Workspace ||--o| LLMConfig : configures
+
+User ||--o{ MCPKey : creates
+Meeting ||--o{ ExportJob : exported as
+User ||--o{ ExportJob : requests export
+Meeting ||--o{ ProcessingJob : processed by
+
+note right of WorkspaceMember
+  role is one of:
+  Member, Moderator, Owner.
+  Permissions are cumulative.
+end note
+
+note right of Meeting
+  access_mode = workspace means all
+  workspace members can read the meeting.
+  access_mode = restricted means only
+  explicit MeetingAccessGrant rows apply.
+  name_is_generated tells the SPA whether
+  to show the naming prompt.
+  recording_status = partial means the
+  capture ended without a complete stop
+  event, but acknowledged chunks were kept.
+  Recordings are deleted after retention,
+  while transcripts and notes remain.
+end note
+
+note bottom of ExternalShare
+  External shares are read-only links for
+  signed-in recipients. Token is stored
+  only as a hash. Speaker names may be
+  redacted; redacted shares do not include
+  the recording.
+end note
+
+note bottom of TranscriptRevision
+  The original transcript revision is
+  retained permanently. Edited revisions
+  are never presented as original.
+end note
+
+note bottom of Segment
+  Transcript text and speaker labels may
+  contain personal, confidential, or
+  otherwise sensitive information.
+end note
+
+note bottom of LLMConfig
+  Store provider credentials encrypted;
+  never return them to clients or logs.
+end note
+
+note bottom of MCPKey
+  Store only a hash of the secret key.
+  Show the raw key only once when created.
+end note
+
+legend right
+  <<P>> personal data
+  <<S>> sensitive or secret data
+endlegend
+
+@enduml
