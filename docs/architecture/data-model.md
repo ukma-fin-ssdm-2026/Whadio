@@ -32,7 +32,9 @@ The model covers the data required for these key project functions:
 | `WORKSPACE` | `workspace_id` | Collaboration boundary for members, folders, glossary terms, meetings, and LLM configuration. | Usually not personal, but the workspace name may reveal an organization or project. |
 | `WORKSPACE_MEMBERSHIP` | `workspace_membership_id` | Connects users to workspaces and stores their cumulative role: `Member`, `Moderator`, or `Owner`. | Membership and role data can be sensitive organizational metadata. |
 | `FOLDER` | `folder_id` | Organizes meetings inside a workspace. Folders do not define permissions. | Folder names may reveal topics or projects. |
-| `MEETING` | `meeting_id` | Meeting metadata, generated-name state, source type, recording completeness, recording location, retention state, and access mode. | `name`, `storage_path`, timestamps, and duration can be sensitive; the recording path points to highly sensitive audio. |
+| `MEETING` | `meeting_id` | Meeting metadata, generated-name state, source type, recording completeness, meeting-level processing state, consent confirmation, recording location, retention state, and access mode. | `name`, `storage_path`, timestamps, duration, and consent-confirmation metadata can be sensitive; the recording path points to highly sensitive audio. |
+| `CAPTURE_SESSION` | `capture_session_id` | Browser recording session used by the extension for chunked upload, idle-timeout recovery, and partial recording assembly. | Links a user to a recording action and may reveal meeting timing. |
+| `CAPTURE_CHUNK` | `capture_chunk_id` | Acknowledged uploaded audio chunk with sequence number, object-storage key, and speaker events observed by the extension. | `storage_key` is sensitive. `speaker_events` may contain participant names and active-speaker timing. |
 | `MEETING_ACCESS_GRANT` | `access_grant_id` | Explicit access list used when a meeting is restricted to selected workspace members. | Reveals who can access a specific meeting. |
 | `EXTERNAL_SHARE` | `share_id` | Read-only signed-in sharing outside the workspace, with revocation and optional speaker-name redaction. | `token_hash` is sensitive. Share metadata reveals external disclosure. |
 | `TRANSCRIPT` | `transcript_id` | Transcript container for one meeting, including language, recognition model, and current revision. | Transcript metadata may be sensitive. |
@@ -44,7 +46,7 @@ The model covers the data required for these key project functions:
 | `LLM_PROVIDER_CONFIG` | `provider_config_id` | Workspace BYOK configuration for external LLM providers. | `api_key_encrypted` is secret credential material. |
 | `MCP_KEY` | `mcp_key_id` | Personal access key for MCP clients. | `key_hash` is sensitive authentication material. |
 | `EXPORT_JOB` | `export_job_id` | Tracks Markdown and VTT exports requested by users. | `storage_path` may point to sensitive exported content. |
-| `PROCESSING_JOB` | `processing_job_id` | Tracks transcription, diarization, and notes jobs for monitoring. | Failure reasons can include sensitive operational or content-derived details. |
+| `PROCESSING_JOB` | `processing_job_id` | Tracks transcription and notes jobs for monitoring. Diarization is part of the transcription job. | Failure reasons can include sensitive operational or content-derived details. |
 
 ## Relationships and Cardinality
 
@@ -53,6 +55,8 @@ The model covers the data required for these key project functions:
 - One `WORKSPACE` contains many `FOLDER` records and many `MEETING` records.
 - One `FOLDER` contains many meetings; each meeting belongs to exactly one folder.
 - One `USER` can create many meetings; each meeting has one creator.
+- One extension-recorded `MEETING` has zero or one `CAPTURE_SESSION`; uploaded meetings have none.
+- One `CAPTURE_SESSION` has many `CAPTURE_CHUNK` rows.
 - One unrestricted meeting is available to all workspace members. A restricted meeting must have one or more `MEETING_ACCESS_GRANT` rows.
 - One `MEETING` can have many `EXTERNAL_SHARE` rows, each created by one user and revocable independently.
 - One `MEETING` has zero or one `TRANSCRIPT`; one transcript has one or more `TRANSCRIPT_REVISION` rows.
@@ -69,6 +73,10 @@ The model covers the data required for these key project functions:
 - Every entity has a UUID primary key.
 - `MEETING.name_is_generated` is `true` when the meeting name was proposed by the system and the SPA should prompt the user to confirm or rename it; it becomes `false` after the user provides a name.
 - `MEETING.recording_status = partial` means the capture ended without a complete stop event, for example after a lost connection or closed tab, but already acknowledged chunks were stored. Partial recordings must be shown as partial and must not be treated as complete meeting records.
+- `MEETING.processing_state` is the meeting-level state shown in the SPA: `recording`, `queued`, `processing`, `processed`, or `failed`.
+- `MEETING.consent_confirmed_at` and `MEETING.consent_confirmed_by_user_id` are optional because extension recordings require consent confirmation, while uploaded recordings do not have the extension consent step.
+- `CAPTURE_SESSION.last_chunk_seq` and `CAPTURE_SESSION.last_chunk_at` let the scheduler find captures that have been idle past the timeout.
+- `CAPTURE_CHUNK` must be unique by `(capture_session_id, seq)`, so chunk upload retries are idempotent.
 - A workspace must always have exactly one membership with `role = Owner`.
 - `WORKSPACE_MEMBERSHIP` must be unique by `(workspace_id, user_id)`, so one user has at most one role in a workspace.
 - `GLOSSARY_TERM` must be unique by `(workspace_id, term)`, because duplicate glossary terms are rejected.
@@ -91,6 +99,10 @@ The model covers the data required for these key project functions:
 The highest-risk data stores are:
 
 - Meeting recordings referenced by `MEETING.storage_path`.
+- Meeting names in `MEETING.name`, especially generated names based on transcripts.
+- Consent confirmation metadata in `MEETING.consent_confirmed_at` and `MEETING.consent_confirmed_by_user_id`.
+- Capture chunks referenced by `CAPTURE_CHUNK.storage_key`.
+- Speaker events in `CAPTURE_CHUNK.speaker_events`.
 - Transcript text in `TRANSCRIPT_SEGMENT.text`.
 - Speaker names in `SPEAKER.display_name` and `SPEAKER.original_display_name`.
 - Generated notes in `NOTE.content`.

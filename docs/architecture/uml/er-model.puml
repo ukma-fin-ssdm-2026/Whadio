@@ -50,17 +50,42 @@ entity "MEETING" as Meeting {
   * workspace_id : UUID <<FK>>
   * folder_id : UUID <<FK>>
   * created_by_user_id : UUID <<FK>>
-  * name : string
+  * name : string <<S>>
   * name_is_generated : boolean
   * source_type : enum (extension | upload)
   * recording_status : enum (complete | partial)
+  * processing_state : enum (recording | queued | processing | processed | failed)
   * storage_path : string <<S>>
   * duration_seconds : integer
   * recorded_at : datetime
   * created_at : datetime
+  consent_confirmed_at : datetime <<nullable>>
+  consent_confirmed_by_user_id : UUID <<FK, nullable>>
   * recording_delete_after : datetime
   * recording_deleted_at : datetime <<nullable>>
   * access_mode : enum (workspace | restricted)
+}
+
+entity "CAPTURE_SESSION" as CaptureSession {
+  * capture_session_id : UUID <<PK>>
+  --
+  * meeting_id : UUID <<FK>>
+  * opened_by_user_id : UUID <<FK>>
+  * status : enum (recording | idle | assembled | abandoned)
+  * last_chunk_seq : integer
+  * last_chunk_at : datetime
+  * created_at : datetime
+  closed_at : datetime <<nullable>>
+}
+
+entity "CAPTURE_CHUNK" as CaptureChunk {
+  * capture_chunk_id : UUID <<PK>>
+  --
+  * capture_session_id : UUID <<FK>>
+  * seq : integer
+  * storage_key : string <<S>>
+  speaker_events : json <<P, nullable>>
+  * received_at : datetime
 }
 
 entity "MEETING_ACCESS_GRANT" as MeetingAccessGrant {
@@ -180,7 +205,7 @@ entity "PROCESSING_JOB" as ProcessingJob {
   * processing_job_id : UUID <<PK>>
   --
   * meeting_id : UUID <<FK>>
-  * job_type : enum (transcription | diarization | notes)
+  * job_type : enum (transcription | notes)
   * status : enum (queued | running | succeeded | failed)
   * failure_reason : text <<S, nullable>>
   * started_at : datetime <<nullable>>
@@ -194,6 +219,10 @@ Workspace ||--o{ Folder : contains
 Workspace ||--o{ Meeting : contains
 Folder ||--o{ Meeting : files
 User ||--o{ Meeting : creates
+User ||--o{ CaptureSession : opens
+
+Meeting ||--o| CaptureSession : receives capture
+CaptureSession ||--o{ CaptureChunk : stores chunks
 
 Meeting ||--o{ MeetingAccessGrant : restricts to
 User ||--o{ MeetingAccessGrant : receives access
@@ -243,8 +272,22 @@ note right of Meeting
   recording_status = partial means the
   capture ended without a complete stop
   event, but acknowledged chunks were kept.
+  processing_state is the meeting-level
+  state shown by the SPA:
+  recording, queued, processing,
+  processed, or failed.
+  Consent confirmation is optional:
+  extension recordings store it, uploads
+  do not have that confirmation step.
   Recordings are deleted after retention,
   while transcripts and notes remain.
+end note
+
+note right of CaptureChunk
+  Unique: (capture_session_id, seq).
+  speaker_events are the Meet speaker
+  timeline observed with this chunk and
+  may contain participant names.
 end note
 
 note right of GlossaryTerm
