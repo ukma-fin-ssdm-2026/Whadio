@@ -18,6 +18,7 @@ The requirements that shape the architecture most, and what each one forces.
 | The open-source build can be installed outside the team's hosting, given stated resources. | NFR-016, NFR-017 | One container image and Docker Compose profiles; the same system runs on one machine or two. |
 | Without a configured provider, no request leaves the system; provider keys are the Owner's alone. | FR-021, FR-022, NFR-013 | The built-in language model runs inside the deployment. Only the notes worker calls an external provider, and only with the Owner's key. |
 | Meeting content reaches only those with access, on every path. | NFR-007, NFR-009, FR-037, FR-044 | One Access Policy module sits on every read path. Workers receive only data the backend has already authorised. |
+| Every change an account makes to a meeting's content or access stays attributable to it, even after the meeting is deleted. | NFR-010 | One Audit module keeps an append-only record, written in the same transaction as the change. |
 | GPU time is the dominant running cost (about $2 per hour on a cloud GPU instance). | Team session 2026-09-24 | GPU work is isolated on its own host, which can be sized, placed and switched off without touching the rest. |
 | One team of four, one repository, one semester. | [Team Charter](../../TeamCharter.md) | No microservices: there are no independent release cycles to gain, while the full cost of operating a distributed system would still be paid. |
 
@@ -43,6 +44,8 @@ The requirements that shape the architecture most, and what each one forces.
    read through a presigned URL, and results return as messages.
 3. On the backend side, only the Processing module talks to the broker.
 4. Every read of meeting content goes through Meetings, which consults Access Policy.
+5. Every change an account makes to meeting content or access writes an audit event through Audit,
+   in the same transaction as the change. The module that performs the change writes it.
 
 ### Alternatives considered
 
@@ -76,12 +79,13 @@ Source: [uml/component-diagram.puml](uml/component-diagram.puml)
 | MCP Server | The MCP interface: authenticates personal keys and exposes the key owner's meetings as tools. | FR-043, FR-044 |
 | Accounts & Workspaces | Registration, sign-in, workspaces, membership and roles, LLM provider configuration, MCP keys. Checks workspace-administration permissions against the member's role. | FR-001–FR-003, FR-005–FR-008, FR-021, FR-043 |
 | Access Policy | Decides who may read which meeting: workspace role, per-meeting restriction, share grants and redaction. A share grants reading only to the account its creator approved; opening its link otherwise records an access request for the creator. | FR-004, FR-037–FR-039, FR-044, NFR-007–NFR-009 |
-| Meetings | Meetings, folders, transcript and notes versions, speaker labels, naming, glossary, playback. The single read path for meeting content. | FR-017, FR-027–FR-036 |
+| Meetings | Meetings, folders, transcript and notes versions, speaker labels, naming, glossary, playback. The single read path for meeting content. Enforces the meeting cap: when a meeting is queued, counts the queued and later meetings across the workspaces of its workspace's Owner, and evicts the earliest-created one if the cap is exceeded. | FR-017, FR-027–FR-036, NFR-003 |
 | Processing | The pipeline's orchestrator: publishes jobs, consumes results, tracks processing state, assembles the context set, limits regeneration. | FR-012, FR-014, FR-015, FR-018–FR-020, FR-022, FR-023, FR-025, FR-026 |
 | Export | Markdown and VTT export with the consent notice and attribution. | FR-040–FR-042 |
-| Notifications | Email to members when processing finishes or fails, before recordings expire, and to a share's creator when an account requests access. | FR-024, FR-038, FR-046 |
+| Notifications | Email to members when processing finishes or fails, before recordings expire, and when the meeting cap evicts a meeting; to a share's creator when an account requests access. | FR-024, FR-038, FR-046, NFR-003 |
 | Retention | Deletes recordings three months after the meeting and triggers the advance warning. | FR-046 |
 | Admin & Monitoring | The administrator dashboard: queue, failures, load and model usage, without meeting content. | FR-045 |
+| Audit | The append-only record of who changed a meeting's content or access: actor, action, target IDs and time, never content. Written by Meetings, Access Policy and Accounts & Workspaces; no API reads it, and the operator consults it in the database. | NFR-010 |
 
 The Web API has no component of its own: each module serves its own resources through its API
 layer. Session authentication is middleware that Accounts & Workspaces provides to every Web API
