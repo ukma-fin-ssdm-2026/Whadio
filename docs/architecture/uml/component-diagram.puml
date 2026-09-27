@@ -1,0 +1,97 @@
+@startuml component-diagram
+title Whadio — component diagram
+
+skinparam componentStyle uml2
+skinparam packageStyle rectangle
+skinparam nodesep 50
+skinparam ranksep 60
+
+component "Chrome extension\n<<Manifest V3>>" as ext
+component "Google Meet tab" as meet
+component "Web SPA\n<<React>>" as spa
+component "MCP client\n<<user's AI assistant>>" as mcpClient
+
+package "Whadio backend  (entry points: web, scheduler)" as backend {
+  () "Capture API" as ICapture
+  () "Web API" as IWeb
+  () "MCP" as IMcp
+
+  component "Capture" as capture
+  component "MCP Server" as mcp
+
+  component "Processing" as processing
+  component "Admin & Monitoring" as admin
+  component "Export" as export
+  component "Retention" as retention
+
+  component "Meetings" as meetings
+  component "Notifications" as notifications
+
+  component "Access Policy" as access
+  component "Accounts & Workspaces" as accounts
+}
+
+queue "Message broker\n<<RabbitMQ>>" as mq
+
+package "Whadio workers  (entry points: asr-worker, notes-worker)" as workers {
+  component "Transcription pipeline" as asr
+  component "Notes pipeline" as notes
+}
+
+database "PostgreSQL" as db
+database "Object storage\n<<S3-compatible>>" as store
+component "LLM runtime\n<<OpenAI-compatible>>" as llm
+cloud "LLM provider\n<<BYOK>>" as provider
+cloud "SMTP relay" as smtp
+
+note right of mq
+  <b>transcription.requests</b>: TranscriptionRequested
+  <b>notes.requests</b>: NotesRequested
+  <b>processing.results</b>: JobStarted, TranscriptReady,
+  TranscriptionFailed, NotesReady, NotesFailed
+end note
+
+' --- Clients and the provided interfaces ---
+ext .left.> meet : names, active\nspeaker (DOM)
+ext ..> ICapture : HTTPS
+spa ..> IWeb : HTTPS
+spa ..> ICapture : HTTPS\nfile upload
+mcpClient ..> IMcp : HTTPS, personal key
+
+ICapture -- capture
+IWeb -- accounts
+IWeb -- meetings
+IWeb -- processing : regenerate notes
+IWeb -- export
+IWeb -- admin
+IMcp -- mcp
+
+' --- In-process dependencies inside the backend ---
+capture ..> processing : submit recording
+capture ..> meetings : create meeting
+mcp ..> meetings
+mcp ..> accounts : verify key
+admin ..> processing : job states
+export ..> meetings
+processing ..> meetings : save results,\ncontext set
+processing ..> notifications
+retention ..> meetings
+retention ..> notifications
+meetings ..> access : every content read
+access ..> accounts : roles
+
+' --- Backend <-> workers, only through the broker ---
+processing ..> mq : AMQP
+mq <.. asr : AMQP
+mq <.. notes : AMQP
+
+' --- Infrastructure ---
+backend ..> db : SQL
+capture ..> store : write chunks
+meetings ..> store : playback URL
+retention ..> store : delete
+notifications ..> smtp : SMTP
+asr ..> store : read audio\n(presigned URL)
+notes ..> llm : HTTP
+notes ..> provider : HTTPS, BYOK only
+@enduml

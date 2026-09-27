@@ -1,0 +1,76 @@
+@startuml deployment-diagram
+title Whadio — deployment diagram (production)
+
+skinparam nodesep 50
+skinparam ranksep 70
+
+node "User's computer" as pc {
+  node "Chrome (desktop)" as chrome {
+    artifact "Whadio extension\n<<Manifest V3>>" as ext
+    component "Google Meet tab\n<<third-party page>>" as meet
+    artifact "Whadio SPA\n<<React bundle>>" as spa
+  }
+  component "AI assistant\n<<MCP client>>" as mcpClient
+}
+
+node "Main host\n<<Linux VM, CPU only>>" as main {
+  node "Docker Compose — profile: core" as composeCore {
+    component "nginx\n<<reverse proxy, TLS, SPA static>>" as nginx
+    component "web\n<<container>>" as web
+    component "scheduler\n<<container>>" as scheduler
+    component "notes-worker\n<<container>>" as notesWorker
+    queue "rabbitmq\n<<container>>" as mq
+    database "postgres\n<<container, volume>>" as db
+    database "object-storage\n<<container, volume, S3-compatible>>" as store
+  }
+}
+
+node "GPU host\n<<Linux, NVIDIA GPU>>" as gpu {
+  node "Docker Compose — profile: gpu" as composeGpu {
+    component "asr-worker\n<<container>>" as asrWorker
+    component "llm-runtime\n<<container: OpenAI-compatible server>>" as llm
+  }
+}
+
+cloud "LLM provider API\n<<Anthropic / OpenAI / Google>>" as provider
+cloud "SMTP relay" as smtp
+
+' --- Clients: nginx is the only public entry point ---
+ext --> nginx : HTTPS 443\nCapture API
+spa --> nginx : HTTPS 443\nWeb API
+mcpClient --> nginx : HTTPS 443\nMCP
+ext .left.> meet : DOM read\n(names, active speaker)
+
+' --- Inside the main host ---
+nginx --> web : HTTP
+web --> db : SQL
+web --> store : S3 API
+web --> mq : AMQP
+scheduler --> db : SQL
+scheduler --> store : S3 API
+scheduler --> mq : AMQP
+notesWorker --> mq : AMQP
+
+' --- Between the hosts: everything travels over the private network ---
+gpu == main : <<private network>>
+asrWorker --> mq : AMQP
+asrWorker --> store : HTTPS GET, presigned URL
+notesWorker --> llm : HTTP /v1/chat/completions
+
+' --- Egress to third parties ---
+notesWorker --> provider : HTTPS\nonly when the Owner configured a key
+web --> smtp : SMTP + STARTTLS
+
+note bottom of gpu
+  The GPU host opens no public ports and reaches
+  the main host only over the private network.
+  It holds no database or storage credentials:
+  audio is fetched through presigned URLs.
+end note
+
+note bottom of main
+  Only nginx (443) and the private network's endpoint
+  are exposed. Single-host deployment runs both Compose
+  profiles on one GPU machine, without the private network.
+end note
+@enduml
