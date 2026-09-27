@@ -77,6 +77,7 @@ processing ..> meetings : save results,\ncontext set
 processing ..> notifications
 retention ..> meetings
 retention ..> notifications
+access ..> notifications : share access\nrequests
 meetings ..> access : every content read
 access ..> accounts : roles
 

@@ -163,6 +163,8 @@ Each story has acceptance criteria in Given/When/Then form.
   - Acceptance criteria:
     - [ ] Given a Member opens a Meeting, when they create a share, then they receive a link that grants reading of the transcript and notes and nothing else.
     - [ ] Given a person is not signed in, when they open a share link, then they are asked to sign in and no content is shown beforehand.
+    - [ ] Given a signed-in person opens a share link, when the creator has not approved them, then no content is shown and the creator receives an access request.
+    - [ ] Given a share is bound to account A, when account B opens the link, then B sees no content.
     - [ ] Given a signed-in recipient opens a share link, when they view the Meeting, then no download, export or re-share action is available to them.
     - [ ] Given a Member revokes a share, when the recipient opens the link again, then access is denied.
     - [ ] Given a Member is creating a share, when they enable redaction, then the recipient sees speaker labels as Speaker 1, Speaker 2 and so on instead of names.
@@ -263,7 +265,7 @@ Each story has acceptance criteria in Given/When/Then form.
   - **Testable** — isolation and failure both assertable
 
 - US-009
-  - **Independent** — the only story that sends a notification
+  - **Independent** — the only story that notifies about processing
   - **Negotiable** — delivery channel deliberately left open
   - **Valuable** — the user stops checking back
   - **Estimable** — one trigger and one message
@@ -322,9 +324,9 @@ Each story has acceptance criteria in Given/When/Then form.
   - **Independent** — the only story that grants outside access
   - **Negotiable** — link form and expiry open
   - **Valuable** — outsiders read without taking it
-  - **Estimable** — a token plus a read view
+  - **Estimable** — a token, an approval step and a read view
   - **Small** — one grant plus one transform
-  - **Testable** — revocation and redaction both observable
+  - **Testable** — approval, revocation and redaction all observable
 
 - US-017
   - **Independent** — the only story that downloads content

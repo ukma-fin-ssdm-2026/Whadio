@@ -37,7 +37,8 @@ The model covers the data required for these key project functions:
 | `CAPTURE_SESSION` | `capture_session_id` | Browser recording session used by the extension for chunked upload, idle-timeout recovery, and partial recording assembly. | Links a user to a recording action and may reveal meeting timing. |
 | `CAPTURE_CHUNK` | `capture_chunk_id` | Acknowledged uploaded audio chunk with sequence number, object-storage key, and speaker events observed by the extension. | `storage_key` references audio chunks containing personal voice data and sensitive meeting content. `speaker_events` may contain participant names and active-speaker timing. |
 | `MEETING_ACCESS_GRANT` | `access_grant_id` | Explicit access list used when a meeting is restricted to selected workspace members. | Reveals who can access a specific meeting. |
-| `EXTERNAL_SHARE` | `share_id` | Read-only signed-in sharing outside the workspace, with revocation and optional speaker-name redaction. | `token_hash` is sensitive. Share metadata reveals external disclosure. |
+| `EXTERNAL_SHARE` | `share_id` | Read-only signed-in sharing outside the workspace, bound to the one account its creator approves, with revocation and optional speaker-name redaction. | `token_hash` is sensitive. `recipient_user_id` is personal data. Share metadata reveals external disclosure. |
+| `SHARE_ACCESS_REQUEST` | `share_access_request_id` | Request to read a shared meeting, created when a signed-in account opens the share link; the share's creator approves or declines it. | `requester_user_id` is personal data: it links a person outside the workspace to a meeting they tried to open. |
 | `TRANSCRIPT` | `transcript_id` | Transcript container for one meeting, including language, recognition model, and current revision. | Transcript metadata may be sensitive. |
 | `TRANSCRIPT_REVISION` | `revision_id` | Preserves the original transcript and all edited versions. | Edit history and editor identity may be sensitive. |
 | `SPEAKER` | `speaker_id` | Speaker labels stored per transcript revision, so speaker renames preserve the original labels and create edited revisions. | `display_name` is personal data. |
@@ -62,6 +63,8 @@ The model covers the data required for these key project functions:
 - One `CAPTURE_SESSION` has many `CAPTURE_CHUNK` rows.
 - One unrestricted meeting is available to all workspace members. A restricted meeting must have one or more `MEETING_ACCESS_GRANT` rows.
 - One `MEETING` can have many `EXTERNAL_SHARE` rows, each created by one user and revocable independently.
+- One `EXTERNAL_SHARE` is bound to zero or one recipient `USER`, set when its creator approves a request.
+- One `EXTERNAL_SHARE` has many `SHARE_ACCESS_REQUEST` rows; each request is made by one `USER`.
 - One `MEETING` has zero or one `TRANSCRIPT`; one transcript has one or more `TRANSCRIPT_REVISION` rows.
 - One `TRANSCRIPT_REVISION` has many `TRANSCRIPT_SEGMENT` rows.
 - One `TRANSCRIPT_REVISION` has many `SPEAKER` rows; each segment may reference one speaker label from the same revision.
@@ -88,11 +91,14 @@ The model covers the data required for these key project functions:
 - `GLOSSARY_TERM` must be unique by `(workspace_id, term)`, because duplicate glossary terms are rejected.
 - `GLOSSARY_TERM.source_meeting_id` is optional and records the meeting where a transcript correction produced the term.
 - Workspace roles are cumulative: `Owner` includes `Moderator` permissions, and `Moderator` includes `Member` permissions.
-- Folders do not grant or restrict access. Meeting access is determined by workspace membership plus the meeting's `access_mode`, and for people outside the workspace, an active `EXTERNAL_SHARE`.
+- Folders do not grant or restrict access. Meeting access is determined by workspace membership plus the meeting's `access_mode`, and for people outside the workspace, an active `EXTERNAL_SHARE` bound to them.
 - If `MEETING.access_mode = workspace`, all workspace members can access the meeting.
 - If `MEETING.access_mode = restricted`, only users listed in `MEETING_ACCESS_GRANT` can access the meeting.
 - A restricted meeting must not be used as cross-meeting context for another meeting's notes.
 - External shares are read-only, require a signed-in recipient, can be revoked, and must store only `token_hash`, never a raw share token.
+- An external share grants access only to its `recipient_user_id`. While it is null, opening the link only creates a `SHARE_ACCESS_REQUEST`; approving a request sets `recipient_user_id` to the requester.
+- Only the share's creator (`EXTERNAL_SHARE.created_by_user_id`) approves or declines its requests. Once `recipient_user_id` is set, further requests can only be declined.
+- `SHARE_ACCESS_REQUEST` must be unique by `(share_id, requester_user_id)`, so an account cannot repeat a declined request.
 - If an external share has `redact_speaker_names = true`, it must not include the meeting recording.
 - A transcript's first revision must have `revision_type = original`.
 - The original transcript revision must be retained permanently. Edited transcript text or speaker-label changes create edited revisions and must not overwrite the original.
@@ -122,6 +128,7 @@ The highest-risk data stores are:
 - LLM provider credentials in `LLM_PROVIDER_CONFIG.api_key_encrypted`.
 - MCP credentials in `MCP_KEY.key_hash`.
 - External share tokens represented by `EXTERNAL_SHARE.token_hash`.
+- Share recipients and requesters in `EXTERNAL_SHARE.recipient_user_id` and `SHARE_ACCESS_REQUEST.requester_user_id`, which reveal who outside the workspace read or tried to open a meeting.
 
 These fields should drive the next threat-analysis step, especially for access control, logging, export handling, retention, encryption, and external provider use.
 
