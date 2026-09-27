@@ -1,0 +1,112 @@
+@startuml sequence-meeting-pipeline
+title Whadio — recording a meeting: capture → transcript → notes → delivery
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+autonumber
+
+actor "Member" as user
+participant "Chrome extension" as ext
+participant "Web SPA" as spa
+
+box "Main host" #F5F5F5
+  participant "Backend\n(web)" as web
+  participant "Scheduler" as scheduler
+  database "PostgreSQL" as db
+  database "Object storage" as store
+  queue "Message broker" as mq
+  participant "Notes worker" as notes
+end box
+
+box "GPU host" #EEF3FA
+  participant "ASR worker" as asr
+  participant "LLM runtime" as llm
+end box
+
+== Capture ==
+
+user -> ext ++ : Start recording
+ext --> user : Consent reminder
+user -> ext : Confirm participants' consent
+ext -> web ++ : POST /captures {workspace, folder, consent}
+web -> db : Create meeting (state = recording),\nstore consent confirmation
+web --> ext -- : 201 {capture_id}
+
+loop every few seconds while recording
+  ext -> ext : Encode tab + mic audio chunk;\nsample active speaker from Meet DOM
+  ext -> web ++ : PUT /captures/{id}/chunks/{seq}\n{audio, speaker events}
+  web -> store : Put chunk
+  web -> db : Record seq, append speaker events
+  web --> ext -- : 204
+  note right of ext
+    A chunk is retried until acknowledged;
+    the seq number makes the upload idempotent.
+  end note
+end
+
+alt Member stops the recording
+  user -> ext : Stop
+  ext -> web ++ : POST /captures/{id}/complete {last_seq}
+  web -> store : Assemble chunks into the recording
+  web -> db : state = queued
+  web ->> mq : TranscriptionRequested\n{audio URL, speaker timeline, glossary}
+  web --> ext -- : 202 Accepted
+  ext --> user -- : Recording saved, processing
+else Connection lost or tab closed
+  note over ext, web
+    Chunks already acknowledged stay stored (NFR-014).
+    No complete call arrives.
+  end note
+  scheduler -> db ++ : Find captures idle past the timeout
+  db --> scheduler -- : Idle capture {id}
+  activate scheduler
+  scheduler -> store : Assemble the received chunks into the recording
+  scheduler -> db : state = queued, mark recording as partial
+  scheduler ->> mq : TranscriptionRequested\n{audio URL, speaker timeline, glossary}
+  deactivate scheduler
+end
+
+== Transcription ==
+
+mq ->> asr ++ : TranscriptionRequested
+asr ->> mq : JobStarted
+mq ->> web ++ : JobStarted
+web -> db -- : state = processing
+asr -> store : GET recording (presigned URL)
+asr -> asr : Normalise audio; recognise speech\nwith glossary biasing; diarize;\nname speakers from the timeline
+asr ->> mq -- : TranscriptReady {segments, speakers}
+mq ->> web ++ : TranscriptReady
+web -> db : Save transcript (original version)
+web -> db : Load preset, provider config and the context set\n(Access Policy drops restricted meetings)
+web ->> mq -- : NotesRequested\n{transcript, preset, context set, provider}
+
+spa -> web ++ : GET /meetings/{id}
+web --> spa -- : state = processing, transcript
+note right of spa
+  The transcript is readable
+  before the notes are ready.
+end note
+
+== Notes ==
+
+mq ->> notes ++ : NotesRequested
+notes -> notes : Build the prompt from the preset,\ntranscript and context set
+notes -> llm ++ : POST /v1/chat/completions
+llm --> notes -- : Completion
+notes ->> mq -- : NotesReady {notes, proposed name, context meetings}
+mq ->> web ++ : NotesReady
+web -> db : Save notes and the context used; set the proposed\nname, marked as generated; state = processed
+web -> web : Notify the member by email (FR-024)
+deactivate web
+
+== Delivery ==
+
+spa -> web ++ : GET /meetings/{id}
+web -> db : Read meeting (access checked)
+web --> spa -- : state = processed, name, transcript, notes
+spa --> user : Show transcript and notes; prompt to name\nthe meeting, prefilled with the generated name
+user -> spa : Confirm or edit the name
+spa -> web ++ : PATCH /meetings/{id} {name}
+web -> db : Save the name, no longer marked as generated
+web --> spa -- : 200
+@enduml
