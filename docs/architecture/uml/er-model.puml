@@ -15,6 +15,7 @@ entity "USER" as User {
   * email : string <<P>>
   * name : string <<P>>
   * password_hash : string <<S>>
+  * is_administrator : boolean
   * created_at : datetime
 }
 
@@ -22,6 +23,7 @@ entity "WORKSPACE" as Workspace {
   * workspace_id : UUID <<PK>>
   --
   * name : string
+  * default_template : enum (summary | detailed | interview)
   * created_at : datetime
   * is_default : boolean
 }
@@ -47,7 +49,6 @@ entity "FOLDER" as Folder {
 entity "MEETING" as Meeting {
   * meeting_id : UUID <<PK>>
   --
-  * workspace_id : UUID <<FK>>
   * folder_id : UUID <<FK>>
   * created_by_user_id : UUID <<FK>>
   * name : string <<S>>
@@ -55,15 +56,27 @@ entity "MEETING" as Meeting {
   * source_type : enum (extension | upload)
   * recording_status : enum (complete | partial)
   * processing_state : enum (recording | queued | processing | processed | failed)
-  * storage_path : string <<S>>
-  * duration_seconds : integer
+  storage_path : string <<P/S, nullable>>
+  duration_seconds : integer <<nullable>>
   * recorded_at : datetime
   * created_at : datetime
   consent_confirmed_at : datetime <<nullable>>
   consent_confirmed_by_user_id : UUID <<FK, nullable>>
   * recording_delete_after : datetime
-  * recording_deleted_at : datetime <<nullable>>
+  recording_deleted_at : datetime <<nullable>>
   * access_mode : enum (workspace | restricted)
+}
+
+entity "INVITATION" as Invitation {
+  * invitation_id : UUID <<PK>>
+  --
+  * workspace_id : UUID <<FK>>
+  * invited_email : string <<P>>
+  * role : enum (Member | Moderator)
+  * invited_by_user_id : UUID <<FK>>
+  * status : enum (pending | accepted | declined)
+  * created_at : datetime
+  responded_at : datetime <<nullable>>
 }
 
 entity "CAPTURE_SESSION" as CaptureSession {
@@ -106,8 +119,7 @@ entity "EXTERNAL_SHARE" as ExternalShare {
   * redact_speaker_names : boolean
   * include_recording : boolean
   * created_at : datetime
-  * revoked_at : datetime <<nullable>>
-  * expires_at : datetime <<nullable>>
+  revoked_at : datetime <<nullable>>
 }
 
 entity "TRANSCRIPT" as Transcript {
@@ -125,23 +137,22 @@ entity "TRANSCRIPT_REVISION" as TranscriptRevision {
   --
   * transcript_id : UUID <<FK>>
   * revision_type : enum (original | edited)
-  * edited_by_user_id : UUID <<FK, nullable>>
+  edited_by_user_id : UUID <<FK, nullable>>
   * created_at : datetime
 }
 
 entity "SPEAKER" as Speaker {
   * speaker_id : UUID <<PK>>
   --
-  * meeting_id : UUID <<FK>>
+  * revision_id : UUID <<FK>>
   * display_name : string <<P>>
-  * original_display_name : string <<P, nullable>>
 }
 
 entity "TRANSCRIPT_SEGMENT" as Segment {
   * segment_id : UUID <<PK>>
   --
   * revision_id : UUID <<FK>>
-  * speaker_id : UUID <<FK, nullable>>
+  speaker_id : UUID <<FK, nullable>>
   * start_time_seconds : decimal
   * end_time_seconds : decimal
   * text : text <<P/S>>
@@ -155,6 +166,7 @@ entity "GLOSSARY_TERM" as GlossaryTerm {
   * preferred_form : string <<P/S>>
   * description : text <<P/S>>
   * created_by_user_id : UUID <<FK>>
+  source_meeting_id : UUID <<FK, nullable>>
   * created_at : datetime
 }
 
@@ -166,8 +178,16 @@ entity "NOTE" as Note {
   * content : text <<P/S>>
   * model_name : string
   * provider : enum (Whadio | Anthropic | OpenAI | Google)
-  * created_by_user_id : UUID <<FK>>
+  created_by_user_id : UUID <<FK, nullable>>
   * created_at : datetime
+}
+
+entity "NOTE_CONTEXT_MEETING" as NoteContextMeeting {
+  * note_context_meeting_id : UUID <<PK>>
+  --
+  * note_id : UUID <<FK>>
+  context_meeting_id : UUID <<FK, nullable>>
+  * context_meeting_name_snapshot : string <<S>>
 }
 
 entity "LLM_PROVIDER_CONFIG" as LLMConfig {
@@ -176,7 +196,7 @@ entity "LLM_PROVIDER_CONFIG" as LLMConfig {
   * workspace_id : UUID <<FK>>
   * is_enabled : boolean
   * provider : enum (Whadio | Anthropic | OpenAI | Google)
-  * api_key_encrypted : string <<S>>
+  api_key_encrypted : string <<S, nullable>>
   * created_at : datetime
 }
 
@@ -190,36 +210,28 @@ entity "MCP_KEY" as MCPKey {
   revoked_at : datetime <<nullable>>
 }
 
-entity "EXPORT_JOB" as ExportJob {
-  * export_job_id : UUID <<PK>>
-  --
-  * meeting_id : UUID <<FK>>
-  * requested_by_user_id : UUID <<FK>>
-  * format : enum (markdown | vtt)
-  * status : enum (queued | ready | failed)
-  * storage_path : string <<S, nullable>>
-  * created_at : datetime
-}
-
 entity "PROCESSING_JOB" as ProcessingJob {
   * processing_job_id : UUID <<PK>>
   --
   * meeting_id : UUID <<FK>>
   * job_type : enum (transcription | notes)
   * status : enum (queued | running | succeeded | failed)
-  * failure_reason : text <<S, nullable>>
-  * started_at : datetime <<nullable>>
-  * finished_at : datetime <<nullable>>
+  failure_reason : text <<S, nullable>>
+  * created_at : datetime
+  * attempts : integer
+  started_at : datetime <<nullable>>
+  finished_at : datetime <<nullable>>
 }
 
-User ||--o{ WorkspaceMember : joins
-Workspace ||--o{ WorkspaceMember : has members
+User ||--|{ WorkspaceMember : joins
+Workspace ||--|{ WorkspaceMember : has members
 
-Workspace ||--o{ Folder : contains
-Workspace ||--o{ Meeting : contains
+Workspace ||--|{ Folder : contains
 Folder ||--o{ Meeting : files
 User ||--o{ Meeting : creates
 User ||--o{ CaptureSession : opens
+User ||--o{ Invitation : sends
+Workspace ||--o{ Invitation : has invitations
 
 Meeting ||--o| CaptureSession : receives capture
 CaptureSession ||--o{ CaptureChunk : stores chunks
@@ -235,20 +247,21 @@ Meeting ||--o| Transcript : has transcript
 Transcript ||--|{ TranscriptRevision : keeps revisions
 Transcript |o--|| TranscriptRevision : current revision
 TranscriptRevision ||--o{ Segment : contains
-Meeting ||--o{ Speaker : has speakers
+TranscriptRevision ||--o{ Speaker : has speaker labels
 Speaker |o--o{ Segment : labels
 User |o--o{ TranscriptRevision : edits
 
 Workspace ||--o{ GlossaryTerm : defines
 User ||--o{ GlossaryTerm : creates term
+Meeting |o--o{ GlossaryTerm : source
 
 Meeting ||--o{ Note : produces
 User ||--o{ Note
+Note ||--o{ NoteContextMeeting : records context
+Meeting |o--o{ NoteContextMeeting : context source
 Workspace ||--o| LLMConfig : configures
 
 User ||--o{ MCPKey : creates
-Meeting ||--o{ ExportJob : exported as
-User ||--o{ ExportJob : requests export
 Meeting ||--o{ ProcessingJob : processed by
 
 note right of WorkspaceMember
@@ -281,6 +294,8 @@ note right of Meeting
   do not have that confirmation step.
   Recordings are deleted after retention,
   while transcripts and notes remain.
+  The recording object in storage holds
+  personal voice data.
 end note
 
 note right of CaptureChunk
@@ -316,8 +331,10 @@ note bottom of Segment
 end note
 
 note bottom of LLMConfig
-  Store provider credentials encrypted;
-  never return them to clients or logs.
+  api_key_encrypted is required unless
+  provider = Whadio. Store provider
+  credentials encrypted; never return
+  them to clients or logs.
 end note
 
 note bottom of MCPKey
@@ -328,6 +345,7 @@ end note
 legend right
   <<P>> personal data
   <<S>> sensitive or secret data
+  <<P/S>> personal and/or sensitive data
 endlegend
 
 @enduml
