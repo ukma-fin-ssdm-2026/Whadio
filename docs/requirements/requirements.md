@@ -172,41 +172,41 @@ restriction, never by where a meeting is filed.
 
 ### Compatibility
 
-* NFR-004 (Co-existence): While recording a Google Meet call, the extension captures the meeting audio without affecting the operation of the meeting or the functionality of the browser environment in which the call is running.
+* NFR-004 (Co-existence): In 5 test recordings of at least 10 minutes each on supported desktop Chrome, the extension captures the Meet tab audio and microphone without adding a participant to the call, without crashing the Meet tab, and without preventing the user from muting, unmuting, speaking, hearing other participants, or stopping the recording.
 
 ### Usability
 
-* NFR-005 (User error protection): An accidental user action that changes a meeting's project or folder, or applies an incorrect note preset, can be reversed without losing the meeting, its transcript or its previously generated notes.
+* NFR-005 (User error protection): For every reversible action in scope (moving a meeting between folders, deleting a folder, and regenerating notes with a different preset), the previous state can be restored in no more than 3 user actions, and automated tests verify that the meeting, transcript, recording reference, and previously generated notes are not lost.
 
-* NFR-006 (User error protection): When a transcript has been edited, the system clearly indicates that it differs from the original and allows the user to switch between the original and edited versions.
+* NFR-006 (User error protection): For 100% of views and exports that show an edited transcript, the system displays an "edited" indication and allows the user to reach the original transcript version in no more than 2 user actions.
 
 ### Security
 
-* NFR-007 (Confidentiality): Meeting recordings, transcripts and notes are accessible only to authenticated users who have permission to access the corresponding meeting.
+* NFR-007 (Confidentiality): 100% of endpoints that return meeting recordings, transcripts or notes require an authenticated identity with permission to access the corresponding meeting; the automated authorization test matrix must show zero content returned to unauthorized identities.
 
-* NFR-008 (Confidentiality): A user who receives access to a shared meeting cannot forward, copy or download its content unless the sharing permissions explicitly allow the corresponding action.
+* NFR-008 (Confidentiality): For 100% of share views and share API endpoints, a shared meeting is readable only by the approved signed-in account; a second account opening the same link receives no content, and the share surface exposes no export, download, copy, or re-share action.
 
-* NFR-009 (Confidentiality): The system does not expose a meeting's recording, transcript or notes to users outside the access rules defined for the meeting, including through direct links, exports or connected services.
+* NFR-009 (Confidentiality): 100% of content paths, including direct links, exports and connected services, enforce the meeting access rules; automated tests for workspace access, restricted meetings, shares and MCP must observe zero recording, transcript or notes content outside the allowed audience.
 
-* NFR-010 (Accountability): Every change to a meeting that can affect its content or access is associated with the account that performed the action, without exposing unnecessary personal information in the record.
+* NFR-010 (Accountability): 100% of changes that affect meeting content or access (transcript edits, speaker renames, meeting restrictions, shares, membership changes, provider configuration and MCP key changes) create an audit record containing actor account id, action type, target id and timestamp, without storing transcript, note or recording content in the audit record.
 
-* NFR-011 (Integrity): An edited transcript is never presented as the original transcript; whenever an edited version is displayed or exported, the system indicates that the transcript has been edited.
+* NFR-011 (Integrity): In 100% of displays, shares and exports of an edited transcript, the edited version is marked as edited and is never labelled as the original; the original version remains retrievable through the transcript version switch.
 
-* NFR-012 (Authenticity): User accounts are authenticated by their registered credentials, and a user cannot access another user's account by impersonating that user.
+* NFR-012 (Authenticity): 100% of authentication tests reject incorrect passwords, revoked MCP keys and missing sessions; user passwords are stored only as password hashes, and no endpoint accepts a user id supplied by the client as proof of identity.
 
-* NFR-013 (Confidentiality): API keys configured for an external LLM provider are available only to the workspace Owner and are not exposed to other workspace members.
+* NFR-013 (Confidentiality): 100% of non-Owner role tests for provider settings return no provider API key material; stored external provider keys are encrypted at rest, and API responses never include raw provider keys after creation.
 
 ### Reliability
 
-* NFR-014 (Recoverability): If a processing component of the system becomes unavailable, meetings already received by the system remain stored and available for download or later processing.
+* NFR-014 (Recoverability): If a processing component is stopped during a running job, 100% of meetings already received by the system remain stored, visible with their current processing state, and processable after the component is restarted.
 
-* NFR-015 (Fault tolerance): A failure of the transcription or note-generation component does not make the entire Whadio service unavailable; functionality unrelated to the failed component remains accessible.
+* NFR-015 (Fault tolerance): During a transcription worker, notes worker or LLM runtime failure, at least 95% of requests to functionality unrelated to the failed component (sign-in, workspace list, meeting list, transcript viewing for already processed meetings and sharing settings) complete successfully in the test suite.
 
 ### Portability
 
-* NFR-016 (Adaptability): The open-source version of Whadio can be deployed in an environment that satisfies the documented CPU, RAM, disk-space and, where required, GPU requirements.
+* NFR-016 (Adaptability): The same open-source build and Docker Compose configuration supports both the single-host profile and the two-host `core` + `gpu` profile without source-code changes; CI or a release smoke test starts all required containers in the single-host profile successfully.
 
-* NFR-017 (Installability): Deployment requirements and resource requirements for running Whadio are documented so that the system can be installed and operated outside the team's hosted environment.
+* NFR-017 (Installability): On a clean machine that satisfies the stated resource requirements and has Docker installed, a first-time operator can bring up the development deployment and open the web UI within 30 minutes by following the installation steps, with no manual source-code edits.
 
 ## AI Usage
 
