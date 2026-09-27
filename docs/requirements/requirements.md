@@ -30,7 +30,7 @@ Recorded with the reason, so that the boundary is a decision rather than an omis
 | Platforms other than Google Meet | Their recordings can be uploaded as files instead. Direct support only if time remains. |
 | Recovering a recording interrupted by a dropped connection or a closed tab | There is no design for it yet, so recording covers the happy path only. To be reconsidered once the extension exists. |
 | Real-time transcription | Processing starts after the meeting ends. |
-| Languages other than Ukrainian and English; language-switching detection as its own feature | The glossary and post-correction handle mixed speech without a separate detector. |
+| Languages other than Ukrainian and English; language-switching detection as its own feature | The glossary handles mixed speech without a separate detector. |
 | Recognising the same speakers across meetings (voice profiles) | Requires biometric voice data the system deliberately does not hold. |
 | Custom roles, and access to individual parts of a transcript | Three fixed roles and per-meeting restriction cover the cases the team identified. |
 | Search over the content of transcripts and notes | Requires separate research and a service level agreement due to size and demands, creating a new sub-service. Filtering by name and date is in scope. |
