@@ -230,6 +230,7 @@ Workspace ||--|{ Folder : contains
 Folder ||--o{ Meeting : files
 User ||--o{ Meeting : creates
 User |o--o{ Meeting : confirms consent
+User |o--o{ Meeting : confirms consent
 User ||-left-o{ CaptureSession : opens
 User ||-down-o{ Invitation : sends
 Workspace ||--o{ Invitation : has invitations
