@@ -14,13 +14,13 @@ Architectural view of the requirements in [rtm.md](../requirements/rtm.md) and [
 | US-004 Upload a recording | FR-013, FR-014 | Capture, Object storage, Processing | Upload shares the extension's ingest path; failed jobs keep their state | Integration test |
 | US-005 Transcript by speaker | FR-015, FR-016, FR-017 | Transcription pipeline, Chrome extension, Processing, Meetings | ASR with speaker separation; the extension reads names from the Meet participant list | Diarization error rate (DER) benchmark; test that extension recordings get participant names and uploads get "Speaker N" |
 | US-006 Notes from a preset | FR-018 | Notes pipeline, LLM runtime, Processing | Fixed presets (summary, detailed, interview) stored server-side; Processing puts the preset into the job | Unit test |
-| US-007 Folder as context | FR-019, FR-020 | Notes pipeline, Access Policy | Context = same folder, filtered by Access Policy; used meetings saved with notes | Test with a restricted meeting in the folder |
+| US-007 Folder as context | FR-019, FR-020 | Processing, Notes pipeline, Access Policy | Context = same folder, filtered by Access Policy; used meetings saved with notes | Test with a restricted meeting in the folder |
 | US-008 Own model provider | FR-021, FR-022, FR-023 | Notes pipeline, LLM provider, Accounts & Workspaces, Processing | Fixed provider list; key visible to the Owner only; on provider failure the meeting is shown as failed with the cause and generation with the built-in model is offered | Egress test; simulated provider failure |
 | US-009 Processing notifications | FR-024 | Processing, Notifications, SMTP relay | Email carries a link only, no content | Test with a mail catcher |
 | US-010 Regenerate notes | FR-025, FR-026 | Processing, Meetings | Regeneration limit; old notes kept; failed run changes nothing | Unit test |
 | US-011 Correct the transcript | FR-027, FR-028 | Meetings, Web SPA, Object storage | Edits create a new version; original kept; playback via presigned URL | API and E2E tests |
 | US-012 Workspace glossary | FR-029, FR-030 | Meetings, Transcription pipeline, Processing | Processing passes the workspace glossary to recognition | Accuracy with vs without glossary |
-| US-013 Browse and filter | FR-031, FR-032, FR-033 | Web SPA, Meetings | Paged list; name and date filters | API and E2E tests |
+| US-013 Browse, name and filter | FR-031, FR-032, FR-033 | Web SPA, Meetings, Notes pipeline, Processing | Paged list; name and date filters | API and E2E tests |
 | US-014 Folders, move, delete | FR-034, FR-035, FR-036 | Meetings, Access Policy | Flat folders; deleting a folder moves meetings to default | Integration test |
 | US-015 Restrict a meeting | FR-037 | Access Policy | One check point for lists, links, MCP and context | Test every path |
 | US-016 Share read-only | FR-038, FR-039 | Access Policy, Meetings | Revocable read-only share; optional name redaction | API test |
@@ -69,6 +69,11 @@ submitted one at a time with no other jobs queued; passes if at least 90% have a
 > A member who is not allowed to see a restricted meeting tries to open it through a direct link,
 > through their AI assistant, and indirectly through another meeting's notes. Access Policy
 > denies every path. **Zero content leaks** across the authorization test matrix.
+
+**Verification:** authorization test matrix: for a restricted meeting, request it as a
+non-selected member through the meeting list, a direct link, the MCP server with that member's
+key, and as context for notes of another meeting in the same folder; passes if every request
+returns no content and the meeting is absent from the recorded context set.
 
 **Covers:** NFR-007, NFR-009 · **Components:** Access Policy, Meetings, MCP Server, Notes pipeline
 
