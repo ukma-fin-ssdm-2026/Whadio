@@ -22,7 +22,6 @@ entity "WORKSPACE" as Workspace {
   * workspace_id : UUID <<PK>>
   --
   * name : string
-  * owner_id : UUID <<FK>>
   * created_at : datetime
   * is_default : boolean
 }
@@ -32,7 +31,7 @@ entity "WORKSPACE_MEMBERSHIP" as WorkspaceMember {
   --
   * workspace_id : UUID <<FK>>
   * user_id : UUID <<FK>>
-  * role : enum <<Member, Moderator, Owner>>
+  * role : enum (Member | Moderator | Owner)
   * joined_at : datetime
 }
 
@@ -51,17 +50,17 @@ entity "MEETING" as Meeting {
   * workspace_id : UUID <<FK>>
   * folder_id : UUID <<FK>>
   * created_by_user_id : UUID <<FK>>
-  * title : string
+  * name : string
   * name_is_generated : boolean
-  * source_type : enum <<extension, upload>>
-  * recording_status : enum <<complete, partial>>
+  * source_type : enum (extension | upload)
+  * recording_status : enum (complete | partial)
   * storage_path : string <<S>>
   * duration_seconds : integer
   * recorded_at : datetime
   * created_at : datetime
   * recording_delete_after : datetime
   * recording_deleted_at : datetime <<nullable>>
-  * access_mode : enum <<workspace, restricted>>
+  * access_mode : enum (workspace | restricted)
 }
 
 entity "MEETING_ACCESS_GRANT" as MeetingAccessGrant {
@@ -100,7 +99,7 @@ entity "TRANSCRIPT_REVISION" as TranscriptRevision {
   * revision_id : UUID <<PK>>
   --
   * transcript_id : UUID <<FK>>
-  * revision_type : enum <<original, edited>>
+  * revision_type : enum (original | edited)
   * edited_by_user_id : UUID <<FK, nullable>>
   * created_at : datetime
 }
@@ -138,10 +137,10 @@ entity "NOTE" as Note {
   * note_id : UUID <<PK>>
   --
   * meeting_id : UUID <<FK>>
-  * template : enum <<summary, detailed, interview>>
+  * template : enum (summary | detailed | interview)
   * content : text <<P/S>>
   * model_name : string
-  * provider : enum <<Whadio, Anthropic, OpenAI, Google>>
+  * provider : enum (Whadio | Anthropic | OpenAI | Google)
   * created_by_user_id : UUID <<FK>>
   * created_at : datetime
 }
@@ -151,7 +150,7 @@ entity "LLM_PROVIDER_CONFIG" as LLMConfig {
   --
   * workspace_id : UUID <<FK>>
   * is_enabled : boolean
-  * provider : enum <<Whadio, Anthropic, OpenAI, Google>>
+  * provider : enum (Whadio | Anthropic | OpenAI | Google)
   * api_key_encrypted : string <<S>>
   * created_at : datetime
 }
@@ -171,8 +170,8 @@ entity "EXPORT_JOB" as ExportJob {
   --
   * meeting_id : UUID <<FK>>
   * requested_by_user_id : UUID <<FK>>
-  * format : enum <<markdown, vtt>>
-  * status : enum <<queued, ready, failed>>
+  * format : enum (markdown | vtt)
+  * status : enum (queued | ready | failed)
   * storage_path : string <<S, nullable>>
   * created_at : datetime
 }
@@ -181,14 +180,13 @@ entity "PROCESSING_JOB" as ProcessingJob {
   * processing_job_id : UUID <<PK>>
   --
   * meeting_id : UUID <<FK>>
-  * job_type : enum <<transcription, diarization, notes>>
-  * status : enum <<queued, running, succeeded, failed>>
+  * job_type : enum (transcription | diarization | notes)
+  * status : enum (queued | running | succeeded | failed)
   * failure_reason : text <<S, nullable>>
   * started_at : datetime <<nullable>>
   * finished_at : datetime <<nullable>>
 }
 
-User ||--o{ Workspace : owns
 User ||--o{ WorkspaceMember : joins
 Workspace ||--o{ WorkspaceMember : has members
 
@@ -206,16 +204,17 @@ User ||--o{ ExternalShare : creates share
 
 Meeting ||--o| Transcript : has transcript
 Transcript ||--|{ TranscriptRevision : keeps revisions
+Transcript |o--|| TranscriptRevision : current revision
 TranscriptRevision ||--o{ Segment : contains
 Meeting ||--o{ Speaker : has speakers
-Speaker ||--o{ Segment : labels
-User ||--o{ TranscriptRevision : edits
+Speaker |o--o{ Segment : labels
+User |o--o{ TranscriptRevision : edits
 
 Workspace ||--o{ GlossaryTerm : defines
 User ||--o{ GlossaryTerm : creates term
 
 Meeting ||--o{ Note : produces
-User ||--o{ Note : requests note
+User ||--o{ Note
 Workspace ||--o| LLMConfig : configures
 
 User ||--o{ MCPKey : creates
@@ -227,6 +226,9 @@ note right of WorkspaceMember
   role is one of:
   Member, Moderator, Owner.
   Permissions are cumulative.
+  Unique: (workspace_id, user_id).
+  Every workspace has exactly one
+  membership with role Owner.
 end note
 
 note right of Meeting
@@ -234,6 +236,8 @@ note right of Meeting
   workspace members can read the meeting.
   access_mode = restricted means only
   explicit MeetingAccessGrant rows apply.
+  A restricted meeting must have one
+  or more MeetingAccessGrant rows.
   name_is_generated tells the SPA whether
   to show the naming prompt.
   recording_status = partial means the
@@ -241,6 +245,11 @@ note right of Meeting
   event, but acknowledged chunks were kept.
   Recordings are deleted after retention,
   while transcripts and notes remain.
+end note
+
+note right of GlossaryTerm
+  Unique: (workspace_id, term).
+  Duplicate glossary terms are rejected.
 end note
 
 note bottom of ExternalShare

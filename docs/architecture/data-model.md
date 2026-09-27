@@ -1,16 +1,20 @@
 # Whadio Data Model
 
-This document describes the Whadio ER data model. The PlantUML diagram is stored in [`uml/whadio-er.puml`](uml/whadio-er.puml).
+This document describes the Whadio ER data model.
 
-The model covers the data required for the following key project functions:
+![ER model](uml/er-model.svg)
 
-1. Recording or uploading a meeting and processing it into a transcript.
-2. Speaker labeling and correction.
-3. Workspace glossary management.
-4. Notes generation with fixed presets and optional BYOK LLM providers.
-5. Workspaces, folders, roles, and restricted meeting access.
-6. Transcript editing with original provenance retained.
-7. External read-only sharing, export, MCP access keys, recording retention, and processing monitoring.
+Source: [uml/er-model.puml](uml/er-model.puml)
+
+The model covers the data required for these key project functions:
+
+1. Recording, upload and processing: `US-003`, `US-004`, `US-009`.
+2. Speaker labeling and correction: `US-005`.
+3. Notes generation, folder-scoped context and BYOK provider configuration: `US-006`, `US-007`, `US-008`, `US-010`.
+4. Workspaces, folders, roles and restricted meeting access: `US-002`, `US-013`, `US-014`, `US-015`.
+5. Transcript editing with original provenance retained: `US-011`.
+6. Workspace glossary management: `US-012`.
+7. External sharing, export and MCP access: `US-016`, `US-017`, `US-018`.
 
 ## Notation
 
@@ -28,7 +32,7 @@ The model covers the data required for the following key project functions:
 | `WORKSPACE` | `workspace_id` | Collaboration boundary for members, folders, glossary terms, meetings, and LLM configuration. | Usually not personal, but the workspace name may reveal an organization or project. |
 | `WORKSPACE_MEMBERSHIP` | `workspace_membership_id` | Connects users to workspaces and stores their cumulative role: `Member`, `Moderator`, or `Owner`. | Membership and role data can be sensitive organizational metadata. |
 | `FOLDER` | `folder_id` | Organizes meetings inside a workspace. Folders do not define permissions. | Folder names may reveal topics or projects. |
-| `MEETING` | `meeting_id` | Meeting metadata, generated-name state, source type, recording completeness, recording location, retention state, and access mode. | `title`, `storage_path`, timestamps, and duration can be sensitive; the recording path points to highly sensitive audio. |
+| `MEETING` | `meeting_id` | Meeting metadata, generated-name state, source type, recording completeness, recording location, retention state, and access mode. | `name`, `storage_path`, timestamps, and duration can be sensitive; the recording path points to highly sensitive audio. |
 | `MEETING_ACCESS_GRANT` | `access_grant_id` | Explicit access list used when a meeting is restricted to selected workspace members. | Reveals who can access a specific meeting. |
 | `EXTERNAL_SHARE` | `share_id` | Read-only signed-in sharing outside the workspace, with revocation and optional speaker-name redaction. | `token_hash` is sensitive. Share metadata reveals external disclosure. |
 | `TRANSCRIPT` | `transcript_id` | Transcript container for one meeting, including language, recognition model, and current revision. | Transcript metadata may be sensitive. |
@@ -44,12 +48,12 @@ The model covers the data required for the following key project functions:
 
 ## Relationships and Cardinality
 
-- One `USER` can own many `WORKSPACE` records.
 - One `USER` can have many `WORKSPACE_MEMBERSHIP` rows; one `WORKSPACE` can have many members.
+- Every `WORKSPACE` has exactly one `WORKSPACE_MEMBERSHIP` row with `role = Owner`.
 - One `WORKSPACE` contains many `FOLDER` records and many `MEETING` records.
 - One `FOLDER` contains many meetings; each meeting belongs to exactly one folder.
 - One `USER` can create many meetings; each meeting has one creator.
-- One unrestricted meeting is available to all workspace members. A restricted meeting has one or more `MEETING_ACCESS_GRANT` rows.
+- One unrestricted meeting is available to all workspace members. A restricted meeting must have one or more `MEETING_ACCESS_GRANT` rows.
 - One `MEETING` can have many `EXTERNAL_SHARE` rows, each created by one user and revocable independently.
 - One `MEETING` has zero or one `TRANSCRIPT`; one transcript has one or more `TRANSCRIPT_REVISION` rows.
 - One `TRANSCRIPT_REVISION` has many `TRANSCRIPT_SEGMENT` rows.
@@ -63,9 +67,11 @@ The model covers the data required for the following key project functions:
 ## Integrity Rules
 
 - Every entity has a UUID primary key.
-- `MEETING.name_is_generated` is `true` when the title was proposed by the system and the SPA should prompt the user to confirm or rename it; it becomes `false` after the user provides a title.
+- `MEETING.name_is_generated` is `true` when the meeting name was proposed by the system and the SPA should prompt the user to confirm or rename it; it becomes `false` after the user provides a name.
 - `MEETING.recording_status = partial` means the capture ended without a complete stop event, for example after a lost connection or closed tab, but already acknowledged chunks were stored. Partial recordings must be shown as partial and must not be treated as complete meeting records.
-- A workspace must always have exactly one owner account referenced by `owner_id`; this owner must also have an `Owner` membership in the same workspace.
+- A workspace must always have exactly one membership with `role = Owner`.
+- `WORKSPACE_MEMBERSHIP` must be unique by `(workspace_id, user_id)`, so one user has at most one role in a workspace.
+- `GLOSSARY_TERM` must be unique by `(workspace_id, term)`, because duplicate glossary terms are rejected.
 - Workspace roles are cumulative: `Owner` includes `Moderator` permissions, and `Moderator` includes `Member` permissions.
 - Folders do not grant or restrict access. Meeting access is determined only by workspace membership plus the meeting's `access_mode`.
 - If `MEETING.access_mode = workspace`, all workspace members can access the meeting.
@@ -98,4 +104,4 @@ These fields should drive the next threat-analysis step, especially for access c
 
 ## AI Usage
 
-This document and the accompanying data model diagram was prepared with the assistance of Codex (GPT-5.5) and discussed in the working session of 2026-09-26. Reviewed by the author and the team before commiting.
+This document and the accompanying data model diagram were prepared with the assistance of Codex (GPT-5.5) and discussed in the working session of 2026-09-26. Reviewed by the author and the team before committing.
