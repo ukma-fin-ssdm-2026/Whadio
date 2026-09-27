@@ -8,10 +8,10 @@ Whadio is an open-source meeting recording and transcription service focused on 
 
 | **Name** | **GitHub** | **Role** |
 |----------|----------|----------|
-| Andrii Shalaiev | @Hukyl | CI Maintainer, Requirements Lead |
-| Denys Zabiiaka  | @SquidBow | Issue Tracker Lead, Traceability Lead |
+| Andrii Shalaiev | @Hukyl | CI Maintainer, Requirements Lead, Architecture Lead |
+| Denys Zabiiaka  | @SquidBow | Issue Tracker Lead, Traceability Lead, Requirements-Architecture Mapper |
 | Valeriia Missirova | @v-missirova | Documentation Lead |
-| Zlata Tsepkalo | @t-zlata | Repository Maintainer, Quality Lead |
+| Zlata Tsepkalo | @t-zlata | Repository Maintainer, Quality Lead, Data & Threat Modeler |
 
 
 # Documentation
@@ -24,6 +24,15 @@ All requirements documentation is maintained in the [`/docs/requirements/`](docs
 - [User Stories](docs/requirements/user-stories.md)
 - [Requirements](docs/requirements/requirements.md)
 - [Requirements Traceability Matrix (RTM)](docs/requirements/rtm.md)
+
+## Architecture Artifacts
+All architecture documentation is maintained in the [`/docs/architecture/`](docs/architecture/) directory.
+- [High-Level Design](docs/architecture/high-level-design.md) — overall architecture: chosen style, components, and interfaces
+- [Traceability Matrix](docs/architecture/traceability-matrix.md) — requirements ↔ components, verification methods, and quality attribute scenarios
+- [Data Model](docs/architecture/data-model.md)
+- [Threat Model](docs/architecture/threat-model.md) — STRIDE analysis on the deployment diagram
+- [UML Diagrams](docs/architecture/uml/) — in `.puml` format
+- [Architecture Decision Records (ADRs)](docs/architecture/decisions/) — key architectural decisions and rationale
 
 ## AI usage
 The document was prepared with the help of Claude Code (Claude Opus 5 model) based on the team's decisions; the content was manually checked and edited, and the document is reviewed via a pull request before merging.
