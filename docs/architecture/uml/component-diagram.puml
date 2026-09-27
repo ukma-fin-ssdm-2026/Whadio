@@ -29,6 +29,7 @@ package "Whadio backend  (entry points: web, scheduler)" as backend {
 
   component "Access Policy" as access
   component "Accounts & Workspaces" as accounts
+  component "Audit" as audit
 }
 
 queue "Message broker\n<<RabbitMQ>>" as mq
@@ -80,6 +81,12 @@ retention ..> notifications
 access ..> notifications : share access\nrequests
 meetings ..> access : every content read
 access ..> accounts : roles
+meetings ..> notifications : eviction notice
+
+' --- Audit events, written in the transaction of each change ---
+meetings ..> audit : audit event
+access ..> audit : audit event
+accounts ..> audit : audit event
 
 ' --- Backend <-> workers, only through the broker ---
 processing ..> mq : AMQP

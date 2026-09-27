@@ -15,6 +15,7 @@ The model covers the data required for these key project functions:
 5. Transcript editing with original provenance retained: `US-011`.
 6. Workspace glossary management: `US-012`.
 7. External sharing, export and MCP access: `US-016`, `US-017`, `US-018`.
+8. Accountability for changes to meeting content and access: `NFR-010`.
 
 ## Notation
 
@@ -49,6 +50,7 @@ The model covers the data required for these key project functions:
 | `LLM_PROVIDER_CONFIG` | `provider_config_id` | Workspace notes-provider configuration, either built-in `Whadio` or an external BYOK provider. | `api_key_encrypted` is secret credential material when an external provider is used. |
 | `MCP_KEY` | `mcp_key_id` | Personal access key for MCP clients. | `key_hash` is sensitive authentication material. |
 | `PROCESSING_JOB` | `processing_job_id` | Tracks transcription and notes jobs for monitoring. Diarization is part of the transcription job. | Failure reasons can include sensitive operational or content-derived details. |
+| `AUDIT_EVENT` | `audit_event_id` | Append-only record of who changed a meeting's content or access (`NFR-010`), kept after the meeting or workspace it refers to is deleted. | `actor_user_id` links a person to their actions. `subject_id` and `details` hold user IDs for membership, access-grant and share-request events. No content or names. |
 
 ## Relationships and Cardinality
 
@@ -74,6 +76,7 @@ The model covers the data required for these key project functions:
 - One `WORKSPACE` has zero or one active `LLM_PROVIDER_CONFIG`.
 - One `USER` can create many `MCP_KEY` rows.
 - One `MEETING` can have many `PROCESSING_JOB` rows.
+- One `USER` performs many `AUDIT_EVENT` rows; each event has exactly one actor.
 
 ## Integrity Rules
 
@@ -110,6 +113,41 @@ The model covers the data required for these key project functions:
 - Segment time intervals must satisfy `start_time_seconds < end_time_seconds`.
 - Recording files are deleted after the retention date stored in `recording_delete_after`; transcripts and notes remain after `recording_deleted_at` is set.
 - LLM provider API keys and MCP keys must never be stored in plaintext.
+- `AUDIT_EVENT` is append-only: the table is owned by the migration role, and the application's database role holds only `INSERT` and `SELECT` on it.
+- An `AUDIT_EVENT` is written in the same transaction as the change it records, by the module that performs the change.
+- `AUDIT_EVENT.workspace_id` and `AUDIT_EVENT.meeting_id` carry no foreign key: a cascading key would delete the events together with the workspace or meeting, and a restricting one would block the deletion.
+- `AUDIT_EVENT.workspace_id` is null only for `mcp_key_*` actions, since MCP keys belong to a user; `meeting_id` is null for workspace- and account-level actions.
+- `AUDIT_EVENT.details` holds IDs and enum values only, never transcript, note or recording content, and never meeting or workspace names.
+- For `meeting_evicted`, `actor_user_id` is the account whose new meeting triggered the eviction, and `details` holds that meeting's ID.
+
+## Audit Actions
+
+`AUDIT_EVENT.action` takes one of these values. The writer is the module that performs the change; `subject_id` identifies what the action affected, and its type follows from the action.
+
+| Writer | Action | `subject_id` | `details` |
+| --- | --- | --- | --- |
+| Meetings | `meeting_created` | — | — |
+| Meetings | `meeting_renamed` | — | — |
+| Meetings | `meeting_moved` | — | from and to `folder_id` |
+| Meetings | `meeting_deleted` | — | — |
+| Meetings | `meeting_evicted` | — | the triggering `meeting_id` |
+| Meetings | `transcript_edited` | new `revision_id` | — |
+| Meetings | `speaker_renamed` | new `revision_id` | — |
+| Meetings | `notes_regenerated` | — | preset |
+| Access Policy | `meeting_restricted`, `meeting_unrestricted` | — | — |
+| Access Policy | `access_granted`, `access_revoked` | the member's `user_id` | — |
+| Access Policy | `share_created`, `share_revoked` | `share_id` | — |
+| Access Policy | `share_access_approved`, `share_access_declined` | `share_id` | the requester's `user_id` |
+| Accounts & Workspaces | `member_invited` | `invitation_id` | role |
+| Accounts & Workspaces | `member_joined`, `member_removed` | the member's `user_id` | role |
+| Accounts & Workspaces | `member_role_changed` | the member's `user_id` | old and new role |
+| Accounts & Workspaces | `workspace_deleted` | — | — |
+| Accounts & Workspaces | `provider_configured` | — | provider, enabled |
+| Accounts & Workspaces | `mcp_key_created`, `mcp_key_revoked` | `mcp_key_id` | — |
+
+Restricting a meeting writes `meeting_restricted` and one `access_granted` per selected member; unrestricting writes only `meeting_unrestricted`. Deleting a folder writes one `meeting_moved` per meeting it moves to the default folder. Deleting or evicting a meeting writes one `meeting_deleted` or `meeting_evicted`; its shares and access grants disappear with it without events of their own. Deleting a workspace writes only `workspace_deleted`, not an event per meeting. `notes_regenerated` is written when the regenerated notes are saved, with the requester from `NOTE.created_by_user_id`, so a failed run writes nothing.
+
+Changes the system makes on its own are not recorded, because they have no actor: Retention's deletion of recordings, the assembly of an interrupted capture, the first notes and the generated meeting name. Glossary changes are not recorded either: they affect later transcriptions, not an existing meeting, and `GLOSSARY_TERM.created_by_user_id` records who added a term.
 
 ## Personal and Sensitive Data Starting Points for Threat Analysis
 
@@ -129,6 +167,7 @@ The highest-risk data stores are:
 - MCP credentials in `MCP_KEY.key_hash`.
 - External share tokens represented by `EXTERNAL_SHARE.token_hash`.
 - Share recipients and requesters in `EXTERNAL_SHARE.recipient_user_id` and `SHARE_ACCESS_REQUEST.requester_user_id`, which reveal who outside the workspace read or tried to open a meeting.
+- Audit actors and subjects in `AUDIT_EVENT.actor_user_id`, `subject_id` and `details`, which reveal who did what to which meeting, and outlive the meeting itself.
 
 These fields should drive the next threat-analysis step, especially for access control, logging, export handling, retention, encryption, and external provider use.
 

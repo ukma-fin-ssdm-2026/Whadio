@@ -70,7 +70,7 @@ Recorded with the reason, so that the boundary is a decision rather than an omis
 | **MCP** | Model Context Protocol — the integration through which a user's own AI assistant reaches the meetings they have access to. |
 | **VTT** | WebVTT, the subtitle format used for transcript export; carries cue times and speaker attribution. |
 | **WER** | Word error rate — the share of words a recognition system gets wrong, used to compare model configurations. |
-| **Open core** | Shipping an unrestricted open-source build while the instance the team hosts carries usage limits. The pattern behind the per-workspace meeting limit. |
+| **Open core** | Shipping an unrestricted open-source build while the instance the team hosts carries usage limits. The pattern behind the meeting limit per workspace Owner. |
 
 ### Roles
 
@@ -168,7 +168,7 @@ restriction, never by where a meeting is filed.
 
 * NFR-002 (Time behaviour): For a recording of up to one hour, the system generates the transcript within 15 minutes in at least 90% of processing runs.
 
-* NFR-003 (Capacity): The hosted service supports up to 1000 meetings per user. When a new meeting would exceed this limit, the oldest meeting is deleted.
+* NFR-003 (Capacity): On the hosted service, the workspaces a user owns hold up to 1000 meetings in total, counting a meeting from when it is queued for processing. When a newly queued meeting would exceed the limit, the earliest-created meeting across those workspaces is deleted. The member who added the new meeting, and the member who added the deleted one if still in its workspace, are notified; each notice names the deleted meeting only to a recipient who could read it immediately before the deletion. The self-hosted build has no limit.
 
 ### Compatibility
 
@@ -188,7 +188,7 @@ restriction, never by where a meeting is filed.
 
 * NFR-009 (Confidentiality): 100% of content paths, including direct links, exports and connected services, enforce the meeting access rules; automated tests for workspace access, restricted meetings, shares and MCP must observe zero recording, transcript or notes content outside the allowed audience.
 
-* NFR-010 (Accountability): 100% of changes that affect meeting content or access (transcript edits, speaker renames, meeting restrictions, shares, membership changes, provider configuration and MCP key changes) create an audit record containing actor account id, action type, target id and timestamp, without storing transcript, note or recording content in the audit record.
+* NFR-010 (Accountability): 100% of the following changes an account makes to meeting content or access create an audit record containing actor account id, action type, target id and timestamp, without storing transcript, note or recording content in the audit record: meeting creation, renames, moves and deletions, capacity eviction (attributed to the account whose new meeting caused it), transcript edits, speaker renames, notes regeneration, meeting restrictions, shares and share-request decisions, membership changes, workspace deletion, provider configuration and MCP key changes. The record survives the deletion of the meeting or workspace it refers to. Changes the system makes on its own, such as deleting recordings under the retention policy, have no actor and are not recorded.
 
 * NFR-011 (Integrity): In 100% of displays, shares and exports of an edited transcript, the edited version is marked as edited and is never labelled as the original; the original version remains retrievable through the transcript version switch.
 

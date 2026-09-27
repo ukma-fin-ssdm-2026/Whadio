@@ -234,6 +234,18 @@ entity "PROCESSING_JOB" as ProcessingJob {
   finished_at : datetime <<nullable>>
 }
 
+entity "AUDIT_EVENT" as AuditEvent {
+  * audit_event_id : UUID <<PK>>
+  --
+  * occurred_at : datetime
+  * actor_user_id : UUID <<FK, P>>
+  * action : enum (AuditAction)
+  workspace_id : UUID <<nullable>>
+  meeting_id : UUID <<nullable>>
+  subject_id : UUID <<P, nullable>>
+  details : json <<P, nullable>>
+}
+
 User ||--|{ WorkspaceMember : joins
 Workspace ||--|{ WorkspaceMember : has members
 
@@ -278,6 +290,7 @@ Workspace ||--o| LLMConfig : configures
 
 User ||--o{ MCPKey : creates
 Meeting ||--o{ ProcessingJob : processed by
+User ||--o{ AuditEvent : performs
 
 note right of WorkspaceMember
   role is one of:
@@ -365,6 +378,18 @@ end note
 note bottom of MCPKey
   Store only a hash of the secret key.
   Show the raw key only once when created.
+end note
+
+note bottom of AuditEvent
+  Append-only: owned by the migration
+  role; the application role may only
+  insert and select. workspace_id and
+  meeting_id carry no foreign key, so the
+  event outlives a deleted workspace or
+  meeting. details holds IDs and enum
+  values only, never content or names.
+  The action values are listed in
+  data-model.md.
 end note
 
 legend right
