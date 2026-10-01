@@ -27,8 +27,11 @@
     - intermediate results that pass tests and do not break the core system; 
     - final results.
 - Commit conventions: `<type>(#<issue-number>): short message` format is used (e.g., `docs(#3): add TeamCharter.md`).
-- Code review rules: each PR requires at least one approval. Automated review is done by CodeRabbit.
-- Issue workflow: open issue -> assign -> work -> pull request -> AI checks -> fix or address all issues highlighted by the AI code checker -> PR -> close.
+- Code review rules:
+    - each PR requires at least one approval, and the reviewer submits the review themselves;
+    - AI-assisted review: the reviewer goes through the PR with an AI agent, discusses its findings, and posts only the comments they agree with and can justify. The agent, the depth of discussion, and how comments reach GitHub (inline, in the summary, drafted by the agent as a pending review) are the reviewer's choice. PRs that only add report links or signatures are exempt;
+    - the reviewer answers for every posted comment as their own, and the review summary names the AI tool used and states that the reviewer verified each point.
+- Issue workflow: open issue -> assign -> work -> pull request -> AI-assisted review -> address every review comment -> merge -> close.
 - Definition of Done: every issue lists clear acceptance criteria before work starts on it. A task is considered completed when the code meets these criteria, passes all tests and automated checks, receives reviewer approval, and is successfully merged into the `main` branch.
 - Task priority labels:
     - `high priority` — critical tasks that block the work of other members, stop CI/CD pipelines, or are mandatory for the nearest deadline. These are taken into work first.
@@ -78,7 +81,7 @@ Overload -> notify in the primary channel -> brief discussion and selection of a
 
 ## 9. AI Usage
 - Tools: coding agents, chat models
-- Disclosure rules: indication of AI usage in files
+- Disclosure rules: indication of AI usage in files and in PR review summaries
 - Verification rules: 
     - generated code must undergo review and testing before merging;
     - unverified generated code cannot be merged into the main branch;
@@ -91,4 +94,4 @@ Overload -> notify in the primary channel -> brief discussion and selection of a
 - [x] Denys (GitHub: @SquidBow)
 
 ## AI Usage
-This document was prepared with the assistance of AI (Gemini 3.1 Pro). The author reviewed and edited the content, and the document is reviewed through a pull request before merging.
+This document was prepared with the assistance of AI (Gemini 3.1 Pro); the review rules in section 4 were revised with Claude Code (Claude Opus 5.5). The author reviewed and edited the content, and the document is reviewed through a pull request before merging.
