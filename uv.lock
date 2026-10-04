@@ -1776,10 +1776,12 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
     { name = "fastmcp" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.141" },
     { name = "fastmcp", specifier = ">=4.0.11" },
+    { name = "pyyaml", specifier = ">=6.0" },
 ]

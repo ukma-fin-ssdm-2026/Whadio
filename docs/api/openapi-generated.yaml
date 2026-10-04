@@ -1,0 +1,1964 @@
+openapi: 3.1.0
+info:
+  title: Whadio API
+  description: |-
+    Whadio records Google Meet calls from the browser, transcribes them with speaker labels and
+    writes notes, inside workspaces with roles, restrictions and sharing.
+
+    This server is a **stub**: every endpoint answers with fixed demo data, and writes return the
+    result they would have but store nothing. Only part of the designed API is implemented; the
+    full design is in `docs/api/api-design.md`.
+
+    ## Quick start
+    1. `POST /api/v1/sessions` with `alice@whadio.dev` and the password `whadio-demo-pass`. The browser
+       keeps the session cookie, so every later call in this page is signed in.
+    2. `GET /api/v1/workspaces`, then `GET /api/v1/workspaces/7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d/meetings`.
+    3. `GET /api/v1/meetings/5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9/transcript` is processed;
+       `0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d` is still queued and answers `409`.
+
+    ## Conventions
+    - **Errors:** every 4xx and 5xx body is `{"error": {"code", "message", "details",
+      "request_id"}}`. Branch on `code`; `request_id` equals the `X-Request-ID` response header.
+    - **Lists:** `limit` (1-100, default 20) and `cursor`; responses are
+      `{"items": [...], "pagination": {"limit", "next_cursor", "has_more"}}`.
+    - **Visibility:** a resource the caller cannot see is `404`, never `403`, so its existence does
+      not leak. `403` means the caller can see it but their role does not allow the action.
+    - **Time:** ISO 8601 with an offset; returned in UTC.
+  version: 0.1.0
+paths:
+  /api/v1/sessions:
+    post:
+      tags:
+      - accounts
+      summary: Sign in
+      description: 'Public. With `kind: browser` (the default) sets an HttpOnly, SameSite=Strict
+        session cookie valid for 14 days. With `kind: extension` returns a bearer
+        token, shown once and valid for 24 hours, that only the capture endpoints
+        accept. Neither is extended by use. A failure never says which credential
+        was wrong.'
+      operationId: sign_in_api_v1_sessions_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignIn'
+        required: true
+      responses:
+        '201':
+          description: The session that was started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionRead'
+        '400':
+          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
+            valid JSON'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: '`INVALID_CREDENTIALS`: unknown address or wrong password'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: '`RATE_LIMITED`: too many sign-in attempts from this address;
+            `Retry-After` says how long to wait'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/sessions/current:
+    delete:
+      tags:
+      - accounts
+      summary: Sign out
+      description: 'Ends the session presented by the cookie or the extension''s bearer
+        token and clears the cookie. Always `204`, also without a session: signing
+        out is idempotent.'
+      operationId: sign_out_api_v1_sessions_current_delete
+      responses:
+        '204':
+          description: Signed out
+  /api/v1/workspaces:
+    get:
+      tags:
+      - workspaces
+      summary: List my workspaces
+      description: Workspaces the caller belongs to, oldest first, the personal one
+        included.
+      operationId: list_workspaces_api_v1_workspaces_get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Maximum number of items to return
+          default: 20
+          title: Limit
+        description: Maximum number of items to return
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 512
+          - type: 'null'
+          description: Opaque `next_cursor` from the previous page; omit for the first
+            page
+          title: Cursor
+        description: Opaque `next_cursor` from the previous page; omit for the first
+          page
+      responses:
+        '200':
+          description: A page of workspaces
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_WorkspaceSummary_'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - workspaces
+      summary: Create a workspace
+      description: Creates a workspace with the caller as its Owner, one default folder
+        and no meetings.
+      operationId: create_workspace_api_v1_workspaces_post
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkspaceCreate'
+      responses:
+        '201':
+          description: The new workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceRead'
+          headers:
+            Location:
+              description: URL of the new workspace
+        '400':
+          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
+            valid JSON'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/workspaces/{workspace_id}:
+    get:
+      tags:
+      - workspaces
+      summary: Get a workspace
+      description: Any member. Includes the caller's role and where notes are generated.
+      operationId: get_workspace_api_v1_workspaces__workspace_id__get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      responses:
+        '200':
+          description: The workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceRead'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`NOT_FOUND`: no such workspace, or the caller is not a member'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      tags:
+      - workspaces
+      summary: Update workspace settings
+      description: Owner only. Renames the workspace or changes its default notes
+        preset; give at least one field.
+      operationId: update_workspace_api_v1_workspaces__workspace_id__patch
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkspaceUpdate'
+      responses:
+        '200':
+          description: The updated workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceRead'
+        '400':
+          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
+            valid JSON'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: '`INSUFFICIENT_ROLE`: only the Owner can do this'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`NOT_FOUND`: no such workspace, or the caller is not a member'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - workspaces
+      summary: Delete a workspace
+      description: Owner only. Deletes the workspace with its folders, meetings, recordings,
+        transcripts and notes. A personal workspace cannot be deleted.
+      operationId: delete_workspace_api_v1_workspaces__workspace_id__delete
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: '`INSUFFICIENT_ROLE`: only the Owner can do this'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`NOT_FOUND`: no such workspace, or the caller is not a member'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`PERSONAL_WORKSPACE`: a personal workspace cannot be deleted'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/workspaces/{workspace_id}/meetings:
+    get:
+      tags:
+      - meetings
+      summary: List meetings
+      description: Meetings the caller can read, newest recording first, with their
+        processing state. Restricted meetings the caller was not selected for are
+        left out. Filters combine; an empty page means nothing matched.
+      operationId: list_meetings_api_v1_workspaces__workspace_id__meetings_get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Maximum number of items to return
+          default: 20
+          title: Limit
+        description: Maximum number of items to return
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 512
+          - type: 'null'
+          description: Opaque `next_cursor` from the previous page; omit for the first
+            page
+          title: Cursor
+        description: Opaque `next_cursor` from the previous page; omit for the first
+          page
+      - name: folder_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          description: Only meetings in this folder
+          title: Folder Id
+        description: Only meetings in this folder
+      - name: name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 200
+          - type: 'null'
+          description: Case-insensitive part of the meeting name
+          title: Name
+        description: Case-insensitive part of the meeting name
+      - name: recorded_from
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Recorded at or after this instant (inclusive)
+          title: Recorded From
+        description: Recorded at or after this instant (inclusive)
+      - name: recorded_to
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Recorded before this instant (exclusive)
+          title: Recorded To
+        description: Recorded before this instant (exclusive)
+      responses:
+        '200':
+          description: A page of meetings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_MeetingSummary_'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`NOT_FOUND`: no such workspace, or the caller is not a member'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - meetings
+      summary: Upload a recording
+      description: Any member. Multipart with the audio `file`, an optional `folder_id`
+        and `name`. A file that is not audio is refused and creates no meeting. The
+        meeting is queued for processing at once; its speakers will be labelled `Speaker
+        1`, `Speaker 2` and so on.
+      operationId: upload_recording_api_v1_workspaces__workspace_id__meetings_post
+      security:
+      - sessionCookie: []
+      - extensionToken: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_upload_recording_api_v1_workspaces__workspace_id__meetings_post'
+      responses:
+        '201':
+          description: The new meeting, queued for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeetingRead'
+          headers:
+            Location:
+              description: URL of the meeting
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`NOT_FOUND`: no such workspace, or the caller is not a member'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: the file is larger than 500 MiB'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: '`UNSUPPORTED_MEDIA_TYPE`: the file is not audio'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each; `folder_id` must be a folder of this workspace'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/meetings/{meeting_id}:
+    get:
+      tags:
+      - meetings
+      summary: Get a meeting
+      description: Poll this while `processing_state` is `recording`, `queued` or
+        `processing`.
+      operationId: get_meeting_api_v1_meetings__meeting_id__get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: meeting_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
+          title: Meeting Id
+        description: Meeting identifier
+      responses:
+        '200':
+          description: The meeting
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeetingRead'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`NOT_FOUND`: no such meeting, or the caller cannot read it
+            (restricted meetings are reported as missing, never as forbidden)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      tags:
+      - meetings
+      summary: Rename or move a meeting
+      description: Any member who can read the meeting. Renaming clears `name_is_generated`.
+        Moving keeps the recording, transcript and notes; only folders of the same
+        workspace are accepted, and later notes use the new folder as context. `recorded_at`
+        cannot be changed.
+      operationId: update_meeting_api_v1_meetings__meeting_id__patch
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: meeting_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
+          title: Meeting Id
+        description: Meeting identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MeetingUpdate'
+      responses:
+        '200':
+          description: The updated meeting
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeetingRead'
+        '400':
+          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
+            valid JSON'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`NOT_FOUND`: no such meeting, or the caller cannot read it
+            (restricted meetings are reported as missing, never as forbidden)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each; `folder_id` must be a folder of the meeting''s workspace'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - meetings
+      summary: Delete a meeting
+      description: The member who recorded it, a Moderator or the Owner. Deletes the
+        recording, transcript and notes; notes of other meetings that used it as context
+        keep their text.
+      operationId: delete_meeting_api_v1_meetings__meeting_id__delete
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: meeting_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
+          title: Meeting Id
+        description: Meeting identifier
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: '`INSUFFICIENT_ROLE`: neither its recorder nor a Moderator'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`NOT_FOUND`: no such meeting, or the caller cannot read it
+            (restricted meetings are reported as missing, never as forbidden)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/meetings/{meeting_id}/transcript:
+    get:
+      tags:
+      - meetings
+      summary: Get the transcript
+      description: 'The current revision: timestamped segments with speaker labels.
+        The original stays reachable through `original_revision_id`.'
+      operationId: get_transcript_api_v1_meetings__meeting_id__transcript_get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: meeting_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
+          title: Meeting Id
+        description: Meeting identifier
+      responses:
+        '200':
+          description: The current revision of the transcript
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptRead'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`NOT_FOUND`: no such meeting, or the caller cannot read it
+            (restricted meetings are reported as missing, never as forbidden)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`NOT_TRANSCRIBED`: the meeting is not processed yet'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/meetings/{meeting_id}/notes:
+    get:
+      tags:
+      - notes
+      summary: List the meeting's notes
+      description: Every generated version, newest first; the first one is current.
+        Each lists the meetings used as context, so readers can see where statements
+        came from.
+      operationId: list_notes_api_v1_meetings__meeting_id__notes_get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: meeting_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
+          title: Meeting Id
+        description: Meeting identifier
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Maximum number of items to return
+          default: 20
+          title: Limit
+        description: Maximum number of items to return
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 512
+          - type: 'null'
+          description: Opaque `next_cursor` from the previous page; omit for the first
+            page
+          title: Cursor
+        description: Opaque `next_cursor` from the previous page; omit for the first
+          page
+      responses:
+        '200':
+          description: A page of notes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_NoteRead_'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`NOT_FOUND`: no such meeting, or the caller cannot read it
+            (restricted meetings are reported as missing, never as forbidden)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - notes
+      summary: Regenerate the notes
+      description: |-
+        Any member who can read the meeting. Queues notes generation with the chosen preset and answers at once with `202`: generation runs in a worker. Poll the meeting in `Location` until `processing_state` is `processed` or `failed`.
+
+        Limits: one run at a time, and a configured number of regenerations per meeting (3 by default); every requested run counts, failed ones included. The transcript is never regenerated, and a failed run keeps the previous notes current.
+      operationId: regenerate_notes_api_v1_meetings__meeting_id__notes_post
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: meeting_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
+          title: Meeting Id
+        description: Meeting identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotesRequest'
+      responses:
+        '202':
+          description: The queued job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessingJobRead'
+          headers:
+            Location:
+              description: URL of the meeting to poll
+        '400':
+          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
+            valid JSON'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`NOT_FOUND`: no such meeting, or the caller cannot read it
+            (restricted meetings are reported as missing, never as forbidden)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`NOTES_IN_PROGRESS`: a run is already queued or running; `REGENERATION_LIMIT`:
+            the meeting used up its regenerations; `NOT_TRANSCRIBED`: the meeting
+            is not processed yet'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /health:
+    get:
+      tags:
+      - meta
+      summary: Liveness probe
+      description: Unauthenticated liveness check for uptime monitoring. Not versioned.
+      operationId: health_health_get
+      responses:
+        '200':
+          description: The service is up
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+components:
+  schemas:
+    AccessMode:
+      type: string
+      enum:
+      - workspace
+      - restricted
+      title: AccessMode
+    Body_upload_recording_api_v1_workspaces__workspace_id__meetings_post:
+      properties:
+        file:
+          type: string
+          contentMediaType: application/octet-stream
+          title: File
+          description: The recording (audio/*)
+        folder_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Folder Id
+          description: Destination folder; the default folder when omitted
+        name:
+          anyOf:
+          - type: string
+            maxLength: 200
+            minLength: 1
+          - type: 'null'
+          title: Name
+          description: Meeting name
+      type: object
+      required:
+      - file
+      title: Body_upload_recording_api_v1_workspaces__workspace_id__meetings_post
+    ContextMeetingRead:
+      properties:
+        meeting_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Meeting Id
+          description: Meeting used as context; null once that meeting was deleted
+        name:
+          type: string
+          title: Name
+          description: Its name when the notes were generated
+      type: object
+      required:
+      - meeting_id
+      - name
+      title: ContextMeetingRead
+    ErrorBody:
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+          description: Machine-readable error code to branch on
+        message:
+          type: string
+          title: Message
+          description: Human-readable summary
+          examples:
+          - Request contains invalid fields
+        details:
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+          type: array
+          title: Details
+          description: Per-field problems; empty for errors that concern no single
+            field
+        request_id:
+          type: string
+          title: Request Id
+          description: Correlation id, also returned in the X-Request-ID header
+          examples:
+          - req_4f9c2a1be07d
+      type: object
+      required:
+      - code
+      - message
+      - request_id
+      title: ErrorBody
+    ErrorCode:
+      type: string
+      enum:
+      - MALFORMED_REQUEST
+      - VALIDATION_ERROR
+      - UNAUTHENTICATED
+      - INVALID_CREDENTIALS
+      - INSUFFICIENT_ROLE
+      - NOT_FOUND
+      - METHOD_NOT_ALLOWED
+      - PERSONAL_WORKSPACE
+      - NOT_TRANSCRIBED
+      - NOTES_IN_PROGRESS
+      - REGENERATION_LIMIT
+      - PAYLOAD_TOO_LARGE
+      - UNSUPPORTED_MEDIA_TYPE
+      - RATE_LIMITED
+      - HTTP_ERROR
+      - INTERNAL_ERROR
+      title: ErrorCode
+    ErrorDetail:
+      properties:
+        field:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Field
+          description: 'Offending input: body field, query or path parameter, or header'
+          examples:
+          - email
+        message:
+          type: string
+          title: Message
+          description: What is wrong with this input
+          examples:
+          - value is not a valid email address
+        provided_value:
+          $ref: '#/components/schemas/JsonValue'
+          description: The value the client sent, when it is safe to echo back
+          examples:
+          - alice@
+      type: object
+      required:
+      - field
+      - message
+      title: ErrorDetail
+    ErrorResponse:
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorBody'
+      type: object
+      required:
+      - error
+      title: ErrorResponse
+      description: The single error envelope returned for every 4xx and 5xx response.
+    Health:
+      properties:
+        status:
+          type: string
+          title: Status
+          description: Always `ok` while the process serves requests
+          examples:
+          - ok
+      type: object
+      required:
+      - status
+      title: Health
+    JobKind:
+      type: string
+      enum:
+      - transcription
+      - notes
+      title: JobKind
+    JobStatus:
+      type: string
+      enum:
+      - queued
+      - running
+      - succeeded
+      - failed
+      title: JobStatus
+    JsonValue: {}
+    MeetingRead:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
+        workspace_id:
+          type: string
+          format: uuid
+          title: Workspace Id
+          description: Workspace of the meeting
+        folder_id:
+          type: string
+          format: uuid
+          title: Folder Id
+          description: Folder of the meeting
+          examples:
+          - e8f7d6c5-b4a3-4291-8f7e-6d5c4b3a2918
+        name:
+          type: string
+          title: Name
+          description: Meeting name
+          examples:
+          - Sprint 12 review
+        name_is_generated:
+          type: boolean
+          title: Name Is Generated
+          description: True while the name is the system's proposal; prompt the user
+            to confirm or rename it
+        recorded_at:
+          type: string
+          format: date-time
+          title: Recorded At
+          description: When the meeting was recorded; not editable
+        processing_state:
+          $ref: '#/components/schemas/ProcessingState'
+          description: Pipeline state; poll the meeting until `processed` or `failed`
+        recording_status:
+          $ref: '#/components/schemas/RecordingStatus'
+          description: '`partial` when the capture ended without a stop, e.g. a closed
+            tab'
+        source_type:
+          $ref: '#/components/schemas/SourceType'
+          description: Recorded by the extension or uploaded
+        duration_seconds:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Duration Seconds
+          description: Length of the recording, once known
+        access_mode:
+          $ref: '#/components/schemas/AccessMode'
+          description: '`restricted` meetings are visible only to the selected members'
+        created_by_user_id:
+          type: string
+          format: uuid
+          title: Created By User Id
+          description: Member who recorded or uploaded it
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: When the meeting was created in Whadio
+        failure_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Failure Reason
+          description: Why processing failed, when `processing_state` is `failed`;
+            never contains meeting content
+          examples:
+          - null
+        is_edited:
+          type: boolean
+          title: Is Edited
+          description: Whether the transcript was edited
+        recording_available:
+          type: boolean
+          title: Recording Available
+          description: Whether `GET /recording` can return a playback link
+        recording_delete_after:
+          type: string
+          format: date-time
+          title: Recording Delete After
+          description: When the recording is deleted under retention; transcript and
+            notes stay
+        consent_confirmed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Consent Confirmed At
+          description: When the recorder confirmed participant consent (extension
+            recordings)
+      type: object
+      required:
+      - id
+      - workspace_id
+      - folder_id
+      - name
+      - name_is_generated
+      - recorded_at
+      - processing_state
+      - recording_status
+      - source_type
+      - duration_seconds
+      - access_mode
+      - created_by_user_id
+      - created_at
+      - failure_reason
+      - is_edited
+      - recording_available
+      - recording_delete_after
+      - consent_confirmed_at
+      title: MeetingRead
+    MeetingSummary:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
+        workspace_id:
+          type: string
+          format: uuid
+          title: Workspace Id
+          description: Workspace of the meeting
+        folder_id:
+          type: string
+          format: uuid
+          title: Folder Id
+          description: Folder of the meeting
+          examples:
+          - e8f7d6c5-b4a3-4291-8f7e-6d5c4b3a2918
+        name:
+          type: string
+          title: Name
+          description: Meeting name
+          examples:
+          - Sprint 12 review
+        name_is_generated:
+          type: boolean
+          title: Name Is Generated
+          description: True while the name is the system's proposal; prompt the user
+            to confirm or rename it
+        recorded_at:
+          type: string
+          format: date-time
+          title: Recorded At
+          description: When the meeting was recorded; not editable
+        processing_state:
+          $ref: '#/components/schemas/ProcessingState'
+          description: Pipeline state; poll the meeting until `processed` or `failed`
+        recording_status:
+          $ref: '#/components/schemas/RecordingStatus'
+          description: '`partial` when the capture ended without a stop, e.g. a closed
+            tab'
+        source_type:
+          $ref: '#/components/schemas/SourceType'
+          description: Recorded by the extension or uploaded
+        duration_seconds:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Duration Seconds
+          description: Length of the recording, once known
+        access_mode:
+          $ref: '#/components/schemas/AccessMode'
+          description: '`restricted` meetings are visible only to the selected members'
+      type: object
+      required:
+      - id
+      - workspace_id
+      - folder_id
+      - name
+      - name_is_generated
+      - recorded_at
+      - processing_state
+      - recording_status
+      - source_type
+      - duration_seconds
+      - access_mode
+      title: MeetingSummary
+    MeetingUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+            maxLength: 200
+            minLength: 1
+            description: Meeting name
+            examples:
+            - Sprint 12 review
+          - type: 'null'
+          title: Name
+          description: New meeting name
+        folder_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Folder Id
+          description: Folder of the same workspace to move the meeting to
+      additionalProperties: false
+      type: object
+      title: MeetingUpdate
+    NoteRead:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Notes identifier
+        preset:
+          $ref: '#/components/schemas/Preset'
+          description: Preset the notes follow
+        provider:
+          $ref: '#/components/schemas/Provider'
+          description: Model provider that wrote them
+        model_name:
+          type: string
+          title: Model Name
+          description: Model that wrote them
+          examples:
+          - gemma-3-12b-it
+        content:
+          type: string
+          title: Content
+          description: Notes in Markdown
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: When they were generated
+        created_by_user_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Created By User Id
+          description: Who requested a regeneration; null for the automatic first
+            notes
+        is_current:
+          type: boolean
+          title: Is Current
+          description: The notes shown by default; earlier versions stay readable
+        context_meetings:
+          items:
+            $ref: '#/components/schemas/ContextMeetingRead'
+          type: array
+          title: Context Meetings
+          description: Meetings of the same folder used as context
+      type: object
+      required:
+      - id
+      - preset
+      - provider
+      - model_name
+      - content
+      - created_at
+      - created_by_user_id
+      - is_current
+      - context_meetings
+      title: NoteRead
+    NotesRequest:
+      properties:
+        preset:
+          anyOf:
+          - $ref: '#/components/schemas/Preset'
+          - type: 'null'
+          description: Notes preset; defaults to the workspace's. Prompts are fixed
+            and never shown
+        use_builtin_model:
+          type: boolean
+          title: Use Builtin Model
+          description: Generate with the built-in model even if the workspace configured
+            a provider, e.g. after that provider failed
+          default: false
+      additionalProperties: false
+      type: object
+      title: NotesRequest
+    PageInfo:
+      properties:
+        limit:
+          type: integer
+          title: Limit
+          description: Page size that was applied
+          examples:
+          - 20
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Next Cursor
+          description: Pass as `cursor` to get the next page; null on the last page
+          examples:
+          - '20'
+        has_more:
+          type: boolean
+          title: Has More
+          description: Whether another page follows
+          examples:
+          - false
+      type: object
+      required:
+      - limit
+      - next_cursor
+      - has_more
+      title: PageInfo
+    Page_MeetingSummary_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/MeetingSummary'
+          type: array
+          title: Items
+          description: Items of this page, in the documented order
+        pagination:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - pagination
+      title: Page[MeetingSummary]
+    Page_NoteRead_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/NoteRead'
+          type: array
+          title: Items
+          description: Items of this page, in the documented order
+        pagination:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - pagination
+      title: Page[NoteRead]
+    Page_WorkspaceSummary_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/WorkspaceSummary'
+          type: array
+          title: Items
+          description: Items of this page, in the documented order
+        pagination:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - pagination
+      title: Page[WorkspaceSummary]
+    Preset:
+      type: string
+      enum:
+      - summary
+      - detailed
+      - interview
+      title: Preset
+    ProcessingJobRead:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Job identifier
+        meeting_id:
+          type: string
+          format: uuid
+          title: Meeting Id
+          description: Meeting being processed
+        kind:
+          $ref: '#/components/schemas/JobKind'
+          description: Pipeline stage
+        status:
+          $ref: '#/components/schemas/JobStatus'
+          description: Job state
+        preset:
+          anyOf:
+          - $ref: '#/components/schemas/Preset'
+          - type: 'null'
+          description: Notes preset, for notes jobs
+        provider:
+          anyOf:
+          - $ref: '#/components/schemas/Provider'
+          - type: 'null'
+          description: Notes provider, for notes jobs
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: When the job was queued
+      type: object
+      required:
+      - id
+      - meeting_id
+      - kind
+      - status
+      - preset
+      - provider
+      - created_at
+      title: ProcessingJobRead
+    ProcessingState:
+      type: string
+      enum:
+      - recording
+      - queued
+      - processing
+      - processed
+      - failed
+      title: ProcessingState
+    Provider:
+      type: string
+      enum:
+      - whadio
+      - anthropic
+      - openai
+      - google
+      title: Provider
+    RecordingStatus:
+      type: string
+      enum:
+      - complete
+      - partial
+      title: RecordingStatus
+    RevisionRead:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Revision identifier
+        revision_type:
+          $ref: '#/components/schemas/RevisionType'
+          description: '`original` is the recognised text, kept forever; `edited`
+            revisions follow it'
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: When the revision was made
+        edited_by_user_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Edited By User Id
+          description: Editor; null for the original
+        is_current:
+          type: boolean
+          title: Is Current
+          description: Whether this is the revision shown by default
+      type: object
+      required:
+      - id
+      - revision_type
+      - created_at
+      - edited_by_user_id
+      - is_current
+      title: RevisionRead
+    RevisionType:
+      type: string
+      enum:
+      - original
+      - edited
+      title: RevisionType
+    Role:
+      type: string
+      enum:
+      - member
+      - moderator
+      - owner
+      title: Role
+    SegmentRead:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Segment identifier, specific to this revision
+        speaker_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Speaker Id
+          description: Speaker label of the segment, if any
+        start_seconds:
+          type: number
+          minimum: 0.0
+          title: Start Seconds
+          description: Start offset in seconds
+          examples:
+          - 12.4
+        end_seconds:
+          type: number
+          minimum: 0.0
+          title: End Seconds
+          description: End offset in seconds
+          examples:
+          - 18.9
+        text:
+          type: string
+          title: Text
+          description: Recognised or edited text
+      type: object
+      required:
+      - id
+      - speaker_id
+      - start_seconds
+      - end_seconds
+      - text
+      title: SegmentRead
+    SessionKind:
+      type: string
+      enum:
+      - browser
+      - extension
+      title: SessionKind
+    SessionRead:
+      properties:
+        kind:
+          $ref: '#/components/schemas/SessionKind'
+          description: Kind of session created
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+          description: 'Fixed end of the session: 14 days for `browser`, 24 hours
+            for `extension`; use never extends it'
+        user:
+          $ref: '#/components/schemas/UserRead'
+        token:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Token
+          description: Bearer token, shown once, only for `extension` sessions; browser
+            sessions get an HttpOnly cookie instead
+      type: object
+      required:
+      - kind
+      - expires_at
+      - user
+      title: SessionRead
+    SignIn:
+      properties:
+        email:
+          type: string
+          maxLength: 254
+          format: email
+          title: Email
+          description: Account email address
+          examples:
+          - alice@whadio.dev
+        password:
+          type: string
+          maxLength: 128
+          minLength: 1
+          title: Password
+          description: Account password
+          examples:
+          - whadio-demo-pass
+        kind:
+          $ref: '#/components/schemas/SessionKind'
+          description: '`browser` sets the session cookie; `extension` returns a token
+            for the Chrome extension instead'
+          default: browser
+      additionalProperties: false
+      type: object
+      required:
+      - email
+      - password
+      title: SignIn
+    SourceType:
+      type: string
+      enum:
+      - extension
+      - upload
+      title: SourceType
+    SpeakerRead:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Speaker label identifier, specific to this revision
+        display_name:
+          type: string
+          title: Display Name
+          description: Label shown for the speaker
+          examples:
+          - Alice
+        is_unnamed:
+          type: boolean
+          title: Is Unnamed
+          description: Whether the label is a placeholder like `Speaker 2`
+      type: object
+      required:
+      - id
+      - display_name
+      - is_unnamed
+      title: SpeakerRead
+    TranscriptRead:
+      properties:
+        meeting_id:
+          type: string
+          format: uuid
+          title: Meeting Id
+          description: Meeting of the transcript
+        language:
+          type: string
+          title: Language
+          description: Main language
+          examples:
+          - uk
+        model_name:
+          type: string
+          title: Model Name
+          description: Recognition model
+          examples:
+          - parakeet-tdt-0.6b-v3
+        revision:
+          $ref: '#/components/schemas/RevisionRead'
+        original_revision_id:
+          type: string
+          format: uuid
+          title: Original Revision Id
+          description: The original, always reachable
+        is_edited:
+          type: boolean
+          title: Is Edited
+          description: Whether any edited revision exists
+        has_unnamed_speakers:
+          type: boolean
+          title: Has Unnamed Speakers
+          description: Whether some speakers still have placeholder labels
+        speakers:
+          items:
+            $ref: '#/components/schemas/SpeakerRead'
+          type: array
+          title: Speakers
+          description: Speaker labels of this revision
+        segments:
+          items:
+            $ref: '#/components/schemas/SegmentRead'
+          type: array
+          title: Segments
+          description: Segments in time order
+      type: object
+      required:
+      - meeting_id
+      - language
+      - model_name
+      - revision
+      - original_revision_id
+      - is_edited
+      - has_unnamed_speakers
+      - speakers
+      - segments
+      title: TranscriptRead
+    UserRead:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: User identifier
+          examples:
+          - 3f6c1d2e-8a4b-4c5d-9e0f-1a2b3c4d5e6f
+        email:
+          type: string
+          title: Email
+          description: Proven email address
+          examples:
+          - alice@whadio.dev
+        name:
+          type: string
+          title: Name
+          description: Display name
+          examples:
+          - Alice Owner
+        is_administrator:
+          type: boolean
+          title: Is Administrator
+          description: Whether the admin dashboard is available
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: When the account was created
+      type: object
+      required:
+      - id
+      - email
+      - name
+      - is_administrator
+      - created_at
+      title: UserRead
+    WorkspaceCreate:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Name
+          description: Workspace name
+          examples:
+          - Product team
+        default_preset:
+          $ref: '#/components/schemas/Preset'
+          description: Notes preset used when none is chosen
+          default: summary
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      title: WorkspaceCreate
+    WorkspaceRead:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+        name:
+          type: string
+          title: Name
+          description: Workspace name
+          examples:
+          - Product team
+        is_personal:
+          type: boolean
+          title: Is Personal
+          description: The account's own workspace, created with it
+        my_role:
+          $ref: '#/components/schemas/Role'
+          description: The caller's role here
+        member_count:
+          type: integer
+          minimum: 1.0
+          title: Member Count
+          description: Number of members
+          examples:
+          - 4
+        notes_provider:
+          $ref: '#/components/schemas/Provider'
+          description: Where transcripts go for notes; anything but `whadio` sends
+            the transcripts in the context set to that provider
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: When the workspace was created
+        default_preset:
+          $ref: '#/components/schemas/Preset'
+          description: Notes preset used when none is chosen
+      type: object
+      required:
+      - id
+      - name
+      - is_personal
+      - my_role
+      - member_count
+      - notes_provider
+      - created_at
+      - default_preset
+      title: WorkspaceRead
+    WorkspaceSummary:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+        name:
+          type: string
+          title: Name
+          description: Workspace name
+          examples:
+          - Product team
+        is_personal:
+          type: boolean
+          title: Is Personal
+          description: The account's own workspace, created with it
+        my_role:
+          $ref: '#/components/schemas/Role'
+          description: The caller's role here
+        member_count:
+          type: integer
+          minimum: 1.0
+          title: Member Count
+          description: Number of members
+          examples:
+          - 4
+        notes_provider:
+          $ref: '#/components/schemas/Provider'
+          description: Where transcripts go for notes; anything but `whadio` sends
+            the transcripts in the context set to that provider
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: When the workspace was created
+      type: object
+      required:
+      - id
+      - name
+      - is_personal
+      - my_role
+      - member_count
+      - notes_provider
+      - created_at
+      title: WorkspaceSummary
+    WorkspaceUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+            maxLength: 100
+            minLength: 1
+            description: Workspace name
+            examples:
+            - Product team
+          - type: 'null'
+          title: Name
+          description: New workspace name
+        default_preset:
+          anyOf:
+          - $ref: '#/components/schemas/Preset'
+          - type: 'null'
+          description: Notes preset used when none is chosen
+      additionalProperties: false
+      type: object
+      title: WorkspaceUpdate
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      description: HttpOnly cookie set by `POST /api/v1/sessions`; the browser sends
+        it automatically
+      in: cookie
+      name: whadio_session
+    extensionToken:
+      type: http
+      description: 'Token from `POST /api/v1/sessions` with `kind: extension`; accepted
+        only by the capture endpoints and by sign-out'
+      scheme: bearer
+tags:
+- name: accounts
+  description: 'Sessions: signing in and out'
+- name: workspaces
+  description: Workspaces the caller belongs to
+- name: meetings
+  description: Meetings, recording upload and transcripts
+- name: notes
+  description: Generated notes and their regeneration
+- name: meta
+  description: Operational endpoints

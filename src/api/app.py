@@ -1,4 +1,9 @@
+import logging
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+
 from fastapi import APIRouter, FastAPI
+from fastmcp.utilities.lifespan import combine_lifespans
 
 from . import meta
 from .accounts import routes_sessions, routes_workspaces
@@ -7,6 +12,7 @@ from .core.errors import register_error_handlers
 from .mcp_server import build_mcp_server
 from .meetings import routes as meeting_routes
 from .meetings.fixtures import DESIGN_SYNC_MEETING_ID, SPRINT_12_MEETING_ID
+from .openapi_export import export_openapi
 
 API_VERSION = "0.1.0"
 
@@ -43,6 +49,15 @@ TAGS = [
     {"name": "meta", "description": "Operational endpoints"},
 ]
 
+logger = logging.getLogger("uvicorn.error")
+
+
+@asynccontextmanager
+async def _export_spec(app: FastAPI) -> AsyncGenerator[None]:
+    for path in export_openapi(app):
+        logger.info("Wrote %s", path)
+    yield
+
 
 def create_app() -> FastAPI:
     mcp_app = build_mcp_server().http_app(path="/")
@@ -51,8 +66,8 @@ def create_app() -> FastAPI:
         description=DESCRIPTION.strip(),
         version=API_VERSION,
         openapi_tags=TAGS,
-        # Starlette never runs the lifespan of a mounted app, so the MCP one is started here.
-        lifespan=mcp_app.lifespan,
+        docs_url="/api-docs",
+        lifespan=combine_lifespans(_export_spec, mcp_app.lifespan),
     )
     v1 = APIRouter(prefix="/api/v1")
     for module in (routes_sessions, routes_workspaces, meeting_routes):
