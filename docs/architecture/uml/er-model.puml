@@ -75,8 +75,28 @@ entity "INVITATION" as Invitation {
   * role : enum (Member | Moderator)
   * invited_by_user_id : UUID <<FK>>
   * status : enum (pending | accepted | declined)
+  * token_hash : string <<S>>
   * created_at : datetime
+  * expires_at : datetime
   responded_at : datetime <<nullable>>
+}
+
+entity "PENDING_REGISTRATION" as PendingRegistration {
+  * pending_registration_id : UUID <<PK>>
+  --
+  * email : string <<P>>
+  * token_hash : string <<S>>
+  * created_at : datetime
+  * expires_at : datetime
+}
+
+entity "PASSWORD_RESET" as PasswordReset {
+  * password_reset_id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK>>
+  * token_hash : string <<S>>
+  * created_at : datetime
+  * expires_at : datetime
 }
 
 entity "CAPTURE_SESSION" as CaptureSession {
@@ -256,6 +276,7 @@ User |o--o{ Meeting : confirms consent
 User ||-left-o{ CaptureSession : opens
 User ||-down-o{ Invitation : sends
 Workspace ||--o{ Invitation : has invitations
+User ||--o| PasswordReset : resets password
 
 Meeting ||--o| CaptureSession : receives capture
 CaptureSession ||--o{ CaptureChunk : stores chunks
