@@ -34,7 +34,7 @@ Each story has acceptance criteria in Given/When/Then form.
     - [ ] Given an invitation link was already used or is older than 7 days, when it is opened, then it is refused.
     - [ ] Given an address has a pending or expired invitation to the Workspace, when a Moderator invites it again, then the earlier link stops working and a new one is created.
     - [ ] Given an instance in `verified` mode and an address invited to the Workspace less than a day ago, when a Moderator invites it again, then the invitation is refused and the earlier link keeps working.
-    - [ ] Given a User has created 20 invitations in the past day, when they create another, then it is refused.
+    - [ ] Given a User has invited 20 addresses in the past day, when they invite another, then it is refused.
     - [ ] Given a Moderator opens the Workspace's pending invitations, when they cancel one, then its link is refused.
     - [ ] Given the Moderator who created an invitation was removed or made a Member, when its link is opened, then it is refused.
     - [ ] Given a person has received an invitation, when they decline it, then they do not join the Workspace.
