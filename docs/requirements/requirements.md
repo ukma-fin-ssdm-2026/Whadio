@@ -15,7 +15,9 @@ three roles and managed access, subdivided into folders that scope what the mode
 writes the notes.
 
 The system runs on ready-made open models, writes notes with a local language model by default,
-and processes audio only on its own servers. Anyone can deploy their own instance.
+and processes audio only on its own servers. Anyone can deploy their own instance; whoever runs
+an instance (its operator) is responsible for its Terms and Conditions and for the accounts it
+admits.
 
 ### Out of scope for this version
 
@@ -50,14 +52,15 @@ Recorded with the reason, so that the boundary is a decision rather than an omis
 | Tags on meetings, and filtering by tag | Their value only appears at a volume this version will not reach. Filtering by name and date covers the same need over a list of tens of meetings. |
 | Per-share permission sets, and shares addressed to an email address | A share grants reading only. Per-share permissions would make authorization the union of workspace role, per-meeting restriction and share grant on every path that returns content, and every one of those paths would then have to be verified against all three. Email-addressed shares need an invitation flow for accounts that may not exist, duplicating the workspace invitation. |
 | Open registration without email verification | Anyone could register any address, including someone else's, and create accounts in bulk for bot sign-ups. An instance that cannot send email runs `invite-only` instead (FR-047). |
-| Changing an account's email address | A new address would need its own verification, and invitations and shares already rely on the current one. No user has asked for it. |
+| Changing an account's email address | A new address would need its own verification, and invitations and shares already rely on the current one. An account whose owner loses access to the address keeps working with its password, but only the operator can then reset that password (FR-049). |
+| In-app notifications | Notifications are sent only by email, so an `invite-only` instance running without email sends none (FR-047). An in-app channel would need notifications stored and shown by the system. |
 | A capacity display in the interface | The limit, the eviction and the notice naming the evicted meeting are stated and verified as a non-functional requirement. A separate screen adds no behaviour that this verification does not already exercise. |
 
 ## Glossary
 
 | Term | Definition |
 |---|---|
-| **Workspace** | The access boundary. Carries the membership list and the three workspace roles. Every User receives a personal workspace on registration; organisational workspaces are created by their Owner. Nothing crosses this boundary except a share: meetings do not move between workspaces, and are never used as context outside their own. |
+| **Workspace** | The access boundary. Carries the membership list and the three workspace roles. Every User receives a personal workspace when their account is created; organisational workspaces are created by their Owner. Nothing crosses this boundary except a share: meetings do not move between workspaces, and are never used as context outside their own. |
 | **Folder** | The context boundary inside a workspace, and its only organisational subdivision. Carries no permissions of its own and cannot be nested. Every workspace has one default folder. |
 | **Meeting** | One record: its recording, its transcript and its notes. Moved, shared and deleted as a unit. |
 | **Recording** | The captured audio of a meeting. Deleted three months after the meeting under the retention policy. |
@@ -67,7 +70,7 @@ Recorded with the reason, so that the boundary is a decision rather than an omis
 | **Context set** | The transcripts supplied to the model alongside a meeting's own when its notes are generated: the other meetings in the same folder, minus any whose access is restricted. |
 | **Glossary (project)** | The workspace's list of terms and names supplied to the recognition step to improve accuracy on the workspace's own vocabulary. Distinct from this section. |
 | **Share** | A grant of read access to one meeting for a signed-in person outside the workspace, created as a link and revocable. Opening the link only requests access; the share is bound to the one account its creator approves. A share carries no download, export or onward-share right. |
-| **Registration mode** | How an instance admits new accounts, chosen by whoever runs it (the operator): `verified`, where anyone registers and the account exists only once the link sent to its email address is opened, or `invite-only`, where accounts come only from workspace invitations or the operator. |
+| **Registration mode** | How an instance admits new accounts, chosen by whoever runs it (the operator): `verified`, where anyone registers and the account exists only once the link sent to its email address is opened, or `invite-only`, where accounts come only from workspace invitations or from links the operator issues. |
 | **Diarization** | Splitting a transcript by who spoke when. Produces numbered speakers before any names are attached. |
 | **BYOK** | Bring Your Own Key — a workspace Owner connecting their own LLM provider API key in place of the built-in model. |
 | **MCP** | Model Context Protocol — the integration through which a user's own AI assistant reaches the meetings they have access to. |
@@ -81,6 +84,7 @@ System level:
 
 - **User** — a registered account: creates workspaces, records and uploads meetings, creates access keys for their own AI assistant.
 - **Administrator** — monitors system operation. Sees operational metadata only, with no access to recordings, transcripts or notes.
+- **Operator** — whoever runs the instance; not an account. Chooses the registration mode, and issues registration and password-reset links from the command line.
 
 Workspace level — exactly three roles; each has all the permissions of the previous one:
 
@@ -95,16 +99,17 @@ restriction, never by where a meeting is filed.
 
 ### Accounts and access
 
-- FR-001: In `verified` mode, registration starts from an email address, to which a single-use link valid for 24 hours is sent. Opening the link and setting a password creates the account and a personal workspace with that account as its Owner; no account exists before that. A request for an address that already has an account gets the same response, and the email sent to that address points to sign-in instead.
-- FR-002: Creating an account, by registration or through an invitation, requires accepting the Terms and Conditions, which state the obligation to obtain the participants' consent before recording and the restrictions on sharing. Without acceptance no account is created.
+- FR-001: In `verified` mode, registration starts from an email address, to which a single-use link valid for 24 hours is sent. Opening the link and entering a name and a password creates the account and a personal workspace with that account as its Owner; no account exists before that. A repeated request sends a new link and invalidates the earlier one, unless it comes within 20 minutes of the last link sent to that address, in which case nothing changes. A request for an address that already has an account gets the same response and is handled as a password-reset request (FR-048): the email sent to that address points to sign-in and carries a reset link.
+- FR-002: Creating an account, through any link that leads to one, requires accepting the Terms and Conditions on the form that sets its name and password. The Terms state the obligation to obtain the participants' consent before recording and the restrictions on sharing. Without acceptance no account is created.
 - FR-003: Sign-in with correct credentials grants access to the workspaces the account belongs to; incorrect credentials are denied and create no session.
 - FR-004: Every path that returns meeting content requires a signed-in account. An unauthenticated request yields a sign-in prompt and none of the content.
 - FR-005: A User can create a workspace with a name, which is created with them as its Owner, holding one default folder and no meetings. A workspace submitted without a name is rejected.
-- FR-006: A Moderator can invite a person by email address to the workspace as a Member or a Moderator; the Owner role cannot be assigned by invitation. The invitation is a single-use link valid for 7 days, sent to that address in `verified` mode and handed over by the Moderator in `invite-only` mode. The invited person accepts or declines through the link. Acceptance requires an account with the invited address, or creates one with that address and its personal workspace, and joins it with the chosen role.
+- FR-006: A Moderator can invite a person by email address to the workspace as a Member or a Moderator; the Owner role cannot be assigned by invitation. The invitation is a single-use link valid for 7 days, sent to that address in `verified` mode and handed over by the Moderator in `invite-only` mode. The invited person accepts or declines through the link. Acceptance requires an account with the invited address, or creates one with that address and its personal workspace, and joins it with the chosen role. A Moderator can list the workspace's pending invitations and cancel any of them. An invitation stops working once the Moderator who created it is no longer a Moderator or the Owner of the workspace. In `verified` mode an address can be re-invited to the same workspace at most once a day, and in either mode a User can create at most 20 invitations a day.
 - FR-007: A Moderator can remove a member, and change a member's role between Member and Moderator with effect from that member's next action. The Owner can be neither removed nor re-roled, and Members have no member-management actions.
 - FR-008: An Owner can delete a workspace together with its folders, meetings, recordings, transcripts and notes. No other role can delete a workspace, and a personal workspace cannot be deleted at all.
-- FR-047: An instance runs in one registration mode, chosen by its operator: `verified`, where anyone can register as in FR-001, or `invite-only`, where registration is closed and accounts are created only through invitations (FR-006) or by the operator. A share link never creates an account.
-- FR-048: In `verified` mode, a User who forgot their password can request a reset for their email address, to which a single-use link valid for 1 hour is sent. Setting a new password through it ends every session and extension token of the account. A request for an address without an account gets the same response and sends nothing.
+- FR-047: An instance runs in one registration mode, chosen by its operator: `verified`, where anyone can register as in FR-001, or `invite-only`, where there is no open registration and accounts are created only through invitations (FR-006) or from links the operator issues (FR-049). A share link never creates an account, so on an `invite-only` instance a share reaches only accounts that already exist there. An `invite-only` instance may run without email; it then sends no notifications (FR-024, FR-038, FR-046), and its invitation links are only handed over. Switching modes affects new requests only: links already issued keep working until they expire.
+- FR-048: In `verified` mode, a User who forgot their password can request a reset for their email address, to which a single-use link valid for 1 hour is sent. Setting a new password through it ends every session and extension token of the account. A repeated request sends a new link and invalidates the earlier one, unless it comes within 20 minutes of the last link sent to that address, in which case nothing changes. A request for an address without an account gets the same response and sends nothing.
+- FR-049: In either mode, the operator can issue from the command line a registration link for an email address, or a password-reset link for an account, with the lifetimes of FR-001 and FR-048. The link is shown to the operator to hand over, and opening it works as an emailed one does. This is how an instance's first account is created.
 
 ### Capture
 
@@ -201,7 +206,7 @@ restriction, never by where a meeting is filed.
 
 * NFR-013 (Confidentiality): 100% of non-Owner role tests for provider settings return no provider API key material; stored external provider keys are encrypted at rest, and API responses never include raw provider keys after creation.
 
-* NFR-018 (Authenticity): 100% of accounts are created through a link sent to their email address, through an invitation for that address, or by the operator, so no account's address is only typed in at sign-up; registration and password-reset requests return identical responses for addresses with and without an account; an opened or expired link is rejected in 100% of tests; and no address receives more than 3 registration or password-reset emails per hour.
+* NFR-018 (Authenticity): 100% of accounts are created through a link sent to their email address, an invitation for that address, or a link the operator issued for it, so no account's address is only typed in at sign-up; registration and password-reset requests return identical responses for addresses with and without an account; a used, expired or cancelled link is rejected in 100% of tests; no address receives more than one registration or password-reset email per 20 minutes, or more than one invitation to the same workspace per day; and no account creates more than 20 invitations per day.
 
 ### Reliability
 
