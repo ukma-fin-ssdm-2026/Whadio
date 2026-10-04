@@ -29,6 +29,7 @@ The requirements that shape the architecture most, and what each one forces.
 - **One codebase, one container image, four entry points.** `web` serves the HTTP interfaces,
   `scheduler` runs periodic jobs, and `asr-worker` and `notes-worker` consume jobs from the broker.
   Each entry point is a separate process with its own lifecycle, started by a different command.
+  Operator commands, such as issuing a registration link, run as one-off commands of the same image.
 - **Layered inside the backend.** Each backend module has an API, a domain and a persistence layer,
   and owns its own tables.
 - **Client–server at the edge.** The Chrome extension, the web SPA and the user's MCP client talk to
@@ -77,7 +78,7 @@ Source: [uml/component-diagram.puml](uml/component-diagram.puml)
 |---|---|---|
 | Capture | Capture sessions, idempotent chunk storage, assembling the recording, validating uploaded files, finalising interrupted captures. | FR-009, FR-010, FR-012, FR-013 |
 | MCP Server | The MCP interface: authenticates personal keys and exposes the key owner's meetings as tools. | FR-043, FR-044 |
-| Accounts & Workspaces | Registration in the instance's registration mode, invitation links, password reset, sign-in, workspaces, membership and roles, LLM provider configuration, MCP keys. Checks workspace-administration permissions against the member's role. | FR-001–FR-003, FR-005–FR-008, FR-021, FR-043, FR-047, FR-048, NFR-018 |
+| Accounts & Workspaces | Registration in the instance's registration mode, invitation links and their cancellation, password reset, links issued by the operator, sign-in and sessions, workspaces, membership and roles, LLM provider configuration, MCP keys. Checks workspace-administration permissions against the member's role. | FR-001–FR-003, FR-005–FR-008, FR-021, FR-043, FR-047–FR-049, NFR-018 |
 | Access Policy | Decides who may read which meeting: workspace role, per-meeting restriction, share grants and redaction. A share grants reading only to the account its creator approved; opening its link otherwise records an access request for the creator. | FR-004, FR-037–FR-039, FR-044, NFR-007–NFR-009 |
 | Meetings | Meetings, folders, transcript and notes versions, speaker labels, naming, glossary, playback. The single read path for meeting content. Enforces the meeting cap: when a meeting is queued, counts the queued and later meetings across the workspaces of its workspace's Owner, and evicts the earliest-created one if the cap is exceeded. | FR-017, FR-027–FR-036, NFR-003 |
 | Processing | The pipeline's orchestrator: publishes jobs, consumes results, tracks processing state, assembles the context set, limits regeneration. | FR-012, FR-014, FR-015, FR-018–FR-020, FR-022, FR-023, FR-025, FR-026 |
@@ -92,6 +93,12 @@ layer. Session authentication is middleware that Accounts & Workspaces provides 
 route. MCP Server, by contrast, is a component, because it carries behaviour of its own: a separate
 protocol, authentication by personal key, the tool definitions, and the rule that a key reaches only
 its owner's accessible meetings (FR-043, FR-044).
+
+Sessions and extension tokens are rows in PostgreSQL that hold only a hash of the token, so signing
+out or resetting a password deletes them, and any `web` instance can check them. Signed cookies were
+rejected because they cannot revoke a single extension token on sign-out, and an in-process store
+because it breaks with a second `web` instance and signs everyone out on restart; a separate cache
+would add a service for no gain at this scale.
 
 Access Policy governs meeting content. Workspace administration, such as inviting members or
 configuring the provider, is checked by Accounts & Workspaces against the member's role.
@@ -112,7 +119,7 @@ configuring the provider, is checked by Accounts & Workspaces against the member
 | Message broker (RabbitMQ) | Job and result queues between the backend and the workers. |
 | LLM runtime | An off-the-shelf server exposing an OpenAI-compatible chat completions API for the built-in model (for example llama.cpp server or vLLM). |
 | LLM provider | An external API used only when the workspace Owner configured a key. |
-| SMTP relay | Delivers notification email and the registration, invitation and password-reset links. Optional in `invite-only` mode; without it, no email is sent. |
+| SMTP relay | Delivers notification email and the registration, invitation and password-reset links. Optional in `invite-only` mode; without it, no email is sent, so the instance sends no notifications (FR-047). |
 
 ## 4. Runtime units
 
@@ -121,7 +128,7 @@ The deployable processes, all but the off-the-shelf services built from the same
 | Unit | Runs | Host | Instances |
 |---|---|---|---|
 | `web` | All backend modules except Retention; consumes `processing.results` | Main host | 1, stateless; more can run behind nginx |
-| `scheduler` | Retention, capture finalisation, re-publishing jobs stuck in `queued`, deleting expired registration and password-reset links | Main host | Exactly 1 |
+| `scheduler` | Retention, capture finalisation, re-publishing jobs stuck in `queued`, deleting expired registration and password-reset links, invitations and sessions | Main host | Exactly 1 |
 | `notes-worker` | Notes pipeline | Main host (CPU only) | 1 or more, competing consumers |
 | `asr-worker` | Transcription pipeline | GPU host | 1 per GPU |
 | `llm-runtime` | The built-in language model, on an off-the-shelf server | GPU host | 1 |
@@ -193,7 +200,7 @@ How the architecture meets fault tolerance (NFR-015) and recoverability (NFR-014
 | A job fails repeatedly | Everything else. | Past the delivery limit, the meeting is failed with the cause and the member is notified (FR-014, FR-024). |
 | The extension loses its connection | Acknowledged chunks stay stored. | The scheduler finalises a partial recording. |
 | Broker down | Reading, editing, sharing, export. | Meetings stay `queued`; the scheduler re-publishes jobs stuck in `queued` once the broker is back. |
-| SMTP relay down | Everything except email; existing accounts sign in as usual. | Registration, invitation and password-reset links cannot be delivered, so new registrations and resets in `verified` mode cannot complete; notifications are not delivered. |
+| SMTP relay down | Everything except email; existing accounts sign in as usual. | Registration, invitation and password-reset links cannot be delivered, so new registrations and resets in `verified` mode cannot complete; notifications are not delivered. The operator can still issue registration and reset links from the command line (FR-049). |
 | Main host down | Nothing. | Availability is deliberately not among the requirements: a single main host cannot guarantee it. |
 
 ## 8. Deployment
@@ -240,13 +247,20 @@ An instance admits accounts in one of two modes, set in its configuration (FR-04
   development use it; in development a mail catcher stands in for the SMTP relay. `web` refuses to
   start in this mode without an SMTP relay configured, so a missing relay shows at startup rather
   than at the first registration.
-- **`invite-only`.** The default of the self-hosting profile. Registration is closed: an account is
-  created by redeeming a workspace invitation, whose link the Moderator hands over, or by the
-  operator. The SMTP relay is optional.
+- **`invite-only`.** The default of the self-hosting profile. There is no open registration: an
+  account is created by redeeming a workspace invitation, whose link the Moderator hands over, or
+  from a registration link the operator issues. Every account is therefore vouched for by a
+  Moderator or the operator, and a share reaches only accounts that already exist. The SMTP relay
+  is optional; without it the instance sends no notifications.
 
-In both modes no account's address is only typed in at sign-up: it is proven by an opened link or
-taken from the invitation (NFR-018). Invitations are single-use links in both modes, so accepting
-one works the same way in each.
+In both modes the operator can issue a registration link for an address, or a password-reset link
+for an account, from the command line, and hands it over (FR-049). This creates an instance's first
+account, and is the only way to recover a password in `invite-only` mode.
+
+In both modes no account's address is only typed in at sign-up: it is proven by an opened link, or
+taken from an invitation or an operator's link (NFR-018). Invitations are single-use links in both
+modes, so accepting one works the same way in each. Switching modes affects new requests only:
+links already issued keep working until they expire.
 
 | Alternative | Why it was rejected |
 |---|---|
