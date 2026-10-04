@@ -27,6 +27,7 @@ Each story has acceptance criteria in Given/When/Then form.
     - [ ] Given a signed-in User, when they create a Workspace with a name, then the Workspace is created with them as its Owner, holding a default Folder and no Meetings.
     - [ ] Given a User submits a Workspace without a name, when they confirm, then the System rejects it with a validation error and no Workspace is created.
     - [ ] Given a Moderator is in their Workspace, when they invite a person by email address and choose their role, then a single-use invitation link is created, sent to that address in `verified` mode or shown to the Moderator to hand over in `invite-only` mode, and Owner is not among the roles they could assign.
+    - [ ] Given a User opens their personal Workspace, when they try to invite a person, then the invitation is refused.
     - [ ] Given a person has received an invitation, when they accept it, then they join the Workspace with the chosen role and see the Meetings accessible to them.
     - [ ] Given a person without an account opens an invitation link, when they enter a name, set a password and accept the Terms and Conditions, then an account with the invited address and its personal Workspace are created, and the account joins the Workspace with the chosen role.
     - [ ] Given a person without an account opens an invitation link, when they submit the form without accepting the Terms and Conditions, then no account is created and nobody joins the Workspace.
