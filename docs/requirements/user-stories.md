@@ -32,7 +32,7 @@ Each story has acceptance criteria in Given/When/Then form.
     - [ ] Given a person without an account opens an invitation link, when they submit the form without accepting the Terms and Conditions, then no account is created and nobody joins the Workspace.
     - [ ] Given an account whose email address differs from the invited one opens an invitation link, when it tries to accept, then it is refused and does not join.
     - [ ] Given an invitation link was already used or is older than 7 days, when it is opened, then it is refused.
-    - [ ] Given an address has a pending or expired invitation to the Workspace, when a Moderator invites it again, then the earlier link stops working and a new one is created.
+    - [ ] Given an address has a pending or expired invitation to the Workspace, outside the one-day wait of `verified` mode, when a Moderator invites it again, then the earlier link stops working and a new one is created.
     - [ ] Given an instance in `verified` mode and an address invited to the Workspace less than a day ago, when a Moderator invites it again, then the invitation is refused and the earlier link keeps working.
     - [ ] Given a User has invited 20 addresses in the past day, when they invite another, then it is refused.
     - [ ] Given a Moderator opens the Workspace's pending invitations, when they cancel one, then its link is refused.
