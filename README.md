@@ -32,6 +32,8 @@ uv run fastapi dev src/api/main.py --port 3000   # start with auto-reload
 - Sign in with `POST /api/v1/sessions` as `alice@whadio.dev` with the password
   `whadio-demo-pass`; the browser keeps the session cookie for the other calls. The demo ids
   are listed at the top of the Swagger page.
+- Regenerate the committed OpenAPI/Swagger specification with:
+  `uv run python -m src.api.openapi_export`.
 
 ## Connecting an AI assistant (MCP)
 
@@ -59,6 +61,7 @@ All requirements documentation is maintained in the [`/docs/requirements/`](docs
 All API documentation is maintained in the [`/docs/api/`](docs/api/) directory and published on
 [GitHub Pages](https://ukma-fin-ssdm-2026.github.io/Whadio/).
 - [API Design](docs/api/api-design.md) — resource model, conventions and design decisions
+- [OpenAPI specification](docs/api/openapi-generated.json) — generated from the FastAPI app
 
 ## Architecture Artifacts
 All architecture documentation is maintained in the [`/docs/architecture/`](docs/architecture/) directory.
