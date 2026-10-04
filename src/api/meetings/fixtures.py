@@ -4,7 +4,7 @@ from uuid import UUID
 
 from ..accounts.fixtures import ALICE, PERSONAL_WORKSPACE_ID, TEAM_WORKSPACE_ID, workspace
 from ..accounts.schemas import Preset, Provider
-from ..core.errors import ApiError, ErrorCode, not_found
+from ..core.errors import ApiError, ErrorCode, ErrorDetail, not_found
 from .schemas import (
     AccessMode,
     ContextMeetingRead,
@@ -25,10 +25,16 @@ SPRINT_12_MEETING_ID: Final = UUID("5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9")
 SPRINT_11_MEETING_ID: Final = UUID("8c7b6a59-4d3e-4f2a-b1c0-d9e8f7a6b5c4")
 DESIGN_SYNC_MEETING_ID: Final = UUID("0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d")
 PERSONAL_FOLDER_ID: Final = UUID("2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e")
+TEAM_DEFAULT_FOLDER_ID: Final = UUID("9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a")
 RETENTION: Final = timedelta(days=90)
-DEFAULT_FOLDERS: Final = {
-    TEAM_WORKSPACE_ID: UUID("9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a"),
+_DEFAULT_FOLDERS: Final = {
+    TEAM_WORKSPACE_ID: TEAM_DEFAULT_FOLDER_ID,
     PERSONAL_WORKSPACE_ID: PERSONAL_FOLDER_ID,
+}
+_FOLDER_WORKSPACES: Final = {
+    TEAM_DEFAULT_FOLDER_ID: TEAM_WORKSPACE_ID,
+    SPRINT_FOLDER_ID: TEAM_WORKSPACE_ID,
+    PERSONAL_FOLDER_ID: PERSONAL_WORKSPACE_ID,
 }
 
 
@@ -168,6 +174,25 @@ def meeting(meeting_id: UUID) -> MeetingRead:
     if meeting_id not in MEETINGS:
         raise not_found("Meeting")
     return MEETINGS[meeting_id]
+
+
+def folder_in(workspace_id: UUID, folder_id: UUID | None) -> UUID:
+    if folder_id is None:
+        return _DEFAULT_FOLDERS[workspace_id]
+    if _FOLDER_WORKSPACES.get(folder_id) != workspace_id:
+        raise ApiError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Request contains invalid fields",
+            [
+                ErrorDetail(
+                    field="folder_id",
+                    message="is not a folder of this workspace",
+                    provided_value=str(folder_id),
+                )
+            ],
+        )
+    return folder_id
 
 
 def meetings_of(workspace_id: UUID) -> list[MeetingRead]:

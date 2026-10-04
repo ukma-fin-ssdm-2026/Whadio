@@ -17,8 +17,8 @@ from ..core.errors import (
 )
 from ..core.schemas import Page, PageQuery, paginate
 from .fixtures import (
-    DEFAULT_FOLDERS,
     RETENTION,
+    folder_in,
     meeting,
     meetings_of,
     notes,
@@ -124,6 +124,7 @@ async def upload_recording(
     ] = None,
 ) -> MeetingRead:
     workspace(workspace_id)
+    target_folder_id = folder_in(workspace_id, folder_id)
     if not (file.content_type or "").startswith("audio/"):
         raise ApiError(415, ErrorCode.UNSUPPORTED_MEDIA_TYPE, "The file is not audio")
     if file.size is not None and file.size > MAX_UPLOAD_BYTES:
@@ -132,7 +133,7 @@ async def upload_recording(
     created = MeetingRead(
         id=uuid4(),
         workspace_id=workspace_id,
-        folder_id=folder_id or DEFAULT_FOLDERS[workspace_id],
+        folder_id=target_folder_id,
         name=name or file.filename or "Uploaded recording",
         name_is_generated=name is None,
         recorded_at=now,
@@ -188,10 +189,13 @@ async def get_meeting(meeting_id: MeetingId, user: BrowserUser) -> MeetingRead:
 async def update_meeting(
     meeting_id: MeetingId, payload: MeetingUpdate, user: BrowserUser
 ) -> MeetingRead:
+    target = meeting(meeting_id)
+    if payload.folder_id is not None:
+        folder_in(target.workspace_id, payload.folder_id)
     changes = payload.model_dump(exclude_none=True)
     if payload.name is not None:
         changes["name_is_generated"] = False
-    return meeting(meeting_id).model_copy(update=changes)
+    return target.model_copy(update=changes)
 
 
 @router.delete(
