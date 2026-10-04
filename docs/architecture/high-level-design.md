@@ -77,12 +77,12 @@ Source: [uml/component-diagram.puml](uml/component-diagram.puml)
 |---|---|---|
 | Capture | Capture sessions, idempotent chunk storage, assembling the recording, validating uploaded files, finalising interrupted captures. | FR-009, FR-010, FR-012, FR-013 |
 | MCP Server | The MCP interface: authenticates personal keys and exposes the key owner's meetings as tools. | FR-043, FR-044 |
-| Accounts & Workspaces | Registration, sign-in, workspaces, membership and roles, LLM provider configuration, MCP keys. Checks workspace-administration permissions against the member's role. | FR-001–FR-003, FR-005–FR-008, FR-021, FR-043 |
+| Accounts & Workspaces | Registration in the instance's registration mode, invitation links, password reset, sign-in, workspaces, membership and roles, LLM provider configuration, MCP keys. Checks workspace-administration permissions against the member's role. | FR-001–FR-003, FR-005–FR-008, FR-021, FR-043, FR-047, FR-048, NFR-018 |
 | Access Policy | Decides who may read which meeting: workspace role, per-meeting restriction, share grants and redaction. A share grants reading only to the account its creator approved; opening its link otherwise records an access request for the creator. | FR-004, FR-037–FR-039, FR-044, NFR-007–NFR-009 |
 | Meetings | Meetings, folders, transcript and notes versions, speaker labels, naming, glossary, playback. The single read path for meeting content. Enforces the meeting cap: when a meeting is queued, counts the queued and later meetings across the workspaces of its workspace's Owner, and evicts the earliest-created one if the cap is exceeded. | FR-017, FR-027–FR-036, NFR-003 |
 | Processing | The pipeline's orchestrator: publishes jobs, consumes results, tracks processing state, assembles the context set, limits regeneration. | FR-012, FR-014, FR-015, FR-018–FR-020, FR-022, FR-023, FR-025, FR-026 |
 | Export | Markdown and VTT export with the consent notice and attribution. | FR-040–FR-042 |
-| Notifications | Email to members when processing finishes or fails, before recordings expire, and when the meeting cap evicts a meeting; to a share's creator when an account requests access. | FR-024, FR-038, FR-046, NFR-003 |
+| Notifications | Email to members when processing finishes or fails, before recordings expire, and when the meeting cap evicts a meeting; to a share's creator when an account requests access; registration, invitation and password-reset links to the address they are for. | FR-001, FR-006, FR-024, FR-038, FR-046, FR-048, NFR-003 |
 | Retention | Deletes recordings three months after the meeting and triggers the advance warning. | FR-046 |
 | Admin & Monitoring | The administrator dashboard: queue, failures, load and model usage, without meeting content. | FR-045 |
 | Audit | The append-only record of who changed a meeting's content or access: actor, action, target IDs and time, never content. Written by Meetings, Access Policy and Accounts & Workspaces; no API reads it, and the operator consults it in the database. | NFR-010 |
@@ -112,7 +112,7 @@ configuring the provider, is checked by Accounts & Workspaces against the member
 | Message broker (RabbitMQ) | Job and result queues between the backend and the workers. |
 | LLM runtime | An off-the-shelf server exposing an OpenAI-compatible chat completions API for the built-in model (for example llama.cpp server or vLLM). |
 | LLM provider | An external API used only when the workspace Owner configured a key. |
-| SMTP relay | Delivers notification email. |
+| SMTP relay | Delivers notification email and the registration, invitation and password-reset links. Optional in `invite-only` mode; without it, no email is sent. |
 
 ## 4. Runtime units
 
@@ -121,7 +121,7 @@ The deployable processes, all but the off-the-shelf services built from the same
 | Unit | Runs | Host | Instances |
 |---|---|---|---|
 | `web` | All backend modules except Retention; consumes `processing.results` | Main host | 1, stateless; more can run behind nginx |
-| `scheduler` | Retention, capture finalisation, re-publishing jobs stuck in `queued` | Main host | Exactly 1 |
+| `scheduler` | Retention, capture finalisation, re-publishing jobs stuck in `queued`, deleting expired registration and password-reset links | Main host | Exactly 1 |
 | `notes-worker` | Notes pipeline | Main host (CPU only) | 1 or more, competing consumers |
 | `asr-worker` | Transcription pipeline | GPU host | 1 per GPU |
 | `llm-runtime` | The built-in language model, on an off-the-shelf server | GPU host | 1 |
@@ -193,6 +193,7 @@ How the architecture meets fault tolerance (NFR-015) and recoverability (NFR-014
 | A job fails repeatedly | Everything else. | Past the delivery limit, the meeting is failed with the cause and the member is notified (FR-014, FR-024). |
 | The extension loses its connection | Acknowledged chunks stay stored. | The scheduler finalises a partial recording. |
 | Broker down | Reading, editing, sharing, export. | Meetings stay `queued`; the scheduler re-publishes jobs stuck in `queued` once the broker is back. |
+| SMTP relay down | Everything except email; existing accounts sign in as usual. | Registration, invitation and password-reset links cannot be delivered, so new registrations and resets in `verified` mode cannot complete; notifications are not delivered. |
 | Main host down | Nothing. | Availability is deliberately not among the requirements: a single main host cannot guarantee it. |
 
 ## 8. Deployment
@@ -230,6 +231,30 @@ choice that does not change the architecture.
   GPU, with no private network. On a machine without a GPU, the quantized CPU models are used (see the
   hardware assumptions in the [project description](../../Project-Description.md)).
 
+### Registration modes
+
+An instance admits accounts in one of two modes, set in its configuration (FR-047):
+
+- **`verified`.** Open registration: the account exists only once the link sent to its address is
+  opened, and a forgotten password is reset by email (FR-001, FR-048). Reference production and
+  development use it; in development a mail catcher stands in for the SMTP relay. `web` refuses to
+  start in this mode without an SMTP relay configured, so a missing relay shows at startup rather
+  than at the first registration.
+- **`invite-only`.** The default of the self-hosting profile. Registration is closed: an account is
+  created by redeeming a workspace invitation, whose link the Moderator hands over, or by the
+  operator. The SMTP relay is optional.
+
+In both modes no account's address is only typed in at sign-up: it is proven by an opened link or
+taken from the invitation (NFR-018). Invitations are single-use links in both modes, so accepting
+one works the same way in each.
+
+| Alternative | Why it was rejected |
+|---|---|
+| Open registration without verification, offered for self-hosting | Anyone could register someone else's address: take an invitation addressed to it, pose as its owner in a share access request, or hold the address so its owner cannot register. It also allows bot sign-ups. |
+| Registering with a password first and verifying the address afterwards | Whoever registers an address first sets its password, and its owner may then verify that account by opening the link. Setting the password only after the link is opened rules this out. |
+| Unverified accounts with limited rights until the address is proven | The address can still be held by someone else, and every action would need a check of the account's state. |
+| Sign-in by an emailed link instead of a password | Every sign-in would depend on the SMTP relay, so a mail outage would lock out every account. |
+
 ## 9. Evolution
 
 The architecture leaves room for these changes without restructuring:
@@ -247,7 +272,7 @@ The architecture leaves room for these changes without restructuring:
 
 ## AI Usage
 
-This document and its diagrams were prepared with the assistance of Claude Code (Claude Opus 5.5).
-The architecture follows the decisions of the team's working session of 2026-09-24 and the
-architecture-lead decisions that followed it. The author reviewed and edited the content, and the
-document is reviewed through a pull request before merging.
+This document and its diagrams were prepared and revised with the assistance of Claude Code (Claude
+Opus 5.5). The architecture follows the decisions of the team's working session of 2026-09-24 and
+the architecture-lead decisions that followed it. The author reviewed and edited the content, and
+the document is reviewed through a pull request before merging.

@@ -82,6 +82,7 @@ access ..> notifications : share access\nrequests
 meetings ..> access : every content read
 access ..> accounts : roles
 meetings ..> notifications : eviction notice
+accounts ..> notifications : registration, invitation\nand reset links
 
 ' --- Audit events, written in the transaction of each change ---
 meetings ..> audit : audit event
