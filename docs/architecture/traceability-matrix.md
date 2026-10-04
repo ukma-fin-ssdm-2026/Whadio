@@ -8,8 +8,8 @@ Architectural view of the requirements in [rtm.md](../requirements/rtm.md) and [
 
 | Story | FRs | Components | Design decision | Verification |
 |---|---|---|---|---|
-| US-001 Register and sign in | FR-001, FR-002, FR-003, FR-004 | Accounts & Workspaces, Access Policy | Registration creates the user, a personal workspace and its default folder; every content request needs a session | API test: anonymous → denied |
-| US-002 Manage a workspace | FR-005, FR-006, FR-007, FR-008 | Accounts & Workspaces, Access Policy, Audit | Membership has a role (owner, moderator, member); membership and role changes are recorded as audit events; personal workspaces refuse deletion | Role-by-role API tests |
+| US-001 Register and sign in | FR-001, FR-002, FR-003, FR-004, FR-047 | Accounts & Workspaces, Access Policy, Notifications, SMTP relay | Email-first registration: the user, a personal workspace and its default folder are created only once the emailed link is opened; registration is closed in `invite-only` mode; every content request needs a session | API test: anonymous → denied; registration tests with a mail catcher |
+| US-002 Manage a workspace | FR-005, FR-006, FR-007, FR-008 | Accounts & Workspaces, Access Policy, Audit, Notifications, SMTP relay | Membership has a role (owner, moderator, member); membership and role changes are recorded as audit events; personal workspaces refuse deletion; invitations are single-use links for the invited address, emailed or handed over by the Moderator | Role-by-role API tests; invitation tests with a mail catcher |
 | US-003 Record from the browser | FR-009, FR-010, FR-011, FR-012 | Google Meet tab, Chrome extension, Capture, Object storage, Meetings, Processing | Consent confirmed before recording; chunks saved as they arrive; the finished recording becomes a queued meeting | Manual test on Meet |
 | US-004 Upload a recording | FR-013, FR-014 | Capture, Object storage, Processing | Upload shares the extension's ingest path; failed jobs keep their state | Integration test |
 | US-005 Transcript by speaker | FR-015, FR-016, FR-017 | Transcription pipeline, Chrome extension, Processing, Meetings | ASR with speaker separation; the extension reads names from the Meet participant list | Diarization error rate (DER) benchmark; test that extension recordings get participant names and uploads get "Speaker N" |
@@ -27,6 +27,7 @@ Architectural view of the requirements in [rtm.md](../requirements/rtm.md) and [
 | US-017 Export | FR-040, FR-041, FR-042 | Export, Meetings, Access Policy | Current version, "edited" marker, notice and attribution | Reference-file tests |
 | US-018 Own AI assistant | FR-043, FR-044 | MCP client, MCP Server, Accounts & Workspaces, Access Policy | Keys shown once, stored hashed; results filtered by Access Policy | Unit and API tests |
 | US-019 Admin dashboard | FR-045 | Admin & Monitoring, Processing | Reads job states from Processing and system metrics only, no content | Query review |
+| US-020 Reset a forgotten password | FR-048 | Accounts & Workspaces, Notifications, SMTP relay | Single-use emailed link; a new password ends every earlier session and extension token; offered only in `verified` mode | API tests with a mail catcher and a mocked clock |
 | Retention policy (referenced in US-011) | FR-046 | Retention, Notifications | Scheduled deletion of recordings three months after the meeting; Notifications warns members in advance | Test with a mocked clock |
 
 ### Non-functional requirements
@@ -42,6 +43,7 @@ Architectural view of the requirements in [rtm.md](../requirements/rtm.md) and [
 | NFR-010 Accountability | Audit, written by Meetings, Access Policy and Accounts & Workspaces | Append-only audit events with the actor's account ID, action type, target IDs and timestamp, never content; written in the same transaction as the change by the module that performs it; no foreign keys to the meeting or workspace; the table is owned by the migration role, and the application role may only insert and select ([ADR-005](decisions/ADR-005.md)) | Integration test per action type; pass if 100% of the listed changes create an audit record without transcript, note or recording content, deleting a meeting or a workspace leaves its events behind, and updating or deleting an audit record as the application role is refused |
 | NFR-012 Authenticity | Accounts & Workspaces | Hashed passwords, HTTPS, sessions and MCP key revocation | Authentication test suite; pass if 100% of wrong passwords, missing sessions and revoked MCP keys are rejected, and stored passwords are hashes only |
 | NFR-013 Key secrecy | Accounts & Workspaces, Access Policy | Provider key encrypted at rest and visible only to the Owner at creation/configuration time | Role and response-shape tests; pass if 100% of non-Owner requests return no key material and no API response returns a raw provider key after creation |
+| NFR-018 Authenticity of email addresses | Accounts & Workspaces, Notifications | Accounts are created only from an opened link, an invitation or the operator; identical responses for known and unknown addresses; per-address email limit | API tests; pass if 100% of used or expired links are rejected, responses for known and unknown addresses match, and no address receives more than 3 such emails per hour |
 | NFR-014 Recoverability | Object storage, Message broker | Audio saved before processing; queued jobs persist and can resume | Chaos test: stop a processing component during a job, verify 100% received meetings remain stored and process after restart |
 | NFR-015 Fault tolerance | Message broker, Transcription pipeline, Notes pipeline | Process isolation: ML work runs in separate worker processes that the backend reaches only through the broker | Kill transcription worker, notes worker and LLM runtime in separate tests; pass if at least 95% of unrelated requests complete successfully |
 | NFR-016, NFR-017 Portability | All runtime units | One image, Compose profiles `core` and `gpu`; no source-code changes between single-host and two-host profiles | Release smoke test starts all required containers in the single-host profile; fresh-install test on a clean Docker machine reaches the web UI within 30 min with no source-code edits |
@@ -90,5 +92,5 @@ and a new upload succeed, restart the host, and confirm both jobs complete.
 
 ## AI Usage
 
-Drafted with Claude Code (Claude Opus 5.5) from requirements.md, rtm.md, the component diagram
-and the 2026-09-26 architecture review. Reviewed by the team before merging.
+Drafted and revised with Claude Code (Claude Opus 5.5) from requirements.md, rtm.md, the component
+diagram and the 2026-09-26 architecture review. Reviewed by the team before merging.
