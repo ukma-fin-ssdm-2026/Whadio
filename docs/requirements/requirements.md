@@ -49,6 +49,8 @@ Recorded with the reason, so that the boundary is a decision rather than an omis
 | Transfer of workspace ownership | The confirmation mechanism was never specified and no user has asked for it. The consequence is accepted: a workspace whose Owner leaves is stranded — its meetings stay reachable to its members, but the provider key, the ownership and the deletion cannot be changed. |
 | Tags on meetings, and filtering by tag | Their value only appears at a volume this version will not reach. Filtering by name and date covers the same need over a list of tens of meetings. |
 | Per-share permission sets, and shares addressed to an email address | A share grants reading only. Per-share permissions would make authorization the union of workspace role, per-meeting restriction and share grant on every path that returns content, and every one of those paths would then have to be verified against all three. Email-addressed shares need an invitation flow for accounts that may not exist, duplicating the workspace invitation. |
+| Open registration without email verification | Anyone could register any address, including someone else's, and create accounts in bulk for bot sign-ups. An instance that cannot send email runs `invite-only` instead (FR-047). |
+| Changing an account's email address | A new address would need its own verification, and invitations and shares already rely on the current one. No user has asked for it. |
 | A capacity display in the interface | The limit, the eviction and the notice naming the evicted meeting are stated and verified as a non-functional requirement. A separate screen adds no behaviour that this verification does not already exercise. |
 
 ## Glossary
@@ -65,6 +67,7 @@ Recorded with the reason, so that the boundary is a decision rather than an omis
 | **Context set** | The transcripts supplied to the model alongside a meeting's own when its notes are generated: the other meetings in the same folder, minus any whose access is restricted. |
 | **Glossary (project)** | The workspace's list of terms and names supplied to the recognition step to improve accuracy on the workspace's own vocabulary. Distinct from this section. |
 | **Share** | A grant of read access to one meeting for a signed-in person outside the workspace, created as a link and revocable. Opening the link only requests access; the share is bound to the one account its creator approves. A share carries no download, export or onward-share right. |
+| **Registration mode** | How an instance admits new accounts, chosen by whoever runs it (the operator): `verified`, where anyone registers and the account exists only once the link sent to its email address is opened, or `invite-only`, where accounts come only from workspace invitations or the operator. |
 | **Diarization** | Splitting a transcript by who spoke when. Produces numbered speakers before any names are attached. |
 | **BYOK** | Bring Your Own Key — a workspace Owner connecting their own LLM provider API key in place of the built-in model. |
 | **MCP** | Model Context Protocol — the integration through which a user's own AI assistant reaches the meetings they have access to. |
@@ -92,14 +95,16 @@ restriction, never by where a meeting is filed.
 
 ### Accounts and access
 
-- FR-001: Registration from an email address and a password creates an account and a personal workspace with that account as its Owner.
-- FR-002: Registration requires accepting the Terms and Conditions, which state the obligation to obtain the participants' consent before recording and the restrictions on sharing. Without acceptance no account is created.
+- FR-001: In `verified` mode, registration starts from an email address, to which a single-use link valid for 24 hours is sent. Opening the link and setting a password creates the account and a personal workspace with that account as its Owner; no account exists before that. A request for an address that already has an account gets the same response, and the email sent to that address points to sign-in instead.
+- FR-002: Creating an account, by registration or through an invitation, requires accepting the Terms and Conditions, which state the obligation to obtain the participants' consent before recording and the restrictions on sharing. Without acceptance no account is created.
 - FR-003: Sign-in with correct credentials grants access to the workspaces the account belongs to; incorrect credentials are denied and create no session.
 - FR-004: Every path that returns meeting content requires a signed-in account. An unauthenticated request yields a sign-in prompt and none of the content.
 - FR-005: A User can create a workspace with a name, which is created with them as its Owner, holding one default folder and no meetings. A workspace submitted without a name is rejected.
-- FR-006: A Moderator can invite a person to the workspace as a Member or a Moderator; the Owner role cannot be assigned by invitation. The invited person accepts or declines, and on acceptance joins with the chosen role.
+- FR-006: A Moderator can invite a person by email address to the workspace as a Member or a Moderator; the Owner role cannot be assigned by invitation. The invitation is a single-use link valid for 7 days, sent to that address in `verified` mode and handed over by the Moderator in `invite-only` mode. The invited person accepts or declines through the link. Acceptance requires an account with the invited address, or creates one with that address and its personal workspace, and joins it with the chosen role.
 - FR-007: A Moderator can remove a member, and change a member's role between Member and Moderator with effect from that member's next action. The Owner can be neither removed nor re-roled, and Members have no member-management actions.
 - FR-008: An Owner can delete a workspace together with its folders, meetings, recordings, transcripts and notes. No other role can delete a workspace, and a personal workspace cannot be deleted at all.
+- FR-047: An instance runs in one registration mode, chosen by its operator: `verified`, where anyone can register as in FR-001, or `invite-only`, where registration is closed and accounts are created only through invitations (FR-006) or by the operator. A share link never creates an account.
+- FR-048: In `verified` mode, a User who forgot their password can request a reset for their email address, to which a single-use link valid for 1 hour is sent. Setting a new password through it ends every session and extension token of the account. A request for an address without an account gets the same response and sends nothing.
 
 ### Capture
 
@@ -196,6 +201,8 @@ restriction, never by where a meeting is filed.
 
 * NFR-013 (Confidentiality): 100% of non-Owner role tests for provider settings return no provider API key material; stored external provider keys are encrypted at rest, and API responses never include raw provider keys after creation.
 
+* NFR-018 (Authenticity): 100% of accounts are created through a link sent to their email address, through an invitation for that address, or by the operator, so no account's address is only typed in at sign-up; registration and password-reset requests return identical responses for addresses with and without an account; an opened or expired link is rejected in 100% of tests; and no address receives more than 3 registration or password-reset emails per hour.
+
 ### Reliability
 
 * NFR-014 (Recoverability): If a processing component is stopped during a running job, 100% of meetings already received by the system remain stored, visible with their current processing state, and processable after the component is restarted.
@@ -210,7 +217,7 @@ restriction, never by where a meeting is filed.
 
 ## AI Usage
 
-This document was prepared with the assistance of Claude Code (Claude Opus 5). The requirements
-derive from the mini technical specification agreed in Lab 1 and from the team's working session of
-2026-09-19. The authors reviewed and edited the content, and the document is reviewed through a
-pull request before merging.
+This document was prepared and revised with the assistance of Claude Code (Claude Opus 5 and Claude
+Opus 5.5). The requirements derive from the mini technical specification agreed in Lab 1 and from
+the team's working session of 2026-09-19. The authors reviewed and edited the content, and the
+document is reviewed through a pull request before merging.
