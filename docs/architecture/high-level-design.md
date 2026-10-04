@@ -76,7 +76,7 @@ Source: [uml/component-diagram.puml](uml/component-diagram.puml)
 
 | Component | Responsibility | Requirements |
 |---|---|---|
-| Capture | Capture sessions, idempotent chunk storage, assembling the recording, validating uploaded files, finalising interrupted captures. | FR-009, FR-010, FR-012, FR-013 |
+| Capture | Capture sessions, the workspaces and folders a recording can be delivered to, idempotent chunk storage, assembling the recording, validating uploaded files, finalising interrupted captures. | FR-009, FR-010, FR-012, FR-013 |
 | MCP Server | The MCP interface: authenticates personal keys and exposes the key owner's meetings as tools. | FR-043, FR-044 |
 | Accounts & Workspaces | Registration in the instance's registration mode, invitation links and their cancellation, password reset, links issued by the operator, sign-in and sessions, workspaces, membership and roles, LLM provider configuration, MCP keys. Checks workspace-administration permissions against the member's role. | FR-001–FR-003, FR-005–FR-008, FR-021, FR-043, FR-047–FR-049, NFR-018 |
 | Access Policy | Decides who may read which meeting: workspace role, per-meeting restriction, share grants and redaction. A share grants reading only to the account its creator approved; opening its link otherwise records an access request for the creator. | FR-004, FR-037–FR-039, FR-044, NFR-007–NFR-009 |
@@ -146,7 +146,7 @@ message schemas are specified with the API design, not here.
 | Interface | Provider → consumers | Protocol | Purpose | Authentication |
 |---|---|---|---|---|
 | Web API | Accounts & Workspaces, Meetings, Processing, Export, Admin & Monitoring → Web SPA | HTTPS, JSON | Workspaces, members, meetings, transcripts, notes, glossary, sharing, export and administration; the SPA polls a meeting's processing state. | Session |
-| Capture API | Capture → Chrome extension, Web SPA | HTTPS | Resumable upload of a recording in chunks, with the speaker events observed during each; upload of an existing file. | Session, or a token issued to the extension at sign-in |
+| Capture API | Capture → Chrome extension, Web SPA | HTTPS | The workspaces and folders the user can deliver a recording to; resumable upload of a recording in chunks, with the speaker events observed during each; upload of an existing file. | Session, or a token issued to the extension at sign-in |
 | MCP | MCP Server → the user's AI assistant | MCP over HTTPS | Listing, searching and reading the meetings the key's owner has access to. | Personal key, stored hashed |
 | Job queues | Message broker ↔ Processing, Transcription pipeline, Notes pipeline | AMQP | Transcription and notes jobs from the backend to the workers; progress, results and failures back. | Separate broker credentials per runtime unit |
 
