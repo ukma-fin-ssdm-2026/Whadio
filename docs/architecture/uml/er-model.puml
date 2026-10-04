@@ -16,6 +16,7 @@ entity "USER" as User {
   * name : string <<P>>
   * password_hash : string <<S>>
   * is_administrator : boolean
+  * terms_accepted_at : datetime
   * created_at : datetime
 }
 
@@ -74,7 +75,7 @@ entity "INVITATION" as Invitation {
   * invited_email : string <<P>>
   * role : enum (Member | Moderator)
   * invited_by_user_id : UUID <<FK>>
-  * status : enum (pending | accepted | declined)
+  * status : enum (pending | accepted | declined | cancelled)
   * token_hash : string <<S>>
   * created_at : datetime
   * expires_at : datetime
@@ -94,6 +95,16 @@ entity "PASSWORD_RESET" as PasswordReset {
   * password_reset_id : UUID <<PK>>
   --
   * user_id : UUID <<FK>>
+  * token_hash : string <<S>>
+  * created_at : datetime
+  * expires_at : datetime
+}
+
+entity "SESSION" as Session {
+  * session_id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK>>
+  * kind : enum (browser | extension)
   * token_hash : string <<S>>
   * created_at : datetime
   * expires_at : datetime
@@ -277,6 +288,7 @@ User ||-left-o{ CaptureSession : opens
 User ||-down-o{ Invitation : sends
 Workspace ||--o{ Invitation : has invitations
 User ||--o| PasswordReset : resets password
+User ||--o{ Session : signs in
 
 Meeting ||--o| CaptureSession : receives capture
 CaptureSession ||--o{ CaptureChunk : stores chunks
