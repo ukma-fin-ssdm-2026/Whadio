@@ -16,6 +16,7 @@ The model covers the data required for these key project functions:
 6. Workspace glossary management: `US-012`.
 7. External sharing, export and MCP access: `US-016`, `US-017`, `US-018`.
 8. Accountability for changes to meeting content and access: `NFR-010`.
+9. Registration, invitations and password recovery: `US-001`, `US-002`, `US-020`.
 
 ## Notation
 
@@ -32,7 +33,9 @@ The model covers the data required for these key project functions:
 | `USER` | `user_id` | Registered account that can create workspaces, meetings, exports, shares, and MCP keys; `is_administrator` marks system administrators. | `email`, `name` are personal. `password_hash` is sensitive. |
 | `WORKSPACE` | `workspace_id` | Collaboration boundary for members, folders, glossary terms, meetings, the default notes template, and LLM configuration. `is_personal` marks the personal workspace created during registration. | Usually not personal, but the workspace name may reveal an organization or project. |
 | `WORKSPACE_MEMBERSHIP` | `workspace_membership_id` | Connects users to workspaces and stores their cumulative role: `Member`, `Moderator`, or `Owner`. | Membership and role data can be sensitive organizational metadata. |
-| `INVITATION` | `invitation_id` | Pending, accepted, or declined workspace invitation for an email address with a chosen role. | `invited_email` is personal data. Invitation metadata can reveal team membership. |
+| `INVITATION` | `invitation_id` | Pending, accepted, or declined workspace invitation for an email address with a chosen role, reached through a single-use link that expires. | `invited_email` is personal data. `token_hash` is sensitive. Invitation metadata can reveal team membership. |
+| `PENDING_REGISTRATION` | `pending_registration_id` | Registration started from an email address and waiting for its link to be opened; becomes a `USER` when completed. | `email` is personal data of someone who may never complete registration. `token_hash` is sensitive. |
+| `PASSWORD_RESET` | `password_reset_id` | Pending password reset for an account. | `token_hash` is sensitive. |
 | `FOLDER` | `folder_id` | Organizes meetings inside a workspace. Folders do not define permissions. | Folder names may reveal topics or projects. |
 | `MEETING` | `meeting_id` | Meeting metadata, generated-name state, source type, recording completeness, meeting-level processing state, consent confirmation, recording location, retention state, and access mode. | `name`, `storage_path`, timestamps, duration, and consent-confirmation metadata can be sensitive; the recording path points to highly sensitive audio. |
 | `CAPTURE_SESSION` | `capture_session_id` | Browser recording session used by the extension for chunked upload, idle-timeout recovery, and partial recording assembly. | Links a user to a recording action and may reveal meeting timing. |
@@ -59,6 +62,8 @@ The model covers the data required for these key project functions:
 - Every `WORKSPACE` has exactly one `WORKSPACE_MEMBERSHIP` row with `role = Owner`.
 - One `WORKSPACE` contains one or more `FOLDER` records because every workspace has a default folder.
 - One `WORKSPACE` can have many `INVITATION` rows.
+- One `USER` has zero or one `PASSWORD_RESET`.
+- `PENDING_REGISTRATION` is related to no other entity, because the account it leads to does not exist yet.
 - One `FOLDER` contains many meetings; each meeting belongs to exactly one folder.
 - One `USER` can create many meetings; each meeting has one creator.
 - One extension-recorded `MEETING` has zero or one `CAPTURE_SESSION`; uploaded meetings have none.
@@ -91,6 +96,15 @@ The model covers the data required for these key project functions:
 - A workspace must always have exactly one membership with `role = Owner`.
 - `WORKSPACE_MEMBERSHIP` must be unique by `(workspace_id, user_id)`, so one user has at most one role in a workspace.
 - `INVITATION.role` is limited to `Member` or `Moderator`; invitations cannot grant `Owner`.
+- `USER.email` is unique. Email addresses are compared case-insensitively everywhere, including `INVITATION.invited_email` and `PENDING_REGISTRATION.email`.
+- A `USER` row is created in one of three ways: by completing a `PENDING_REGISTRATION` (`verified` mode), taking its email; by redeeming an `INVITATION`, taking `invited_email`; or by the operator. No account's email is only typed in at sign-up.
+- `PENDING_REGISTRATION` is unique by `email`, and none exists for an email that already has a `USER`. A repeated request replaces `token_hash`, so earlier links stop working.
+- Completing a `PENDING_REGISTRATION` deletes it in the same transaction that creates the `USER`, its personal workspace and its default folder, which makes its link single-use.
+- `PASSWORD_RESET` is unique by `user_id`; a new request replaces `token_hash`, and using the link deletes the row. Password resets exist only in `verified` mode.
+- At most one `INVITATION` per `(workspace_id, invited_email)` has `status = pending`.
+- An invitation link works only while `status = pending` and `expires_at` has not passed; expiry is read from `expires_at`, not stored as a status. Accepting requires the account's email to equal `invited_email`, and accepting or declining moves `status` off `pending`, which makes the link single-use.
+- Registration, password-reset and invitation tokens are stored only as `token_hash`. Each `expires_at` is set at creation from the lifetime stated in the requirements.
+- The scheduler deletes `PENDING_REGISTRATION` and `PASSWORD_RESET` rows past their `expires_at`. Expired invitations are kept as part of the workspace's membership history.
 - `GLOSSARY_TERM` must be unique by `(workspace_id, term)`, because duplicate glossary terms are rejected.
 - `GLOSSARY_TERM.source_meeting_id` is optional and records the meeting where a transcript correction produced the term.
 - Workspace roles are cumulative: `Owner` includes `Moderator` permissions, and `Moderator` includes `Member` permissions.
@@ -147,7 +161,7 @@ The model covers the data required for these key project functions:
 
 Restricting a meeting writes `meeting_restricted` and one `access_granted` per selected member; unrestricting writes only `meeting_unrestricted`. Deleting a folder writes one `meeting_moved` per meeting it moves to the default folder. Deleting or evicting a meeting writes one `meeting_deleted` or `meeting_evicted`; its shares and access grants disappear with it without events of their own. Deleting a workspace writes only `workspace_deleted`, not an event per meeting. `notes_regenerated` is written when the regenerated notes are saved, with the requester from `NOTE.created_by_user_id`, so a failed run writes nothing.
 
-Changes the system makes on its own are not recorded, because they have no actor: Retention's deletion of recordings, the assembly of an interrupted capture, the first notes and the generated meeting name. Glossary changes are not recorded either: they affect later transcriptions, not an existing meeting, and `GLOSSARY_TERM.created_by_user_id` records who added a term.
+Changes the system makes on its own are not recorded, because they have no actor: Retention's deletion of recordings, the assembly of an interrupted capture, the first notes and the generated meeting name. Glossary changes are not recorded either: they affect later transcriptions, not an existing meeting, and `GLOSSARY_TERM.created_by_user_id` records who added a term. Registration and password resets are not recorded: they change no meeting content or access. Joining through an invitation writes `member_joined` as before.
 
 ## Personal and Sensitive Data Starting Points for Threat Analysis
 
@@ -166,6 +180,8 @@ The highest-risk data stores are:
 - LLM provider credentials in `LLM_PROVIDER_CONFIG.api_key_encrypted`.
 - MCP credentials in `MCP_KEY.key_hash`.
 - External share tokens represented by `EXTERNAL_SHARE.token_hash`.
+- Registration, password-reset and invitation tokens represented by `PENDING_REGISTRATION.token_hash`, `PASSWORD_RESET.token_hash` and `INVITATION.token_hash`.
+- Addresses in `PENDING_REGISTRATION.email`, which belong to people who may never complete registration and are kept only until the link expires.
 - Share recipients and requesters in `EXTERNAL_SHARE.recipient_user_id` and `SHARE_ACCESS_REQUEST.requester_user_id`, which reveal who outside the workspace read or tried to open a meeting.
 - Audit actors and subjects in `AUDIT_EVENT.actor_user_id`, `subject_id` and `details`, which reveal who did what to which meeting, and outlive the meeting itself.
 
@@ -173,4 +189,4 @@ These fields should drive the next threat-analysis step, especially for access c
 
 ## AI Usage
 
-This document and the accompanying data model diagram were prepared with the assistance of Codex (GPT-5.5) and discussed in the working session of 2026-09-26. Reviewed by the author and the team before committing.
+This document and the accompanying data model diagram were prepared and revised with the assistance of Codex (GPT-5.5) and Claude Code (Claude Opus 5.5) and discussed in the working session of 2026-09-26. Reviewed by the author and the team before committing.
