@@ -101,10 +101,10 @@ The model covers the data required for these key project functions:
 - `PENDING_REGISTRATION` is unique by `email`, and none exists for an email that already has a `USER`. A repeated request replaces `token_hash`, so earlier links stop working.
 - Completing a `PENDING_REGISTRATION` deletes it in the same transaction that creates the `USER`, its personal workspace and its default folder, which makes its link single-use.
 - `PASSWORD_RESET` is unique by `user_id`; a new request replaces `token_hash`, and using the link deletes the row. Password resets exist only in `verified` mode.
-- At most one `INVITATION` per `(workspace_id, invited_email)` has `status = pending`.
+- At most one `INVITATION` per `(workspace_id, invited_email)` has `status = pending`. Inviting an address that already has a pending invitation in the workspace updates that invitation, keeping its `invitation_id`: it replaces `token_hash`, `role`, `invited_by_user_id`, `created_at` and `expires_at`, so earlier links stop working, and writes another `member_invited` event.
 - An invitation link works only while `status = pending` and `expires_at` has not passed; expiry is read from `expires_at`, not stored as a status. Accepting requires the account's email to equal `invited_email`, and accepting or declining moves `status` off `pending`, which makes the link single-use.
 - Registration, password-reset and invitation tokens are stored only as `token_hash`. Each `expires_at` is set at creation from the lifetime stated in the requirements.
-- The scheduler deletes `PENDING_REGISTRATION` and `PASSWORD_RESET` rows past their `expires_at`. Expired invitations are kept as part of the workspace's membership history.
+- The scheduler deletes `PENDING_REGISTRATION` and `PASSWORD_RESET` rows past their `expires_at`. Expired invitations are not deleted: one stays `pending`, unusable, until its address is invited again.
 - `GLOSSARY_TERM` must be unique by `(workspace_id, term)`, because duplicate glossary terms are rejected.
 - `GLOSSARY_TERM.source_meeting_id` is optional and records the meeting where a transcript correction produced the term.
 - Workspace roles are cumulative: `Owner` includes `Moderator` permissions, and `Moderator` includes `Member` permissions.

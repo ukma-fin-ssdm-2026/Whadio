@@ -29,6 +29,7 @@ Each story has acceptance criteria in Given/When/Then form.
     - [ ] Given a person without an account opens an invitation link, when they set a password and accept the Terms and Conditions, then an account with the invited address and its personal Workspace are created, and the account joins the Workspace with the chosen role.
     - [ ] Given an account whose email address differs from the invited one opens an invitation link, when it tries to accept, then it is refused and does not join.
     - [ ] Given an invitation link was already used or is older than 7 days, when it is opened, then it is refused.
+    - [ ] Given an address has a pending or expired invitation to the Workspace, when a Moderator invites it again, then the earlier link stops working and a new one is created.
     - [ ] Given a person has received an invitation, when they decline it, then they do not join the Workspace.
     - [ ] Given a Moderator opens the member list, when they remove a member, then that member loses access to the Workspace and all of its Meetings.
     - [ ] Given a Moderator opens the member list, when they change a member's role between Member and Moderator, then the new role's permissions apply on that member's next action.
