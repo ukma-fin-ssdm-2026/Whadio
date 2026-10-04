@@ -1,0 +1,59 @@
+from fastapi import APIRouter, FastAPI
+
+from . import meta
+from .accounts import routes_sessions, routes_workspaces
+from .accounts.fixtures import DEMO_EMAIL, DEMO_PASSWORD, TEAM_WORKSPACE_ID
+from .core.errors import register_error_handlers
+from .meetings import routes as meeting_routes
+from .meetings.fixtures import DESIGN_SYNC_MEETING_ID, SPRINT_12_MEETING_ID
+
+API_VERSION = "0.1.0"
+
+DESCRIPTION = f"""
+Whadio records Google Meet calls from the browser, transcribes them with speaker labels and
+writes notes, inside workspaces with roles, restrictions and sharing.
+
+This server is a **stub**: every endpoint answers with fixed demo data, and writes return the
+result they would have but store nothing. Only part of the designed API is implemented; the
+full design is in `docs/api/api-design.md`.
+
+## Quick start
+1. `POST /api/v1/sessions` with `{DEMO_EMAIL}` and the password `{DEMO_PASSWORD}`. The browser
+   keeps the session cookie, so every later call in this page is signed in.
+2. `GET /api/v1/workspaces`, then `GET /api/v1/workspaces/{TEAM_WORKSPACE_ID}/meetings`.
+3. `GET /api/v1/meetings/{SPRINT_12_MEETING_ID}/transcript` is processed;
+   `{DESIGN_SYNC_MEETING_ID}` is still queued and answers `409`.
+
+## Conventions
+- **Errors:** every 4xx and 5xx body is `{{"error": {{"code", "message", "details",
+  "request_id"}}}}`. Branch on `code`; `request_id` equals the `X-Request-ID` response header.
+- **Lists:** `limit` (1-100, default 20) and `cursor`; responses are
+  `{{"items": [...], "pagination": {{"limit", "next_cursor", "has_more"}}}}`.
+- **Visibility:** a resource the caller cannot see is `404`, never `403`, so its existence does
+  not leak. `403` means the caller can see it but their role does not allow the action.
+- **Time:** ISO 8601 with an offset; returned in UTC.
+"""
+
+TAGS = [
+    {"name": "accounts", "description": "Sessions: signing in and out"},
+    {"name": "workspaces", "description": "Workspaces the caller belongs to"},
+    {"name": "meetings", "description": "Meetings, recording upload and transcripts"},
+    {"name": "notes", "description": "Generated notes and their regeneration"},
+    {"name": "meta", "description": "Operational endpoints"},
+]
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="Whadio API",
+        description=DESCRIPTION.strip(),
+        version=API_VERSION,
+        openapi_tags=TAGS,
+    )
+    v1 = APIRouter(prefix="/api/v1")
+    for module in (routes_sessions, routes_workspaces, meeting_routes):
+        v1.include_router(module.router)
+    app.include_router(v1)
+    app.include_router(meta.router)
+    register_error_handlers(app)
+    return app
