@@ -14,6 +14,36 @@ Whadio is an open-source meeting recording and transcription service focused on 
 | Zlata Tsepkalo | @t-zlata | Repository Maintainer, Quality Lead, Data & Threat Modeler |
 
 
+# Running the API
+
+The backend API lives in [`src/api/`](src/api/). It is a stub: it implements 16 of the 70
+designed operations, answers with fixed demo data and stores nothing. The full design, including
+what each error means, is in [`docs/api/api-design.md`](docs/api/api-design.md).
+
+Requirements: [uv](https://docs.astral.sh/uv/) (it installs Python 3.13 into a local `.venv`).
+
+```bash
+uv sync                                          # create .venv and install dependencies
+uv run fastapi dev src/api/main.py --port 3000   # start with auto-reload
+```
+
+- Swagger UI: <http://localhost:3000/docs> (ReDoc: <http://localhost:3000/redoc>; the
+  specification: <http://localhost:3000/openapi.json>)
+- Sign in with `POST /api/v1/sessions` as `alice@whadio.dev` with the password
+  `whadio-demo-pass`; the browser keeps the session cookie for the other calls. The demo ids
+  are listed at the top of the Swagger page.
+
+## Connecting an AI assistant (MCP)
+
+The server also exposes a read-only MCP endpoint at `http://localhost:3000/mcp/` with four tools:
+`list_meetings`, `search_meetings`, `get_transcript` and `get_notes`. They read the same demo
+data as the REST stubs. The stub needs no key; personal MCP keys are designed but not
+implemented yet.
+
+- MCP Inspector: `npx @modelcontextprotocol/inspector`, choose the *Streamable HTTP* transport
+  and the URL `http://localhost:3000/mcp/`.
+- Claude Code: `claude mcp add --transport http whadio http://localhost:3000/mcp/`.
+
 # Documentation
 
 - [Team Charter](TeamCharter.md)
@@ -24,6 +54,11 @@ All requirements documentation is maintained in the [`/docs/requirements/`](docs
 - [User Stories](docs/requirements/user-stories.md)
 - [Requirements](docs/requirements/requirements.md)
 - [Requirements Traceability Matrix (RTM)](docs/requirements/rtm.md)
+
+## API Artifacts
+All API documentation is maintained in the [`/docs/api/`](docs/api/) directory and published on
+[GitHub Pages](https://ukma-fin-ssdm-2026.github.io/Whadio/).
+- [API Design](docs/api/api-design.md) — resource model, conventions and design decisions
 
 ## Architecture Artifacts
 All architecture documentation is maintained in the [`/docs/architecture/`](docs/architecture/) directory.
