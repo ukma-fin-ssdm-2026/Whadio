@@ -6,7 +6,10 @@ API**. The code in [`src/api/`](../../src/api/) implements one vertical slice of
 (section 2).
 
 The API is written code-first: FastAPI builds the OpenAPI specification from the code, and
-nothing in it is written by hand. The architecture this API serves is described in the
+nothing in it is written by hand. The generated specification is committed as
+[`openapi-generated.yaml`](openapi-generated.yaml) and
+[`openapi-generated.json`](openapi-generated.json), and published through
+[`index.html`](index.html). The architecture this API serves is described in the
 [high-level design](../architecture/high-level-design.md).
 
 ## 1. Architecture overview
@@ -14,8 +17,8 @@ nothing in it is written by hand. The architecture this API serves is described 
 - **Base URL:** `http://localhost:3000/api/v1` in development. `/health` and the MCP endpoint
   `/mcp/` sit outside the version prefix.
 - **Style:** REST over HTTPS. Bodies are JSON; audio is sent as `multipart/form-data`.
-- **Interactive docs:** Swagger UI at `/docs`, ReDoc at `/redoc`, the specification at
-  `/openapi.json`.
+- **Interactive docs:** Swagger UI at `/api-docs`, ReDoc at `/redoc`, the live specification at
+  `/openapi.json`, and the committed generated specification in this directory.
 - **Authentication:**
   - the web app uses a browser session cookie;
   - the Chrome extension uses a bearer token that only the Capture API accepts;
@@ -1027,8 +1030,10 @@ status, and which operations return it.
 ### 6.1 Code-first with FastAPI and Pydantic
 
 The specification is produced by FastAPI from route decorators and Pydantic models, so it
-always matches what the server does. The server serves it at `/openapi.json`, and Swagger UI
-renders it at `/docs`.
+matches what the server does. The server serves it at `/openapi.json`, renders Swagger UI at
+`/api-docs`, and writes `docs/api/openapi-generated.yaml` and `.json` on startup. Running
+`python -m api.openapi_export` writes the same files without starting the server, which is what
+CI and the Pages deployment use.
 
 Pydantic was chosen as the single modelling tool for request validation, responses and,
 later, the job contracts between the backend and the workers (high-level design, dependency

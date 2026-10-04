@@ -27,13 +27,13 @@ uv sync                                          # create .venv and install depe
 uv run fastapi dev src/api/main.py --port 3000   # start with auto-reload
 ```
 
-- Swagger UI: <http://localhost:3000/docs> (ReDoc: <http://localhost:3000/redoc>; the
+- Swagger UI: <http://localhost:3000/api-docs> (ReDoc: <http://localhost:3000/redoc>; the
   specification: <http://localhost:3000/openapi.json>)
 - Sign in with `POST /api/v1/sessions` as `alice@whadio.dev` with the password
   `whadio-demo-pass`; the browser keeps the session cookie for the other calls. The demo ids
   are listed at the top of the Swagger page.
-- Regenerate the committed OpenAPI/Swagger specification with:
-  `uv run python -m src.api.openapi_export`.
+- Starting the server writes the OpenAPI specification to `docs/api/openapi-generated.yaml`
+  and `.json`; to regenerate it without a server, run `uv run python -m api.openapi_export`.
 
 ## Connecting an AI assistant (MCP)
 
@@ -61,7 +61,7 @@ All requirements documentation is maintained in the [`/docs/requirements/`](docs
 All API documentation is maintained in the [`/docs/api/`](docs/api/) directory and published on
 [GitHub Pages](https://ukma-fin-ssdm-2026.github.io/Whadio/).
 - [API Design](docs/api/api-design.md) — resource model, conventions and design decisions
-- [OpenAPI specification](docs/api/openapi-generated.json) — generated from the FastAPI app
+- [OpenAPI specification](docs/api/openapi-generated.yaml) — generated from the code
 
 ## Architecture Artifacts
 All architecture documentation is maintained in the [`/docs/architecture/`](docs/architecture/) directory.

@@ -1,11 +1,18 @@
+import logging
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+
 from fastapi import APIRouter, FastAPI
+from fastmcp.utilities.lifespan import combine_lifespans
 
 from . import meta
 from .accounts import routes_sessions, routes_workspaces
 from .accounts.fixtures import DEMO_EMAIL, DEMO_PASSWORD, TEAM_WORKSPACE_ID
 from .core.errors import register_error_handlers
+from .mcp_server import build_mcp_server
 from .meetings import routes as meeting_routes
 from .meetings.fixtures import DESIGN_SYNC_MEETING_ID, SPRINT_12_MEETING_ID
+from .openapi_export import export_openapi
 
 API_VERSION = "0.1.0"
 
@@ -42,31 +49,31 @@ TAGS = [
     {"name": "meta", "description": "Operational endpoints"},
 ]
 
+logger = logging.getLogger("uvicorn.error")
 
-def create_app(*, include_mcp: bool = True) -> FastAPI:
-    app_kwargs = {}
-    if include_mcp:
-        from .mcp_server import build_mcp_server
 
-        mcp_app = build_mcp_server().http_app(path="/")
-        # Starlette never runs the lifespan of a mounted app, so the MCP one is started here.
-        app_kwargs["lifespan"] = mcp_app.lifespan
-    else:
-        mcp_app = None
+@asynccontextmanager
+async def _export_spec(app: FastAPI) -> AsyncGenerator[None]:
+    for path in export_openapi(app):
+        logger.info("Wrote %s", path)
+    yield
 
+
+def create_app() -> FastAPI:
+    mcp_app = build_mcp_server().http_app(path="/")
     app = FastAPI(
         title="Whadio API",
         description=DESCRIPTION.strip(),
         version=API_VERSION,
         openapi_tags=TAGS,
-        **app_kwargs,
+        docs_url="/api-docs",
+        lifespan=combine_lifespans(_export_spec, mcp_app.lifespan),
     )
     v1 = APIRouter(prefix="/api/v1")
     for module in (routes_sessions, routes_workspaces, meeting_routes):
         v1.include_router(module.router)
     app.include_router(v1)
     app.include_router(meta.router)
-    if mcp_app is not None:
-        app.mount("/mcp", mcp_app)
+    app.mount("/mcp", mcp_app)
     register_error_handlers(app)
     return app
