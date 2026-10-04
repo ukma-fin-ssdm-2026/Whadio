@@ -4,6 +4,7 @@ from . import meta
 from .accounts import routes_sessions, routes_workspaces
 from .accounts.fixtures import DEMO_EMAIL, DEMO_PASSWORD, TEAM_WORKSPACE_ID
 from .core.errors import register_error_handlers
+from .mcp_server import build_mcp_server
 from .meetings import routes as meeting_routes
 from .meetings.fixtures import DESIGN_SYNC_MEETING_ID, SPRINT_12_MEETING_ID
 
@@ -44,16 +45,20 @@ TAGS = [
 
 
 def create_app() -> FastAPI:
+    mcp_app = build_mcp_server().http_app(path="/")
     app = FastAPI(
         title="Whadio API",
         description=DESCRIPTION.strip(),
         version=API_VERSION,
         openapi_tags=TAGS,
+        # Starlette never runs the lifespan of a mounted app, so the MCP one is started here.
+        lifespan=mcp_app.lifespan,
     )
     v1 = APIRouter(prefix="/api/v1")
     for module in (routes_sessions, routes_workspaces, meeting_routes):
         v1.include_router(module.router)
     app.include_router(v1)
     app.include_router(meta.router)
+    app.mount("/mcp", mcp_app)
     register_error_handlers(app)
     return app
