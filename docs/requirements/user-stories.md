@@ -10,8 +10,12 @@ Each story has acceptance criteria in Given/When/Then form.
 
 - US-001: As a visitor, I want to register and sign in, so that my Meetings are tied to my own account and nobody can act as me.
   - Acceptance criteria:
-    - [ ] Given a visitor with no account, when they register with an email address and a password, then an account is created and a personal Workspace is created with them as its Owner.
+    - [ ] Given a visitor with no account on an instance in `verified` mode, when they register with an email address, then a single-use link is sent to that address and no account exists yet.
+    - [ ] Given a visitor opens their registration link within 24 hours, when they set a password and accept the Terms and Conditions, then an account is created and a personal Workspace is created with them as its Owner.
+    - [ ] Given a registration link was already used or is older than 24 hours, when it is opened, then no account is created.
+    - [ ] Given an address already has an account, when someone registers with it, then they see the same response as for a new address, and the email sent there points to sign-in.
     - [ ] Given a visitor is registering, when they submit the form without accepting the Terms and Conditions, then registration is refused and no account is created.
+    - [ ] Given an instance runs in `invite-only` mode, when a visitor looks for registration, then none is offered.
     - [ ] Given a registered User, when they sign in with correct credentials, then they gain access to the Workspaces they belong to.
     - [ ] Given a registered User, when they sign in with an incorrect password, then access is denied and no session is created.
     - [ ] Given a visitor is not signed in, when they open a Meeting's URL, then they are asked to sign in and none of the Meeting's content is shown.
@@ -20,8 +24,11 @@ Each story has acceptance criteria in Given/When/Then form.
   - Acceptance criteria:
     - [ ] Given a signed-in User, when they create a Workspace with a name, then the Workspace is created with them as its Owner, holding a default Folder and no Meetings.
     - [ ] Given a User submits a Workspace without a name, when they confirm, then the System rejects it with a validation error and no Workspace is created.
-    - [ ] Given a Moderator is in their Workspace, when they invite a person and choose their role, then that person receives an invitation and Owner is not among the roles they could assign.
+    - [ ] Given a Moderator is in their Workspace, when they invite a person by email address and choose their role, then a single-use invitation link is created, sent to that address in `verified` mode or shown to the Moderator to hand over in `invite-only` mode, and Owner is not among the roles they could assign.
     - [ ] Given a person has received an invitation, when they accept it, then they join the Workspace with the chosen role and see the Meetings accessible to them.
+    - [ ] Given a person without an account opens an invitation link, when they set a password and accept the Terms and Conditions, then an account with the invited address and its personal Workspace are created, and the account joins the Workspace with the chosen role.
+    - [ ] Given an account whose email address differs from the invited one opens an invitation link, when it tries to accept, then it is refused and does not join.
+    - [ ] Given an invitation link was already used or is older than 7 days, when it is opened, then it is refused.
     - [ ] Given a person has received an invitation, when they decline it, then they do not join the Workspace.
     - [ ] Given a Moderator opens the member list, when they remove a member, then that member loses access to the Workspace and all of its Meetings.
     - [ ] Given a Moderator opens the member list, when they change a member's role between Member and Moderator, then the new role's permissions apply on that member's next action.
@@ -30,6 +37,14 @@ Each story has acceptance criteria in Given/When/Then form.
     - [ ] Given an Owner opens the Workspace settings, when they delete the Workspace and confirm, then the Workspace, its Folders, Meetings, recordings, transcripts and notes are removed.
     - [ ] Given a Moderator opens the Workspace settings, when they look for a delete action, then none is available.
     - [ ] Given a User opens their personal Workspace's settings, when they look for a delete action, then none is available.
+
+- US-020: As a User, I want to reset a forgotten password through my email address, so that I do not lose my account and its Meetings.
+  - Acceptance criteria:
+    - [ ] Given an instance in `verified` mode, when a User requests a password reset for their email address, then a single-use link valid for 1 hour is sent to that address.
+    - [ ] Given the User opens the reset link in time, when they set a new password, then they can sign in with it and every earlier session and extension token of the account is ended.
+    - [ ] Given a reset link was already used or is older than 1 hour, when it is opened, then the password stays unchanged.
+    - [ ] Given an address has no account, when someone requests a reset for it, then they see the same response as for an existing address and no email is sent.
+    - [ ] Given an instance runs in `invite-only` mode, when a User looks for a password reset, then none is offered.
 
 ### Capture
 
@@ -163,6 +178,7 @@ Each story has acceptance criteria in Given/When/Then form.
   - Acceptance criteria:
     - [ ] Given a Member opens a Meeting, when they create a share, then they receive a link that grants reading of the transcript and notes and nothing else.
     - [ ] Given a person is not signed in, when they open a share link, then they are asked to sign in and no content is shown beforehand.
+    - [ ] Given an instance runs in `invite-only` mode, when a person without an account opens a share link, then they cannot register through it.
     - [ ] Given a signed-in person opens a share link, when the creator has not approved them, then no content is shown and the creator receives an access request.
     - [ ] Given a share is bound to account A, when account B opens the link, then B sees no content.
     - [ ] Given a signed-in recipient opens a share link, when they view the Meeting, then no download, export or re-share action is available to them.
@@ -204,13 +220,13 @@ Each story has acceptance criteria in Given/When/Then form.
   - **Independent** — the only story that mentions the login flow
   - **Negotiable** — password rules and session handling open
   - **Valuable** — gives an account and private space
-  - **Estimable** — standard authentication, well-understood
-  - **Small** — one mechanism: accounts and sessions
+  - **Estimable** — standard authentication plus an emailed link
+  - **Small** — one mechanism: proving an address, then accounts and sessions
   - **Testable** — access or denial, directly observable
 
 - US-002
   - **Independent** — the only story that manages membership
-  - **Negotiable** — invitation channel left to the team
+  - **Negotiable** — invitation wording and screens left to the team
   - **Valuable** — teams get a shared, governed space
   - **Estimable** — familiar CRUD and role checks
   - **Small** — one subsystem despite many criteria
@@ -352,11 +368,19 @@ Each story has acceptance criteria in Given/When/Then form.
   - **Small** — one read-only view
   - **Testable** — the absence of content is assertable too
 
+- US-020
+  - **Independent** — the only story that changes a password
+  - **Negotiable** — screens and email wording left open
+  - **Valuable** — a forgotten password no longer loses the account
+  - **Estimable** — reuses the registration link mechanism
+  - **Small** — one request, one link, one form
+  - **Testable** — expiry, reuse and ended sessions all observable
+
 ---
 
 ## AI Usage
 
-This document was prepared with the assistance of Claude Code (Claude Opus 5). The stories and
-their acceptance criteria come from the team's working session of 2026-09-19 and from the mini
-technical specification agreed in Lab 1. The authors reviewed and edited every story, and the
-document is reviewed through a pull request before merging.
+This document was prepared and revised with the assistance of Claude Code (Claude Opus 5 and Claude
+Opus 5.5). The stories and their acceptance criteria come from the team's working session of
+2026-09-19 and from the mini technical specification agreed in Lab 1. The authors reviewed and
+edited every story, and the document is reviewed through a pull request before merging.
