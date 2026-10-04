@@ -58,6 +58,7 @@ yet in the code. Each operation in section 4 is marked *Stub* or *Designed*.
   - `404` for an id that does not exist;
   - `409 PERSONAL_WORKSPACE` for deleting the personal workspace;
   - `409 NOT_TRANSCRIBED` for the transcript of a queued meeting;
+  - `422` for a `folder_id` that is not a folder of the meeting's workspace;
   - `413` and `415` for an upload that is too large or is not audio.
 
 **What a stub documents but never produces:**
