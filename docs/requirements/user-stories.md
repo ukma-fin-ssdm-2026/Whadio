@@ -11,11 +11,13 @@ Each story has acceptance criteria in Given/When/Then form.
 - US-001: As a visitor, I want to register and sign in, so that my Meetings are tied to my own account and nobody can act as me.
   - Acceptance criteria:
     - [ ] Given a visitor with no account on an instance in `verified` mode, when they register with an email address, then a single-use link is sent to that address and no account exists yet.
-    - [ ] Given a visitor opens their registration link within 24 hours, when they set a password and accept the Terms and Conditions, then an account is created and a personal Workspace is created with them as its Owner.
+    - [ ] Given a visitor opens their registration link within 24 hours, when they enter a name, set a password and accept the Terms and Conditions, then an account is created and a personal Workspace is created with them as its Owner.
     - [ ] Given a registration link was already used or is older than 24 hours, when it is opened, then no account is created.
-    - [ ] Given an address already has an account, when someone registers with it, then they see the same response as for a new address, and the email sent there points to sign-in.
+    - [ ] Given a registration link was sent to an address less than 20 minutes ago, when someone registers with that address again, then no email is sent and the earlier link keeps working.
+    - [ ] Given an address already has an account, when someone registers with it, then they see the same response as for a new address, and the email sent there points to sign-in and carries a password-reset link.
     - [ ] Given a visitor is registering, when they submit the form without accepting the Terms and Conditions, then registration is refused and no account is created.
     - [ ] Given an instance runs in `invite-only` mode, when a visitor looks for registration, then none is offered.
+    - [ ] Given an instance in either mode, when the operator issues a registration link for an address from the command line, then the link is shown to the operator, and opening it creates the account as an emailed link does.
     - [ ] Given a registered User, when they sign in with correct credentials, then they gain access to the Workspaces they belong to.
     - [ ] Given a registered User, when they sign in with an incorrect password, then access is denied and no session is created.
     - [ ] Given a visitor is not signed in, when they open a Meeting's URL, then they are asked to sign in and none of the Meeting's content is shown.
@@ -26,10 +28,15 @@ Each story has acceptance criteria in Given/When/Then form.
     - [ ] Given a User submits a Workspace without a name, when they confirm, then the System rejects it with a validation error and no Workspace is created.
     - [ ] Given a Moderator is in their Workspace, when they invite a person by email address and choose their role, then a single-use invitation link is created, sent to that address in `verified` mode or shown to the Moderator to hand over in `invite-only` mode, and Owner is not among the roles they could assign.
     - [ ] Given a person has received an invitation, when they accept it, then they join the Workspace with the chosen role and see the Meetings accessible to them.
-    - [ ] Given a person without an account opens an invitation link, when they set a password and accept the Terms and Conditions, then an account with the invited address and its personal Workspace are created, and the account joins the Workspace with the chosen role.
+    - [ ] Given a person without an account opens an invitation link, when they enter a name, set a password and accept the Terms and Conditions, then an account with the invited address and its personal Workspace are created, and the account joins the Workspace with the chosen role.
+    - [ ] Given a person without an account opens an invitation link, when they submit the form without accepting the Terms and Conditions, then no account is created and nobody joins the Workspace.
     - [ ] Given an account whose email address differs from the invited one opens an invitation link, when it tries to accept, then it is refused and does not join.
     - [ ] Given an invitation link was already used or is older than 7 days, when it is opened, then it is refused.
     - [ ] Given an address has a pending or expired invitation to the Workspace, when a Moderator invites it again, then the earlier link stops working and a new one is created.
+    - [ ] Given an instance in `verified` mode and an address invited to the Workspace less than a day ago, when a Moderator invites it again, then the invitation is refused and the earlier link keeps working.
+    - [ ] Given a User has created 20 invitations in the past day, when they create another, then it is refused.
+    - [ ] Given a Moderator opens the Workspace's pending invitations, when they cancel one, then its link is refused.
+    - [ ] Given the Moderator who created an invitation was removed or made a Member, when its link is opened, then it is refused.
     - [ ] Given a person has received an invitation, when they decline it, then they do not join the Workspace.
     - [ ] Given a Moderator opens the member list, when they remove a member, then that member loses access to the Workspace and all of its Meetings.
     - [ ] Given a Moderator opens the member list, when they change a member's role between Member and Moderator, then the new role's permissions apply on that member's next action.
@@ -44,8 +51,10 @@ Each story has acceptance criteria in Given/When/Then form.
     - [ ] Given an instance in `verified` mode, when a User requests a password reset for their email address, then a single-use link valid for 1 hour is sent to that address.
     - [ ] Given the User opens the reset link in time, when they set a new password, then they can sign in with it and every earlier session and extension token of the account is ended.
     - [ ] Given a reset link was already used or is older than 1 hour, when it is opened, then the password stays unchanged.
+    - [ ] Given a reset link was sent to an address less than 20 minutes ago, when another reset is requested for it, then no email is sent and the earlier link keeps working.
     - [ ] Given an address has no account, when someone requests a reset for it, then they see the same response as for an existing address and no email is sent.
     - [ ] Given an instance runs in `invite-only` mode, when a User looks for a password reset, then none is offered.
+    - [ ] Given an instance in either mode, when the operator issues a reset link for an account from the command line, then the link is shown to the operator, and opening it sets a new password as an emailed link does.
 
 ### Capture
 
@@ -222,7 +231,7 @@ Each story has acceptance criteria in Given/When/Then form.
   - **Negotiable** — password rules and session handling open
   - **Valuable** — gives an account and private space
   - **Estimable** — standard authentication plus an emailed link
-  - **Small** — one mechanism: proving an address, then accounts and sessions
+  - **Small** — one mechanism, the account link, behind several criteria
   - **Testable** — access or denial, directly observable
 
 - US-002
@@ -370,7 +379,7 @@ Each story has acceptance criteria in Given/When/Then form.
   - **Testable** — the absence of content is assertable too
 
 - US-020
-  - **Independent** — the only story that changes a password
+  - **Independent** — the only story that recovers an account; shares only the link mechanism with US-001
   - **Negotiable** — screens and email wording left open
   - **Valuable** — a forgotten password no longer loses the account
   - **Estimable** — reuses the registration link mechanism
