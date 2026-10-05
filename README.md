@@ -8,10 +8,10 @@ Whadio is an open-source meeting recording and transcription service focused on 
 
 | **Name** | **GitHub** | **Role** |
 |----------|----------|----------|
-| Andrii Shalaiev | @Hukyl | CI Maintainer, Requirements Lead, Architecture Lead |
-| Denys Zabiiaka  | @SquidBow | Issue Tracker Lead, Traceability Lead, Requirements-Architecture Mapper |
-| Valeriia Missirova | @v-missirova | Documentation Lead |
-| Zlata Tsepkalo | @t-zlata | Repository Maintainer, Quality Lead, Data & Threat Modeler |
+| Andrii Shalaiev | @Hukyl | CI Maintainer, Requirements Lead, Architecture Lead, Backend Lead |
+| Denys Zabiiaka  | @SquidBow | Issue Tracker Lead, Traceability Lead, Requirements-Architecture Mapper, API Quality Lead |
+| Valeriia Missirova | @v-missirova | Documentation Lead, Integration Lead |
+| Zlata Tsepkalo | @t-zlata | Repository Maintainer, Quality Lead, Data & Threat Modeler, API Documentation Lead |
 
 
 # Running the API
@@ -62,6 +62,7 @@ All API documentation is maintained in the [`/docs/api/`](docs/api/) directory a
 [GitHub Pages](https://ukma-fin-ssdm-2026.github.io/Whadio/).
 - [API Design](docs/api/api-design.md) — resource model, conventions and design decisions
 - [OpenAPI specification](docs/api/openapi-generated.yaml) — generated from the code
+- [Quality Attributes](docs/api/quality-attributes.md) — measurable API quality targets with failure conditions
 
 ## Architecture Artifacts
 All architecture documentation is maintained in the [`/docs/architecture/`](docs/architecture/) directory.
