@@ -563,8 +563,8 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - The meeting is queued for processing at once. Its speakers are labelled `Speaker 1`,
     `Speaker 2`, and so on (FR-016).
   - `folder_id` must be a folder of this workspace; without it, the default folder is used.
-  - Supported formats are WAV, MP3, AAC, FLAC, Ogg, WebM and MP4/M4A. The format is recognised
-    from the file's content, never from its name or declared type.
+  - Supported formats are WAV, MP3, AAC, FLAC, Ogg, WebM and MP4/M4A. The server checks a file
+    by decoding its first audio frame with FFmpeg, never by its name or declared type.
   - Without `name`, the meeting is named after its date and time until it is renamed
     (FR-033).
 - **Errors:**
@@ -1117,8 +1117,10 @@ Pydantic validates all input before a handler runs:
 - **Names must be displayable:** workspace and meeting names are trimmed, need at least one
   visible character and refuse control characters such as line breaks. A name made only of
   spaces or zero-width characters is a `422`. Passwords are never trimmed.
-- **Uploads are recognised by content:** a text file renamed to `.mp3` is a `415`, and a real
-  recording sent as `application/octet-stream` is accepted.
+- **Uploads are checked by decoding:** FFmpeg (through PyAV) must open the file as a supported
+  format and decode its first audio frame. A text file renamed to `.mp3`, or a valid header
+  followed by junk, is a `415`; a real recording sent as `application/octet-stream` is
+  accepted.
 - **Separate Create, Update and Read models**, so a provider API key can be written but never
   read back (NFR-013).
 - **Cross-field rules**, such as an ordered date range, at least one field in a `PATCH`, and
