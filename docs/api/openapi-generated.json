@@ -209,7 +209,11 @@
             },
             "headers": {
               "Location": {
-                "description": "URL of the new workspace"
+                "description": "URL of the new workspace",
+                "schema": {
+                  "type": "string",
+                  "format": "uri"
+                }
               }
             }
           },
@@ -745,7 +749,11 @@
             },
             "headers": {
               "Location": {
-                "description": "URL of the meeting"
+                "description": "URL of the meeting",
+                "schema": {
+                  "type": "string",
+                  "format": "uri"
+                }
               }
             }
           },
@@ -1285,7 +1293,11 @@
             },
             "headers": {
               "Location": {
-                "description": "URL of the meeting to poll"
+                "description": "URL of the meeting to poll",
+                "schema": {
+                  "type": "string",
+                  "format": "uri"
+                }
               }
             }
           },

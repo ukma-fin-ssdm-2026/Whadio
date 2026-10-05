@@ -53,7 +53,14 @@ async def list_workspaces(
     "meetings.",
     response_description="The new workspace",
     responses={
-        201: {"headers": {"Location": {"description": "URL of the new workspace"}}},
+        201: {
+            "headers": {
+                "Location": {
+                    "description": "URL of the new workspace",
+                    "schema": {"type": "string", "format": "uri"},
+                }
+            }
+        },
         **error_responses({400: DOC_MALFORMED, 401: DOC_UNAUTHENTICATED, 422: DOC_INVALID}),
     },
 )

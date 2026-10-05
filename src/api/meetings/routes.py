@@ -103,7 +103,14 @@ async def list_meetings(
     ),
     response_description="The new meeting, queued for processing",
     responses={
-        201: {"headers": {"Location": {"description": "URL of the meeting"}}},
+        201: {
+            "headers": {
+                "Location": {
+                    "description": "URL of the meeting",
+                    "schema": {"type": "string", "format": "uri"},
+                }
+            }
+        },
         **error_responses(
             {
                 401: DOC_UNAUTHENTICATED,
@@ -285,7 +292,14 @@ async def list_notes(
     ),
     response_description="The queued job",
     responses={
-        202: {"headers": {"Location": {"description": "URL of the meeting to poll"}}},
+        202: {
+            "headers": {
+                "Location": {
+                    "description": "URL of the meeting to poll",
+                    "schema": {"type": "string", "format": "uri"},
+                }
+            }
+        },
         **error_responses(
             {
                 400: DOC_MALFORMED,
