@@ -55,14 +55,15 @@ yet in the code. Each operation in section 4 is marked *Stub* or *Designed*.
 **What a stub does:**
 - It answers with fixed demo data, listed at the top of the Swagger page. Writes return the
   result they would have, but store nothing.
-- It validates all input for real: types, lengths, enums, unknown fields and cross-field rules.
+- It validates all input for real: types, lengths, enums, unknown fields, cross-field rules
+  and the format of uploaded audio.
 - It authenticates for real against one demo account: a missing or unknown session gets `401`.
 - It returns errors that follow from the demo data:
   - `404` for an id that does not exist;
   - `409 PERSONAL_WORKSPACE` for deleting the personal workspace;
   - `409 NOT_TRANSCRIBED` for the transcript of a queued meeting;
   - `422` for a `folder_id` that is not a folder of the meeting's workspace;
-  - `413` and `415` for an upload that is too large or is not audio.
+  - `413` and `415` for an upload that is too large or is not a supported audio format.
 
 **What a stub documents but never produces:**
 - role checks (`403 INSUFFICIENT_ROLE`);
@@ -562,10 +563,15 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - The meeting is queued for processing at once. Its speakers are labelled `Speaker 1`,
     `Speaker 2`, and so on (FR-016).
   - `folder_id` must be a folder of this workspace; without it, the default folder is used.
+  - Supported formats are WAV, MP3, AAC, FLAC, Ogg, WebM and MP4/M4A. The format is recognised
+    from the file's content, never from its name or declared type.
+  - Without `name`, the meeting is named after its date and time until it is renamed
+    (FR-033).
 - **Errors:**
   - `404 NOT_FOUND`: no such workspace, or the caller is not a member.
   - `413 PAYLOAD_TOO_LARGE`: the file is larger than 500 MiB.
-  - `415 UNSUPPORTED_MEDIA_TYPE`: the file is not `audio/*`, so no meeting is created.
+  - `415 UNSUPPORTED_MEDIA_TYPE`: the content is not a supported audio format, so no meeting is
+    created (FR-013).
 
 #### `GET /meetings/{meeting_id}` · Get a meeting
 
@@ -892,7 +898,7 @@ Each status code has one meaning:
 - **`409`:** the input is valid, but the current state forbids the request. The client must
   change the state first.
 - **`410`:** the resource existed and was deliberately removed.
-- **`413`, `415`:** the audio is too large, or is not audio.
+- **`413`, `415`:** the audio is too large, or is not a supported audio format.
 - **`422`:** the input was parsed, but is invalid.
 - **`429`:** a limit was reached. `Retry-After` says how many seconds to wait.
 
@@ -1015,7 +1021,8 @@ status, and which operations return it.
 **`413`, `415`, `422`, `429` and `5xx`**
 
 - **`PAYLOAD_TOO_LARGE`** (`413`): an upload over 500 MiB, or a chunk over `max_chunk_bytes`.
-- **`UNSUPPORTED_MEDIA_TYPE`** (`415`): an upload or chunk that is not `audio/*`.
+- **`UNSUPPORTED_MEDIA_TYPE`** (`415`): an upload whose content is not a supported audio
+  format, or a chunk that is not `audio/*`.
 - **`VALIDATION_ERROR`, `IDEMPOTENCY_KEY_REUSED`** (`422`): see section 5.3.
 - **`INVITATION_LIMIT`** (`429`): the caller invited 20 addresses in the last day (FR-006).
 - **`INVITATION_COOLDOWN`** (`429`): the address was invited to this workspace in the last
@@ -1105,6 +1112,13 @@ Pydantic validates all input before a handler runs:
   every field.
 - **Unknown fields and query parameters are rejected** (`extra="forbid"`), so a typo is never
   silently ignored. For example, `recorded_at` cannot be changed (FR-033).
+- **JSON types are not converted:** a boolean field refuses `0`, `1` and `"true"`. Query and
+  form values arrive as text, so only they are parsed into numbers and booleans.
+- **Names must be displayable:** workspace and meeting names are trimmed, need at least one
+  visible character and refuse control characters such as line breaks. A name made only of
+  spaces or zero-width characters is a `422`. Passwords are never trimmed.
+- **Uploads are recognised by content:** a text file renamed to `.mp3` is a `415`, and a real
+  recording sent as `application/octet-stream` is accepted.
 - **Separate Create, Update and Read models**, so a provider API key can be written but never
   read back (NFR-013).
 - **Cross-field rules**, such as an ordered date range, at least one field in a `PATCH`, and
