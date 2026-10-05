@@ -16,6 +16,7 @@ from ..core.errors import (
     error_responses,
 )
 from ..core.schemas import Page, PageQuery, paginate
+from .audio import SNIFF_BYTES, SUPPORTED_FORMATS, is_supported_audio
 from .fixtures import (
     RETENTION,
     folder_in,
@@ -31,6 +32,7 @@ from .schemas import (
     JobStatus,
     MeetingId,
     MeetingListQuery,
+    MeetingName,
     MeetingRead,
     MeetingSummary,
     MeetingUpdate,
@@ -92,9 +94,11 @@ async def list_meetings(
     summary="Upload a recording",
     description=(
         "Any member. Multipart with the audio `file`, an optional `folder_id` and "
-        "`name`. A file that is not audio is refused and creates no meeting. The meeting is "
-        "queued for processing at once; its speakers will be labelled `Speaker 1`, "
-        "`Speaker 2` and so on."
+        f"`name`. Supported formats: {SUPPORTED_FORMATS}, recognised by the file's content "
+        "whatever its name or declared type; any other file is refused and creates no "
+        "meeting. Without `name`, the meeting is named after its date and time until it is "
+        "renamed. The meeting is queued for processing at once; its speakers will be "
+        "labelled `Speaker 1`, `Speaker 2` and so on."
     ),
     response_description="The new meeting, queued for processing",
     responses={
@@ -104,7 +108,8 @@ async def list_meetings(
                 401: DOC_UNAUTHENTICATED,
                 404: _WORKSPACE_NOT_FOUND,
                 413: f"`{ErrorCode.PAYLOAD_TOO_LARGE}`: the file is larger than 500 MiB",
-                415: f"`{ErrorCode.UNSUPPORTED_MEDIA_TYPE}`: the file is not audio",
+                415: f"`{ErrorCode.UNSUPPORTED_MEDIA_TYPE}`: the content is not a supported "
+                "audio format",
                 422: f"{DOC_INVALID}; `folder_id` must be a folder of this workspace",
             }
         ),
@@ -112,21 +117,25 @@ async def list_meetings(
 )
 async def upload_recording(
     workspace_id: WorkspaceId,
-    file: Annotated[UploadFile, File(description="The recording (audio/*)")],
+    file: Annotated[UploadFile, File(description=f"The recording: {SUPPORTED_FORMATS}")],
     user: CaptureUser,
     request: Request,
     response: Response,
     folder_id: Annotated[
         UUID | None, Form(description="Destination folder; the default folder when omitted")
     ] = None,
-    name: Annotated[
-        str | None, Form(min_length=1, max_length=200, description="Meeting name")
-    ] = None,
+    name: Annotated[MeetingName | None, Form(description="Meeting name")] = None,
 ) -> MeetingRead:
     workspace(workspace_id)
     target_folder_id = folder_in(workspace_id, folder_id)
-    if not (file.content_type or "").startswith("audio/"):
-        raise ApiError(415, ErrorCode.UNSUPPORTED_MEDIA_TYPE, "The file is not audio")
+    head = await file.read(SNIFF_BYTES)
+    await file.seek(0)
+    if not is_supported_audio(head):
+        raise ApiError(
+            415,
+            ErrorCode.UNSUPPORTED_MEDIA_TYPE,
+            f"The file is not a supported audio format: {SUPPORTED_FORMATS}",
+        )
     if file.size is not None and file.size > MAX_UPLOAD_BYTES:
         raise ApiError(413, ErrorCode.PAYLOAD_TOO_LARGE, "The file is larger than 500 MiB")
     now = datetime.now(UTC)
@@ -134,7 +143,7 @@ async def upload_recording(
         id=uuid4(),
         workspace_id=workspace_id,
         folder_id=target_folder_id,
-        name=name or file.filename or "Uploaded recording",
+        name=name or f"Meeting {now:%Y-%m-%d %H:%M} UTC",
         name_is_generated=name is None,
         recorded_at=now,
         processing_state=ProcessingState.QUEUED,

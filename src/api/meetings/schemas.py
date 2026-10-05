@@ -7,7 +7,7 @@ from fastapi import Path
 from pydantic import Field, model_validator
 
 from ..accounts.schemas import Preset, Provider
-from ..core.schemas import Input, Output, PageQuery, UtcDatetime
+from ..core.schemas import DisplayText, Input, Output, PageQuery, UtcDatetime
 
 MEETING_ID_EXAMPLE = "5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9"
 FOLDER_ID_EXAMPLE = "e8f7d6c5-b4a3-4291-8f7e-6d5c4b3a2918"
@@ -55,7 +55,7 @@ class JobStatus(StrEnum):
 
 MeetingId = Annotated[UUID, Path(description="Meeting identifier", examples=[MEETING_ID_EXAMPLE])]
 MeetingName = Annotated[
-    str,
+    DisplayText,
     Field(min_length=1, max_length=200, description="Meeting name", examples=["Sprint 12 review"]),
 ]
 
@@ -195,6 +195,7 @@ class NotesRequest(Input):
     )
     use_builtin_model: bool = Field(
         default=False,
+        strict=True,
         description="Generate with the built-in model even if the workspace configured a "
         "provider, e.g. after that provider failed",
     )

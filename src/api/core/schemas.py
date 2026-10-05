@@ -1,13 +1,16 @@
+import unicodedata
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Final
 
-from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints
 
 from .errors import ApiError, ErrorCode, ErrorDetail
 
 
 class Input(BaseModel):
+    # FastAPI validates bodies in Python mode, where model-wide strict=True refuses enum and UUID
+    # strings; give each non-string body field `strict=True` instead.
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
@@ -20,6 +23,24 @@ def _to_utc(value: datetime) -> datetime:
 
 
 UtcDatetime = Annotated[AwareDatetime, AfterValidator(_to_utc)]
+
+_VISIBLE_CATEGORIES: Final = frozenset("LNPS")
+# Graphic characters that render blank: the Hangul fillers and the Braille blank.
+_BLANK_GRAPHICS: Final = frozenset("\u115f\u1160\u3164\uffa0\u2800")
+
+
+def _displayable(value: str) -> str:
+    if any(unicodedata.category(char) == "Cc" for char in value):
+        raise ValueError("must not contain control characters such as line breaks")
+    if not any(
+        unicodedata.category(char)[0] in _VISIBLE_CATEGORIES and char not in _BLANK_GRAPHICS
+        for char in value
+    ):
+        raise ValueError("must contain a visible character, not only spaces or invisible ones")
+    return value
+
+
+DisplayText = Annotated[str, StringConstraints(strip_whitespace=True), AfterValidator(_displayable)]
 
 
 class PageQuery(Input):
@@ -50,14 +71,15 @@ def paginate[T](items: Sequence[T], query: PageQuery) -> Page[T]:
     # Stub cursor: the position of the next item. The design's cursor is an opaque sort key.
     start = 0
     if query.cursor is not None:
-        if not query.cursor.isdigit() or not 0 < int(query.cursor) < len(items):
+        cursor = query.cursor
+        if not (cursor.isascii() and cursor.isdigit() and 0 < int(cursor) < len(items)):
             raise ApiError(
                 422,
                 ErrorCode.VALIDATION_ERROR,
                 "Request contains invalid fields",
                 [ErrorDetail(field="cursor", message="is not a cursor of this list")],
             )
-        start = int(query.cursor)
+        start = int(cursor)
     end = start + query.limit
     has_more = end < len(items)
     return Page[T](

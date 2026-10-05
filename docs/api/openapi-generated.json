@@ -696,7 +696,7 @@
           "meetings"
         ],
         "summary": "Upload a recording",
-        "description": "Any member. Multipart with the audio `file`, an optional `folder_id` and `name`. A file that is not audio is refused and creates no meeting. The meeting is queued for processing at once; its speakers will be labelled `Speaker 1`, `Speaker 2` and so on.",
+        "description": "Any member. Multipart with the audio `file`, an optional `folder_id` and `name`. Supported formats: WAV, MP3, AAC, FLAC, Ogg, WebM or MP4/M4A, recognised by the file's content whatever its name or declared type; any other file is refused and creates no meeting. Without `name`, the meeting is named after its date and time until it is renamed. The meeting is queued for processing at once; its speakers will be labelled `Speaker 1`, `Speaker 2` and so on.",
         "operationId": "upload_recording_api_v1_workspaces__workspace_id__meetings_post",
         "security": [
           {
@@ -780,7 +780,7 @@
             }
           },
           "415": {
-            "description": "`UNSUPPORTED_MEDIA_TYPE`: the file is not audio",
+            "description": "`UNSUPPORTED_MEDIA_TYPE`: the content is not a supported audio format",
             "content": {
               "application/json": {
                 "schema": {
@@ -1381,7 +1381,7 @@
             "type": "string",
             "contentMediaType": "application/octet-stream",
             "title": "File",
-            "description": "The recording (audio/*)"
+            "description": "The recording: WAV, MP3, AAC, FLAC, Ogg, WebM or MP4/M4A"
           },
           "folder_id": {
             "anyOf": [
@@ -1401,7 +1401,11 @@
               {
                 "type": "string",
                 "maxLength": 200,
-                "minLength": 1
+                "minLength": 1,
+                "description": "Meeting name",
+                "examples": [
+                  "Sprint 12 review"
+                ]
               },
               {
                 "type": "null"
@@ -2362,7 +2366,7 @@
             "maxLength": 128,
             "minLength": 1,
             "title": "Password",
-            "description": "Account password",
+            "description": "Account password, compared exactly: surrounding spaces are part of it",
             "examples": [
               "whadio-demo-pass"
             ]

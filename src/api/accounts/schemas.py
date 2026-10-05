@@ -4,9 +4,9 @@ from typing import Annotated, Self
 from uuid import UUID
 
 from fastapi import Path
-from pydantic import EmailStr, Field, model_validator
+from pydantic import EmailStr, Field, StringConstraints, model_validator
 
-from ..core.schemas import Input, Output
+from ..core.schemas import DisplayText, Input, Output
 
 USER_ID_EXAMPLE = "3f6c1d2e-8a4b-4c5d-9e0f-1a2b3c4d5e6f"
 WORKSPACE_ID_EXAMPLE = "7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d"
@@ -40,7 +40,7 @@ WorkspaceId = Annotated[
     UUID, Path(description="Workspace identifier", examples=[WORKSPACE_ID_EXAMPLE])
 ]
 WorkspaceName = Annotated[
-    str,
+    DisplayText,
     Field(min_length=1, max_length=100, description="Workspace name", examples=["Product team"]),
 ]
 
@@ -49,8 +49,11 @@ class SignIn(Input):
     email: EmailStr = Field(
         max_length=254, description="Account email address", examples=["alice@whadio.dev"]
     )
-    password: str = Field(
-        min_length=1, max_length=128, description="Account password", examples=["whadio-demo-pass"]
+    password: Annotated[str, StringConstraints(strip_whitespace=False)] = Field(
+        min_length=1,
+        max_length=128,
+        description="Account password, compared exactly: surrounding spaces are part of it",
+        examples=["whadio-demo-pass"],
     )
     kind: SessionKind = Field(
         default=SessionKind.BROWSER,
