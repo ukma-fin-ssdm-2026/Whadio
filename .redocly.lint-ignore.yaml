@@ -1,0 +1,7 @@
+docs/api/openapi-generated.yaml:
+  operation-4xx-response:
+    # DELETE /api/v1/sessions/current — sign-out is idempotent, always 204
+    - '#/paths/~1api~1v1~1sessions~1current/delete'
+    # GET /health — liveness probe, intentionally no 4xx
+    - '#/paths/~1health/get'
+

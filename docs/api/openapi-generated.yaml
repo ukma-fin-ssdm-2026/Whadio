@@ -170,6 +170,9 @@ paths:
           headers:
             Location:
               description: URL of the new workspace
+              schema:
+                type: string
+                format: uri
         '400':
           description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
             valid JSON'
@@ -520,6 +523,9 @@ paths:
           headers:
             Location:
               description: URL of the meeting
+              schema:
+                type: string
+                format: uri
         '401':
           description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
           content:
@@ -884,6 +890,9 @@ paths:
           headers:
             Location:
               description: URL of the meeting to poll
+              schema:
+                type: string
+                format: uri
         '400':
           description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
             valid JSON'
