@@ -3,6 +3,7 @@ from typing import Annotated, Final
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, Form, Query, Request, Response, UploadFile
+from starlette.concurrency import run_in_threadpool
 
 from ..accounts.auth import BrowserUser, CaptureUser
 from ..accounts.fixtures import workspace
@@ -16,7 +17,7 @@ from ..core.errors import (
     error_responses,
 )
 from ..core.schemas import Page, PageQuery, paginate
-from .audio import SNIFF_BYTES, SUPPORTED_FORMATS, is_supported_audio
+from .audio import SUPPORTED_FORMATS, is_supported_audio
 from .fixtures import (
     RETENTION,
     folder_in,
@@ -94,8 +95,8 @@ async def list_meetings(
     summary="Upload a recording",
     description=(
         "Any member. Multipart with the audio `file`, an optional `folder_id` and "
-        f"`name`. Supported formats: {SUPPORTED_FORMATS}, recognised by the file's content "
-        "whatever its name or declared type; any other file is refused and creates no "
+        f"`name`. Supported formats: {SUPPORTED_FORMATS}. The server decodes the file to "
+        "check, whatever its name or declared type; any other file is refused and creates no "
         "meeting. Without `name`, the meeting is named after its date and time until it is "
         "renamed. The meeting is queued for processing at once; its speakers will be "
         "labelled `Speaker 1`, `Speaker 2` and so on."
@@ -128,16 +129,16 @@ async def upload_recording(
 ) -> MeetingRead:
     workspace(workspace_id)
     target_folder_id = folder_in(workspace_id, folder_id)
-    head = await file.read(SNIFF_BYTES)
+    if file.size is not None and file.size > MAX_UPLOAD_BYTES:
+        raise ApiError(413, ErrorCode.PAYLOAD_TOO_LARGE, "The file is larger than 500 MiB")
+    is_audio = await run_in_threadpool(is_supported_audio, file.file)
     await file.seek(0)
-    if not is_supported_audio(head):
+    if not is_audio:
         raise ApiError(
             415,
             ErrorCode.UNSUPPORTED_MEDIA_TYPE,
             f"The file is not a supported audio format: {SUPPORTED_FORMATS}",
         )
-    if file.size is not None and file.size > MAX_UPLOAD_BYTES:
-        raise ApiError(413, ErrorCode.PAYLOAD_TOO_LARGE, "The file is larger than 500 MiB")
     now = datetime.now(UTC)
     created = MeetingRead(
         id=uuid4(),

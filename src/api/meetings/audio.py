@@ -1,14 +1,20 @@
-from typing import Final
+from typing import BinaryIO, Final
 
-SNIFF_BYTES: Final = 12
+import av
+from av.error import FFmpegError
+
 SUPPORTED_FORMATS: Final = "WAV, MP3, AAC, FLAC, Ogg, WebM or MP4/M4A"
+_DEMUXERS: Final = frozenset(
+    {"wav", "mp3", "aac", "flac", "ogg", "matroska,webm", "mov,mp4,m4a,3gp,3g2,mj2"}
+)
 
 
-def is_supported_audio(head: bytes) -> bool:
-    """Recognise a supported container by its signature in the first `SNIFF_BYTES` bytes."""
-    return (
-        head.startswith((b"ID3", b"fLaC", b"OggS", b"\x1a\x45\xdf\xa3"))
-        or (head.startswith(b"RIFF") and head[8:12] == b"WAVE")
-        or head[4:8] == b"ftyp"
-        or (len(head) >= 2 and head[0] == 0xFF and head[1] & 0xE0 == 0xE0)
-    )
+def is_supported_audio(recording: BinaryIO) -> bool:
+    """Whether FFmpeg opens `recording` as a supported format and decodes its first audio frame."""
+    try:
+        with av.open(recording, mode="r") as container:
+            if container.format.name not in _DEMUXERS or not container.streams.audio:
+                return False
+            return next(container.decode(audio=0), None) is not None
+    except FFmpegError:
+        return False
