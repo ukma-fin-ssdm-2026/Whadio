@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.errors import not_found
-from .models import User
+from .models import User, Workspace, WorkspaceMembership
 from .schemas import Preset, Provider, Role, UserRead, WorkspaceRead
 
 DEMO_EMAIL: Final = "alice@whadio.dev"
@@ -58,7 +58,7 @@ def workspace(workspace_id: UUID) -> WorkspaceRead:
 
 
 async def seed_demo_user(db: AsyncSession) -> None:
-    """Creates Alice, so the quick start in the API docs can sign in, unless she exists."""
+    """Creates Alice and her two workspaces, so the quick start in the API docs works."""
     if await db.scalar(select(User).where(User.email == DEMO_EMAIL)) is not None:
         return
     db.add(
@@ -72,4 +72,20 @@ async def seed_demo_user(db: AsyncSession) -> None:
             created_at=ALICE.created_at,
         )
     )
+    # Same IDs as WORKSPACES, which the meetings stub still reads its demo meetings from.
+    for demo in WORKSPACES.values():
+        db.add(
+            Workspace(
+                workspace_id=demo.id,
+                name=demo.name,
+                default_preset=demo.default_preset,
+                is_personal=demo.is_personal,
+                created_at=demo.created_at,
+            )
+        )
+        db.add(
+            WorkspaceMembership(
+                workspace_id=demo.id, user_id=ALICE.id, role=Role.OWNER, joined_at=demo.created_at
+            )
+        )
     await db.commit()

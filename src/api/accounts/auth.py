@@ -67,17 +67,5 @@ BrowserUser = Annotated[UserRead, Depends(_browser_user)]
 CaptureUser = Annotated[UserRead, Depends(_capture_user)]
 
 
-def set_session_cookie(response: Response, token: str) -> None:
-    response.set_cookie(
-        SESSION_COOKIE,
-        token,
-        max_age=int(BROWSER_SESSION_TTL.total_seconds()),
-        httponly=True,
-        secure=True,
-        samesite="strict",
-        path="/",
-    )
-
-
 def clear_session_cookie(response: Response) -> None:
     response.delete_cookie(SESSION_COOKIE, httponly=True, secure=True, samesite="strict", path="/")

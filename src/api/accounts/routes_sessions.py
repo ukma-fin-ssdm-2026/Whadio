@@ -11,10 +11,10 @@ from ..core.errors import DOC_INVALID, DOC_MALFORMED, ApiError, ErrorCode, error
 from .auth import (
     BROWSER_SESSION_TTL,
     EXTENSION_TOKEN_TTL,
+    SESSION_COOKIE,
     Bearer,
     Cookie,
     clear_session_cookie,
-    set_session_cookie,
 )
 from .models import User, UserSession
 from .schemas import SessionKind, SessionRead, SignIn
@@ -69,7 +69,15 @@ async def sign_in(payload: SignIn, response: Response, db: Db) -> SessionRead:
         return SessionRead(
             kind=payload.kind, expires_at=session.expires_at, user=user.to_read(), token=token
         )
-    set_session_cookie(response, token)
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        max_age=int(BROWSER_SESSION_TTL.total_seconds()),
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        path="/",
+    )
     return SessionRead(kind=payload.kind, expires_at=session.expires_at, user=user.to_read())
 
 

@@ -1,27 +1,11 @@
-from datetime import UTC, datetime
+from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, String, TypeDecorator
-from sqlalchemy.engine import Dialect
+from sqlalchemy import ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ..core.db import Base
-from .schemas import SessionKind, UserRead
-
-
-class UtcDateTime(TypeDecorator[datetime]):
-    """Timezone-aware UTC datetimes, also on SQLite, which stores them without an offset."""
-
-    impl = DateTime(timezone=True)
-    cache_ok = True
-
-    def process_bind_param(self, value: datetime | None, dialect: Dialect) -> datetime | None:
-        return None if value is None else value.astimezone(UTC)
-
-    def process_result_value(self, value: datetime | None, dialect: Dialect) -> datetime | None:
-        if value is None:
-            return None
-        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+from ..core.db import Base, UtcDateTime
+from .schemas import Preset, Role, SessionKind, UserRead
 
 
 class User(Base):
@@ -55,3 +39,24 @@ class UserSession(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime)
     expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
+
+
+class Workspace(Base):
+    __tablename__ = "workspaces"
+
+    workspace_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(100))
+    default_preset: Mapped[Preset] = mapped_column("default_template")
+    is_personal: Mapped[bool]
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime)
+
+
+class WorkspaceMembership(Base):
+    __tablename__ = "workspace_memberships"
+    __table_args__ = (UniqueConstraint("workspace_id", "user_id"),)
+
+    workspace_membership_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.workspace_id"))
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.user_id"))
+    role: Mapped[Role]
+    joined_at: Mapped[datetime] = mapped_column(UtcDateTime)

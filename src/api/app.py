@@ -1,4 +1,5 @@
 import logging
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -9,7 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from . import meta
 from .accounts import routes_sessions, routes_workspaces
 from .accounts.fixtures import DEMO_EMAIL, DEMO_PASSWORD, TEAM_WORKSPACE_ID, seed_demo_user
-from .core.db import create_tables, database_url
+from .core.db import DEFAULT_DATABASE_URL, create_tables
 from .core.errors import register_error_handlers
 from .mcp_server import build_mcp_server
 from .meetings import routes as meeting_routes
@@ -83,7 +84,9 @@ def create_app(database: str | None = None) -> FastAPI:
         docs_url="/api-docs",
         lifespan=combine_lifespans(_export_spec, _database, mcp_app.lifespan),
     )
-    app.state.database_url = database or database_url()
+    app.state.database_url = database or os.environ.get(
+        "WHADIO_DATABASE_URL", DEFAULT_DATABASE_URL
+    )
     v1 = APIRouter(prefix="/api/v1")
     for module in (routes_sessions, routes_workspaces, meeting_routes):
         v1.include_router(module.router)

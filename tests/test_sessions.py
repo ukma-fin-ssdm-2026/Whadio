@@ -1,25 +1,13 @@
-from collections.abc import Iterator
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
 
 from api.accounts.auth import SESSION_COOKIE
 from api.accounts.fixtures import DEMO_EMAIL, DEMO_PASSWORD, TEAM_WORKSPACE_ID
-from api.app import create_app
 
 SESSIONS = "/api/v1/sessions"
 SIGN_OUT = "/api/v1/sessions/current"
 # Any endpoint behind the browser session will do.
 WORKSPACES = "/api/v1/workspaces"
-
-
-@pytest.fixture
-def client(tmp_path: Path) -> Iterator[TestClient]:
-    app = create_app(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}")
-    # https, because the session cookie is Secure and is not sent over plain http.
-    with TestClient(app, base_url="https://testserver") as client:
-        yield client
 
 
 def sign_in(client: TestClient, **overrides: str):
