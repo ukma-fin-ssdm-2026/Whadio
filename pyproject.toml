@@ -29,6 +29,7 @@ dev = [
     "basedpyright>=1.40.2",
     "deptry>=0.25.1",
     "import-linter>=2.15",
+    "pytest>=9.1.1",
     "ruff>=0.16.10",
     "ty>=0.0.85",
     "types-pyyaml>=6.0.12.20260906",
@@ -197,3 +198,13 @@ name = "Only processing and the workers use the job contracts"
 type = "protected"
 protected_modules = ["whadio.contracts"]
 allowed_importers = ["whadio.processing", "whadio.workers"]
+
+[tool.pytest]
+minversion = "9.0"
+strict = true
+testpaths = ["src"]
+addopts = ["--import-mode=importlib"]
+markers = ["slow: needs models or running services; left out of the commit hook"]
+
+[tool.deptry]
+extend_exclude = ["src/.*/test_[^/]*\\.py"]
