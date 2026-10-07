@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
+      - name: Run tests
+        run: uv run pytest
+
       - name: Generate OpenAPI specification
         run: uv run python -m api.openapi_export
 

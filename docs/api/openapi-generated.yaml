@@ -5,7 +5,8 @@ info:
     Whadio records Google Meet calls from the browser, transcribes them with speaker labels and
     writes notes, inside workspaces with roles, restrictions and sharing.
 
-    This server is a **stub**: every endpoint answers with fixed demo data, and writes return the
+    This server is mostly a **stub**: signing in and out use real accounts and sessions stored in
+    the database, while every other endpoint answers with fixed demo data, and its writes return the
     result they would have but store nothing. Only part of the designed API is implemented; the
     full design is in `docs/api/api-design.md`.
 
@@ -89,6 +90,9 @@ paths:
       responses:
         '204':
           description: Signed out
+      security:
+      - sessionCookie: []
+      - extensionToken: []
   /api/v1/workspaces:
     get:
       tags:

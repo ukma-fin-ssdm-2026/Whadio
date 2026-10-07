@@ -1,15 +1,22 @@
+import hashlib
+import hmac
+import secrets
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Response
+from sqlalchemy import delete, select
 
+from ..core.db import Db
 from ..core.errors import DOC_INVALID, DOC_MALFORMED, ApiError, ErrorCode, error_responses
 from .auth import (
     BROWSER_SESSION_TTL,
     EXTENSION_TOKEN_TTL,
+    Bearer,
+    Cookie,
     clear_session_cookie,
     set_session_cookie,
 )
-from .fixtures import ALICE, DEMO_EMAIL, DEMO_EXTENSION_TOKEN, DEMO_PASSWORD
+from .models import User, UserSession
 from .schemas import SessionKind, SessionRead, SignIn
 
 router = APIRouter(tags=["accounts"])
@@ -36,19 +43,34 @@ router = APIRouter(tags=["accounts"])
         }
     ),
 )
-async def sign_in(payload: SignIn, response: Response) -> SessionRead:
-    if (payload.email, payload.password) != (DEMO_EMAIL, DEMO_PASSWORD):
+async def sign_in(payload: SignIn, response: Response, db: Db) -> SessionRead:
+    user = await db.scalar(select(User).where(User.email == payload.email.lower()))
+    if user is None or not hmac.compare_digest(
+        user.password_hash,
+        # The lowercased email is the salt, so equal passwords still hash differently per user.
+        hashlib.sha256((payload.email.lower() + payload.password).encode()).hexdigest(),
+    ):
         raise ApiError(401, ErrorCode.INVALID_CREDENTIALS, "Wrong email address or password")
+
     now = datetime.now(UTC)
+    ttl = EXTENSION_TOKEN_TTL if payload.kind is SessionKind.EXTENSION else BROWSER_SESSION_TTL
+    token = secrets.token_urlsafe(32)
+    session = UserSession(
+        user_id=user.user_id,
+        kind=payload.kind,
+        token_hash=hashlib.sha256(token.encode()).hexdigest(),
+        created_at=now,
+        expires_at=now + ttl,
+    )
+    db.add(session)
+    await db.commit()
+
     if payload.kind is SessionKind.EXTENSION:
         return SessionRead(
-            kind=payload.kind,
-            expires_at=now + EXTENSION_TOKEN_TTL,
-            user=ALICE,
-            token=DEMO_EXTENSION_TOKEN,
+            kind=payload.kind, expires_at=session.expires_at, user=user.to_read(), token=token
         )
-    set_session_cookie(response)
-    return SessionRead(kind=payload.kind, expires_at=now + BROWSER_SESSION_TTL, user=ALICE)
+    set_session_cookie(response, token)
+    return SessionRead(kind=payload.kind, expires_at=session.expires_at, user=user.to_read())
 
 
 @router.delete(
@@ -61,5 +83,10 @@ async def sign_in(payload: SignIn, response: Response) -> SessionRead:
     ),
     response_description="Signed out",
 )
-async def sign_out(response: Response) -> None:
+async def sign_out(response: Response, db: Db, cookie: Cookie, bearer: Bearer) -> None:
+    token = bearer.credentials if bearer is not None else cookie
+    if token is not None:
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        await db.execute(delete(UserSession).where(UserSession.token_hash == token_hash))
+        await db.commit()
     clear_session_cookie(response)

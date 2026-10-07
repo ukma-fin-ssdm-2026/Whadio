@@ -4,10 +4,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
 from fastmcp.utilities.lifespan import combine_lifespans
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from . import meta
 from .accounts import routes_sessions, routes_workspaces
-from .accounts.fixtures import DEMO_EMAIL, DEMO_PASSWORD, TEAM_WORKSPACE_ID
+from .accounts.fixtures import DEMO_EMAIL, DEMO_PASSWORD, TEAM_WORKSPACE_ID, seed_demo_user
+from .core.db import create_tables, database_url
 from .core.errors import register_error_handlers
 from .mcp_server import build_mcp_server
 from .meetings import routes as meeting_routes
@@ -20,7 +22,8 @@ DESCRIPTION = f"""
 Whadio records Google Meet calls from the browser, transcribes them with speaker labels and
 writes notes, inside workspaces with roles, restrictions and sharing.
 
-This server is a **stub**: every endpoint answers with fixed demo data, and writes return the
+This server is mostly a **stub**: signing in and out use real accounts and sessions stored in
+the database, while every other endpoint answers with fixed demo data, and its writes return the
 result they would have but store nothing. Only part of the designed API is implemented; the
 full design is in `docs/api/api-design.md`.
 
@@ -59,7 +62,18 @@ async def _export_spec(app: FastAPI) -> AsyncGenerator[None]:
     yield
 
 
-def create_app() -> FastAPI:
+@asynccontextmanager
+async def _database(app: FastAPI) -> AsyncGenerator[None]:
+    engine = create_async_engine(app.state.database_url)
+    await create_tables(engine)
+    app.state.sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
+    async with app.state.sessionmaker() as db:
+        await seed_demo_user(db)
+    yield
+    await engine.dispose()
+
+
+def create_app(database: str | None = None) -> FastAPI:
     mcp_app = build_mcp_server().http_app(path="/")
     app = FastAPI(
         title="Whadio API",
@@ -67,8 +81,9 @@ def create_app() -> FastAPI:
         version=API_VERSION,
         openapi_tags=TAGS,
         docs_url="/api-docs",
-        lifespan=combine_lifespans(_export_spec, mcp_app.lifespan),
+        lifespan=combine_lifespans(_export_spec, _database, mcp_app.lifespan),
     )
+    app.state.database_url = database or database_url()
     v1 = APIRouter(prefix="/api/v1")
     for module in (routes_sessions, routes_workspaces, meeting_routes):
         v1.include_router(module.router)

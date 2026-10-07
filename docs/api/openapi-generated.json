@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Whadio API",
-    "description": "Whadio records Google Meet calls from the browser, transcribes them with speaker labels and\nwrites notes, inside workspaces with roles, restrictions and sharing.\n\nThis server is a **stub**: every endpoint answers with fixed demo data, and writes return the\nresult they would have but store nothing. Only part of the designed API is implemented; the\nfull design is in `docs/api/api-design.md`.\n\n## Quick start\n1. `POST /api/v1/sessions` with `alice@whadio.dev` and the password `whadio-demo-pass`. The browser\n   keeps the session cookie, so every later call in this page is signed in.\n2. `GET /api/v1/workspaces`, then `GET /api/v1/workspaces/7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d/meetings`.\n3. `GET /api/v1/meetings/5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9/transcript` is processed;\n   `0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d` is still queued and answers `409`.\n\n## Conventions\n- **Errors:** every 4xx and 5xx body is `{\"error\": {\"code\", \"message\", \"details\",\n  \"request_id\"}}`. Branch on `code`; `request_id` equals the `X-Request-ID` response header.\n- **Lists:** `limit` (1-100, default 20) and `cursor`; responses are\n  `{\"items\": [...], \"pagination\": {\"limit\", \"next_cursor\", \"has_more\"}}`.\n- **Visibility:** a resource the caller cannot see is `404`, never `403`, so its existence does\n  not leak. `403` means the caller can see it but their role does not allow the action.\n- **Time:** ISO 8601 with an offset; returned in UTC.",
+    "description": "Whadio records Google Meet calls from the browser, transcribes them with speaker labels and\nwrites notes, inside workspaces with roles, restrictions and sharing.\n\nThis server is mostly a **stub**: signing in and out use real accounts and sessions stored in\nthe database, while every other endpoint answers with fixed demo data, and its writes return the\nresult they would have but store nothing. Only part of the designed API is implemented; the\nfull design is in `docs/api/api-design.md`.\n\n## Quick start\n1. `POST /api/v1/sessions` with `alice@whadio.dev` and the password `whadio-demo-pass`. The browser\n   keeps the session cookie, so every later call in this page is signed in.\n2. `GET /api/v1/workspaces`, then `GET /api/v1/workspaces/7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d/meetings`.\n3. `GET /api/v1/meetings/5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9/transcript` is processed;\n   `0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d` is still queued and answers `409`.\n\n## Conventions\n- **Errors:** every 4xx and 5xx body is `{\"error\": {\"code\", \"message\", \"details\",\n  \"request_id\"}}`. Branch on `code`; `request_id` equals the `X-Request-ID` response header.\n- **Lists:** `limit` (1-100, default 20) and `cursor`; responses are\n  `{\"items\": [...], \"pagination\": {\"limit\", \"next_cursor\", \"has_more\"}}`.\n- **Visibility:** a resource the caller cannot see is `404`, never `403`, so its existence does\n  not leak. `403` means the caller can see it but their role does not allow the action.\n- **Time:** ISO 8601 with an offset; returned in UTC.",
     "version": "0.1.0"
   },
   "paths": {
@@ -90,7 +90,15 @@
           "204": {
             "description": "Signed out"
           }
-        }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "extensionToken": []
+          }
+        ]
       }
     },
     "/api/v1/workspaces": {

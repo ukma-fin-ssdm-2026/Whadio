@@ -1,14 +1,17 @@
+import hashlib
 from datetime import UTC, datetime
 from typing import Final
 from uuid import UUID
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from ..core.errors import not_found
+from .models import User
 from .schemas import Preset, Provider, Role, UserRead, WorkspaceRead
 
 DEMO_EMAIL: Final = "alice@whadio.dev"
 DEMO_PASSWORD: Final = "whadio-demo-pass"
-DEMO_SESSION_TOKEN: Final = "demo-browser-session"
-DEMO_EXTENSION_TOKEN: Final = "demo-extension-token"
 
 TEAM_WORKSPACE_ID: Final = UUID("7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d")
 PERSONAL_WORKSPACE_ID: Final = UUID("1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f")
@@ -52,3 +55,21 @@ def workspace(workspace_id: UUID) -> WorkspaceRead:
     if workspace_id not in WORKSPACES:
         raise not_found("Workspace")
     return WORKSPACES[workspace_id]
+
+
+async def seed_demo_user(db: AsyncSession) -> None:
+    """Creates Alice, so the quick start in the API docs can sign in, unless she exists."""
+    if await db.scalar(select(User).where(User.email == DEMO_EMAIL)) is not None:
+        return
+    db.add(
+        User(
+            user_id=ALICE.id,
+            email=ALICE.email,
+            name=ALICE.name,
+            password_hash=hashlib.sha256((DEMO_EMAIL + DEMO_PASSWORD).encode()).hexdigest(),
+            is_administrator=ALICE.is_administrator,
+            terms_accepted_at=ALICE.created_at,
+            created_at=ALICE.created_at,
+        )
+    )
+    await db.commit()
