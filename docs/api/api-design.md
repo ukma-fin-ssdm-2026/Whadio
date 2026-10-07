@@ -34,9 +34,11 @@ The three HTTP interfaces of the high-level design map onto the API as follows:
   SPA use it.
 - **MCP:** `/mcp/`. The user's AI assistant uses it.
 
-The code follows the module boundaries of the high-level design: `accounts`, `meetings`,
-`access_policy`, `processing`, `export`, `capture` and `admin`. Each module serves its own
-resources, so there is no separate "Web API" layer.
+The code follows the module boundaries of the high-level design: `whadio.api` has one subpackage
+per module (`accounts`, `meetings`, `access_policy`, `processing`, `export`, `capture` and
+`admin`) holding only that module's HTTP layer, and the module's domain logic lives in its own
+package next to it, such as `whadio.meetings`. Each module serves its own resources, so there is no
+separate "Web API" component.
 
 ## 2. Implementation status
 

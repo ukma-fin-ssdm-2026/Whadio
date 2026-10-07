@@ -14,18 +14,26 @@ Whadio is an open-source meeting recording and transcription service focused on 
 | Zlata Tsepkalo | @t-zlata | Repository Maintainer, Quality Lead, Data & Threat Modeler, API Documentation Lead |
 
 
-# Running the API
+# Development
+
+[AGENTS.md](AGENTS.md) covers everything a contributor or their AI agent needs: the code layout,
+the architecture rules, the coding standards and the checks every change must pass. In short, with
+[uv](https://docs.astral.sh/uv/) and Docker installed:
+
+```bash
+uv sync                  # Python 3.13, the dependencies and the dev tools, in .venv
+uv run task setup        # also installs the git hooks
+cp .env.example .env     # local credentials for the Compose stack
+uv run task infra:up     # PostgreSQL, RabbitMQ, SeaweedFS and Mailpit
+uv run task dev          # the API on http://localhost:3000, with auto-reload
+```
+
+## Running the API
 
 The backend API lives in [`src/whadio/api/`](src/whadio/api/). It is a stub: it implements 16
 of the 70 designed operations, answers with fixed demo data and stores nothing. The full design,
 including what each error means, is in [`docs/api/api-design.md`](docs/api/api-design.md).
-
-Requirements: [uv](https://docs.astral.sh/uv/) (it installs Python 3.13 into a local `.venv`).
-
-```bash
-uv sync                                                # create .venv and install dependencies
-uv run fastapi dev -e whadio.api.main:app --port 3000   # start with auto-reload
-```
+`uv run task dev` starts it; `uv run whadio web` runs it without auto-reload.
 
 - Swagger UI: <http://localhost:3000/api-docs> (ReDoc: <http://localhost:3000/redoc>; the
   specification: <http://localhost:3000/openapi.json>)
