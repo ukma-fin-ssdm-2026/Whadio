@@ -2,7 +2,7 @@
 
 This document describes Whadio's HTTP API: what it exposes, how its resources are modelled,
 what each error means, and the decisions behind its conventions. It covers the **whole designed
-API**. The code in [`src/api/`](../../src/api/) implements one vertical slice of it as stubs
+API**. The code in [`src/whadio/api/`](../../src/whadio/api/) implements one vertical slice of it as stubs
 (section 2).
 
 The API is written code-first: FastAPI builds the OpenAPI specification from the code, and
@@ -1039,7 +1039,7 @@ status, and which operations return it.
 The specification is produced by FastAPI from route decorators and Pydantic models, so it
 matches what the server does. The server serves it at `/openapi.json`, renders Swagger UI at
 `/api-docs`, and writes `docs/api/openapi-generated.yaml` and `.json` on startup. Running
-`python -m api.openapi_export` writes the same files without starting the server, which is what
+`whadio openapi` writes the same files without starting the server, which is what
 CI and the Pages deployment use.
 
 Pydantic was chosen as the single modelling tool for request validation, responses and,
