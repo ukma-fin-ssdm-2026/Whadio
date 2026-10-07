@@ -26,7 +26,7 @@ jobs:
         run: uv sync --locked
 
       - name: Generate OpenAPI specification
-        run: uv run python -m api.openapi_export
+        run: uv run whadio openapi
 
       - name: Lint OpenAPI specification
         run: npx --yes @redocly/cli@2.55.0 lint docs/api/openapi-generated.yaml

@@ -16,15 +16,15 @@ Whadio is an open-source meeting recording and transcription service focused on 
 
 # Running the API
 
-The backend API lives in [`src/api/`](src/api/). It is a stub: it implements 16 of the 70
-designed operations, answers with fixed demo data and stores nothing. The full design, including
-what each error means, is in [`docs/api/api-design.md`](docs/api/api-design.md).
+The backend API lives in [`src/whadio/api/`](src/whadio/api/). It is a stub: it implements 16
+of the 70 designed operations, answers with fixed demo data and stores nothing. The full design,
+including what each error means, is in [`docs/api/api-design.md`](docs/api/api-design.md).
 
 Requirements: [uv](https://docs.astral.sh/uv/) (it installs Python 3.13 into a local `.venv`).
 
 ```bash
-uv sync                                          # create .venv and install dependencies
-uv run fastapi dev src/api/main.py --port 3000   # start with auto-reload
+uv sync                                                # create .venv and install dependencies
+uv run fastapi dev -e whadio.api.main:app --port 3000   # start with auto-reload
 ```
 
 - Swagger UI: <http://localhost:3000/api-docs> (ReDoc: <http://localhost:3000/redoc>; the
@@ -33,7 +33,7 @@ uv run fastapi dev src/api/main.py --port 3000   # start with auto-reload
   `whadio-demo-pass`; the browser keeps the session cookie for the other calls. The demo ids
   are listed at the top of the Swagger page.
 - Starting the server writes the OpenAPI specification to `docs/api/openapi-generated.yaml`
-  and `.json`; to regenerate it without a server, run `uv run python -m api.openapi_export`.
+  and `.json`; to regenerate it without a server, run `uv run whadio openapi`.
 
 ## Connecting an AI assistant (MCP)
 
