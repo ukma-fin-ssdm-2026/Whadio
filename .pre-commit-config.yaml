@@ -104,7 +104,7 @@ repos:
         name: zizmor (GitHub Actions security)
         language: unsupported
         entry: uv run --frozen zizmor
-        files: ^\.github/
+        files: ^\.github/.*\.ya?ml$
 
       - id: import-linter
         name: import-linter (architecture contracts)
