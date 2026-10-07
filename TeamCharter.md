@@ -15,16 +15,16 @@
 ## 3. Communication Plan
 - Primary channel: Telegram chat, Google Meet calls
 - Meeting schedule: online meetings on demand, approximately once a week
-- Response expectations: 
-    - no more than 6 hours during working hours; 
+- Response expectations:
+    - no more than 6 hours during working hours;
     - if less than 24 hours to the deadline -> 1 hour
-    - *soft deadline*: assigned tasks should preferably be completed 24 hours before the deadline 
+    - *soft deadline*: assigned tasks should preferably be completed 24 hours before the deadline
 
 ## 4. Collaboration and Workflow
 - Branching strategy: branches for issues (resolves / relates to) + pull requests to main.
 - Branch naming: `type/#<issue-number>-short-description` format is used (e.g., `docs/#3-teamcharter-setup`).
 - Commit practices:
-    - intermediate results that pass tests and do not break the core system; 
+    - intermediate results that pass tests and do not break the core system;
     - final results.
 - Commit conventions: `<type>(#<issue-number>): short message` format is used (e.g., `docs(#3): add TeamCharter.md`).
 - Code review rules:
@@ -55,7 +55,7 @@
 
 ## 5. Conflict Resolution
 - Conflict resolution plan:
-    - joint discussion -> majority vote, 
+    - joint discussion -> majority vote,
     - upon failure -> appeal to the instructor
 
 ## 6. Availability and Workload
@@ -82,7 +82,7 @@ Overload -> notify in the primary channel -> brief discussion and selection of a
 ## 9. AI Usage
 - Tools: coding agents, chat models
 - Disclosure rules: indication of AI usage in files and in PR review summaries
-- Verification rules: 
+- Verification rules:
     - generated code must undergo review and testing before merging;
     - unverified generated code cannot be merged into the main branch;
     - responsibility for anything generated lies solely with the person who generated it

@@ -52,7 +52,7 @@ implemented yet.
 - [Project Description](Project-Description.md)
 
 ## Requirements Artifacts
-All requirements documentation is maintained in the [`/docs/requirements/`](docs/requirements/) directory. 
+All requirements documentation is maintained in the [`/docs/requirements/`](docs/requirements/) directory.
 - [User Stories](docs/requirements/user-stories.md)
 - [Requirements](docs/requirements/requirements.md)
 - [Requirements Traceability Matrix (RTM)](docs/requirements/rtm.md)
