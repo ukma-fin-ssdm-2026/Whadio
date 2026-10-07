@@ -70,8 +70,8 @@ def create_app() -> FastAPI:
         lifespan=combine_lifespans(_export_spec, mcp_app.lifespan),
     )
     v1 = APIRouter(prefix="/api/v1")
-    for module in (routes_sessions, routes_workspaces, meeting_routes):
-        v1.include_router(module.router)
+    for router in (routes_sessions.router, routes_workspaces.router, meeting_routes.router):
+        v1.include_router(router)
     app.include_router(v1)
     app.include_router(meta.router)
     app.mount("/mcp", mcp_app)
