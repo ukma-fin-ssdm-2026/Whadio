@@ -14,31 +14,45 @@ concurrency:
 
 jobs:
   verify:
-    name: Verify API & Contract
+    name: Checks, tests and API contract
     runs-on: ubuntu-latest
+    env:
+      # Pushes to main check out main itself; the hook exists to stop local commits there.
+      SKIP: no-commit-to-branch
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The whole history, for the history-wide secret scan.
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
 
       - name: Install dependencies
         run: uv sync --locked
 
-      - name: Generate OpenAPI specification
-        run: uv run whadio openapi
+      - name: Cache pre-commit environments
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml', '.python-version') }}
+
+      - name: Run the commit-hook checks on all files
+        run: uv run --frozen task check
+
+      - name: Run the whole test suite
+        run: uv run --frozen task test
+
+      - name: Audit dependencies and the git history
+        run: uv run --frozen task audit
 
       - name: Lint OpenAPI specification
         run: npx --yes @redocly/cli@2.55.0 lint docs/api/openapi-generated.yaml
 
-      - name: Check contract drift
-        run: |
-          git status --short -- docs/api
-          test -z "$(git status --porcelain -- docs/api)"
-
       - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
         with:
           path: docs/api
 
@@ -59,4 +73,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
