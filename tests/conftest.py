@@ -18,7 +18,7 @@ BOB_PASSWORD = "bob-password"
 
 @pytest.fixture
 def client(tmp_path: Path) -> Iterator[TestClient]:
-    app = create_app(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}")
+    app = create_app(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", tmp_path / "recordings")
     # https, because the session cookie is Secure and is not sent over plain http.
     with TestClient(app, base_url="https://testserver") as client:
         yield client

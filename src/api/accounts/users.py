@@ -3,12 +3,13 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..meetings.models import Folder
 from .models import User, Workspace, WorkspaceMembership
 from .schemas import Preset, Role
 
 
 async def create_user(db: AsyncSession, email: str, name: str, password: str) -> User:
-    """Adds an account with its personal workspace; the caller commits.
+    """Adds an account with its personal workspace and its default folder; the caller commits.
 
     Registration will call this once it exists; until then only tests do.
     """
@@ -24,9 +25,17 @@ async def create_user(db: AsyncSession, email: str, name: str, password: str) ->
     personal = Workspace(name=name, default_preset=Preset.SUMMARY, is_personal=True, created_at=now)
     db.add_all([user, personal])
     await db.flush()
-    db.add(
-        WorkspaceMembership(
-            workspace_id=personal.workspace_id, user_id=user.user_id, role=Role.OWNER, joined_at=now
-        )
+    db.add_all(
+        [
+            WorkspaceMembership(
+                workspace_id=personal.workspace_id,
+                user_id=user.user_id,
+                role=Role.OWNER,
+                joined_at=now,
+            ),
+            Folder(
+                workspace_id=personal.workspace_id, name="Default", created_at=now, is_default=True
+            ),
+        ]
     )
     return user

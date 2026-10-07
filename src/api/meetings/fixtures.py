@@ -2,9 +2,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Final
 from uuid import UUID
 
-from ..accounts.fixtures import ALICE, PERSONAL_WORKSPACE_ID, TEAM_WORKSPACE_ID, workspace
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..accounts.fixtures import ALICE, PERSONAL_WORKSPACE_ID, TEAM_WORKSPACE_ID
 from ..accounts.schemas import Preset, Provider
-from ..core.errors import ApiError, ErrorCode, ErrorDetail, not_found
+from ..core.errors import ApiError, ErrorCode, not_found
+from .models import Folder, Meeting
 from .schemas import (
     AccessMode,
     ContextMeetingRead,
@@ -27,15 +30,6 @@ DESIGN_SYNC_MEETING_ID: Final = UUID("0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d")
 PERSONAL_FOLDER_ID: Final = UUID("2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e")
 TEAM_DEFAULT_FOLDER_ID: Final = UUID("9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a")
 RETENTION: Final = timedelta(days=90)
-_DEFAULT_FOLDERS: Final = {
-    TEAM_WORKSPACE_ID: TEAM_DEFAULT_FOLDER_ID,
-    PERSONAL_WORKSPACE_ID: PERSONAL_FOLDER_ID,
-}
-_FOLDER_WORKSPACES: Final = {
-    TEAM_DEFAULT_FOLDER_ID: TEAM_WORKSPACE_ID,
-    SPRINT_FOLDER_ID: TEAM_WORKSPACE_ID,
-    PERSONAL_FOLDER_ID: PERSONAL_WORKSPACE_ID,
-}
 
 
 def _meeting(
@@ -176,30 +170,6 @@ def meeting(meeting_id: UUID) -> MeetingRead:
     return MEETINGS[meeting_id]
 
 
-def folder_in(workspace_id: UUID, folder_id: UUID | None) -> UUID:
-    if folder_id is None:
-        return _DEFAULT_FOLDERS[workspace_id]
-    if _FOLDER_WORKSPACES.get(folder_id) != workspace_id:
-        raise ApiError(
-            422,
-            ErrorCode.VALIDATION_ERROR,
-            "Request contains invalid fields",
-            [
-                ErrorDetail(
-                    field="folder_id",
-                    message="is not a folder of this workspace",
-                    provided_value=str(folder_id),
-                )
-            ],
-        )
-    return folder_id
-
-
-def meetings_of(workspace_id: UUID) -> list[MeetingRead]:
-    workspace(workspace_id)
-    return [item for item in _MEETINGS if item.workspace_id == workspace_id]
-
-
 def transcribed(meeting_id: UUID) -> MeetingRead:
     found = meeting(meeting_id)
     if found.processing_state is not ProcessingState.PROCESSED:
@@ -215,3 +185,63 @@ def transcript(meeting_id: UUID) -> TranscriptRead:
 def notes(meeting_id: UUID) -> list[NoteRead]:
     found = meeting(meeting_id)
     return [_NOTES] if found.processing_state is ProcessingState.PROCESSED else []
+
+
+async def seed_demo_meetings(db: AsyncSession) -> None:
+    """Puts the demo folders and meetings above into the database, unless they are there."""
+    if await db.get(Folder, PERSONAL_FOLDER_ID) is not None:
+        return
+    created_at = datetime(2026, 9, 1, 9, 0, tzinfo=UTC)
+    db.add_all(
+        [
+            Folder(
+                folder_id=PERSONAL_FOLDER_ID,
+                workspace_id=PERSONAL_WORKSPACE_ID,
+                name="Default",
+                created_at=created_at,
+                is_default=True,
+            ),
+            Folder(
+                folder_id=TEAM_DEFAULT_FOLDER_ID,
+                workspace_id=TEAM_WORKSPACE_ID,
+                name="Default",
+                created_at=created_at,
+                is_default=True,
+            ),
+            Folder(
+                folder_id=SPRINT_FOLDER_ID,
+                workspace_id=TEAM_WORKSPACE_ID,
+                name="Sprint reviews",
+                created_at=created_at,
+                is_default=False,
+            ),
+        ]
+    )
+    await db.flush()
+    db.add_all(
+        [
+            Meeting(
+                meeting_id=item.id,
+                folder_id=item.folder_id,
+                created_by_user_id=item.created_by_user_id,
+                name=item.name,
+                name_is_generated=item.name_is_generated,
+                source_type=item.source_type,
+                recording_status=item.recording_status,
+                processing_state=item.processing_state,
+                storage_path=None,
+                duration_seconds=item.duration_seconds,
+                recorded_at=item.recorded_at,
+                created_at=item.created_at,
+                consent_confirmed_at=item.consent_confirmed_at,
+                consent_confirmed_by_user_id=(
+                    item.created_by_user_id if item.consent_confirmed_at else None
+                ),
+                recording_delete_after=item.recording_delete_after,
+                recording_deleted_at=None,
+                access_mode=item.access_mode,
+            )
+            for item in _MEETINGS
+        ]
+    )
+    await db.commit()

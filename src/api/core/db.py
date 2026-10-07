@@ -5,7 +5,7 @@ from typing import Annotated, Final
 from fastapi import Depends, Request
 from sqlalchemy import DateTime, TypeDecorator
 from sqlalchemy.engine import Dialect
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
 # SQLite until the team runs PostgreSQL; switching is a matter of this URL
@@ -36,6 +36,7 @@ async def create_tables(engine: AsyncEngine) -> None:
     # Importing the models registers their tables on Base.metadata.
     from ..accounts import models  # noqa: F401
     from ..audit import models as audit_models  # noqa: F401
+    from ..meetings import models as meeting_models  # noqa: F401
 
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)

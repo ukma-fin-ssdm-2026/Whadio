@@ -2,6 +2,7 @@ import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import APIRouter, FastAPI
 from fastmcp.utilities.lifespan import combine_lifespans
@@ -14,7 +15,7 @@ from .core.db import DEFAULT_DATABASE_URL, create_tables
 from .core.errors import register_error_handlers
 from .mcp_server import build_mcp_server
 from .meetings import routes as meeting_routes
-from .meetings.fixtures import DESIGN_SYNC_MEETING_ID, SPRINT_12_MEETING_ID
+from .meetings.fixtures import DESIGN_SYNC_MEETING_ID, SPRINT_12_MEETING_ID, seed_demo_meetings
 from .openapi_export import export_openapi
 
 API_VERSION = "0.1.0"
@@ -70,11 +71,12 @@ async def _database(app: FastAPI) -> AsyncGenerator[None]:
     app.state.sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
     async with app.state.sessionmaker() as db:
         await seed_demo_user(db)
+        await seed_demo_meetings(db)
     yield
     await engine.dispose()
 
 
-def create_app(database: str | None = None) -> FastAPI:
+def create_app(database: str | None = None, recordings: Path | None = None) -> FastAPI:
     mcp_app = build_mcp_server().http_app(path="/")
     app = FastAPI(
         title="Whadio API",
@@ -86,6 +88,10 @@ def create_app(database: str | None = None) -> FastAPI:
     )
     app.state.database_url = database or os.environ.get(
         "WHADIO_DATABASE_URL", DEFAULT_DATABASE_URL
+    )
+    # A local folder until the team runs object storage (S3).
+    app.state.recordings_dir = recordings or Path(
+        os.environ.get("WHADIO_RECORDINGS_DIR", "recordings")
     )
     v1 = APIRouter(prefix="/api/v1")
     for module in (routes_sessions, routes_workspaces, meeting_routes):

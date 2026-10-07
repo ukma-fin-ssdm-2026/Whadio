@@ -8,6 +8,7 @@ from sqlalchemy.orm import aliased
 
 from ..audit.models import AuditAction, AuditEvent
 from ..core.db import Db
+from ..meetings.models import Folder, Meeting
 
 from ..core.errors import (
     DOC_INVALID,
@@ -118,10 +119,15 @@ async def create_workspace(
     )
     db.add(workspace)
     await db.flush()
-    db.add(
-        WorkspaceMembership(
-            workspace_id=workspace.workspace_id, user_id=user.id, role=Role.OWNER, joined_at=now
-        )
+    db.add_all(
+        [
+            WorkspaceMembership(
+                workspace_id=workspace.workspace_id, user_id=user.id, role=Role.OWNER, joined_at=now
+            ),
+            Folder(
+                workspace_id=workspace.workspace_id, name="Default", created_at=now, is_default=True
+            ),
+        ]
     )
     await db.commit()
     response.headers["Location"] = str(
@@ -213,7 +219,10 @@ async def delete_workspace(workspace_id: WorkspaceId, user: BrowserUser, db: Db)
         raise ApiError(403, ErrorCode.INSUFFICIENT_ROLE, "Only the Owner can delete the workspace")
     if found[0].is_personal:
         raise ApiError(409, ErrorCode.PERSONAL_WORKSPACE, "A personal workspace cannot be deleted")
-    # Folders and meetings are not stored in the database yet; once they are, they go here too.
+    folders = select(Folder.folder_id).where(Folder.workspace_id == workspace_id)
+    # Recordings, transcripts and notes are not stored yet; once they are, they go here too.
+    await db.execute(delete(Meeting).where(Meeting.folder_id.in_(folders)))
+    await db.execute(delete(Folder).where(Folder.workspace_id == workspace_id))
     await db.execute(
         delete(WorkspaceMembership).where(WorkspaceMembership.workspace_id == workspace_id)
     )
