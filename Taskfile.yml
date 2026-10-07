@@ -1,0 +1,40 @@
+version: "3"
+
+tasks:
+  setup:
+    desc: Install the dependencies and the git hooks
+    cmds:
+      - uv sync --locked
+      - uv run --frozen pre-commit install --install-hooks
+
+  dev:
+    desc: Run the API with auto-reload on http://localhost:3000
+    cmds:
+      - uv run --frozen fastapi dev --entrypoint whadio.api.main:app --port 3000
+
+  fix:
+    desc: Apply ruff's fixes and formatting to the whole project
+    cmds:
+      - uv run --frozen ruff check --fix
+      - uv run --frozen ruff format
+
+  check:
+    desc: Run every commit-hook check on all files, as CI does
+    cmds:
+      - uv run --frozen pre-commit run --all-files --show-diff-on-failure
+
+  test:
+    desc: Run the whole test suite, slow tests included
+    cmds:
+      - uv run --frozen pytest {{.CLI_ARGS}}
+
+  audit:
+    desc: Look for vulnerable dependencies and for secrets anywhere in the git history
+    cmds:
+      - uv run --frozen pre-commit run uv-audit --hook-stage manual --all-files
+      - uv run --frozen pre-commit run gitleaks-history --hook-stage manual --all-files
+
+  openapi:
+    desc: Regenerate docs/api/openapi-generated.yaml and .json
+    cmds:
+      - uv run --frozen whadio openapi

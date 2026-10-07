@@ -25,14 +25,20 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "actionlint-py>=1.7.12.25",
     "bandit>=1.9.4",
     "basedpyright>=1.40.2",
+    "check-jsonschema>=0.38.2",
     "deptry>=0.25.1",
+    "go-task-bin>=3.54.0",
     "import-linter>=2.15",
+    "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "ruff>=0.16.10",
     "ty>=0.0.85",
     "types-pyyaml>=6.0.12.20260906",
+    "typos>=1.51.1",
+    "zizmor>=1.30.1",
 ]
 
 [tool.uv]
@@ -208,3 +214,9 @@ markers = ["slow: needs models or running services; left out of the commit hook"
 
 [tool.deptry]
 extend_exclude = ["src/.*/test_[^/]*\\.py"]
+
+[tool.typos.files]
+extend-exclude = ["*.svg"] # PlantUML embeds its compressed source in every SVG
+
+[tool.typos.default.extend-words]
+thr = "thr" # threat IDs of the team reviewed in docs/code-quality/review-report.md
