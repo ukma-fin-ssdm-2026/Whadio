@@ -1,11 +1,11 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.db import Base, UtcDateTime
-from .schemas import AccessMode, ProcessingState, RecordingStatus, SourceType
+from .schemas import AccessMode, ProcessingState, RecordingStatus, RevisionType, SourceType
 
 
 class Folder(Base):
@@ -40,3 +40,52 @@ class Meeting(Base):
     recording_delete_after: Mapped[datetime] = mapped_column(UtcDateTime)
     recording_deleted_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     access_mode: Mapped[AccessMode]
+
+
+class Transcript(Base):
+    __tablename__ = "transcripts"
+
+    transcript_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    meeting_id: Mapped[UUID] = mapped_column(ForeignKey("meetings.meeting_id"), unique=True)
+    language: Mapped[str] = mapped_column(String(16))
+    model_name: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    # Transcripts and revisions point at each other: the key is added after both tables exist
+    # and checked only at commit, so a transcript and its first revision go in together.
+    current_revision_id: Mapped[UUID] = mapped_column(
+        ForeignKey(
+            "transcript_revisions.revision_id",
+            use_alter=True,
+            deferrable=True,
+            initially="DEFERRED",
+        )
+    )
+
+
+class TranscriptRevision(Base):
+    __tablename__ = "transcript_revisions"
+
+    revision_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    transcript_id: Mapped[UUID] = mapped_column(ForeignKey("transcripts.transcript_id"))
+    revision_type: Mapped[RevisionType]
+    edited_by_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.user_id"))
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime)
+
+
+class Speaker(Base):
+    __tablename__ = "speakers"
+
+    speaker_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    revision_id: Mapped[UUID] = mapped_column(ForeignKey("transcript_revisions.revision_id"))
+    display_name: Mapped[str] = mapped_column(String(100))
+
+
+class TranscriptSegment(Base):
+    __tablename__ = "transcript_segments"
+
+    segment_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    revision_id: Mapped[UUID] = mapped_column(ForeignKey("transcript_revisions.revision_id"))
+    speaker_id: Mapped[UUID | None] = mapped_column(ForeignKey("speakers.speaker_id"))
+    start_time_seconds: Mapped[float]
+    end_time_seconds: Mapped[float]
+    text: Mapped[str] = mapped_column(Text)

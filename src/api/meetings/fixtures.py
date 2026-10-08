@@ -1,13 +1,20 @@
 from datetime import UTC, datetime, timedelta
 from typing import Final
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..accounts.fixtures import ALICE, PERSONAL_WORKSPACE_ID, TEAM_WORKSPACE_ID
 from ..accounts.schemas import Preset, Provider
 from ..core.errors import ApiError, ErrorCode, not_found
-from .models import Folder, Meeting
+from .models import (
+    Folder,
+    Meeting,
+    Speaker,
+    Transcript,
+    TranscriptRevision,
+    TranscriptSegment,
+)
 from .schemas import (
     AccessMode,
     ContextMeetingRead,
@@ -244,4 +251,46 @@ async def seed_demo_meetings(db: AsyncSession) -> None:
             for item in _MEETINGS
         ]
     )
+    await db.flush()
+    # The stub gave every processed meeting the same transcript; the database gets a copy each.
+    for item in _MEETINGS:
+        if item.processing_state is not ProcessingState.PROCESSED:
+            continue
+        transcript = Transcript(
+            transcript_id=uuid4(),
+            meeting_id=item.id,
+            language=_TRANSCRIPT.language,
+            model_name=_TRANSCRIPT.model_name,
+            created_at=_TRANSCRIPT.revision.created_at,
+            current_revision_id=uuid4(),
+        )
+        revision = TranscriptRevision(
+            revision_id=transcript.current_revision_id,
+            transcript_id=transcript.transcript_id,
+            revision_type=RevisionType.ORIGINAL,
+            created_at=_TRANSCRIPT.revision.created_at,
+        )
+        speakers = {
+            speaker.id: Speaker(
+                speaker_id=uuid4(),
+                revision_id=revision.revision_id,
+                display_name=speaker.display_name,
+            )
+            for speaker in _TRANSCRIPT.speakers
+        }
+        db.add_all([transcript, revision, *speakers.values()])
+        db.add_all(
+            [
+                TranscriptSegment(
+                    revision_id=revision.revision_id,
+                    speaker_id=(
+                        speakers[segment.speaker_id].speaker_id if segment.speaker_id else None
+                    ),
+                    start_time_seconds=segment.start_seconds,
+                    end_time_seconds=segment.end_seconds,
+                    text=segment.text,
+                )
+                for segment in _TRANSCRIPT.segments
+            ]
+        )
     await db.commit()

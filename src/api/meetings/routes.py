@@ -1,3 +1,4 @@
+import re
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,9 +31,15 @@ from .fixtures import (
     RETENTION,
     notes,
     transcribed,
-    transcript,
 )
-from .models import Folder, Meeting
+from .models import (
+    Folder,
+    Meeting,
+    Speaker,
+    Transcript,
+    TranscriptRevision,
+    TranscriptSegment,
+)
 from .schemas import (
     AccessMode,
     JobKind,
@@ -48,7 +55,11 @@ from .schemas import (
     ProcessingJobRead,
     ProcessingState,
     RecordingStatus,
+    RevisionRead,
+    RevisionType,
+    SegmentRead,
     SourceType,
+    SpeakerRead,
     TranscriptRead,
 )
 
@@ -482,7 +493,63 @@ async def delete_meeting(meeting_id: MeetingId, user: BrowserUser, db: Db) -> No
 )
 async def get_transcript(meeting_id: MeetingId, user: BrowserUser, db: Db) -> TranscriptRead:
     await _check_can_read(db, meeting_id, user)
-    return transcript(meeting_id)
+    found = await db.scalar(select(Transcript).where(Transcript.meeting_id == meeting_id))
+    if found is None:
+        raise ApiError(409, ErrorCode.NOT_TRANSCRIBED, "The meeting has no transcript yet")
+
+    revisions = [
+        *await db.scalars(
+            select(TranscriptRevision).where(
+                TranscriptRevision.transcript_id == found.transcript_id
+            )
+        )
+    ]
+    current = next(r for r in revisions if r.revision_id == found.current_revision_id)
+    original = next(r for r in revisions if r.revision_type is RevisionType.ORIGINAL)
+    speakers = [
+        SpeakerRead(
+            id=speaker.speaker_id,
+            display_name=speaker.display_name,
+            # Placeholders are the "Speaker 1", "Speaker 2", ... labels transcription gives.
+            is_unnamed=re.fullmatch(r"Speaker \d+", speaker.display_name) is not None,
+        )
+        for speaker in await db.scalars(
+            select(Speaker)
+            .where(Speaker.revision_id == current.revision_id)
+            .order_by(Speaker.display_name)
+        )
+    ]
+    segments = [
+        SegmentRead(
+            id=segment.segment_id,
+            speaker_id=segment.speaker_id,
+            start_seconds=segment.start_time_seconds,
+            end_seconds=segment.end_time_seconds,
+            text=segment.text,
+        )
+        for segment in await db.scalars(
+            select(TranscriptSegment)
+            .where(TranscriptSegment.revision_id == current.revision_id)
+            .order_by(TranscriptSegment.start_time_seconds)
+        )
+    ]
+    return TranscriptRead(
+        meeting_id=meeting_id,
+        language=found.language,
+        model_name=found.model_name,
+        revision=RevisionRead(
+            id=current.revision_id,
+            revision_type=current.revision_type,
+            created_at=current.created_at,
+            edited_by_user_id=current.edited_by_user_id,
+            is_current=True,
+        ),
+        original_revision_id=original.revision_id,
+        is_edited=any(r.revision_type is RevisionType.EDITED for r in revisions),
+        has_unnamed_speakers=any(speaker.is_unnamed for speaker in speakers),
+        speakers=speakers,
+        segments=segments,
+    )
 
 
 # --- Notes ---
