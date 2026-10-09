@@ -13,6 +13,7 @@ dependencies = [
     "mcp>=2.3",
     "minio>=7.2.20",
     "pydantic>=2.13",
+    "pydantic-settings>=2.15",
     "pyyaml>=6.0",
     "starlette>=1.7",
     "typer>=0.27",
