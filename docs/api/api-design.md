@@ -1041,8 +1041,9 @@ status, and which operations return it.
 The specification is produced by FastAPI from route decorators and Pydantic models, so it
 matches what the server does. The server serves it at `/openapi.json`, renders Swagger UI at
 `/api-docs`, and writes `docs/api/openapi-generated.yaml` and `.json` on startup. Running
-`whadio openapi` writes the same files without starting the server, which is what
-CI and the Pages deployment use.
+`whadio openapi` writes the same files without starting the server. The commit hook and CI
+run it and fail when the committed files differ from the code, so the Pages deployment
+publishes a specification that matches the code.
 
 Pydantic was chosen as the single modelling tool for request validation, responses and,
 later, the job contracts between the backend and the workers (high-level design, dependency
