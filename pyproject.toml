@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13,<3.15"
 dependencies = [
     "aio-pika>=10.1",
+    "anthropic>=1",
     "av>=19.0",
     "fastapi[standard-no-fastapi-cloud-cli]>=0.142",
     "fastmcp>=4.0.11",
