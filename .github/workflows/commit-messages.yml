@@ -1,0 +1,52 @@
+name: Commit messages
+
+on:
+  pull_request:
+    # `edited` re-checks the title after a rename.
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commit-messages-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  commit-messages:
+    name: Pull request title and commit messages
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      # A squash merge lands the title on main, a rebase or merge commit lands every commit.
+      - name: Check them with the commit-msg hook
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          messages="$RUNNER_TEMP/messages"
+          mkdir "$messages"
+          printf '%s\n' "$TITLE" > "$messages/title"
+          git rev-list "$BASE_SHA..$HEAD_SHA" | while read -r sha; do
+            git log -1 --format=%B "$sha" > "$messages/commit-$sha"
+          done
+          status=0
+          for message in "$messages"/*; do
+            uv run --frozen pre-commit run commit-msg-format --hook-stage commit-msg \
+              --commit-msg-filename "$message" || status=1
+          done
+          exit "$status"
