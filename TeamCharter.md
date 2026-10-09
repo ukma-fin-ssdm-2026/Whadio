@@ -27,6 +27,7 @@
     - intermediate results that pass tests and do not break the core system;
     - final results.
 - Commit conventions: `<type>(#<issue-number>): short message` format is used (e.g., `docs(#3): add TeamCharter.md`).
+- Dependency updates: Dependabot's pull requests are not tied to issues; their branches keep the `dependabot/...` names, and their commits use `build(deps): ...` or `build(deps-dev): ...`.
 - Code review rules:
     - each PR requires at least one approval, and the reviewer submits the review themselves;
     - AI-assisted review: the reviewer goes through the PR with an AI agent, discusses its findings, and posts only the comments they agree with and can justify. The agent, the depth of discussion, and how comments reach GitHub (inline, in the summary, drafted by the agent as a pending review) are the reviewer's choice. PRs that only add report links or signatures are exempt;
