@@ -76,12 +76,12 @@ class ApiError(Exception):
         code: ErrorCode,
         message: str,
         details: Sequence[ErrorDetail] = (),
-    ):
+    ) -> None:
         super().__init__(message)
-        self.status_code = status_code
-        self.code = code
-        self.message = message
-        self.details = list(details)
+        self.status_code: int = status_code
+        self.code: ErrorCode = code
+        self.message: str = message
+        self.details: list[ErrorDetail] = list(details)
 
 
 def not_found(what: str) -> ApiError:
@@ -114,7 +114,7 @@ def register_error_handlers(app: FastAPI) -> None:
         app.add_exception_handler(exception_type, _handle)
 
 
-async def _handle(request: Request, exc: Exception) -> JSONResponse:
+async def _handle(_request: Request, exc: Exception) -> JSONResponse:
     status_code, code, message, details = _describe(exc)
     request_id = f"req_{uuid4().hex[:12]}"
     body = ErrorResponse(

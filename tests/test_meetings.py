@@ -6,17 +6,17 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from api.accounts.fixtures import (
+from whadio.api.accounts.fixtures import (
     ALICE,
     DEMO_EMAIL,
     DEMO_PASSWORD,
     PERSONAL_WORKSPACE_ID,
     TEAM_WORKSPACE_ID,
 )
-from api.accounts.models import WorkspaceMembership
-from api.accounts.schemas import Role
-from api.audit.models import AuditAction, AuditEvent
-from api.meetings.fixtures import (
+from whadio.api.accounts.models import WorkspaceMembership
+from whadio.api.accounts.schemas import Role
+from whadio.api.audit.models import AuditAction, AuditEvent
+from whadio.api.meetings.fixtures import (
     DESIGN_SYNC_MEETING_ID,
     PERSONAL_FOLDER_ID,
     SPRINT_11_MEETING_ID,
@@ -24,7 +24,7 @@ from api.meetings.fixtures import (
     SPRINT_FOLDER_ID,
     TEAM_DEFAULT_FOLDER_ID,
 )
-from api.meetings.models import Folder, Meeting
+from whadio.api.meetings.models import Folder, Meeting
 from conftest import BOB_EMAIL, BOB_PASSWORD
 
 TEAM_MEETINGS = f"/api/v1/workspaces/{TEAM_WORKSPACE_ID}/meetings"

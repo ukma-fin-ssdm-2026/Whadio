@@ -1,7 +1,7 @@
 import unicodedata
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Annotated, Final
+from typing import Annotated, ClassVar, Final
 
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints
 
@@ -11,7 +11,7 @@ from .errors import ApiError, ErrorCode, ErrorDetail
 class Input(BaseModel):
     # FastAPI validates bodies in Python mode, where model-wide strict=True refuses enum and UUID
     # strings; give each non-string body field `strict=True` instead.
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
 class Output(BaseModel):

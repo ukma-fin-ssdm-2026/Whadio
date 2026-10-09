@@ -2,7 +2,7 @@
 
 This document describes Whadio's HTTP API: what it exposes, how its resources are modelled,
 what each error means, and the decisions behind its conventions. It covers the **whole designed
-API**. The code in [`src/api/`](../../src/api/) implements one vertical slice of it as stubs
+API**. The code in [`src/whadio/api/`](../../src/whadio/api/) implements one vertical slice of it as stubs
 (section 2).
 
 The API is written code-first: FastAPI builds the OpenAPI specification from the code, and
@@ -34,9 +34,11 @@ The three HTTP interfaces of the high-level design map onto the API as follows:
   SPA use it.
 - **MCP:** `/mcp/`. The user's AI assistant uses it.
 
-The code follows the module boundaries of the high-level design: `accounts`, `meetings`,
-`access_policy`, `processing`, `export`, `capture` and `admin`. Each module serves its own
-resources, so there is no separate "Web API" layer.
+The code follows the module boundaries of the high-level design: `whadio.api` has one subpackage
+per module (`accounts`, `meetings`, `access_policy`, `processing`, `export`, `capture` and
+`admin`) holding only that module's HTTP layer, and the module's domain logic lives in its own
+package next to it, such as `whadio.meetings`. Each module serves its own resources, so there is no
+separate "Web API" component.
 
 ## 2. Implementation status
 
@@ -1039,8 +1041,9 @@ status, and which operations return it.
 The specification is produced by FastAPI from route decorators and Pydantic models, so it
 matches what the server does. The server serves it at `/openapi.json`, renders Swagger UI at
 `/api-docs`, and writes `docs/api/openapi-generated.yaml` and `.json` on startup. Running
-`python -m api.openapi_export` writes the same files without starting the server, which is what
-CI and the Pages deployment use.
+`whadio openapi` writes the same files without starting the server. The commit hook and CI
+run it and fail when the committed files differ from the code, so the Pages deployment
+publishes a specification that matches the code.
 
 Pydantic was chosen as the single modelling tool for request validation, responses and,
 later, the job contracts between the backend and the workers (high-level design, dependency

@@ -6,11 +6,11 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
-from api.accounts.fixtures import TEAM_WORKSPACE_ID
-from api.accounts.models import WorkspaceMembership
-from api.accounts.schemas import Role
-from api.accounts.users import create_user
-from api.app import create_app
+from whadio.api.accounts.fixtures import TEAM_WORKSPACE_ID
+from whadio.api.accounts.models import WorkspaceMembership
+from whadio.api.accounts.schemas import Role
+from whadio.api.accounts.users import create_user
+from whadio.api.app import create_app
 
 BOB_EMAIL = "bob@whadio.dev"
 BOB_PASSWORD = "bob-password"

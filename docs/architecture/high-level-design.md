@@ -31,7 +31,8 @@ The requirements that shape the architecture most, and what each one forces.
   Each entry point is a separate process with its own lifecycle, started by a different command.
   Operator commands, such as issuing a registration link, run as one-off commands of the same image.
 - **Layered inside the backend.** Each backend module has an API, a domain and a persistence layer,
-  and owns its own tables.
+  and owns its own tables. The API layers of all modules live in one `api` package, one subpackage
+  per module, so that the web framework stays out of the domain and persistence code (rule 6).
 - **Client–server at the edge.** The Chrome extension, the web SPA and the user's MCP client talk to
   the backend over HTTPS.
 - **Asynchronous messaging between the backend and the workers.** The backend orchestrates the
@@ -40,13 +41,20 @@ The requirements that shape the architecture most, and what each one forces.
 ### Dependency rules
 
 1. Worker code never imports backend modules or the database layer. The backend and the workers
-   share only the Job contracts library. The rule is checked in CI by an import-linter contract.
+   share only the Job contracts library and framework-free utilities, such as logging.
 2. Workers have no access to PostgreSQL. Everything a job needs arrives in its message, audio is
    read through a presigned URL, and results return as messages.
 3. On the backend side, only the Processing module talks to the broker.
 4. Every read of meeting content goes through Meetings, which consults Access Policy.
 5. Every change an account makes to meeting content or access writes an audit event through Audit,
    in the same transaction as the change. The module that performs the change writes it.
+6. Only the `api` package imports the web framework. A backend module calls only the modules below
+   it in the component diagram: Capture, Export, Admin & Monitoring and Retention; then
+   Processing; Meetings; Access Policy; Accounts & Workspaces; and Notifications and Audit at the
+   bottom. A call upwards goes through an interface the lower module declares.
+
+Rules 1 and 6 are checked on every commit and in CI by the import-linter contracts in
+`pyproject.toml`, which also let only Processing and the workers use the job contracts (rule 3).
 
 ### Alternatives considered
 
@@ -89,7 +97,7 @@ Source: [uml/component-diagram.puml](uml/component-diagram.puml)
 | Audit | The append-only record of who changed a meeting's content or access: actor, action, target IDs and time, never content. Written by Meetings, Access Policy and Accounts & Workspaces; no API reads it, and the operator consults it in the database. | NFR-010 |
 
 The Web API has no component of its own: each module serves its own resources through its API
-layer. Session authentication is middleware that Accounts & Workspaces provides to every Web API
+layer, in the module's subpackage of `api`. Session authentication is middleware that Accounts & Workspaces provides to every Web API
 route. MCP Server, by contrast, is a component, because it carries behaviour of its own: a separate
 protocol, authentication by personal key, the tool definitions, and the rule that a key reaches only
 its owner's accessible meetings (FR-043, FR-044).

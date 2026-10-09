@@ -1,8 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from api.accounts.auth import SESSION_COOKIE
-from api.accounts.fixtures import DEMO_EMAIL, DEMO_PASSWORD, TEAM_WORKSPACE_ID
+from whadio.api.accounts.auth import SESSION_COOKIE
+from whadio.api.accounts.fixtures import DEMO_EMAIL, DEMO_PASSWORD, TEAM_WORKSPACE_ID
 
 SESSIONS = "/api/v1/sessions"
 SIGN_OUT = "/api/v1/sessions/current"

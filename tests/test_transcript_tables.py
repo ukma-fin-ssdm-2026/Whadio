@@ -4,9 +4,9 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from api.meetings.fixtures import DESIGN_SYNC_MEETING_ID
-from api.meetings.models import Speaker, Transcript, TranscriptRevision, TranscriptSegment
-from api.meetings.schemas import RevisionType
+from whadio.api.meetings.fixtures import DESIGN_SYNC_MEETING_ID
+from whadio.api.meetings.models import Speaker, Transcript, TranscriptRevision, TranscriptSegment
+from whadio.api.meetings.schemas import RevisionType
 
 
 # Design sync is still queued, so it has no transcript yet.
