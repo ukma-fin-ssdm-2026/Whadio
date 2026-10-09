@@ -3,15 +3,15 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from whadio.api.accounts.fixtures import (
+from ..audit.models import AuditAction, AuditEvent
+from ..conftest import BOB_EMAIL, BOB_PASSWORD
+from .fixtures import (
     ALICE,
     DEMO_EMAIL,
     DEMO_PASSWORD,
     PERSONAL_WORKSPACE_ID,
     TEAM_WORKSPACE_ID,
 )
-from whadio.api.audit.models import AuditAction, AuditEvent
-from conftest import BOB_EMAIL, BOB_PASSWORD
 
 WORKSPACES = "/api/v1/workspaces"
 TEAM = f"{WORKSPACES}/{TEAM_WORKSPACE_ID}"
