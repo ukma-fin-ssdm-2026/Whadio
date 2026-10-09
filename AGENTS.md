@@ -113,8 +113,9 @@ the pull request. The commit hook runs the same checks as `task check`, in this 
 the first failure: branch name, file hygiene, gitleaks, `uv lock --check`, `ruff check --fix` and
 `ruff format` on the whole project, the suppression ban, typos, schema and workflow checks,
 import-linter, ty, basedpyright, Bandit, deptry, the OpenAPI drift check and the fast tests. The
-commit message is checked last. `git push` runs the whole test suite. CI repeats all of this, plus
-`uv run task audit`: uv audit and a gitleaks scan of the whole history.
+commit message is checked last. `git push` runs the whole test suite. CI repeats all of this but
+the branch name, and adds `uv run task audit`: uv audit and a gitleaks scan of the whole history.
+On a pull request, CI checks the title and every commit message against the commit format.
 
 - Never bypass the checks: no `--no-verify`, no `SKIP=`. If a check is wrong, fix it in its own
   pull request.
@@ -169,6 +170,9 @@ Tests use pytest:
   `feat/#61-meeting-repository`.
 - Commit as `<type>(#<issue>): <subject>`, with the type one of `build`, `chore`, `ci`, `docs`,
   `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`, and the subject in the imperative.
+- Dependabot is the one exception: its branches are named `dependabot/...`, its commits and pull
+  request titles start with `build(deps):` or `build(deps-dev):`, and its pull requests reference
+  no issue.
 - One concern per commit; never mix formatting with behaviour.
 - A pull request references its issue, needs one teammate's approval and follows the review rules
   in `TeamCharter.md`, section 4. Its title follows the commit format, since a squash merge uses it.
