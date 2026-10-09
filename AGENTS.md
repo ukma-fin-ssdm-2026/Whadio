@@ -170,6 +170,9 @@ Tests use pytest:
   `feat/#61-meeting-repository`.
 - Commit as `<type>(#<issue>): <subject>`, with the type one of `build`, `chore`, `ci`, `docs`,
   `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`, and the subject in the imperative.
+- Dependabot is the one exception: its branches are named `dependabot/...`, its commits and pull
+  request titles start with `build(deps):` or `build(deps-dev):`, and its pull requests reference
+  no issue.
 - One concern per commit; never mix formatting with behaviour.
 - A pull request references its issue, needs one teammate's approval and follows the review rules
   in `TeamCharter.md`, section 4. Its title follows the commit format, since a squash merge uses it.
