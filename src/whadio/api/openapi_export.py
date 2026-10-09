@@ -41,10 +41,3 @@ def export_openapi(app: FastAPI, directory: Path = OUTPUT_DIR) -> list[Path]:
     written[0].write_text(render_openapi_yaml(app), encoding="utf-8")
     written[1].write_text(render_openapi_json(app), encoding="utf-8")
     return written
-
-
-if __name__ == "__main__":
-    from .app import create_app
-
-    for path in export_openapi(create_app()):
-        print(f"Wrote {path}")

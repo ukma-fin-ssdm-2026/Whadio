@@ -5,4 +5,3 @@ rules:
   operation-description: error
   parameter-description: error
   operation-4xx-response: error
-

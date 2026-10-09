@@ -75,7 +75,7 @@ _NOT_TRANSCRIBED = f"`{ErrorCode.NOT_TRANSCRIBED}`: the meeting is not processed
 async def list_meetings(
     workspace_id: WorkspaceId,
     query: Annotated[MeetingListQuery, Query()],
-    user: BrowserUser,
+    _user: BrowserUser,
 ) -> Page[MeetingSummary]:
     matching: list[MeetingSummary] = [
         item
@@ -181,7 +181,7 @@ async def upload_recording(
         {401: DOC_UNAUTHENTICATED, 404: _MEETING_NOT_FOUND, 422: DOC_INVALID}
     ),
 )
-async def get_meeting(meeting_id: MeetingId, user: BrowserUser) -> MeetingRead:
+async def get_meeting(meeting_id: MeetingId, _user: BrowserUser) -> MeetingRead:
     return meeting(meeting_id)
 
 
@@ -204,7 +204,7 @@ async def get_meeting(meeting_id: MeetingId, user: BrowserUser) -> MeetingRead:
     ),
 )
 async def update_meeting(
-    meeting_id: MeetingId, payload: MeetingUpdate, user: BrowserUser
+    meeting_id: MeetingId, payload: MeetingUpdate, _user: BrowserUser
 ) -> MeetingRead:
     target = meeting(meeting_id)
     if payload.folder_id is not None:
@@ -233,7 +233,7 @@ async def update_meeting(
         }
     ),
 )
-async def delete_meeting(meeting_id: MeetingId, user: BrowserUser) -> None:
+async def delete_meeting(meeting_id: MeetingId, _user: BrowserUser) -> None:
     meeting(meeting_id)
 
 
@@ -253,7 +253,7 @@ async def delete_meeting(meeting_id: MeetingId, user: BrowserUser) -> None:
         }
     ),
 )
-async def get_transcript(meeting_id: MeetingId, user: BrowserUser) -> TranscriptRead:
+async def get_transcript(meeting_id: MeetingId, _user: BrowserUser) -> TranscriptRead:
     return transcript(meeting_id)
 
 
@@ -272,7 +272,7 @@ async def get_transcript(meeting_id: MeetingId, user: BrowserUser) -> Transcript
     ),
 )
 async def list_notes(
-    meeting_id: MeetingId, query: Annotated[PageQuery, Query()], user: BrowserUser
+    meeting_id: MeetingId, query: Annotated[PageQuery, Query()], _user: BrowserUser
 ) -> Page[NoteRead]:
     return paginate(notes(meeting_id), query)
 
@@ -316,7 +316,7 @@ async def list_notes(
 async def regenerate_notes(
     meeting_id: MeetingId,
     payload: NotesRequest,
-    user: BrowserUser,
+    _user: BrowserUser,
     request: Request,
     response: Response,
 ) -> ProcessingJobRead:

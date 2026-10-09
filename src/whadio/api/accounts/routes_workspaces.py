@@ -39,7 +39,7 @@ _OWNER_ONLY = f"`{ErrorCode.INSUFFICIENT_ROLE}`: only the Owner can do this"
     responses=error_responses({401: DOC_UNAUTHENTICATED, 422: DOC_INVALID}),
 )
 async def list_workspaces(
-    query: Annotated[PageQuery, Query()], user: BrowserUser
+    query: Annotated[PageQuery, Query()], _user: BrowserUser
 ) -> Page[WorkspaceSummary]:
     workspaces: list[WorkspaceSummary] = [*WORKSPACES.values()]
     return paginate(workspaces, query)
@@ -65,7 +65,7 @@ async def list_workspaces(
     },
 )
 async def create_workspace(
-    payload: WorkspaceCreate, user: BrowserUser, request: Request, response: Response
+    payload: WorkspaceCreate, _user: BrowserUser, request: Request, response: Response
 ) -> WorkspaceRead:
     created = WorkspaceRead(
         id=uuid4(),
@@ -88,7 +88,7 @@ async def create_workspace(
     response_description="The workspace",
     responses=error_responses({401: DOC_UNAUTHENTICATED, 404: _NOT_FOUND, 422: DOC_INVALID}),
 )
-async def get_workspace(workspace_id: WorkspaceId, user: BrowserUser) -> WorkspaceRead:
+async def get_workspace(workspace_id: WorkspaceId, _user: BrowserUser) -> WorkspaceRead:
     return workspace(workspace_id)
 
 
@@ -109,7 +109,7 @@ async def get_workspace(workspace_id: WorkspaceId, user: BrowserUser) -> Workspa
     ),
 )
 async def update_workspace(
-    workspace_id: WorkspaceId, payload: WorkspaceUpdate, user: BrowserUser
+    workspace_id: WorkspaceId, payload: WorkspaceUpdate, _user: BrowserUser
 ) -> WorkspaceRead:
     return workspace(workspace_id).model_copy(update=payload.model_dump(exclude_none=True))
 
@@ -131,6 +131,6 @@ async def update_workspace(
         }
     ),
 )
-async def delete_workspace(workspace_id: WorkspaceId, user: BrowserUser) -> None:
+async def delete_workspace(workspace_id: WorkspaceId, _user: BrowserUser) -> None:
     if workspace(workspace_id).is_personal:
         raise ApiError(409, ErrorCode.PERSONAL_WORKSPACE, "A personal workspace cannot be deleted")

@@ -6,14 +6,217 @@ readme = "README.md"
 requires-python = ">=3.13,<3.15"
 dependencies = [
     "av>=19.0",
-    "fastapi[standard]>=0.141",
+    "fastapi[standard-no-fastapi-cloud-cli]>=0.142",
     "fastmcp>=4.0.11",
+    "mcp>=2.3",
+    "pydantic>=2.13",
     "pyyaml>=6.0",
+    "starlette>=1.7",
+    "typer>=0.27",
+    "uvicorn>=0.54",
 ]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[project.scripts]
+whadio = "whadio.cli:app"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/api"]
+[build-system]
+requires = ["uv_build>=0.11.16,<0.12"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "actionlint-py>=1.7.12.25",
+    "bandit>=1.9.4",
+    "basedpyright>=1.40.2",
+    "check-jsonschema>=0.38.2",
+    "deptry>=0.25.1",
+    "go-task-bin>=3.54.0",
+    "import-linter>=2.15",
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "ruff>=0.16.10",
+    "ty>=0.0.85",
+    "types-pyyaml>=6.0.12.20260906",
+    "typos>=1.51.1",
+    "zizmor>=1.30.1",
+]
+
+[tool.uv]
+required-version = ">=0.11.16"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.format]
+docstring-code-format = true
+line-ending = "lf"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "COM812", # conflicts with the formatter
+    "CPY001", # no licence header in every file
+    "D",      # docstrings only where they state a contract (AGENTS.md, "Comments")
+    "EM101",  # exception messages are written inline
+    "EM102",
+    "TID252", # relative imports inside the package are the house style
+    "TRY003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/test_*.py" = ["S101", "PLR2004"]
+"src/whadio/api/**/*.py" = ["PLR0913", "PLR0917"] # FastAPI injects every input as a parameter
+"src/whadio/api/accounts/fixtures.py" = ["S105"]  # public demo credentials, shown on the Swagger page
+"src/whadio/cli.py" = ["PLC0415"]                 # each command imports its own runtime
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"typing.Any".msg = "Any is banned: type the value, or validate it at the boundary"
+"typing.cast".msg = "cast is banned: narrow the type instead"
+"typing_extensions.Any".msg = "Any is banned: type the value, or validate it at the boundary"
+"typing_extensions.cast".msg = "cast is banned: narrow the type instead"
+
+[tool.ty.environment]
+python-platform = "linux"
+
+[tool.ty.analysis]
+respect-type-ignore-comments = false
+
+[tool.ty.rules]
+all = "error"
+
+[tool.basedpyright]
+include = ["src"]
+pythonPlatform = "Linux"
+typeCheckingMode = "recommended"
+reportImplicitStringConcatenation = "none" # long literals are split across lines on purpose
+reportUnusedCallResult = "none"             # calls made for their effect, e.g. a lookup that raises 404
+allowedUntypedLibraries = ["yaml"]          # types-PyYAML leaves Representer.represent_scalar `value` untyped
+
+[tool.bandit.assert_used]
+skips = ["*/test_*.py"]
+
+[tool.importlinter]
+root_package = "whadio"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Backend modules follow the component diagram"
+type = "layers"
+containers = ["whadio"]
+layers = [
+    "capture | export | admin | retention",
+    "processing",
+    "meetings",
+    "access_policy",
+    "accounts",
+    "notifications | audit",
+]
+broken_contract_guidance = """
+A module may only call modules below it in docs/architecture/uml/component-diagram.puml. For a call
+upwards, declare a Protocol in the lower module, implement it in the higher one and wire the two in
+the runtime's composition root. Changing the layers changes the architecture: agree it with the
+architecture lead and update the diagram in the same pull request."""
+
+[[tool.importlinter.contracts]]
+name = "Backend modules never import a runtime"
+type = "forbidden"
+source_modules = [
+    "whadio.access_policy",
+    "whadio.accounts",
+    "whadio.admin",
+    "whadio.audit",
+    "whadio.capture",
+    "whadio.export",
+    "whadio.meetings",
+    "whadio.notifications",
+    "whadio.processing",
+    "whadio.retention",
+]
+forbidden_modules = ["whadio.api", "whadio.cli", "whadio.scheduler", "whadio.workers"]
+
+[[tool.importlinter.contracts]]
+name = "Only the api package and the CLI use the web frameworks"
+type = "forbidden"
+source_modules = [
+    "whadio.access_policy",
+    "whadio.accounts",
+    "whadio.admin",
+    "whadio.audit",
+    "whadio.capture",
+    "whadio.contracts",
+    "whadio.export",
+    "whadio.meetings",
+    "whadio.notifications",
+    "whadio.processing",
+    "whadio.retention",
+    "whadio.scheduler",
+    "whadio.shared",
+    "whadio.workers",
+]
+forbidden_modules = ["fastapi", "fastmcp", "mcp", "starlette", "uvicorn"]
+
+[[tool.importlinter.contracts]]
+name = "Workers never import backend modules"
+type = "forbidden"
+source_modules = ["whadio.workers"]
+forbidden_modules = [
+    "whadio.access_policy",
+    "whadio.accounts",
+    "whadio.admin",
+    "whadio.audit",
+    "whadio.capture",
+    "whadio.cli",
+    "whadio.export",
+    "whadio.meetings",
+    "whadio.notifications",
+    "whadio.processing",
+    "whadio.retention",
+]
+
+[[tool.importlinter.contracts]]
+name = "Runtimes are independent of each other"
+type = "independence"
+modules = ["whadio.api", "whadio.scheduler", "whadio.workers.asr", "whadio.workers.notes"]
+
+[[tool.importlinter.contracts]]
+name = "Job contracts and shared code import no other Whadio package"
+type = "forbidden"
+source_modules = ["whadio.contracts", "whadio.shared"]
+forbidden_modules = [
+    "whadio.access_policy",
+    "whadio.accounts",
+    "whadio.admin",
+    "whadio.api",
+    "whadio.audit",
+    "whadio.capture",
+    "whadio.cli",
+    "whadio.export",
+    "whadio.meetings",
+    "whadio.notifications",
+    "whadio.processing",
+    "whadio.retention",
+    "whadio.scheduler",
+    "whadio.workers",
+]
+
+[[tool.importlinter.contracts]]
+name = "Only processing and the workers use the job contracts"
+type = "protected"
+protected_modules = ["whadio.contracts"]
+allowed_importers = ["whadio.processing", "whadio.workers"]
+
+[tool.pytest]
+minversion = "9.0"
+strict = true
+testpaths = ["src"]
+addopts = ["--import-mode=importlib"]
+markers = ["slow: needs models or running services; left out of the commit hook"]
+
+[tool.deptry]
+extend_exclude = ["src/.*/test_[^/]*\\.py"]
+
+[tool.typos.files]
+extend-exclude = ["*.svg"] # PlantUML embeds its compressed source in every SVG
+
+[tool.typos.default.extend-words]
+thr = "thr" # threat IDs of the team reviewed in docs/code-quality/review-report.md
