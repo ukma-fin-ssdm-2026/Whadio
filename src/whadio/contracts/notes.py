@@ -74,6 +74,7 @@ class NotesFailure(StrEnum):
     PROVIDER_RATE_LIMITED = "provider_rate_limited"
     PROVIDER_UNAVAILABLE = "provider_unavailable"
     PROVIDER_REFUSED = "provider_refused"
+    PROVIDER_REJECTED_REQUEST = "provider_rejected_request"
     INVALID_OUTPUT = "invalid_output"
     TIMED_OUT = "timed_out"
     INTERNAL_ERROR = "internal_error"

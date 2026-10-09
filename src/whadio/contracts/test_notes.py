@@ -107,6 +107,7 @@ def test_transient_notes_failures_are_retryable(failure: NotesFailure) -> None:
         NotesFailure.TRANSCRIPT_TOO_LONG,
         NotesFailure.PROVIDER_AUTH_FAILED,
         NotesFailure.PROVIDER_REFUSED,
+        NotesFailure.PROVIDER_REJECTED_REQUEST,
     ],
 )
 def test_notes_failures_that_would_repeat_are_not_retryable(failure: NotesFailure) -> None:
