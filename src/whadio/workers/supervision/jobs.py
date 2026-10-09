@@ -5,7 +5,7 @@ from typing import Protocol
 from uuid import UUID
 
 from ...contracts.common import JobKind, JobMessage
-from ...contracts.queues import QueueSpec
+from ...contracts.queues import PROCESSING_RESULTS, QueueSpec
 
 
 class RunFailure(StrEnum):
@@ -31,6 +31,7 @@ class WorkerSpec[J: JobMessage, R: IResultMessage]:
     kind: JobKind
     job_type: type[J]
     failure_result: Callable[[J, RunFailure], R]
+    results: QueueSpec = PROCESSING_RESULTS
 
 
 class IJobRunner[J: JobMessage, R: IResultMessage](Protocol):

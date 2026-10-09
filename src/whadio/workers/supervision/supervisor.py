@@ -9,7 +9,7 @@ from aio_pika.abc import AbstractIncomingMessage
 from pydantic import ValidationError
 
 from ...contracts.common import JobMessage
-from ...contracts.queues import ALL_QUEUES, PROCESSING_RESULTS
+from ...contracts.queues import DEAD_LETTERS
 from ...contracts.results import JobStarted
 from ...shared.broker import BrokerSettings, MessagePublisher, connect, declare_queue
 from .jobs import IJobRunner, IResultMessage, WorkerSpec
@@ -33,12 +33,13 @@ class IResultPublisher(Protocol):
 
 
 class AmqpResultPublisher:
-    def __init__(self, publisher: MessagePublisher) -> None:
+    def __init__(self, publisher: MessagePublisher, queue: str) -> None:
         self._publisher: MessagePublisher = publisher
+        self._queue: str = queue
 
     async def publish(self, result: IResultMessage) -> None:
         await self._publisher.publish(
-            PROCESSING_RESULTS.name,
+            self._queue,
             result.model_dump_json().encode(),
             message_type=result.type,
             correlation_id=str(result.job_id),
@@ -107,14 +108,11 @@ async def serve_jobs[J: JobMessage, R: IResultMessage](
     async with connection:
         channel = await connection.channel()
         await channel.set_qos(prefetch_count=options.concurrency)
-        declared = {
-            queue.name: await declare_queue(channel, queue.name, queue.arguments)
-            for queue in ALL_QUEUES
-        }
-        jobs = declared[spec.queue.name]
-        supervisor = JobSupervisor(
-            spec, runner, AmqpResultPublisher(MessagePublisher(channel, broker.user))
-        )
+        for queue in (DEAD_LETTERS, spec.results):
+            await declare_queue(channel, queue.name, queue.arguments)
+        jobs = await declare_queue(channel, spec.queue.name, spec.queue.arguments)
+        publisher = AmqpResultPublisher(MessagePublisher(channel, broker.user), spec.results.name)
+        supervisor = JobSupervisor(spec, runner, publisher)
         in_flight: set[asyncio.Task[None]] = set()
 
         async def on_message(message: AbstractIncomingMessage) -> None:
