@@ -14,6 +14,7 @@ from ..accounts.fixtures import workspace
 from ..accounts.models import WorkspaceMembership
 from ..accounts.schemas import Provider, Role, UserRead, WorkspaceId
 from ..audit.models import AuditAction, AuditEvent
+from ..core.db import Db
 from ..core.errors import (
     DOC_INVALID,
     DOC_MALFORMED,
@@ -24,7 +25,6 @@ from ..core.errors import (
     error_responses,
     not_found,
 )
-from ..core.db import Db
 from ..core.schemas import Page, PageQuery, paginate
 from .audio import SUPPORTED_FORMATS, is_supported_audio
 from .fixtures import (
@@ -73,6 +73,7 @@ _MEETING_NOT_FOUND = (
     "reported as missing, never as forbidden)"
 )
 _NOT_TRANSCRIBED = f"`{ErrorCode.NOT_TRANSCRIBED}`: the meeting is not processed yet"
+
 
 async def _check_can_read(db: Db, meeting_id: UUID, user: UserRead) -> None:
     """404 unless the meeting exists and the caller is a member of its workspace.
@@ -187,7 +188,6 @@ async def list_meetings(
         ),
     },
 )
-
 async def upload_recording(
     workspace_id: WorkspaceId,
     file: Annotated[UploadFile, File(description=f"The recording: {SUPPORTED_FORMATS}")],
@@ -245,7 +245,7 @@ async def upload_recording(
     # 1. Save the recording, 2. the meeting row, 3. the job (not yet: no queue), 4. respond.
     meeting_id = uuid4()
     recordings_dir: Path = request.app.state.recordings_dir
-    recordings_dir.mkdir(parents=True, exist_ok=True)
+    await run_in_threadpool(recordings_dir.mkdir, parents=True, exist_ok=True)
     storage_path = recordings_dir / str(meeting_id)
     with storage_path.open("wb") as saved:
         await run_in_threadpool(shutil.copyfileobj, file.file, saved)
@@ -472,7 +472,7 @@ async def delete_meeting(meeting_id: MeetingId, user: BrowserUser, db: Db) -> No
     await db.commit()
     # After the commit, so a failed commit never leaves a meeting without its recording.
     if target.storage_path is not None:
-        Path(target.storage_path).unlink(missing_ok=True)
+        await run_in_threadpool(Path(target.storage_path).unlink, missing_ok=True)
 
 
 @router.get(

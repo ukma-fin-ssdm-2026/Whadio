@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from .auth import SESSION_COOKIE
 from .fixtures import DEMO_EMAIL, DEMO_PASSWORD, TEAM_WORKSPACE_ID
@@ -10,7 +11,7 @@ SIGN_OUT = "/api/v1/sessions/current"
 WORKSPACES = "/api/v1/workspaces"
 
 
-def sign_in(client: TestClient, **overrides: str):
+def sign_in(client: TestClient, **overrides: str) -> Response:
     return client.post(SESSIONS, json={"email": DEMO_EMAIL, "password": DEMO_PASSWORD, **overrides})
 
 

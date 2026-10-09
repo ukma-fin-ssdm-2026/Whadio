@@ -86,9 +86,7 @@ def create_app(database: str | None = None, recordings: Path | None = None) -> F
         docs_url="/api-docs",
         lifespan=combine_lifespans(_export_spec, _database, mcp_app.lifespan),
     )
-    app.state.database_url = database or os.environ.get(
-        "WHADIO_DATABASE_URL", DEFAULT_DATABASE_URL
-    )
+    app.state.database_url = database or os.environ.get("WHADIO_DATABASE_URL", DEFAULT_DATABASE_URL)
     # A local folder until the team runs object storage (S3).
     app.state.recordings_dir = recordings or Path(
         os.environ.get("WHADIO_RECORDINGS_DIR", "recordings")

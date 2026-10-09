@@ -1,6 +1,6 @@
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
-from typing import Annotated, Final
+from typing import Annotated, Final, override
 
 from fastapi import Depends, Request
 from sqlalchemy import DateTime, TypeDecorator
@@ -23,9 +23,11 @@ class UtcDateTime(TypeDecorator[datetime]):
     impl = DateTime(timezone=True)
     cache_ok = True
 
+    @override
     def process_bind_param(self, value: datetime | None, dialect: Dialect) -> datetime | None:
         return None if value is None else value.astimezone(UTC)
 
+    @override
     def process_result_value(self, value: datetime | None, dialect: Dialect) -> datetime | None:
         if value is None:
             return None
@@ -33,11 +35,6 @@ class UtcDateTime(TypeDecorator[datetime]):
 
 
 async def create_tables(engine: AsyncEngine) -> None:
-    # Importing the models registers their tables on Base.metadata.
-    from ..accounts import models  # noqa: F401
-    from ..audit import models as audit_models  # noqa: F401
-    from ..meetings import models as meeting_models  # noqa: F401
-
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
 

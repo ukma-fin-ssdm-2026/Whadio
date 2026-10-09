@@ -34,9 +34,7 @@ class Meeting(Base):
     recorded_at: Mapped[datetime] = mapped_column(UtcDateTime)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime)
     consent_confirmed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
-    consent_confirmed_by_user_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("users.user_id")
-    )
+    consent_confirmed_by_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.user_id"))
     recording_delete_after: Mapped[datetime] = mapped_column(UtcDateTime)
     recording_deleted_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     access_mode: Mapped[AccessMode]

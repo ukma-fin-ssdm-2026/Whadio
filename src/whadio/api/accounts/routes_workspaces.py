@@ -8,8 +8,6 @@ from sqlalchemy.orm import aliased
 
 from ..audit.models import AuditAction, AuditEvent
 from ..core.db import Db
-from ..meetings.models import Folder, Meeting
-
 from ..core.errors import (
     DOC_INVALID,
     DOC_MALFORMED,
@@ -20,6 +18,7 @@ from ..core.errors import (
     not_found,
 )
 from ..core.schemas import Page, PageQuery, paginate
+from ..meetings.models import Folder, Meeting
 from .auth import BrowserUser
 from .models import Workspace, WorkspaceMembership
 from .schemas import (
@@ -45,9 +44,7 @@ async def _my_workspaces(
     """The caller's workspaces, oldest first, or just `workspace_id` if they are a member."""
     others = aliased(WorkspaceMembership)
     member_count = (
-        select(func.count())
-        .where(others.workspace_id == Workspace.workspace_id)
-        .scalar_subquery()
+        select(func.count()).where(others.workspace_id == Workspace.workspace_id).scalar_subquery()
     )
     statement = (
         select(Workspace, WorkspaceMembership.role, member_count)

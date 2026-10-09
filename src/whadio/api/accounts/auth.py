@@ -63,6 +63,7 @@ async def _capture_user(db: Db, cookie: Cookie, bearer: Bearer) -> UserRead:
         return await _user_for_token(db, bearer.credentials, SessionKind.EXTENSION)
     return await _user_for_token(db, cookie, SessionKind.BROWSER)
 
+
 BrowserUser = Annotated[UserRead, Depends(_browser_user)]
 CaptureUser = Annotated[UserRead, Depends(_capture_user)]
 

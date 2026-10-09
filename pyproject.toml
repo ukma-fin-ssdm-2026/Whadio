@@ -67,6 +67,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "**/test_*.py" = ["S101", "PLR2004"]
+"**/conftest.py" = ["S105"]                       # test-only account credentials
 "src/whadio/api/**/*.py" = ["PLR0913", "PLR0917"] # FastAPI injects every input as a parameter
 "src/whadio/api/accounts/fixtures.py" = ["S105"]  # public demo credentials, shown on the Swagger page
 "src/whadio/cli.py" = ["PLC0415"]                 # each command imports its own runtime

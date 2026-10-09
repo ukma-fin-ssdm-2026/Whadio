@@ -1,6 +1,5 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import JSON
@@ -52,4 +51,4 @@ class AuditEvent(Base):
     workspace_id: Mapped[UUID | None]
     meeting_id: Mapped[UUID | None]
     subject_id: Mapped[UUID | None]
-    details: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    details: Mapped[dict[str, str] | None] = mapped_column(JSON)

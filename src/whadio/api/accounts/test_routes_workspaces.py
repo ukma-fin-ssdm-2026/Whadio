@@ -1,5 +1,4 @@
-from uuid import UUID
-
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -58,7 +57,8 @@ def test_create_makes_me_owner_and_is_stored(client: TestClient) -> None:
     assert client.get(WORKSPACES).json()["items"][-1]["id"] == created["id"]
 
 
-def test_member_sees_their_role_and_the_member_count(client: TestClient, bob: UUID) -> None:
+@pytest.mark.usefixtures("bob")
+def test_member_sees_their_role_and_the_member_count(client: TestClient) -> None:
     sign_in_as_bob(client)
 
     team = client.get(TEAM).json()
@@ -74,7 +74,8 @@ def test_member_sees_their_role_and_the_member_count(client: TestClient, bob: UU
     assert personal["member_count"] == 1
 
 
-def test_non_member_gets_404_not_403(client: TestClient, bob: UUID) -> None:
+@pytest.mark.usefixtures("bob")
+def test_non_member_gets_404_not_403(client: TestClient) -> None:
     sign_in_as_bob(client)
 
     for response in (
@@ -113,7 +114,8 @@ def test_update_with_only_one_field_keeps_the_other(client: TestClient) -> None:
     assert client.get(TEAM).json()["name"] == before["name"]
 
 
-def test_member_cannot_update_or_delete(client: TestClient, bob: UUID) -> None:
+@pytest.mark.usefixtures("bob")
+def test_member_cannot_update_or_delete(client: TestClient) -> None:
     sign_in_as_bob(client)
 
     for response in (client.patch(TEAM, json={"name": "Bob's now"}), client.delete(TEAM)):
@@ -132,7 +134,8 @@ def test_personal_workspace_cannot_be_deleted(client: TestClient) -> None:
     assert client.get(PERSONAL).status_code == 200
 
 
-def test_owner_deletes_and_it_is_audited(client: TestClient, bob: UUID) -> None:
+@pytest.mark.usefixtures("bob")
+def test_owner_deletes_and_it_is_audited(client: TestClient) -> None:
     sign_in_as_alice(client)
 
     assert client.delete(TEAM).status_code == 204
@@ -152,7 +155,8 @@ def test_owner_deletes_and_it_is_audited(client: TestClient, bob: UUID) -> None:
     assert events[0].meeting_id is None
 
 
-def test_deleting_removes_other_members_too(client: TestClient, bob: UUID) -> None:
+@pytest.mark.usefixtures("bob")
+def test_deleting_removes_other_members_too(client: TestClient) -> None:
     sign_in_as_alice(client)
     client.delete(TEAM)
     client.cookies.clear()

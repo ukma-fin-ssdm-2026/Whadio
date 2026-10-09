@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -94,7 +95,8 @@ def test_only_this_workspaces_meetings(client: TestClient) -> None:
     assert [item["name"] for item in items] == ["Thesis consultation"]
 
 
-def test_non_member_gets_404(client: TestClient, bob: UUID) -> None:
+@pytest.mark.usefixtures("bob")
+def test_non_member_gets_404(client: TestClient) -> None:
     client.post("/api/v1/sessions", json={"email": BOB_EMAIL, "password": BOB_PASSWORD})
 
     response = client.get(f"/api/v1/workspaces/{PERSONAL_WORKSPACE_ID}/meetings")
@@ -107,7 +109,8 @@ def test_list_needs_sign_in(client: TestClient) -> None:
     assert client.get(TEAM_MEETINGS).status_code == 401
 
 
-def test_new_workspace_and_new_account_get_a_default_folder(client: TestClient, bob: UUID) -> None:
+@pytest.mark.usefixtures("bob")
+def test_new_workspace_and_new_account_get_a_default_folder(client: TestClient) -> None:
     sign_in_as_alice(client)
     created = client.post("/api/v1/workspaces", json={"name": "Research"}).json()
 
@@ -220,7 +223,8 @@ def test_upload_that_is_not_audio_is_415_and_creates_nothing(client: TestClient)
     assert len(ids(client)) == 3
 
 
-def test_upload_by_non_member_is_404(client: TestClient, bob: UUID) -> None:
+@pytest.mark.usefixtures("bob")
+def test_upload_by_non_member_is_404(client: TestClient) -> None:
     client.post("/api/v1/sessions", json={"email": BOB_EMAIL, "password": BOB_PASSWORD})
 
     response = client.post(
@@ -262,7 +266,8 @@ def test_unknown_meeting_is_404(client: TestClient) -> None:
     assert response.json()["error"]["code"] == "NOT_FOUND"
 
 
-def test_non_member_cannot_reach_a_meeting_by_its_id(client: TestClient, bob: UUID) -> None:
+@pytest.mark.usefixtures("bob")
+def test_non_member_cannot_reach_a_meeting_by_its_id(client: TestClient) -> None:
     """Regression test for the meeting-id IDOR: every route that takes a meeting id."""
     client.post("/api/v1/sessions", json={"email": BOB_EMAIL, "password": BOB_PASSWORD})
     alices_meeting = f"/api/v1/meetings/{THESIS_MEETING_ID}"
@@ -279,7 +284,8 @@ def test_non_member_cannot_reach_a_meeting_by_its_id(client: TestClient, bob: UU
         assert response.json()["error"]["code"] == "NOT_FOUND"
 
 
-def test_member_can_reach_a_meeting_of_their_workspace(client: TestClient, bob: UUID) -> None:
+@pytest.mark.usefixtures("bob")
+def test_member_can_reach_a_meeting_of_their_workspace(client: TestClient) -> None:
     client.post("/api/v1/sessions", json={"email": BOB_EMAIL, "password": BOB_PASSWORD})
 
     assert client.get(f"/api/v1/meetings/{SPRINT_12_MEETING_ID}").status_code == 200
@@ -308,7 +314,8 @@ def test_owner_deletes_a_meeting_and_it_is_audited(client: TestClient) -> None:
     assert event.actor_user_id == ALICE.id
 
 
-def test_plain_member_cannot_delete_someone_elses_meeting(client: TestClient, bob: UUID) -> None:
+@pytest.mark.usefixtures("bob")
+def test_plain_member_cannot_delete_someone_elses_meeting(client: TestClient) -> None:
     client.post("/api/v1/sessions", json={"email": BOB_EMAIL, "password": BOB_PASSWORD})
 
     response = client.delete(f"/api/v1/meetings/{SPRINT_12_MEETING_ID}")
@@ -319,7 +326,8 @@ def test_plain_member_cannot_delete_someone_elses_meeting(client: TestClient, bo
     assert audit_events(client) == []
 
 
-def test_plain_member_deletes_their_own_upload_and_its_file(client: TestClient, bob: UUID) -> None:
+@pytest.mark.usefixtures("bob")
+def test_plain_member_deletes_their_own_upload_and_its_file(client: TestClient) -> None:
     client.post("/api/v1/sessions", json={"email": BOB_EMAIL, "password": BOB_PASSWORD})
     created = client.post(
         TEAM_MEETINGS, files={"file": ("call.wav", wav_bytes(), "audio/wav")}
@@ -399,7 +407,8 @@ def test_move_to_another_workspaces_folder_is_422(client: TestClient) -> None:
     assert audit_events(client) == []
 
 
-def test_plain_member_can_rename(client: TestClient, bob: UUID) -> None:
+@pytest.mark.usefixtures("bob")
+def test_plain_member_can_rename(client: TestClient) -> None:
     client.post("/api/v1/sessions", json={"email": BOB_EMAIL, "password": BOB_PASSWORD})
 
     response = client.patch(f"/api/v1/meetings/{SPRINT_12_MEETING_ID}", json={"name": "Bob's"})
@@ -438,7 +447,8 @@ def test_transcript_comes_from_the_database(client: TestClient) -> None:
     assert body["has_unnamed_speakers"] is True
     # In time order, each pointing at one of this revision's speakers.
     starts = [segment["start_seconds"] for segment in body["segments"]]
-    assert starts == sorted(starts) and len(starts) == 3
+    assert len(starts) == 3
+    assert starts == sorted(starts)
     speaker_ids = {speaker["id"] for speaker in body["speakers"]}
     assert {segment["speaker_id"] for segment in body["segments"]} <= speaker_ids
 
