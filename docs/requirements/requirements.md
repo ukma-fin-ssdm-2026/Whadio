@@ -44,7 +44,7 @@ Recorded with the reason, so that the boundary is a decision rather than an omis
 | Redaction of names spoken inside the transcript body | Requires named-entity recognition for Ukrainian. Speaker labels are redacted instead, which falls out of speaker separation at no extra cost. |
 | Reading transcripts aloud, colour-blind modes and similar accessibility work | Cannot be committed to this semester. The original recording already covers the audio case. |
 | An uptime guarantee | The service runs on a single host, and redundancy isn't in the budget. |
-| An owner-controlled switch for whether recordings are stored at all | Cut when the story set was consolidated. The retention policy already deletes recordings three months after the meeting; a workspace-level override would add a second deletion path to specify and verify. |
+| An owner-controlled switch for whether recordings are stored at all | Cut when the story set was consolidated. The retention policy already deletes recordings 90 days after the meeting; a workspace-level override would add a second deletion path to specify and verify. |
 | Sending a user's records out by email | Meeting content would leave the system, which the privacy requirement forbids. Users are warned before deletion and export themselves. |
 | Video capture | Audio only. |
 | Payments, pricing plans and paid tiers | The service is free and open-source. |
@@ -63,7 +63,7 @@ Recorded with the reason, so that the boundary is a decision rather than an omis
 | **Workspace** | The access boundary. Carries the membership list and the three workspace roles. Every User receives a personal workspace when their account is created; organisational workspaces are created by their Owner. Nothing crosses this boundary except a share: meetings do not move between workspaces, and are never used as context outside their own. |
 | **Folder** | The context boundary inside a workspace, and its only organisational subdivision. Carries no permissions of its own and cannot be nested. Every workspace has one default folder. |
 | **Meeting** | One record: its recording, its transcript and its notes. Moved, shared and deleted as a unit. |
-| **Recording** | The captured audio of a meeting. Deleted three months after the meeting under the retention policy. |
+| **Recording** | The captured audio of a meeting. Deleted 90 days after the meeting under the retention policy. |
 | **Transcript** | The text of a meeting, split into timestamped segments attributed to speakers. |
 | **Notes** | The text generated from a transcript by a language model, using a preset. A layer above the transcript, never a replacement for it. |
 | **Preset** | A named note format — a summary with action items, a detailed write-up, an interview. Each preset is a fixed prompt; users do not write their own. |
@@ -168,7 +168,7 @@ restriction, never by where a meeting is filed.
 
 ### Retention
 
-- FR-046: Recordings are deleted three months after the meeting, with the members who have access warned in advance. The transcript and the notes survive the deletion.
+- FR-046: Recordings are deleted 90 days after the meeting, with the members who have access warned 7 days before deletion. The transcript and the notes survive the deletion.
 
 ## Non-functional requirements (NFR)
 

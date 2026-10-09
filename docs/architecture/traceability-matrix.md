@@ -28,7 +28,7 @@ Architectural view of the requirements in [rtm.md](../requirements/rtm.md) and [
 | US-018 Own AI assistant | FR-043, FR-044 | MCP client, MCP Server, Accounts & Workspaces, Access Policy | Keys shown once, stored hashed; results filtered by Access Policy | Unit and API tests |
 | US-019 Admin dashboard | FR-045 | Admin & Monitoring, Processing | Reads job states from Processing and system metrics only, no content | Query review |
 | US-020 Reset a forgotten password | FR-048, FR-049 | Accounts & Workspaces, Notifications, SMTP relay | Single-use emailed link; a new password ends every earlier session and extension token; requested by users only in `verified` mode, and issued by the operator in either | API tests with a mail catcher and a mocked clock |
-| Retention policy (referenced in US-011) | FR-046 | Retention, Notifications | Scheduled deletion of recordings three months after the meeting; Notifications warns members in advance | Test with a mocked clock |
+| Retention policy (referenced in US-011) | FR-046 | Retention, Notifications | Scheduled deletion of recordings 90 days after the meeting; Notifications warns accessible members 7 days in advance | Test with a mocked clock |
 
 ### Non-functional requirements
 

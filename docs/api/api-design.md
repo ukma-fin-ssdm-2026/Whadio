@@ -613,7 +613,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 - **Errors:**
   - `404 NOT_FOUND`: no such meeting, or the caller cannot read it.
   - `409 RECORDING_NOT_READY`: the meeting is still being captured.
-  - `410 RECORDING_DELETED`: retention removed the audio after 3 months (FR-046). The
+  - `410 RECORDING_DELETED`: retention removed the audio after 90 days (FR-046). The
     transcript and notes stay.
 
 #### `GET /meetings/{meeting_id}/transcript` · Get the transcript
@@ -1014,7 +1014,7 @@ status, and which operations return it.
 
 **`410 Gone`**
 
-- **`RECORDING_DELETED`:** the recording was removed by the 3-month retention rule (FR-046).
+- **`RECORDING_DELETED`:** the recording was removed by the 90-day retention rule (FR-046).
   It is `410` rather than `404` so the client can explain that the transcript and notes still
   exist. Returned by `GET /meetings/{id}/recording`.
 - **`SHARE_REVOKED`:** the bound recipient reads a share that its creator revoked. It is

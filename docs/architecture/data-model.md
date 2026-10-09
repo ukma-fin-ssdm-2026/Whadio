@@ -133,7 +133,7 @@ The model covers the data required for these key project functions:
 - `LLM_PROVIDER_CONFIG.api_key_encrypted` is required unless `provider = Whadio`.
 - `PROCESSING_JOB.created_at` stores when the job was queued, and `attempts` stores retry count for monitoring and retry limits.
 - Segment time intervals must satisfy `start_time_seconds < end_time_seconds`.
-- Recording files are deleted after the retention date stored in `recording_delete_after`; transcripts and notes remain after `recording_deleted_at` is set.
+- Recording files are deleted 90 days after the meeting, at the date stored in `recording_delete_after`; accessible members are warned 7 days beforehand. Transcripts and notes remain after `recording_deleted_at` is set.
 - LLM provider API keys and MCP keys must never be stored in plaintext.
 - `AUDIT_EVENT` is append-only: the table is owned by the migration role, and the application's database role holds only `INSERT` and `SELECT` on it.
 - An `AUDIT_EVENT` is written in the same transaction as the change it records, by the module that performs the change.

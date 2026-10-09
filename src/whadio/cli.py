@@ -27,3 +27,13 @@ def openapi() -> None:
 
     for path in export_openapi(create_app()):
         typer.echo(f"Wrote {path}")
+
+
+@app.command(help="Apply database migrations using the owner role; run from the repository root.")
+def db_upgrade(
+    config: Annotated[str, typer.Option(help="Alembic configuration file.")] = "alembic.ini",
+) -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    command.upgrade(Config(config), "head")
