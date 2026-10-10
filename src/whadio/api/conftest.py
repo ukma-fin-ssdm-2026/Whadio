@@ -6,35 +6,32 @@ from uuid import UUID
 
 import pytest
 from anyio.from_thread import BlockingPortal
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from .accounts.fixtures import TEAM_WORKSPACE_ID
 from .accounts.models import WorkspaceMembership
 from .accounts.schemas import Role
 from .accounts.users import create_user
 from .app import create_app
+from .core.db import SessionFactory
 
 BOB_EMAIL = "bob@whadio.dev"
 BOB_PASSWORD: Final = "bob-password"
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> Iterator[TestClient]:
-    app = create_app(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", tmp_path / "recordings")
+def client(tmp_path: Path, sessionmaker: SessionFactory) -> Iterator[TestClient]:
+    app = create_app(sessionmaker, tmp_path / "recordings")
     # https, because the session cookie is Secure and is not sent over plain http.
     with TestClient(app, base_url="https://testserver") as client:
         yield client
 
 
 @pytest.fixture
-def sessionmaker(client: TestClient) -> async_sessionmaker[AsyncSession]:
+def sessionmaker(tmp_path: Path) -> SessionFactory:
     """The app's database sessions, for tests that set up or check rows directly."""
-    if not isinstance(client.app, FastAPI):
-        raise TypeError("the test client wraps something other than the app")
-    sessionmaker: async_sessionmaker[AsyncSession] = client.app.state.sessionmaker
-    return sessionmaker
+    return SessionFactory(create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}"))
 
 
 @pytest.fixture

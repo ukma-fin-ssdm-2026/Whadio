@@ -5,24 +5,44 @@ description = "Whadio backend: meeting recording, transcription and notes"
 readme = "README.md"
 requires-python = ">=3.13,<3.15"
 dependencies = [
+    "aio-pika>=10.1",
     "aiosqlite>=0.21",
+    "anthropic>=1",
     "av>=19.0",
     "fastapi[standard-no-fastapi-cloud-cli]>=0.142",
     "fastmcp>=4.0.11",
     "mcp>=2.3",
+    "minio>=7.2.20",
     "pydantic>=2.13",
+    "pydantic-settings>=2.15",
     "pyyaml>=6.0",
     "sqlalchemy[asyncio]>=2.0",
     "starlette>=1.7",
     "typer>=0.27",
+    "urllib3>=2.5",
     "uvicorn>=0.54",
 ]
 
 [project.scripts]
 whadio = "whadio.cli:app"
 
+[project.optional-dependencies]
+cpu = [
+    "torch==2.14.1",
+    "torchaudio==2.11.0",
+    "torchcodec==0.17.0",
+]
+asr = [
+    "faster-whisper>=1.2.1",
+    "httpx2>=2.13",
+    "lingua-language-detector>=2.2",
+    "numpy>=2.5",
+    "onnx-asr[hub]>=0.12",
+    "pyannote-audio==4.0.7",
+]
+
 [build-system]
-requires = ["uv_build>=0.11.16,<0.12"]
+requires = ["uv_build>=0.11.16,<0.13"]
 build-backend = "uv_build"
 
 [dependency-groups]
@@ -45,6 +65,17 @@ dev = [
 
 [tool.uv]
 required-version = ">=0.11.16"
+
+# torch, torchaudio and torchcodec must come from one index: mismatched builds abort the process.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", extra = "cpu" }]
+torchaudio = [{ index = "pytorch-cpu", extra = "cpu" }]
+torchcodec = [{ index = "pytorch-cpu", extra = "cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.ruff]
 line-length = 100
@@ -71,6 +102,7 @@ ignore = [
 "src/whadio/api/**/*.py" = ["PLR0913", "PLR0917"] # FastAPI injects every input as a parameter
 "src/whadio/api/accounts/fixtures.py" = ["S105"]  # public demo credentials, shown on the Swagger page
 "src/whadio/cli.py" = ["PLC0415"]                 # each command imports its own runtime
+"src/whadio/workers/asr/slot.py" = ["PLC0415"]    # model libraries load only in the slot's child
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "typing.Any".msg = "Any is banned: type the value, or validate it at the boundary"
@@ -93,7 +125,12 @@ pythonPlatform = "Linux"
 typeCheckingMode = "recommended"
 reportImplicitStringConcatenation = "none" # long literals are split across lines on purpose
 reportUnusedCallResult = "none"             # calls made for their effect, e.g. a lookup that raises 404
-allowedUntypedLibraries = ["yaml"]          # types-PyYAML leaves Representer.represent_scalar `value` untyped
+allowedUntypedLibraries = [
+    "yaml",           # types-PyYAML leaves Representer.represent_scalar `value` untyped
+    "faster_whisper", # ships no type information
+    "onnx_asr",       # load_model and load_vad take onnxruntime's untyped SessionOptions
+    "pyannote",       # Pipeline.from_pretrained takes a bare `dict`; pyannote.core is untyped
+]
 
 [tool.bandit.assert_used]
 skips = ["*/test_*.py"]
@@ -213,13 +250,16 @@ minversion = "9.0"
 strict = true
 testpaths = ["src"]
 addopts = ["--import-mode=importlib"]
-markers = ["slow: needs models or running services; left out of the commit hook"]
+markers = [
+    "slow: needs models or running services; left out of the commit hook",
+    "models: needs downloaded ML models; CI leaves it out (mark such tests slow as well)",
+]
 
 [tool.deptry]
 extend_exclude = ["src/.*/(test_[^/]*|conftest)\\.py"]
 
 [tool.deptry.per_rule_ignores]
-DEP002 = ["aiosqlite"] # the SQLite driver, loaded by name from the database URL
+DEP002 = ["aiosqlite", "torchaudio", "torchcodec"] # aiosqlite is loaded by name from the database URL; the torch ones are declared to pin them to torch's index
 
 [tool.typos.files]
 extend-exclude = ["*.svg"] # PlantUML embeds its compressed source in every SVG

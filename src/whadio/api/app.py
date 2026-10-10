@@ -6,12 +6,12 @@ from pathlib import Path
 
 from fastapi import APIRouter, FastAPI
 from fastmcp.utilities.lifespan import combine_lifespans
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from . import meta
 from .accounts import routes_sessions, routes_workspaces
 from .accounts.fixtures import DEMO_EMAIL, DEMO_PASSWORD, TEAM_WORKSPACE_ID, seed_demo_user
-from .core.db import DEFAULT_DATABASE_URL, create_tables
+from .core.db import DEFAULT_DATABASE_URL, SessionFactory, create_tables, get_session
 from .core.errors import register_error_handlers
 from .mcp_server import build_mcp_server
 from .meetings import routes as meeting_routes
@@ -64,19 +64,27 @@ async def _export_spec(app: FastAPI) -> AsyncGenerator[None]:
     yield
 
 
-@asynccontextmanager
-async def _database(app: FastAPI) -> AsyncGenerator[None]:
-    engine = create_async_engine(app.state.database_url)
-    await create_tables(engine)
-    app.state.sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
-    async with app.state.sessionmaker() as db:
-        await seed_demo_user(db)
-        await seed_demo_meetings(db)
-    yield
-    await engine.dispose()
+def create_app(sessions: SessionFactory | None = None, recordings: Path | None = None) -> FastAPI:
+    if sessions is None:
+        database = os.environ.get("WHADIO_DATABASE_URL", DEFAULT_DATABASE_URL)
+        sessions = SessionFactory(create_async_engine(database))
+    # A local folder until the team runs object storage (S3).
+    recordings_dir = recordings or Path(os.environ.get("WHADIO_RECORDINGS_DIR", "recordings"))
+    factory = sessions
 
+    @asynccontextmanager
+    async def open_database(_app: FastAPI) -> AsyncGenerator[None]:
+        await create_tables(factory.engine)
+        async with factory() as db:
+            await seed_demo_user(db)
+            await seed_demo_meetings(db)
+        yield
+        await factory.engine.dispose()
 
-def create_app(database: str | None = None, recordings: Path | None = None) -> FastAPI:
+    async def session() -> AsyncGenerator[AsyncSession]:
+        async with factory() as db:
+            yield db
+
     mcp_app = build_mcp_server().http_app(path="/")
     app = FastAPI(
         title="Whadio API",
@@ -84,13 +92,10 @@ def create_app(database: str | None = None, recordings: Path | None = None) -> F
         version=API_VERSION,
         openapi_tags=TAGS,
         docs_url="/api-docs",
-        lifespan=combine_lifespans(_export_spec, _database, mcp_app.lifespan),
+        lifespan=combine_lifespans(_export_spec, open_database, mcp_app.lifespan),
     )
-    app.state.database_url = database or os.environ.get("WHADIO_DATABASE_URL", DEFAULT_DATABASE_URL)
-    # A local folder until the team runs object storage (S3).
-    app.state.recordings_dir = recordings or Path(
-        os.environ.get("WHADIO_RECORDINGS_DIR", "recordings")
-    )
+    app.dependency_overrides[get_session] = session
+    app.dependency_overrides[meeting_routes.get_recordings_dir] = lambda: recordings_dir
     v1 = APIRouter(prefix="/api/v1")
     for router in (routes_sessions.router, routes_workspaces.router, meeting_routes.router):
         v1.include_router(router)

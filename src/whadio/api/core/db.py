@@ -1,8 +1,7 @@
-from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
-from typing import Annotated, Final, override
+from typing import Annotated, Final, final, override
 
-from fastapi import Depends, Request
+from fastapi import Depends
 from sqlalchemy import DateTime, TypeDecorator
 from sqlalchemy.engine import Dialect
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -17,6 +16,15 @@ class Base(DeclarativeBase):
     pass
 
 
+class SessionFactory(async_sessionmaker[AsyncSession]):
+    """Opens the app's database sessions and keeps the engine they run on."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        super().__init__(engine, expire_on_commit=False)
+        self.engine: Final = engine
+
+
+@final
 class UtcDateTime(TypeDecorator[datetime]):
     """Timezone-aware UTC datetimes, also on SQLite, which stores them without an offset."""
 
@@ -39,10 +47,8 @@ async def create_tables(engine: AsyncEngine) -> None:
         await connection.run_sync(Base.metadata.create_all)
 
 
-async def _db(request: Request) -> AsyncGenerator[AsyncSession]:
-    sessionmaker: async_sessionmaker[AsyncSession] = request.app.state.sessionmaker
-    async with sessionmaker() as session:
-        yield session
+def get_session() -> AsyncSession:
+    raise NotImplementedError("create_app() supplies the session")
 
 
-Db = Annotated[AsyncSession, Depends(_db)]
+Db = Annotated[AsyncSession, Depends(get_session)]

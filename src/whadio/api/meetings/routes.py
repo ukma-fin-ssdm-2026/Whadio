@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Annotated, Final
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, File, Form, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile
 from sqlalchemy import select
 from starlette.concurrency import run_in_threadpool
 
@@ -64,6 +64,13 @@ from .schemas import (
 )
 
 router = APIRouter()
+
+
+def get_recordings_dir() -> Path:
+    raise NotImplementedError("create_app() supplies the recordings folder")
+
+
+RecordingsDir = Annotated[Path, Depends(get_recordings_dir)]
 
 MAX_UPLOAD_BYTES: Final = 500 * 1024 * 1024
 
@@ -195,6 +202,7 @@ async def upload_recording(
     request: Request,
     response: Response,
     db: Db,
+    recordings_dir: RecordingsDir,
     folder_id: Annotated[
         UUID | None, Form(description="Destination folder; the default folder when omitted")
     ] = None,
@@ -244,7 +252,6 @@ async def upload_recording(
 
     # 1. Save the recording, 2. the meeting row, 3. the job (not yet: no queue), 4. respond.
     meeting_id = uuid4()
-    recordings_dir: Path = request.app.state.recordings_dir
     await run_in_threadpool(recordings_dir.mkdir, parents=True, exist_ok=True)
     storage_path = recordings_dir / str(meeting_id)
     with storage_path.open("wb") as saved:

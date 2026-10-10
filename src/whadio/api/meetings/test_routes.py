@@ -18,9 +18,10 @@ from ..accounts.fixtures import (
     TEAM_WORKSPACE_ID,
 )
 from ..accounts.models import WorkspaceMembership
-from ..accounts.schemas import Role
+from ..accounts.schemas import Role, WorkspaceRead
 from ..audit.models import AuditAction, AuditEvent
 from ..conftest import BOB_EMAIL, BOB_PASSWORD
+from ..core.schemas import Page
 from .fixtures import (
     DESIGN_SYNC_MEETING_ID,
     PERSONAL_FOLDER_ID,
@@ -30,7 +31,14 @@ from .fixtures import (
     TEAM_DEFAULT_FOLDER_ID,
 )
 from .models import Folder, Meeting, Speaker, Transcript, TranscriptRevision, TranscriptSegment
-from .schemas import RevisionType
+from .schemas import (
+    MeetingRead,
+    MeetingSummary,
+    ProcessingState,
+    RevisionType,
+    SourceType,
+    TranscriptRead,
+)
 
 TEAM_MEETINGS = f"/api/v1/workspaces/{TEAM_WORKSPACE_ID}/meetings"
 # "Thesis consultation", the demo meeting in Alice's personal workspace.
@@ -42,7 +50,8 @@ def sign_in_as_alice(client: TestClient) -> None:
 
 
 def ids(client: TestClient, params: dict[str, str] | None = None) -> list[str]:
-    return [item["id"] for item in client.get(TEAM_MEETINGS, params=params).json()["items"]]
+    page = Page[MeetingSummary].model_validate_json(client.get(TEAM_MEETINGS, params=params).text)
+    return [str(item.id) for item in page.items]
 
 
 def test_list_is_newest_recording_first(client: TestClient) -> None:
@@ -52,13 +61,14 @@ def test_list_is_newest_recording_first(client: TestClient) -> None:
 
     assert response.status_code == 200
     # Recorded 2 October, 30 September and 16 September.
-    assert [item["id"] for item in response.json()["items"]] == [
-        str(DESIGN_SYNC_MEETING_ID),
-        str(SPRINT_12_MEETING_ID),
-        str(SPRINT_11_MEETING_ID),
+    items = Page[MeetingSummary].model_validate_json(response.text).items
+    assert [item.id for item in items] == [
+        DESIGN_SYNC_MEETING_ID,
+        SPRINT_12_MEETING_ID,
+        SPRINT_11_MEETING_ID,
     ]
-    assert response.json()["items"][0]["processing_state"] == "queued"
-    assert response.json()["items"][0]["workspace_id"] == str(TEAM_WORKSPACE_ID)
+    assert items[0].processing_state is ProcessingState.QUEUED
+    assert items[0].workspace_id == TEAM_WORKSPACE_ID
 
 
 def test_name_filter_ignores_case(client: TestClient) -> None:
@@ -92,9 +102,10 @@ def test_folder_filter(client: TestClient) -> None:
 def test_only_this_workspaces_meetings(client: TestClient) -> None:
     sign_in_as_alice(client)
 
-    items = client.get(f"/api/v1/workspaces/{PERSONAL_WORKSPACE_ID}/meetings").json()["items"]
+    listed = client.get(f"/api/v1/workspaces/{PERSONAL_WORKSPACE_ID}/meetings")
 
-    assert [item["name"] for item in items] == ["Thesis consultation"]
+    items = Page[MeetingSummary].model_validate_json(listed.text).items
+    assert [item.name for item in items] == ["Thesis consultation"]
 
 
 @pytest.mark.usefixtures("bob")
@@ -116,14 +127,16 @@ def test_new_workspace_and_new_account_get_a_default_folder(
     client: TestClient, sessionmaker: async_sessionmaker[AsyncSession], portal: BlockingPortal
 ) -> None:
     sign_in_as_alice(client)
-    created = client.post("/api/v1/workspaces", json={"name": "Research"}).json()
+    created = WorkspaceRead.model_validate_json(
+        client.post("/api/v1/workspaces", json={"name": "Research"}).text
+    )
 
     async def folders() -> list[Folder]:
         async with sessionmaker() as db:
             return [*await db.scalars(select(Folder).where(Folder.is_default))]
 
     default_folders = [folder.workspace_id for folder in portal.call(folders)]
-    assert UUID(created["id"]) in default_folders
+    assert created.id in default_folders
     # Alice's two seeded workspaces, "Research" and Bob's personal one: one default folder each.
     assert len(default_folders) == len(set(default_folders)) == 4
 
@@ -168,19 +181,19 @@ def test_upload_saves_the_file_and_a_queued_meeting(
     )
 
     assert response.status_code == 201
-    created = response.json()
-    assert created["name"] == "Standup"
-    assert created["name_is_generated"] is False
-    assert created["processing_state"] == "queued"
-    assert created["source_type"] == "upload"
-    assert created["folder_id"] == str(TEAM_DEFAULT_FOLDER_ID)
-    assert response.headers["Location"].endswith(f"/meetings/{created['id']}")
+    created = MeetingRead.model_validate_json(response.text)
+    assert created.name == "Standup"
+    assert created.name_is_generated is False
+    assert created.processing_state is ProcessingState.QUEUED
+    assert created.source_type is SourceType.UPLOAD
+    assert created.folder_id == TEAM_DEFAULT_FOLDER_ID
+    assert response.headers["Location"].endswith(f"/meetings/{created.id}")
     # The row is stored, so the list shows it, newest first.
-    assert ids(client)[0] == created["id"]
+    assert ids(client)[0] == str(created.id)
 
     async def stored() -> Meeting:
         async with sessionmaker() as db:
-            return await db.get_one(Meeting, UUID(created["id"]))
+            return await db.get_one(Meeting, created.id)
 
     meeting = portal.call(stored)
     assert meeting.storage_path is not None
@@ -190,24 +203,26 @@ def test_upload_saves_the_file_and_a_queued_meeting(
 def test_upload_without_name_gets_a_generated_one(client: TestClient) -> None:
     sign_in_as_alice(client)
 
-    created = client.post(
-        TEAM_MEETINGS, files={"file": ("call.wav", wav_bytes(), "audio/wav")}
-    ).json()
+    created = MeetingRead.model_validate_json(
+        client.post(TEAM_MEETINGS, files={"file": ("call.wav", wav_bytes(), "audio/wav")}).text
+    )
 
-    assert created["name"].startswith("Meeting ")
-    assert created["name_is_generated"] is True
+    assert created.name.startswith("Meeting ")
+    assert created.name_is_generated is True
 
 
 def test_upload_into_a_chosen_folder(client: TestClient) -> None:
     sign_in_as_alice(client)
 
-    created = client.post(
-        TEAM_MEETINGS,
-        files={"file": ("call.wav", wav_bytes(), "audio/wav")},
-        data={"folder_id": str(SPRINT_FOLDER_ID)},
-    ).json()
+    created = MeetingRead.model_validate_json(
+        client.post(
+            TEAM_MEETINGS,
+            files={"file": ("call.wav", wav_bytes(), "audio/wav")},
+            data={"folder_id": str(SPRINT_FOLDER_ID)},
+        ).text
+    )
 
-    assert created["folder_id"] == str(SPRINT_FOLDER_ID)
+    assert created.folder_id == SPRINT_FOLDER_ID
 
 
 def test_upload_into_another_workspaces_folder_is_422(client: TestClient) -> None:
@@ -257,13 +272,15 @@ def test_uploaded_meeting_can_be_opened_from_location(client: TestClient) -> Non
 def test_seeded_meeting_reads_from_the_database(client: TestClient) -> None:
     sign_in_as_alice(client)
 
-    opened = client.get(f"/api/v1/meetings/{SPRINT_12_MEETING_ID}").json()
+    opened = MeetingRead.model_validate_json(
+        client.get(f"/api/v1/meetings/{SPRINT_12_MEETING_ID}").text
+    )
 
-    assert opened["name"] == "Sprint 12 review"
-    assert opened["workspace_id"] == str(TEAM_WORKSPACE_ID)
-    assert opened["processing_state"] == "processed"
+    assert opened.name == "Sprint 12 review"
+    assert opened.workspace_id == TEAM_WORKSPACE_ID
+    assert opened.processing_state is ProcessingState.PROCESSED
     # Seeded meetings have no file saved.
-    assert opened["recording_available"] is False
+    assert opened.recording_available is False
 
 
 def test_unknown_meeting_is_404(client: TestClient) -> None:
@@ -346,23 +363,23 @@ def test_plain_member_deletes_their_own_upload_and_its_file(
     client: TestClient, sessionmaker: async_sessionmaker[AsyncSession], portal: BlockingPortal
 ) -> None:
     client.post("/api/v1/sessions", json={"email": BOB_EMAIL, "password": BOB_PASSWORD})
-    created = client.post(
-        TEAM_MEETINGS, files={"file": ("call.wav", wav_bytes(), "audio/wav")}
-    ).json()
+    created = MeetingRead.model_validate_json(
+        client.post(TEAM_MEETINGS, files={"file": ("call.wav", wav_bytes(), "audio/wav")}).text
+    )
 
     async def storage_path() -> Path:
         async with sessionmaker() as db:
-            meeting = await db.get_one(Meeting, UUID(created["id"]))
+            meeting = await db.get_one(Meeting, created.id)
             assert meeting.storage_path is not None
             return Path(meeting.storage_path)
 
     saved = portal.call(storage_path)
     assert saved.exists()
 
-    assert client.delete(f"/api/v1/meetings/{created['id']}").status_code == 204
+    assert client.delete(f"/api/v1/meetings/{created.id}").status_code == 204
 
     assert not saved.exists()
-    assert client.get(f"/api/v1/meetings/{created['id']}").status_code == 404
+    assert client.get(f"/api/v1/meetings/{created.id}").status_code == 404
 
 
 def test_moderator_deletes_someone_elses_meeting(
@@ -394,20 +411,20 @@ def test_rename_is_stored_clears_generated_flag_and_is_audited(
     client: TestClient, sessionmaker: async_sessionmaker[AsyncSession], portal: BlockingPortal
 ) -> None:
     sign_in_as_alice(client)
-    created = client.post(
-        TEAM_MEETINGS, files={"file": ("call.wav", wav_bytes(), "audio/wav")}
-    ).json()
-    assert created["name_is_generated"] is True
+    created = MeetingRead.model_validate_json(
+        client.post(TEAM_MEETINGS, files={"file": ("call.wav", wav_bytes(), "audio/wav")}).text
+    )
+    assert created.name_is_generated is True
 
-    response = client.patch(f"/api/v1/meetings/{created['id']}", json={"name": "Planning"})
+    response = client.patch(f"/api/v1/meetings/{created.id}", json={"name": "Planning"})
 
     assert response.status_code == 200
     assert response.json()["name"] == "Planning"
     assert response.json()["name_is_generated"] is False
-    assert client.get(f"/api/v1/meetings/{created['id']}").json()["name"] == "Planning"
+    assert client.get(f"/api/v1/meetings/{created.id}").json()["name"] == "Planning"
     [event] = audit_events(sessionmaker, portal)
     assert event.action is AuditAction.MEETING_RENAMED
-    assert event.meeting_id == UUID(created["id"])
+    assert event.meeting_id == created.id
 
 
 def test_move_is_stored_and_audited_with_both_folders(
@@ -463,25 +480,25 @@ SPRINT_12_TRANSCRIPT = f"/api/v1/meetings/{SPRINT_12_MEETING_ID}/transcript"
 def test_transcript_comes_from_the_database(client: TestClient) -> None:
     sign_in_as_alice(client)
 
-    body = client.get(SPRINT_12_TRANSCRIPT).json()
+    body = TranscriptRead.model_validate_json(client.get(SPRINT_12_TRANSCRIPT).text)
 
-    assert body["meeting_id"] == str(SPRINT_12_MEETING_ID)
-    assert body["language"] == "uk"
-    assert body["revision"]["revision_type"] == "original"
-    assert body["revision"]["is_current"] is True
-    assert body["original_revision_id"] == body["revision"]["id"]
-    assert body["is_edited"] is False
-    assert [(s["display_name"], s["is_unnamed"]) for s in body["speakers"]] == [
+    assert body.meeting_id == SPRINT_12_MEETING_ID
+    assert body.language == "uk"
+    assert body.revision.revision_type is RevisionType.ORIGINAL
+    assert body.revision.is_current is True
+    assert body.original_revision_id == body.revision.id
+    assert body.is_edited is False
+    assert [(s.display_name, s.is_unnamed) for s in body.speakers] == [
         ("Alice", False),
         ("Speaker 2", True),
     ]
-    assert body["has_unnamed_speakers"] is True
+    assert body.has_unnamed_speakers is True
     # In time order, each pointing at one of this revision's speakers.
-    starts = [segment["start_seconds"] for segment in body["segments"]]
+    starts = [segment.start_seconds for segment in body.segments]
     assert len(starts) == 3
     assert starts == sorted(starts)
-    speaker_ids = {speaker["id"] for speaker in body["speakers"]}
-    assert {segment["speaker_id"] for segment in body["segments"]} <= speaker_ids
+    speaker_ids = {speaker.id for speaker in body.speakers}
+    assert {segment.speaker_id for segment in body.segments} <= speaker_ids
 
 
 def test_meeting_without_transcript_is_409(client: TestClient) -> None:
@@ -497,7 +514,9 @@ def test_edited_revision_is_shown_and_the_original_stays_reachable(
     client: TestClient, sessionmaker: async_sessionmaker[AsyncSession], portal: BlockingPortal
 ) -> None:
     sign_in_as_alice(client)
-    original_id = client.get(SPRINT_12_TRANSCRIPT).json()["revision"]["id"]
+    original_id = TranscriptRead.model_validate_json(
+        client.get(SPRINT_12_TRANSCRIPT).text
+    ).revision.id
 
     async def add_edited_revision() -> None:
         async with sessionmaker() as db:
@@ -530,11 +549,11 @@ def test_edited_revision_is_shown_and_the_original_stays_reachable(
             await db.commit()
 
     portal.call(add_edited_revision)
-    body = client.get(SPRINT_12_TRANSCRIPT).json()
+    body = TranscriptRead.model_validate_json(client.get(SPRINT_12_TRANSCRIPT).text)
 
-    assert body["revision"]["revision_type"] == "edited"
-    assert body["revision"]["edited_by_user_id"] == str(ALICE.id)
-    assert body["original_revision_id"] == original_id
-    assert body["is_edited"] is True
-    assert body["has_unnamed_speakers"] is False
-    assert [segment["text"] for segment in body["segments"]] == ["Edited line."]
+    assert body.revision.revision_type is RevisionType.EDITED
+    assert body.revision.edited_by_user_id == ALICE.id
+    assert body.original_revision_id == original_id
+    assert body.is_edited is True
+    assert body.has_unnamed_speakers is False
+    assert [segment.text for segment in body.segments] == ["Edited line."]

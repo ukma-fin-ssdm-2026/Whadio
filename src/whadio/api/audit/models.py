@@ -1,9 +1,10 @@
 from datetime import datetime
 from enum import StrEnum
+from typing import final
 from uuid import UUID, uuid4
 
 from sqlalchemy import JSON
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, MappedColumn
 
 from ..core.db import Base, UtcDateTime
 
@@ -36,6 +37,7 @@ class AuditAction(StrEnum):
     MCP_KEY_REVOKED = "mcp_key_revoked"
 
 
+@final
 class AuditEvent(Base):
     """Append-only (ADR-005): rows are only ever inserted, never updated or deleted.
 
@@ -44,11 +46,11 @@ class AuditEvent(Base):
 
     __tablename__ = "audit_events"
 
-    audit_event_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    occurred_at: Mapped[datetime] = mapped_column(UtcDateTime)
-    actor_user_id: Mapped[UUID]
-    action: Mapped[AuditAction]
-    workspace_id: Mapped[UUID | None]
-    meeting_id: Mapped[UUID | None]
-    subject_id: Mapped[UUID | None]
-    details: Mapped[dict[str, str] | None] = mapped_column(JSON)
+    audit_event_id: Mapped[UUID] = MappedColumn[UUID](primary_key=True, default=uuid4)
+    occurred_at: Mapped[datetime] = MappedColumn[datetime](UtcDateTime)
+    actor_user_id: Mapped[UUID] = MappedColumn[UUID]()
+    action: Mapped[AuditAction] = MappedColumn[AuditAction]()
+    workspace_id: Mapped[UUID | None] = MappedColumn[UUID | None]()
+    meeting_id: Mapped[UUID | None] = MappedColumn[UUID | None]()
+    subject_id: Mapped[UUID | None] = MappedColumn[UUID | None]()
+    details: Mapped[dict[str, str] | None] = MappedColumn[dict[str, str] | None](JSON)

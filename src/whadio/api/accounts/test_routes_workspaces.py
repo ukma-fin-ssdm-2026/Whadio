@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..audit.models import AuditAction, AuditEvent
 from ..conftest import BOB_EMAIL, BOB_PASSWORD
+from ..core.schemas import Page
 from .fixtures import (
     ALICE,
     DEMO_EMAIL,
@@ -13,6 +14,7 @@ from .fixtures import (
     PERSONAL_WORKSPACE_ID,
     TEAM_WORKSPACE_ID,
 )
+from .schemas import Preset, Role, WorkspaceRead, WorkspaceSummary
 
 WORKSPACES = "/api/v1/workspaces"
 TEAM = f"{WORKSPACES}/{TEAM_WORKSPACE_ID}"
@@ -30,11 +32,11 @@ def sign_in_as_bob(client: TestClient) -> None:
 def test_list_shows_my_workspaces_oldest_first(client: TestClient) -> None:
     sign_in_as_alice(client)
 
-    items = client.get(WORKSPACES).json()["items"]
+    items = Page[WorkspaceSummary].model_validate_json(client.get(WORKSPACES).text).items
 
-    assert [item["id"] for item in items] == [str(PERSONAL_WORKSPACE_ID), str(TEAM_WORKSPACE_ID)]
-    assert items[0]["is_personal"] is True
-    assert items[0]["my_role"] == "owner"
+    assert [item.id for item in items] == [PERSONAL_WORKSPACE_ID, TEAM_WORKSPACE_ID]
+    assert items[0].is_personal is True
+    assert items[0].my_role is Role.OWNER
 
 
 def test_list_needs_sign_in(client: TestClient) -> None:
@@ -47,33 +49,40 @@ def test_create_makes_me_owner_and_is_stored(client: TestClient) -> None:
     response = client.post(WORKSPACES, json={"name": "Research"})
 
     assert response.status_code == 201
-    created = response.json()
-    assert created["name"] == "Research"
-    assert created["my_role"] == "owner"
-    assert created["member_count"] == 1
-    assert created["is_personal"] is False
-    assert created["default_preset"] == "summary"
-    assert response.headers["Location"].endswith(f"{WORKSPACES}/{created['id']}")
+    created = WorkspaceRead.model_validate_json(response.text)
+    assert created.name == "Research"
+    assert created.my_role is Role.OWNER
+    assert created.member_count == 1
+    assert created.is_personal is False
+    assert created.default_preset is Preset.SUMMARY
+    assert response.headers["Location"].endswith(f"{WORKSPACES}/{created.id}")
     # Stored: it comes back from a fresh read and is last in the list, being the newest.
-    assert client.get(f"{WORKSPACES}/{created['id']}").json() == created
-    assert client.get(WORKSPACES).json()["items"][-1]["id"] == created["id"]
+    assert (
+        WorkspaceRead.model_validate_json(client.get(f"{WORKSPACES}/{created.id}").text) == created
+    )
+    assert (
+        Page[WorkspaceSummary].model_validate_json(client.get(WORKSPACES).text).items[-1].id
+        == created.id
+    )
 
 
 @pytest.mark.usefixtures("bob")
 def test_member_sees_their_role_and_the_member_count(client: TestClient) -> None:
     sign_in_as_bob(client)
 
-    team = client.get(TEAM).json()
+    team = WorkspaceRead.model_validate_json(client.get(TEAM).text)
 
-    assert team["my_role"] == "member"
-    assert team["member_count"] == 2
+    assert team.my_role is Role.MEMBER
+    assert team.member_count == 2
     # The team workspace is older than Bob's account, so it comes before his personal one.
-    team_item, personal = client.get(WORKSPACES).json()["items"]
-    assert team_item["id"] == str(TEAM_WORKSPACE_ID)
-    assert personal["is_personal"] is True
-    assert personal["my_role"] == "owner"
-    assert personal["name"] == "Bob Member"
-    assert personal["member_count"] == 1
+    team_item, personal = (
+        Page[WorkspaceSummary].model_validate_json(client.get(WORKSPACES).text).items
+    )
+    assert team_item.id == TEAM_WORKSPACE_ID
+    assert personal.is_personal is True
+    assert personal.my_role is Role.OWNER
+    assert personal.name == "Bob Member"
+    assert personal.member_count == 1
 
 
 @pytest.mark.usefixtures("bob")
@@ -102,18 +111,18 @@ def test_owner_updates_and_the_change_is_stored(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.json()["name"] == "Renamed team"
-    stored = client.get(TEAM).json()
-    assert stored["name"] == "Renamed team"
-    assert stored["default_preset"] == "interview"
+    stored = WorkspaceRead.model_validate_json(client.get(TEAM).text)
+    assert stored.name == "Renamed team"
+    assert stored.default_preset is Preset.INTERVIEW
 
 
 def test_update_with_only_one_field_keeps_the_other(client: TestClient) -> None:
     sign_in_as_alice(client)
-    before = client.get(TEAM).json()
+    before = WorkspaceRead.model_validate_json(client.get(TEAM).text)
 
     client.patch(TEAM, json={"default_preset": "summary"})
 
-    assert client.get(TEAM).json()["name"] == before["name"]
+    assert WorkspaceRead.model_validate_json(client.get(TEAM).text).name == before.name
 
 
 @pytest.mark.usefixtures("bob")
@@ -145,7 +154,8 @@ def test_owner_deletes_and_it_is_audited(
     assert client.delete(TEAM).status_code == 204
 
     assert client.get(TEAM).status_code == 404
-    assert str(TEAM_WORKSPACE_ID) not in [i["id"] for i in client.get(WORKSPACES).json()["items"]]
+    remaining = Page[WorkspaceSummary].model_validate_json(client.get(WORKSPACES).text).items
+    assert TEAM_WORKSPACE_ID not in [workspace.id for workspace in remaining]
 
     async def audit_events() -> list[AuditEvent]:
         async with sessionmaker() as db:
@@ -167,5 +177,5 @@ def test_deleting_removes_other_members_too(client: TestClient) -> None:
 
     sign_in_as_bob(client)
 
-    items = client.get(WORKSPACES).json()["items"]
-    assert [item["is_personal"] for item in items] == [True]
+    items = Page[WorkspaceSummary].model_validate_json(client.get(WORKSPACES).text).items
+    assert [item.is_personal for item in items] == [True]

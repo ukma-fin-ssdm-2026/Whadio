@@ -4,6 +4,7 @@ from httpx2 import Response
 
 from .auth import SESSION_COOKIE
 from .fixtures import DEMO_EMAIL, DEMO_PASSWORD, TEAM_WORKSPACE_ID
+from .schemas import SessionKind, SessionRead
 
 SESSIONS = "/api/v1/sessions"
 SIGN_OUT = "/api/v1/sessions/current"
@@ -19,10 +20,10 @@ def test_browser_sign_in_sets_cookie_that_authenticates(client: TestClient) -> N
     response = sign_in(client)
 
     assert response.status_code == 201
-    body = response.json()
-    assert body["kind"] == "browser"
-    assert body["user"]["email"] == DEMO_EMAIL
-    assert body["token"] is None
+    body = SessionRead.model_validate_json(response.text)
+    assert body.kind is SessionKind.BROWSER
+    assert body.user.email == DEMO_EMAIL
+    assert body.token is None
     assert client.cookies.get(SESSION_COOKIE) is not None
     assert client.get(WORKSPACES).status_code == 200
 
@@ -87,7 +88,8 @@ def test_extension_sign_in_returns_token_and_no_cookie(client: TestClient) -> No
 
 
 def test_extension_token_is_not_a_browser_session(client: TestClient) -> None:
-    token = sign_in(client, kind="extension").json()["token"]
+    token = SessionRead.model_validate_json(sign_in(client, kind="extension").text).token
+    assert token is not None
 
     # Browser-only endpoints take the cookie; an extension token passed as one is refused.
     client.cookies.set(SESSION_COOKIE, token)
@@ -95,7 +97,8 @@ def test_extension_token_is_not_a_browser_session(client: TestClient) -> None:
 
 
 def test_sign_out_with_bearer_ends_the_extension_session(client: TestClient) -> None:
-    token = sign_in(client, kind="extension").json()["token"]
+    token = SessionRead.model_validate_json(sign_in(client, kind="extension").text).token
+    assert token is not None
     headers = {"Authorization": f"Bearer {token}"}
     # Upload accepts the bearer token. Without a file it fails validation (422) once signed in,
     # and authentication (401) once the session is gone.
