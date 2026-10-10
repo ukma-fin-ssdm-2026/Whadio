@@ -41,7 +41,18 @@ jobs:
       - name: Run the commit-hook checks on all files
         run: uv run --frozen task check
 
+      - name: Start and migrate the disposable test database
+        env:
+          WHADIO_DB_HOST: 127.0.0.1
+        run: |
+          cp .env.example .env
+          docker compose --profile core up --detach --wait postgres
+          uv run --frozen task db:upgrade
+          uv run --frozen alembic check
+
       - name: Run the whole test suite
+        env:
+          WHADIO_TEST_DATABASE_URL: postgresql+psycopg://whadio_app:whadio-dev-app@127.0.0.1:5432/whadio
         run: uv run --frozen task test
 
       - name: Audit dependencies and the git history
