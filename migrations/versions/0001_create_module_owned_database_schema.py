@@ -765,7 +765,7 @@ def upgrade() -> None:
     _upgrade_identity()
     _upgrade_content()
     op.create_check_constraint(
-        "ck_audit_event_action",
+        op.f("ck_audit_event_action"),
         "audit_event",
         "action IN ('meeting_created', "
         "'meeting_renamed', "

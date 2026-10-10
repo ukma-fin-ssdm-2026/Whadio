@@ -1,12 +1,28 @@
 from asyncio import Runner, SelectorEventLoop
+from io import StringIO
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from pydantic import SecretStr
 from sqlalchemy import Connection, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from .database import Database, DatabaseSettings, MigrationSettings
+
+
+def test_initial_migration_uses_canonical_audit_action_constraint_name() -> None:
+    # Arrange
+    root = Path(__file__).resolve().parents[3]
+    output = StringIO()
+    config = Config(str(root / "alembic.ini"), output_buffer=output)
+    config.set_main_option("script_location", str(root / "migrations"))
+    # Act
+    command.upgrade(config, "0001", sql=True)
+    # Assert
+    assert "ADD CONSTRAINT ck_audit_event_action CHECK" in output.getvalue()
 
 
 def test_application_url_does_not_expose_password_in_representation() -> None:
