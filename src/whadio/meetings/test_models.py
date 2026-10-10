@@ -398,6 +398,14 @@ def test_deleting_folder_preserves_meeting_content_in_default_folder(
         {"id": uuid4(), "meeting": meeting_id},
     )
     # Act
+    database_connection.execute(
+        text(
+            "UPDATE meeting SET folder_id = (SELECT d.folder_id FROM folder d "
+            "JOIN folder source ON source.workspace_id = d.workspace_id "
+            "WHERE source.folder_id = :id AND d.is_default) WHERE folder_id = :id"
+        ),
+        {"id": folder_id},
+    )
     database_connection.execute(text("DELETE FROM folder WHERE folder_id = :id"), {"id": folder_id})
     database_connection.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
     result = database_connection.execute(
@@ -412,6 +420,22 @@ def test_deleting_folder_preserves_meeting_content_in_default_folder(
     ).one()
     # Assert
     assert tuple(result) == (True, "recording-key", "original", "saved")
+
+
+@pytest.mark.slow
+def test_occupied_folder_cannot_be_deleted_directly(
+    database_connection: Connection, folder_id: UUID, meeting_id: UUID
+) -> None:
+    # Arrange
+    command = text(
+        "DELETE FROM folder WHERE folder_id = :id "
+        "AND EXISTS (SELECT 1 FROM meeting WHERE meeting_id = :meeting)"
+    )
+    # Act
+    with pytest.raises(IntegrityError) as failure:
+        database_connection.execute(command, {"id": folder_id, "meeting": meeting_id})
+    # Assert
+    assert "Move and audit meetings before deleting their folder" in str(failure.value.orig)
 
 
 @pytest.mark.slow
@@ -521,6 +545,14 @@ def test_deleting_folder_keeps_restricted_meeting_grants(
         {"id": uuid4(), "meeting": meeting_id, "user": owner_id},
     )
     # Act
+    database_connection.execute(
+        text(
+            "UPDATE meeting SET folder_id = (SELECT d.folder_id FROM folder d "
+            "JOIN folder source ON source.workspace_id = d.workspace_id "
+            "WHERE source.folder_id = :id AND d.is_default) WHERE folder_id = :id"
+        ),
+        {"id": folder_id},
+    )
     database_connection.execute(text("DELETE FROM folder WHERE folder_id = :id"), {"id": folder_id})
     database_connection.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
     result = database_connection.execute(
@@ -593,6 +625,14 @@ def test_folder_deletion_move_rolls_back_with_its_transaction(
     # Arrange
     savepoint = database_connection.begin_nested()
     # Act
+    database_connection.execute(
+        text(
+            "UPDATE meeting SET folder_id = (SELECT d.folder_id FROM folder d "
+            "JOIN folder source ON source.workspace_id = d.workspace_id "
+            "WHERE source.folder_id = :id AND d.is_default) WHERE folder_id = :id"
+        ),
+        {"id": folder_id},
+    )
     database_connection.execute(text("DELETE FROM folder WHERE folder_id = :id"), {"id": folder_id})
     savepoint.rollback()
     result = database_connection.execute(
