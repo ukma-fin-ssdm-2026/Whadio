@@ -67,7 +67,7 @@ BEGIN
     IF TG_OP <> 'DELETE' THEN PERFORM assert_meeting_access(NEW.meeting_id); END IF;
     RETURN NULL;
 END $$;
-CREATE CONSTRAINT TRIGGER meeting_access_integrity AFTER INSERT OR UPDATE OR DELETE ON meeting
+CREATE CONSTRAINT TRIGGER meeting_access_integrity AFTER INSERT OR DELETE OR UPDATE OF access_mode, folder_id ON meeting
 DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION check_meeting_access();
 CREATE CONSTRAINT TRIGGER grant_integrity AFTER INSERT OR UPDATE OR DELETE ON meeting_access_grant
 DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION check_meeting_access();
@@ -86,24 +86,6 @@ BEGIN
 END $$;
 CREATE CONSTRAINT TRIGGER membership_access_integrity AFTER UPDATE OR DELETE ON workspace_membership
 DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION check_membership_access();
-
-CREATE FUNCTION prevent_cross_workspace_move() RETURNS trigger
-LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
-BEGIN
-    IF TG_TABLE_NAME = 'folder' THEN
-        IF NEW.workspace_id IS DISTINCT FROM OLD.workspace_id THEN
-            RAISE EXCEPTION 'Folders cannot move between workspaces' USING ERRCODE = '23514';
-        END IF;
-    ELSIF (SELECT workspace_id FROM folder WHERE folder_id = NEW.folder_id)
-          IS DISTINCT FROM (SELECT workspace_id FROM folder WHERE folder_id = OLD.folder_id) THEN
-        RAISE EXCEPTION 'Meetings cannot move between workspaces' USING ERRCODE = '23514';
-    END IF;
-    RETURN NEW;
-END $$;
-CREATE TRIGGER meeting_workspace BEFORE UPDATE OF folder_id ON meeting
-FOR EACH ROW EXECUTE FUNCTION prevent_cross_workspace_move();
-CREATE TRIGGER folder_workspace BEFORE UPDATE OF workspace_id ON folder
-FOR EACH ROW EXECUTE FUNCTION prevent_cross_workspace_move();
 
 CREATE FUNCTION check_transcript_original() RETURNS trigger
 LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
@@ -130,30 +112,6 @@ DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION check_transcript_ori
 CREATE CONSTRAINT TRIGGER revision_original AFTER INSERT OR UPDATE OR DELETE ON transcript_revision
 DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION check_transcript_original();
 
--- Cascading deletion is allowed only when the containing transcript has already gone.
-CREATE FUNCTION protect_original_revision() RETURNS trigger
-LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
-BEGIN
-    IF TG_TABLE_NAME = 'transcript_revision' THEN
-        IF OLD.revision_type = 'original' AND EXISTS (
-            SELECT 1 FROM transcript WHERE transcript_id = OLD.transcript_id
-        ) THEN
-            RAISE EXCEPTION 'Original revision is immutable' USING ERRCODE = '23514';
-        END IF;
-    ELSIF EXISTS (SELECT 1 FROM transcript_revision
-                  WHERE revision_id = OLD.revision_id AND revision_type = 'original') THEN
-        RAISE EXCEPTION 'Original content is immutable' USING ERRCODE = '23514';
-    END IF;
-    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
-    RETURN NEW;
-END $$;
-CREATE TRIGGER original_revision_immutable BEFORE UPDATE OR DELETE ON transcript_revision
-FOR EACH ROW EXECUTE FUNCTION protect_original_revision();
-CREATE TRIGGER original_segment_immutable BEFORE UPDATE OR DELETE ON transcript_segment
-FOR EACH ROW EXECUTE FUNCTION protect_original_revision();
-CREATE TRIGGER original_speaker_immutable BEFORE UPDATE OR DELETE ON speaker
-FOR EACH ROW EXECUTE FUNCTION protect_original_revision();
-
 CREATE FUNCTION reject_personal_invitation() RETURNS trigger
 LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
 BEGIN
@@ -164,3 +122,115 @@ BEGIN
 END $$;
 CREATE TRIGGER invitation_workspace BEFORE INSERT OR UPDATE ON invitation
 FOR EACH ROW EXECUTE FUNCTION reject_personal_invitation();
+
+CREATE FUNCTION initialize_revision_transaction() RETURNS trigger
+LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
+BEGIN
+    NEW.initialization_xid := pg_current_xact_id()::text;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER original_revision_initialize BEFORE INSERT ON transcript_revision
+FOR EACH ROW EXECUTE FUNCTION initialize_revision_transaction();
+
+CREATE FUNCTION prevent_folder_workspace_move() RETURNS trigger
+LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
+BEGIN
+    IF NEW.workspace_id IS DISTINCT FROM OLD.workspace_id THEN
+        RAISE EXCEPTION 'Folders cannot move between workspaces' USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END $$;
+
+CREATE FUNCTION prevent_meeting_workspace_move() RETURNS trigger
+LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
+BEGIN
+    IF (SELECT workspace_id FROM folder WHERE folder_id = NEW.folder_id)
+       IS DISTINCT FROM (SELECT workspace_id FROM folder WHERE folder_id = OLD.folder_id) THEN
+        RAISE EXCEPTION 'Meetings cannot move between workspaces' USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END $$;
+
+CREATE FUNCTION protect_original_revision_row() RETURNS trigger
+LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
+BEGIN
+    IF (OLD.revision_type = 'original' AND EXISTS (
+        SELECT 1 FROM transcript WHERE transcript_id = OLD.transcript_id
+    )) OR (TG_OP = 'UPDATE' AND NEW.revision_type = 'original') THEN
+        RAISE EXCEPTION 'Original revision is immutable' USING ERRCODE = '23514';
+    END IF;
+    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+END $$;
+
+CREATE FUNCTION protect_original_segment() RETURNS trigger
+LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
+BEGIN
+    IF TG_OP <> 'INSERT' AND EXISTS (
+        SELECT 1 FROM transcript_revision
+        WHERE revision_id = OLD.revision_id AND revision_type = 'original'
+    ) THEN
+        RAISE EXCEPTION 'Original content is immutable' USING ERRCODE = '23514';
+    END IF;
+    IF TG_OP <> 'DELETE' AND EXISTS (
+        SELECT 1 FROM transcript_revision
+        WHERE revision_id = NEW.revision_id AND revision_type = 'original'
+          AND initialization_xid <> pg_current_xact_id()::text
+    ) THEN
+        RAISE EXCEPTION 'Original content is immutable' USING ERRCODE = '23514';
+    END IF;
+    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+END $$;
+
+CREATE FUNCTION protect_original_speaker() RETURNS trigger
+LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
+BEGIN
+    IF TG_OP <> 'INSERT' AND EXISTS (
+        SELECT 1 FROM transcript_revision
+        WHERE revision_id = OLD.revision_id AND revision_type = 'original'
+    ) THEN
+        RAISE EXCEPTION 'Original content is immutable' USING ERRCODE = '23514';
+    END IF;
+    IF TG_OP <> 'DELETE' AND EXISTS (
+        SELECT 1 FROM transcript_revision
+        WHERE revision_id = NEW.revision_id AND revision_type = 'original'
+          AND initialization_xid <> pg_current_xact_id()::text
+    ) THEN
+        RAISE EXCEPTION 'Original content is immutable' USING ERRCODE = '23514';
+    END IF;
+    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+END $$;
+
+CREATE TRIGGER folder_workspace BEFORE UPDATE OF workspace_id ON folder
+FOR EACH ROW EXECUTE FUNCTION prevent_folder_workspace_move();
+
+CREATE TRIGGER meeting_workspace BEFORE UPDATE OF folder_id ON meeting
+FOR EACH ROW EXECUTE FUNCTION prevent_meeting_workspace_move();
+
+CREATE TRIGGER original_revision_immutable BEFORE UPDATE OR DELETE ON transcript_revision
+FOR EACH ROW EXECUTE FUNCTION protect_original_revision_row();
+
+CREATE TRIGGER original_segment_immutable BEFORE INSERT OR UPDATE OR DELETE ON transcript_segment
+FOR EACH ROW EXECUTE FUNCTION protect_original_segment();
+
+CREATE TRIGGER original_speaker_immutable BEFORE INSERT OR UPDATE OR DELETE ON speaker
+FOR EACH ROW EXECUTE FUNCTION protect_original_speaker();
+
+CREATE FUNCTION preserve_folder_meetings() RETURNS trigger
+LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
+BEGIN
+    PERFORM 1 FROM workspace WHERE workspace_id = OLD.workspace_id FOR UPDATE;
+    IF NOT FOUND THEN RETURN OLD; END IF;
+    IF OLD.is_default THEN
+        RAISE EXCEPTION 'Default folder cannot be deleted' USING ERRCODE = '23514';
+    END IF;
+    IF EXISTS (SELECT 1 FROM meeting WHERE folder_id = OLD.folder_id) THEN
+        RAISE EXCEPTION 'Move and audit meetings before deleting their folder'
+            USING ERRCODE = '23514';
+    END IF;
+    RETURN OLD;
+END $$;
+CREATE TRIGGER folder_preserve_meetings BEFORE DELETE ON folder
+FOR EACH ROW EXECUTE FUNCTION preserve_folder_meetings();

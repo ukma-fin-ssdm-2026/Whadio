@@ -4,6 +4,8 @@ Revision ID: 0001
 Revises:
 """
 
+from pathlib import Path
+
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
@@ -20,7 +22,12 @@ def _upgrade_identity() -> None:
         sa.Column("pending_registration_id", sa.Uuid(), nullable=False),
         sa.Column("email", sa.Text(), nullable=False),
         sa.Column("token_hash", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("expires_at > created_at", name=op.f("ck_pending_registration_expiry")),
         sa.PrimaryKeyConstraint("pending_registration_id", name=op.f("pk_pending_registration")),
@@ -41,9 +48,16 @@ def _upgrade_identity() -> None:
         sa.Column("email", sa.Text(), nullable=False),
         sa.Column("name", sa.Text(), nullable=False),
         sa.Column("password_hash", sa.Text(), nullable=False),
-        sa.Column("is_administrator", sa.Boolean(), nullable=False),
+        sa.Column(
+            "is_administrator", sa.Boolean(), nullable=False, server_default=sa.text("false")
+        ),
         sa.Column("terms_accepted_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.PrimaryKeyConstraint("user_id", name=op.f("pk_user")),
     )
     op.create_index("uq_user_email", "user", [sa.literal_column("lower(email)")], unique=True)
@@ -51,9 +65,14 @@ def _upgrade_identity() -> None:
         "workspace",
         sa.Column("workspace_id", sa.Uuid(), nullable=False),
         sa.Column("name", sa.Text(), nullable=False),
-        sa.Column("default_template", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("is_personal", sa.Boolean(), nullable=False),
+        sa.Column("default_template", sa.String(length=9), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column("is_personal", sa.Boolean(), nullable=False, server_default=sa.text("false")),
         sa.CheckConstraint(
             "default_template IN ('summary', 'detailed', 'interview')",
             name=op.f("ck_workspace_template"),
@@ -63,9 +82,14 @@ def _upgrade_identity() -> None:
     op.create_table(
         "audit_event",
         sa.Column("audit_event_id", sa.Uuid(), nullable=False),
-        sa.Column("occurred_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "occurred_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("actor_user_id", sa.Uuid(), nullable=False),
-        sa.Column("action", sa.Text(), nullable=False),
+        sa.Column("action", sa.String(length=21), nullable=False),
         sa.Column("workspace_id", sa.Uuid(), nullable=True),
         sa.Column("meeting_id", sa.Uuid(), nullable=True),
         sa.Column("subject_id", sa.Uuid(), nullable=True),
@@ -105,8 +129,13 @@ def _upgrade_identity() -> None:
         sa.Column("folder_id", sa.Uuid(), nullable=False),
         sa.Column("workspace_id", sa.Uuid(), nullable=False),
         sa.Column("name", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("is_default", sa.Boolean(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column("is_default", sa.Boolean(), nullable=False, server_default=sa.text("false")),
         sa.ForeignKeyConstraint(
             ["workspace_id"],
             ["workspace.workspace_id"],
@@ -115,7 +144,12 @@ def _upgrade_identity() -> None:
         ),
         sa.PrimaryKeyConstraint("folder_id", name=op.f("pk_folder")),
     )
-    op.create_index("ix_folder_workspace_id", "folder", ["workspace_id"], unique=False)
+    op.create_index(
+        "uq_folder_workspace_name",
+        "folder",
+        ["workspace_id", sa.literal_column("lower(name)")],
+        unique=True,
+    )
     op.create_index(
         "uq_folder_default",
         "folder",
@@ -128,11 +162,16 @@ def _upgrade_identity() -> None:
         sa.Column("invitation_id", sa.Uuid(), nullable=False),
         sa.Column("workspace_id", sa.Uuid(), nullable=False),
         sa.Column("invited_email", sa.Text(), nullable=False),
-        sa.Column("role", sa.Text(), nullable=False),
+        sa.Column("role", sa.String(length=9), nullable=False),
         sa.Column("invited_by_user_id", sa.Uuid(), nullable=False),
-        sa.Column("status", sa.Text(), nullable=False),
+        sa.Column("status", sa.String(length=9), nullable=False),
         sa.Column("token_hash", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("responded_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint("role IN ('Member', 'Moderator')", name=op.f("ck_invitation_role")),
@@ -181,9 +220,14 @@ def _upgrade_identity() -> None:
         sa.Column("provider_config_id", sa.Uuid(), nullable=False),
         sa.Column("workspace_id", sa.Uuid(), nullable=False),
         sa.Column("is_enabled", sa.Boolean(), nullable=False),
-        sa.Column("provider", sa.Text(), nullable=False),
+        sa.Column("provider", sa.String(length=9), nullable=False),
         sa.Column("api_key_encrypted", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.CheckConstraint(
             "provider = 'Whadio' OR api_key_encrypted IS NOT NULL",
             name=op.f("ck_llm_provider_config_encrypted_key"),
@@ -206,7 +250,12 @@ def _upgrade_identity() -> None:
         sa.Column("mcp_key_id", sa.Uuid(), nullable=False),
         sa.Column("user_id", sa.Uuid(), nullable=False),
         sa.Column("key_hash", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint(
@@ -224,7 +273,12 @@ def _upgrade_identity() -> None:
         sa.Column("password_reset_id", sa.Uuid(), nullable=False),
         sa.Column("user_id", sa.Uuid(), nullable=False),
         sa.Column("token_hash", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("expires_at > created_at", name=op.f("ck_password_reset_expiry")),
         sa.ForeignKeyConstraint(
@@ -242,9 +296,14 @@ def _upgrade_identity() -> None:
         "session",
         sa.Column("session_id", sa.Uuid(), nullable=False),
         sa.Column("user_id", sa.Uuid(), nullable=False),
-        sa.Column("kind", sa.Text(), nullable=False),
+        sa.Column("kind", sa.String(length=9), nullable=False),
         sa.Column("token_hash", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("kind IN ('browser', 'extension')", name=op.f("ck_session_kind")),
         sa.CheckConstraint("expires_at > created_at", name=op.f("ck_session_expiry")),
@@ -261,8 +320,10 @@ def _upgrade_identity() -> None:
         sa.Column("workspace_membership_id", sa.Uuid(), nullable=False),
         sa.Column("workspace_id", sa.Uuid(), nullable=False),
         sa.Column("user_id", sa.Uuid(), nullable=False),
-        sa.Column("role", sa.Text(), nullable=False),
-        sa.Column("joined_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("role", sa.String(length=9), nullable=False),
+        sa.Column(
+            "joined_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")
+        ),
         sa.CheckConstraint(
             "role IN ('Member', 'Moderator', 'Owner')", name=op.f("ck_workspace_membership_role")
         ),
@@ -280,7 +341,7 @@ def _upgrade_identity() -> None:
         ),
         sa.PrimaryKeyConstraint("workspace_membership_id", name=op.f("pk_workspace_membership")),
         sa.UniqueConstraint(
-            "workspace_id", "user_id", name=op.f("uq_workspace_membership_workspace_id")
+            "workspace_id", "user_id", name=op.f("uq_workspace_membership_workspace_id_user_id")
         ),
     )
     op.create_index(
@@ -303,18 +364,23 @@ def _upgrade_content() -> None:
         sa.Column("created_by_user_id", sa.Uuid(), nullable=False),
         sa.Column("name", sa.Text(), nullable=False),
         sa.Column("name_is_generated", sa.Boolean(), nullable=False),
-        sa.Column("source_type", sa.Text(), nullable=False),
-        sa.Column("recording_status", sa.Text(), nullable=False),
-        sa.Column("processing_state", sa.Text(), nullable=False),
+        sa.Column("source_type", sa.String(length=9), nullable=False),
+        sa.Column("recording_status", sa.String(length=8), nullable=False),
+        sa.Column("processing_state", sa.String(length=10), nullable=False),
         sa.Column("storage_path", sa.Text(), nullable=True),
         sa.Column("duration_seconds", sa.Integer(), nullable=True),
         sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("consent_confirmed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("consent_confirmed_by_user_id", sa.Uuid(), nullable=True),
         sa.Column("recording_delete_after", sa.DateTime(timezone=True), nullable=False),
         sa.Column("recording_deleted_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("access_mode", sa.Text(), nullable=False),
+        sa.Column("access_mode", sa.String(length=10), nullable=False),
         sa.CheckConstraint(
             "access_mode IN ('workspace', 'restricted')", name=op.f("ck_meeting_access_mode")
         ),
@@ -370,10 +436,15 @@ def _upgrade_content() -> None:
         sa.Column("capture_session_id", sa.Uuid(), nullable=False),
         sa.Column("meeting_id", sa.Uuid(), nullable=False),
         sa.Column("opened_by_user_id", sa.Uuid(), nullable=False),
-        sa.Column("status", sa.Text(), nullable=False),
+        sa.Column("status", sa.String(length=9), nullable=False),
         sa.Column("last_chunk_seq", sa.Integer(), nullable=True),
         sa.Column("last_chunk_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("closed_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint(
             "status IN ('recording', 'idle', 'assembled', 'abandoned')",
@@ -410,14 +481,17 @@ def _upgrade_content() -> None:
         sa.Column("meeting_id", sa.Uuid(), nullable=False),
         sa.Column("created_by_user_id", sa.Uuid(), nullable=False),
         sa.Column("token_hash", sa.Text(), nullable=False),
-        sa.Column("redact_speaker_names", sa.Boolean(), nullable=False),
-        sa.Column("include_recording", sa.Boolean(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "redact_speaker_names", sa.Boolean(), nullable=False, server_default=sa.text("false")
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("recipient_user_id", sa.Uuid(), nullable=True),
         sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
-        sa.CheckConstraint(
-            "NOT include_recording", name=op.f("ck_external_share_read_only_content")
-        ),
         sa.ForeignKeyConstraint(
             ["created_by_user_id"],
             ["user.user_id"],
@@ -452,7 +526,12 @@ def _upgrade_content() -> None:
         sa.Column("description", sa.Text(), nullable=False),
         sa.Column("created_by_user_id", sa.Uuid(), nullable=False),
         sa.Column("source_meeting_id", sa.Uuid(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.ForeignKeyConstraint(
             ["created_by_user_id"],
             ["user.user_id"],
@@ -472,7 +551,9 @@ def _upgrade_content() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("term_id", name=op.f("pk_glossary_term")),
-        sa.UniqueConstraint("workspace_id", "term", name=op.f("uq_glossary_term_workspace_id")),
+        sa.UniqueConstraint(
+            "workspace_id", "term", name=op.f("uq_glossary_term_workspace_id_term")
+        ),
     )
     op.create_table(
         "meeting_access_grant",
@@ -480,7 +561,12 @@ def _upgrade_content() -> None:
         sa.Column("meeting_id", sa.Uuid(), nullable=False),
         sa.Column("user_id", sa.Uuid(), nullable=False),
         sa.Column("granted_by_user_id", sa.Uuid(), nullable=False),
-        sa.Column("granted_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "granted_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.ForeignKeyConstraint(
             ["granted_by_user_id"],
             ["user.user_id"],
@@ -501,7 +587,7 @@ def _upgrade_content() -> None:
         ),
         sa.PrimaryKeyConstraint("access_grant_id", name=op.f("pk_meeting_access_grant")),
         sa.UniqueConstraint(
-            "meeting_id", "user_id", name=op.f("uq_meeting_access_grant_meeting_id")
+            "meeting_id", "user_id", name=op.f("uq_meeting_access_grant_meeting_id_user_id")
         ),
     )
     op.create_index(
@@ -511,12 +597,17 @@ def _upgrade_content() -> None:
         "note",
         sa.Column("note_id", sa.Uuid(), nullable=False),
         sa.Column("meeting_id", sa.Uuid(), nullable=False),
-        sa.Column("template", sa.Text(), nullable=False),
+        sa.Column("template", sa.String(length=9), nullable=False),
         sa.Column("content", sa.Text(), nullable=False),
         sa.Column("model_name", sa.Text(), nullable=False),
-        sa.Column("provider", sa.Text(), nullable=False),
+        sa.Column("provider", sa.String(length=9), nullable=False),
         sa.Column("created_by_user_id", sa.Uuid(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.CheckConstraint(
             "provider IN ('Whadio', 'Anthropic', 'OpenAI', 'Google')", name=op.f("ck_note_provider")
         ),
@@ -542,11 +633,16 @@ def _upgrade_content() -> None:
         "processing_job",
         sa.Column("processing_job_id", sa.Uuid(), nullable=False),
         sa.Column("meeting_id", sa.Uuid(), nullable=False),
-        sa.Column("job_type", sa.Text(), nullable=False),
-        sa.Column("status", sa.Text(), nullable=False),
+        sa.Column("job_type", sa.String(length=13), nullable=False),
+        sa.Column("status", sa.String(length=9), nullable=False),
         sa.Column("failure_reason", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("attempts", sa.Integer(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column("attempts", sa.Integer(), nullable=False, server_default=sa.text("0")),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint(
@@ -575,7 +671,12 @@ def _upgrade_content() -> None:
         sa.Column("meeting_id", sa.Uuid(), nullable=False),
         sa.Column("language", sa.Text(), nullable=False),
         sa.Column("model_name", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("current_revision_id", sa.Uuid(), nullable=False),
         sa.ForeignKeyConstraint(
             ["meeting_id"],
@@ -601,7 +702,12 @@ def _upgrade_content() -> None:
         sa.Column("seq", sa.Integer(), nullable=False),
         sa.Column("storage_key", sa.Text(), nullable=False),
         sa.Column("speaker_events", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("received_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "received_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.CheckConstraint("seq >= 0", name=op.f("ck_capture_chunk_sequence")),
         sa.ForeignKeyConstraint(
             ["capture_session_id"],
@@ -611,7 +717,7 @@ def _upgrade_content() -> None:
         ),
         sa.PrimaryKeyConstraint("capture_chunk_id", name=op.f("pk_capture_chunk")),
         sa.UniqueConstraint(
-            "capture_session_id", "seq", name=op.f("uq_capture_chunk_capture_session_id")
+            "capture_session_id", "seq", name=op.f("uq_capture_chunk_capture_session_id_seq")
         ),
     )
     op.create_table(
@@ -634,7 +740,9 @@ def _upgrade_content() -> None:
         ),
         sa.PrimaryKeyConstraint("note_context_meeting_id", name=op.f("pk_note_context_meeting")),
         sa.UniqueConstraint(
-            "note_id", "context_meeting_id", name=op.f("uq_note_context_meeting_note_id")
+            "note_id",
+            "context_meeting_id",
+            name=op.f("uq_note_context_meeting_note_id_context_meeting_id"),
         ),
     )
     op.create_index(
@@ -648,8 +756,13 @@ def _upgrade_content() -> None:
         sa.Column("share_access_request_id", sa.Uuid(), nullable=False),
         sa.Column("share_id", sa.Uuid(), nullable=False),
         sa.Column("requester_user_id", sa.Uuid(), nullable=False),
-        sa.Column("status", sa.Text(), nullable=False),
-        sa.Column("requested_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("status", sa.String(length=8), nullable=False),
+        sa.Column(
+            "requested_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("decided_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint(
             "status IN ('pending', 'approved', 'declined')",
@@ -669,7 +782,9 @@ def _upgrade_content() -> None:
         ),
         sa.PrimaryKeyConstraint("share_access_request_id", name=op.f("pk_share_access_request")),
         sa.UniqueConstraint(
-            "share_id", "requester_user_id", name=op.f("uq_share_access_request_share_id")
+            "share_id",
+            "requester_user_id",
+            name=op.f("uq_share_access_request_share_id_requester_user_id"),
         ),
     )
     op.create_index(
@@ -683,9 +798,20 @@ def _upgrade_content() -> None:
         "transcript_revision",
         sa.Column("revision_id", sa.Uuid(), nullable=False),
         sa.Column("transcript_id", sa.Uuid(), nullable=False),
-        sa.Column("revision_type", sa.Text(), nullable=False),
+        sa.Column("revision_type", sa.String(length=8), nullable=False),
+        sa.Column(
+            "initialization_xid",
+            sa.Text(),
+            nullable=False,
+            server_default=sa.text("pg_current_xact_id()::text"),
+        ),
         sa.Column("edited_by_user_id", sa.Uuid(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.CheckConstraint(
             "revision_type IN ('original', 'edited')",
             name=op.f("ck_transcript_revision_revision_type"),
@@ -704,7 +830,9 @@ def _upgrade_content() -> None:
         ),
         sa.PrimaryKeyConstraint("revision_id", name=op.f("pk_transcript_revision")),
         sa.UniqueConstraint(
-            "transcript_id", "revision_id", name=op.f("uq_transcript_revision_transcript_id")
+            "transcript_id",
+            "revision_id",
+            name=op.f("uq_transcript_revision_transcript_id_revision_id"),
         ),
     )
     op.create_index(
@@ -726,7 +854,9 @@ def _upgrade_content() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("speaker_id", name=op.f("pk_speaker")),
-        sa.UniqueConstraint("revision_id", "speaker_id", name=op.f("uq_speaker_revision_id")),
+        sa.UniqueConstraint(
+            "revision_id", "speaker_id", name=op.f("uq_speaker_revision_id_speaker_id")
+        ),
     )
     op.create_table(
         "transcript_segment",
@@ -743,7 +873,7 @@ def _upgrade_content() -> None:
         sa.ForeignKeyConstraint(
             ["revision_id", "speaker_id"],
             ["speaker.revision_id", "speaker.speaker_id"],
-            name=op.f("fk_transcript_segment_revision_id_speaker"),
+            name=op.f("fk_transcript_segment_revision_id_speaker_id_speaker"),
         ),
         sa.ForeignKeyConstraint(
             ["revision_id"],
@@ -802,6 +932,8 @@ def upgrade() -> None:
         deferrable=True,
         initially="DEFERRED",
     )
+
+    op.execute(Path(__file__).with_suffix(".sql").read_text(encoding="utf-8"))
 
 
 def _downgrade_identity() -> None:
@@ -873,7 +1005,7 @@ def _downgrade_content() -> None:
     op.drop_index("ix_invitation_expires_at", table_name="invitation")
     op.drop_table("invitation")
     op.drop_index("uq_folder_default", table_name="folder", postgresql_where=sa.text("is_default"))
-    op.drop_index("ix_folder_workspace_id", table_name="folder")
+    op.drop_index("uq_folder_workspace_name", table_name="folder")
     op.drop_table("folder")
     op.drop_index("ix_audit_event_workspace_occurred", table_name="audit_event")
     op.drop_index("ix_audit_event_meeting_occurred", table_name="audit_event")
@@ -891,3 +1023,21 @@ def downgrade() -> None:
     op.drop_constraint("fk_transcript_current_revision", "transcript", type_="foreignkey")
     _downgrade_identity()
     _downgrade_content()
+
+    for function in (
+        "check_workspace_integrity",
+        "assert_meeting_access",
+        "check_meeting_access",
+        "check_membership_access",
+        "check_transcript_original",
+        "reject_personal_invitation",
+        "initialize_revision_transaction",
+        "prevent_folder_workspace_move",
+        "prevent_meeting_workspace_move",
+        "protect_original_revision_row",
+        "protect_original_segment",
+        "protect_original_speaker",
+        "preserve_folder_meetings",
+    ):
+        arguments = "uuid" if function == "assert_meeting_access" else ""
+        op.execute(f"DROP FUNCTION {function}({arguments})")
