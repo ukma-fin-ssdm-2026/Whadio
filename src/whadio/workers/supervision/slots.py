@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import multiprocessing
+import signal
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
@@ -45,6 +46,9 @@ def slot_program[J: JobMessage, R: IResultMessage](
 def serve_slot[J: JobMessage, R: IResultMessage](
     connection: Connection, program: SlotProgram[J, R]
 ) -> None:
+    # A terminal's Ctrl+C reaches every process of the group; the parent decides when jobs stop
+    # and lets them finish within the shutdown grace.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     handler = program.build_handler()
     connection.send_bytes(_READY)
     while True:

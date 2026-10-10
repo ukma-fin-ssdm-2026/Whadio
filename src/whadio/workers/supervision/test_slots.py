@@ -1,5 +1,6 @@
 import asyncio
 import os
+import signal
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -51,6 +52,12 @@ def _transcribe(job: TranscriptionRequested) -> _Result:
     )
 
 
+def _interrupt_and_transcribe(job: TranscriptionRequested) -> _Result:
+    os.kill(os.getpid(), signal.SIGINT)
+    time.sleep(0.2)
+    return _transcribe(job)
+
+
 def _hang(_job: TranscriptionRequested) -> _Result:
     time.sleep(60)
     raise AssertionError
@@ -62,6 +69,10 @@ def _raise(_job: TranscriptionRequested) -> _Result:
 
 def _transcriber() -> Callable[[TranscriptionRequested], _Result]:
     return _transcribe
+
+
+def _interrupted_transcriber() -> Callable[[TranscriptionRequested], _Result]:
+    return _interrupt_and_transcribe
 
 
 def _hanger() -> Callable[[TranscriptionRequested], _Result]:
@@ -145,6 +156,17 @@ def test_slot_runs_the_next_job_in_a_new_child_after_a_crash() -> None:
 
     # Act
     [_, result] = asyncio.run(_run_jobs(_slot(_transcriber), *jobs))
+
+    # Assert
+    assert isinstance(result, TranscriptReady)
+
+
+def test_slot_child_finishes_its_job_when_ctrl_c_reaches_it() -> None:
+    # Arrange
+    job = _job()
+
+    # Act
+    [result] = asyncio.run(_run_jobs(_slot(_interrupted_transcriber), job))
 
     # Assert
     assert isinstance(result, TranscriptReady)
