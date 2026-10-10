@@ -39,4 +39,6 @@ class IJobRunner[J: JobMessage, R: IResultMessage](Protocol):
 
     async def run(self, job: J, /) -> R: ...
 
-    async def stop(self) -> None: ...
+    async def stop(self) -> None:
+        """Stop what `start` started. It also runs after a `start` that failed partway, and may
+        run more than once."""

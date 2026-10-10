@@ -100,12 +100,17 @@ class _Publisher:
 
 
 class _Runner:
-    def __init__(self, *, blocks: bool = False, fails: bool = False) -> None:
+    def __init__(
+        self, *, blocks: bool = False, fails: bool = False, fails_to_start: bool = False
+    ) -> None:
         self._blocks: bool = blocks
         self._fails: bool = fails
+        self._fails_to_start: bool = fails_to_start
+        self.stopped: bool = False
 
     async def start(self) -> None:
-        pass
+        if self._fails_to_start:
+            raise RuntimeError("the models cannot load")
 
     async def run(self, _job: TranscriptionRequested) -> _Result:
         if self._fails:
@@ -115,7 +120,7 @@ class _Runner:
         return _READY
 
     async def stop(self) -> None:
-        pass
+        self.stopped = True
 
 
 def _supervise(body: bytes, runner: _Runner) -> list[str]:
@@ -203,6 +208,21 @@ async def _serve_until_the_job_queue_is_deleted(broker: BrokerSettings) -> BaseE
     return error
 
 
+async def _serve_until_the_runner_fails_to_start(broker: BrokerSettings, runner: _Runner) -> None:
+    spec = _isolated_spec()
+    async with await connect(broker, name="supervisor-test") as connection:
+        channel = await connection.channel()
+        jobs = await declare_queue(channel, spec.queue.name, spec.queue.arguments)
+        results = await declare_queue(channel, spec.results.name, spec.results.arguments)
+        try:
+            worker = serve_jobs(spec, runner, broker, _OPTIONS, asyncio.Event())
+            async with asyncio.timeout(30):
+                await asyncio.gather(worker, return_exceptions=True)
+        finally:
+            await jobs.delete(if_unused=False, if_empty=False)
+            await results.delete(if_unused=False, if_empty=False)
+
+
 def test_job_is_acknowledged_only_after_its_result_is_published() -> None:
     # Arrange
     body = _JOB.model_dump_json().encode()
@@ -270,3 +290,16 @@ def test_worker_stops_with_an_error_when_the_broker_cancels_its_consumer() -> No
 
     # Assert
     assert isinstance(error, WorkerFailedError)
+
+
+@pytest.mark.slow
+def test_worker_stops_its_runner_when_the_runner_fails_to_start() -> None:
+    # Arrange
+    broker = _StackSettings.model_validate({}).broker
+    runner = _Runner(fails_to_start=True)
+
+    # Act
+    asyncio.run(_serve_until_the_runner_fails_to_start(broker, runner))
+
+    # Assert
+    assert runner.stopped

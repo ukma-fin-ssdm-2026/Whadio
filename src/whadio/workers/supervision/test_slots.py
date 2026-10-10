@@ -1,9 +1,12 @@
 import asyncio
+import multiprocessing
 import os
 import signal
+import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from multiprocessing.process import BaseProcess
 from uuid import uuid4
 
 import pytest
@@ -19,12 +22,14 @@ from ...contracts.transcription import (
     TranscriptReady,
 )
 from .jobs import RunFailure, WorkerSpec
-from .slots import ProcessSlot, SlotStartupError, slot_program
+from .slots import ProcessSlot, SlotPool, SlotStartupError, slot_program
 
 type _Result = TranscriptReady | TranscriptionFailed
 
 _AT = datetime(2026, 10, 9, 18, tzinfo=UTC)
 _JOB_TIMEOUT = timedelta(seconds=30)
+_STARTUP_TIMEOUT = timedelta(seconds=30)
+_EXIT_TIMEOUT = timedelta(seconds=30)
 _RESULTS = TypeAdapter[_Result](_Result)
 _FAILURES = {
     RunFailure.CRASHED: TranscriptionFailure.WORKER_CRASHED,
@@ -87,6 +92,11 @@ def _broken() -> Callable[[TranscriptionRequested], _Result]:
     raise RuntimeError
 
 
+def _never_ready() -> Callable[[TranscriptionRequested], _Result]:
+    time.sleep(60)
+    raise AssertionError
+
+
 _SPEC = WorkerSpec(
     name="test-slot",
     queue=TRANSCRIPTION_REQUESTS,
@@ -109,12 +119,13 @@ def _job(language: str = "uk") -> TranscriptionRequested:
 def _slot(
     build_handler: Callable[[], Callable[[TranscriptionRequested], _Result]],
     timeout: timedelta = _JOB_TIMEOUT,
+    startup_timeout: timedelta = _STARTUP_TIMEOUT,
 ) -> ProcessSlot[TranscriptionRequested, _Result]:
     return ProcessSlot(
         slot_program(_SPEC, build_handler),
         _RESULTS,
         timeout=timeout,
-        startup_timeout=timedelta(seconds=30),
+        startup_timeout=startup_timeout,
     )
 
 
@@ -126,6 +137,34 @@ async def _run_jobs(
         return [await slot.run(job) for job in jobs]
     finally:
         await slot.stop()
+
+
+async def _processes_left_after_a_failed_start(
+    pool: SlotPool[TranscriptionRequested, _Result],
+) -> list[BaseProcess]:
+    with pytest.RaisesGroup(SlotStartupError):
+        await pool.start()
+    return multiprocessing.active_children()
+
+
+def _hold(_slot: ProcessSlot[TranscriptionRequested, _Result]) -> None:
+    threading.Event().wait()
+
+
+def _start_a_slot_and_exit_still_holding_it() -> None:
+    slot = _slot(_transcriber)
+    asyncio.run(slot.start())
+    threading.Thread(target=_hold, args=(slot,), daemon=True).start()
+
+
+def _exit_code(process: BaseProcess) -> int | None:
+    process.start()
+    try:
+        process.join(_EXIT_TIMEOUT.total_seconds())
+        return process.exitcode
+    finally:
+        process.kill()
+        process.join()
 
 
 def test_slot_returns_the_result_of_its_child() -> None:
@@ -201,3 +240,29 @@ def test_slot_refuses_to_start_when_its_child_cannot_build_the_handler() -> None
     # Act / Assert
     with pytest.raises(SlotStartupError, match="exited while starting"):
         asyncio.run(slot.start())
+
+
+def test_worker_exits_while_it_still_holds_a_slot_it_never_stopped() -> None:
+    # Arrange
+    worker = multiprocessing.get_context("spawn").Process(
+        target=_start_a_slot_and_exit_still_holding_it
+    )
+
+    # Act
+    exit_code = _exit_code(worker)
+
+    # Assert
+    assert exit_code == 0
+
+
+def test_pool_that_cannot_start_every_slot_leaves_no_process_running() -> None:
+    # Arrange
+    pool = SlotPool(
+        [_slot(_transcriber), _slot(_never_ready, startup_timeout=timedelta(seconds=5))]
+    )
+
+    # Act
+    processes = asyncio.run(_processes_left_after_a_failed_start(pool))
+
+    # Assert
+    assert processes == []

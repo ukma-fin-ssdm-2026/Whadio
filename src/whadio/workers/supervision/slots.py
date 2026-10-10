@@ -90,8 +90,10 @@ class ProcessSlot[J: JobMessage, R: IResultMessage]:
         # CUDA cannot be used again in a forked child, so children are always spawned.
         context = multiprocessing.get_context("spawn")
         parent, child = context.Pipe()
+        # Daemonic, so the worker's exit terminates a slot nobody stopped instead of waiting for it
+        # forever; a daemonic process cannot start processes of its own.
         process = context.Process(
-            target=serve_slot, args=(child, self._program), name=self._program.name
+            target=serve_slot, args=(child, self._program), name=self._program.name, daemon=True
         )
         process.start()
         child.close()
@@ -172,9 +174,14 @@ class SlotPool[J: JobMessage, R: IResultMessage]:
         self._idle: asyncio.Queue[ProcessSlot[J, R]] = asyncio.Queue()
 
     async def start(self) -> None:
-        async with asyncio.TaskGroup() as group:
-            for slot in self._slots:
-                group.create_task(slot.start())
+        try:
+            async with asyncio.TaskGroup() as group:
+                for slot in self._slots:
+                    group.create_task(slot.start())
+        except BaseException:
+            # The task group cancels the slots still starting; those that started keep running.
+            await self.stop()
+            raise
         for slot in self._slots:
             self._idle.put_nowait(slot)
 
