@@ -1,10 +1,14 @@
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Final
 from uuid import UUID
 
 import pytest
+from anyio.from_thread import BlockingPortal
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .accounts.fixtures import TEAM_WORKSPACE_ID
 from .accounts.models import WorkspaceMembership
@@ -13,7 +17,7 @@ from .accounts.users import create_user
 from .app import create_app
 
 BOB_EMAIL = "bob@whadio.dev"
-BOB_PASSWORD = "bob-password"
+BOB_PASSWORD: Final = "bob-password"
 
 
 @pytest.fixture
@@ -25,11 +29,28 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
 
 
 @pytest.fixture
-def bob(client: TestClient) -> UUID:
+def sessionmaker(client: TestClient) -> async_sessionmaker[AsyncSession]:
+    """The app's database sessions, for tests that set up or check rows directly."""
+    if not isinstance(client.app, FastAPI):
+        raise TypeError("the test client wraps something other than the app")
+    sessionmaker: async_sessionmaker[AsyncSession] = client.app.state.sessionmaker
+    return sessionmaker
+
+
+@pytest.fixture
+def portal(client: TestClient) -> BlockingPortal:
+    """The client's event loop, where the app's database sessions have to run."""
+    if client.portal is None:  # set while the client's `with` block is open
+        raise RuntimeError("the test client is not running")
+    return client.portal
+
+
+@pytest.fixture
+def bob(sessionmaker: async_sessionmaker[AsyncSession], portal: BlockingPortal) -> UUID:
     """A second account with its own personal workspace, a plain Member of Alice's team one."""
 
     async def add_bob() -> UUID:
-        async with client.app.state.sessionmaker() as db:
+        async with sessionmaker() as db:
             user = await create_user(db, BOB_EMAIL, "Bob Member", BOB_PASSWORD)
             db.add(
                 WorkspaceMembership(
@@ -42,4 +63,4 @@ def bob(client: TestClient) -> UUID:
             await db.commit()
             return user.user_id
 
-    return client.portal.call(add_bob)
+    return portal.call(add_bob)

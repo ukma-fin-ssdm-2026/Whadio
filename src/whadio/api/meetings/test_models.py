@@ -1,8 +1,9 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
+from anyio.from_thread import BlockingPortal
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .fixtures import DESIGN_SYNC_MEETING_ID
 from .models import Speaker, Transcript, TranscriptRevision, TranscriptSegment
@@ -11,10 +12,11 @@ from .schemas import RevisionType
 
 # Design sync is still queued, so it has no transcript yet.
 def test_a_transcript_with_its_first_revision_is_stored_in_one_commit(
-    client: TestClient,
+    sessionmaker: async_sessionmaker[AsyncSession],
+    portal: BlockingPortal,
 ) -> None:
     async def store_and_read() -> list[tuple[str, str, float]]:
-        async with client.app.state.sessionmaker() as db:
+        async with sessionmaker() as db:
             now = datetime.now(UTC)
             transcript_id, revision_id, speaker_id = uuid4(), uuid4(), uuid4()
             db.add_all(
@@ -53,6 +55,6 @@ def test_a_transcript_with_its_first_revision_is_stored_in_one_commit(
                 .join(Transcript, Transcript.current_revision_id == TranscriptSegment.revision_id)
                 .where(Transcript.meeting_id == DESIGN_SYNC_MEETING_ID)
             )
-            return [tuple(row) for row in rows]
+            return [(name, text, end) for name, text, end in rows]
 
-    assert client.portal.call(store_and_read) == [("Alice", "Let's start the review.", 4.2)]
+    assert portal.call(store_and_read) == [("Alice", "Let's start the review.", 4.2)]

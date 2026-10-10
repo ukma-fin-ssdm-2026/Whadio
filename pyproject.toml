@@ -216,7 +216,10 @@ addopts = ["--import-mode=importlib"]
 markers = ["slow: needs models or running services; left out of the commit hook"]
 
 [tool.deptry]
-extend_exclude = ["src/.*/test_[^/]*\\.py"]
+extend_exclude = ["src/.*/(test_[^/]*|conftest)\\.py"]
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["aiosqlite"] # the SQLite driver, loaded by name from the database URL
 
 [tool.typos.files]
 extend-exclude = ["*.svg"] # PlantUML embeds its compressed source in every SVG

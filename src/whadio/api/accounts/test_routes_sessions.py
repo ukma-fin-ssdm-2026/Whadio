@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from httpx import Response
+from httpx2 import Response
 
 from .auth import SESSION_COOKIE
 from .fixtures import DEMO_EMAIL, DEMO_PASSWORD, TEAM_WORKSPACE_ID
@@ -23,7 +23,7 @@ def test_browser_sign_in_sets_cookie_that_authenticates(client: TestClient) -> N
     assert body["kind"] == "browser"
     assert body["user"]["email"] == DEMO_EMAIL
     assert body["token"] is None
-    assert client.cookies.get(SESSION_COOKIE)
+    assert client.cookies.get(SESSION_COOKIE) is not None
     assert client.get(WORKSPACES).status_code == 200
 
 
@@ -33,7 +33,7 @@ def test_email_is_matched_case_insensitively(client: TestClient) -> None:
 
 @pytest.mark.parametrize(
     "credentials",
-    [{"password": "wrong-password"}, {"email": "nobody@whadio.dev"}],
+    [{"password": DEMO_PASSWORD + "-wrong"}, {"email": "nobody@whadio.dev"}],
     ids=["wrong password", "unknown email"],
 )
 def test_bad_credentials_get_the_same_401(client: TestClient, credentials: dict[str, str]) -> None:
@@ -65,7 +65,7 @@ def test_no_or_unknown_cookie_is_401(client: TestClient) -> None:
 
 def test_sign_out_ends_the_session(client: TestClient) -> None:
     sign_in(client)
-    token = client.cookies.get(SESSION_COOKIE)
+    token = client.cookies[SESSION_COOKIE]
 
     assert client.delete(SIGN_OUT).status_code == 204
 

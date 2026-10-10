@@ -5,8 +5,10 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+from anyio.from_thread import BlockingPortal
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..accounts.fixtures import (
     ALICE,
@@ -110,32 +112,36 @@ def test_list_needs_sign_in(client: TestClient) -> None:
 
 
 @pytest.mark.usefixtures("bob")
-def test_new_workspace_and_new_account_get_a_default_folder(client: TestClient) -> None:
+def test_new_workspace_and_new_account_get_a_default_folder(
+    client: TestClient, sessionmaker: async_sessionmaker[AsyncSession], portal: BlockingPortal
+) -> None:
     sign_in_as_alice(client)
     created = client.post("/api/v1/workspaces", json={"name": "Research"}).json()
 
     async def folders() -> list[Folder]:
-        async with client.app.state.sessionmaker() as db:
+        async with sessionmaker() as db:
             return [*await db.scalars(select(Folder).where(Folder.is_default))]
 
-    default_folders = [folder.workspace_id for folder in client.portal.call(folders)]
+    default_folders = [folder.workspace_id for folder in portal.call(folders)]
     assert UUID(created["id"]) in default_folders
     # Alice's two seeded workspaces, "Research" and Bob's personal one: one default folder each.
     assert len(default_folders) == len(set(default_folders)) == 4
 
 
-def test_deleting_a_workspace_deletes_its_folders_and_meetings(client: TestClient) -> None:
+def test_deleting_a_workspace_deletes_its_folders_and_meetings(
+    client: TestClient, sessionmaker: async_sessionmaker[AsyncSession], portal: BlockingPortal
+) -> None:
     sign_in_as_alice(client)
 
     client.delete(f"/api/v1/workspaces/{TEAM_WORKSPACE_ID}")
 
     async def left() -> tuple[list[Folder], list[Meeting]]:
-        async with client.app.state.sessionmaker() as db:
+        async with sessionmaker() as db:
             folders = [*await db.scalars(select(Folder))]
             meetings = [*await db.scalars(select(Meeting))]
             return folders, meetings
 
-    folders, meetings = client.portal.call(left)
+    folders, meetings = portal.call(left)
     assert {folder.workspace_id for folder in folders} == {PERSONAL_WORKSPACE_ID}
     assert [meeting.name for meeting in meetings] == ["Thesis consultation"]
 
@@ -151,7 +157,9 @@ def wav_bytes() -> bytes:
     return buffer.getvalue()
 
 
-def test_upload_saves_the_file_and_a_queued_meeting(client: TestClient) -> None:
+def test_upload_saves_the_file_and_a_queued_meeting(
+    client: TestClient, sessionmaker: async_sessionmaker[AsyncSession], portal: BlockingPortal
+) -> None:
     sign_in_as_alice(client)
     audio = wav_bytes()
 
@@ -171,10 +179,11 @@ def test_upload_saves_the_file_and_a_queued_meeting(client: TestClient) -> None:
     assert ids(client)[0] == created["id"]
 
     async def stored() -> Meeting:
-        async with client.app.state.sessionmaker() as db:
+        async with sessionmaker() as db:
             return await db.get_one(Meeting, UUID(created["id"]))
 
-    meeting = client.portal.call(stored)
+    meeting = portal.call(stored)
+    assert meeting.storage_path is not None
     assert Path(meeting.storage_path).read_bytes() == audio
 
 
@@ -292,22 +301,26 @@ def test_member_can_reach_a_meeting_of_their_workspace(client: TestClient) -> No
     assert client.get(f"/api/v1/meetings/{SPRINT_12_MEETING_ID}/transcript").status_code == 200
 
 
-def audit_events(client: TestClient) -> list[AuditEvent]:
+def audit_events(
+    sessionmaker: async_sessionmaker[AsyncSession], portal: BlockingPortal
+) -> list[AuditEvent]:
     async def read() -> list[AuditEvent]:
-        async with client.app.state.sessionmaker() as db:
+        async with sessionmaker() as db:
             return [*await db.scalars(select(AuditEvent))]
 
-    return client.portal.call(read)
+    return portal.call(read)
 
 
-def test_owner_deletes_a_meeting_and_it_is_audited(client: TestClient) -> None:
+def test_owner_deletes_a_meeting_and_it_is_audited(
+    client: TestClient, sessionmaker: async_sessionmaker[AsyncSession], portal: BlockingPortal
+) -> None:
     sign_in_as_alice(client)
 
     assert client.delete(f"/api/v1/meetings/{SPRINT_11_MEETING_ID}").status_code == 204
 
     assert client.get(f"/api/v1/meetings/{SPRINT_11_MEETING_ID}").status_code == 404
     assert str(SPRINT_11_MEETING_ID) not in ids(client)
-    [event] = audit_events(client)
+    [event] = audit_events(sessionmaker, portal)
     assert event.action is AuditAction.MEETING_DELETED
     assert event.meeting_id == SPRINT_11_MEETING_ID
     assert event.workspace_id == TEAM_WORKSPACE_ID
@@ -315,7 +328,9 @@ def test_owner_deletes_a_meeting_and_it_is_audited(client: TestClient) -> None:
 
 
 @pytest.mark.usefixtures("bob")
-def test_plain_member_cannot_delete_someone_elses_meeting(client: TestClient) -> None:
+def test_plain_member_cannot_delete_someone_elses_meeting(
+    client: TestClient, sessionmaker: async_sessionmaker[AsyncSession], portal: BlockingPortal
+) -> None:
     client.post("/api/v1/sessions", json={"email": BOB_EMAIL, "password": BOB_PASSWORD})
 
     response = client.delete(f"/api/v1/meetings/{SPRINT_12_MEETING_ID}")
@@ -323,22 +338,25 @@ def test_plain_member_cannot_delete_someone_elses_meeting(client: TestClient) ->
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "INSUFFICIENT_ROLE"
     assert client.get(f"/api/v1/meetings/{SPRINT_12_MEETING_ID}").status_code == 200
-    assert audit_events(client) == []
+    assert audit_events(sessionmaker, portal) == []
 
 
 @pytest.mark.usefixtures("bob")
-def test_plain_member_deletes_their_own_upload_and_its_file(client: TestClient) -> None:
+def test_plain_member_deletes_their_own_upload_and_its_file(
+    client: TestClient, sessionmaker: async_sessionmaker[AsyncSession], portal: BlockingPortal
+) -> None:
     client.post("/api/v1/sessions", json={"email": BOB_EMAIL, "password": BOB_PASSWORD})
     created = client.post(
         TEAM_MEETINGS, files={"file": ("call.wav", wav_bytes(), "audio/wav")}
     ).json()
 
     async def storage_path() -> Path:
-        async with client.app.state.sessionmaker() as db:
+        async with sessionmaker() as db:
             meeting = await db.get_one(Meeting, UUID(created["id"]))
+            assert meeting.storage_path is not None
             return Path(meeting.storage_path)
 
-    saved = client.portal.call(storage_path)
+    saved = portal.call(storage_path)
     assert saved.exists()
 
     assert client.delete(f"/api/v1/meetings/{created['id']}").status_code == 204
@@ -347,25 +365,34 @@ def test_plain_member_deletes_their_own_upload_and_its_file(client: TestClient) 
     assert client.get(f"/api/v1/meetings/{created['id']}").status_code == 404
 
 
-def test_moderator_deletes_someone_elses_meeting(client: TestClient, bob: UUID) -> None:
+def test_moderator_deletes_someone_elses_meeting(
+    client: TestClient,
+    bob: UUID,
+    sessionmaker: async_sessionmaker[AsyncSession],
+    portal: BlockingPortal,
+) -> None:
     async def make_bob_moderator() -> None:
-        async with client.app.state.sessionmaker() as db:
-            membership = await db.scalar(
-                select(WorkspaceMembership).where(
-                    WorkspaceMembership.workspace_id == TEAM_WORKSPACE_ID,
-                    WorkspaceMembership.user_id == bob,
+        async with sessionmaker() as db:
+            membership = (
+                await db.scalars(
+                    select(WorkspaceMembership).where(
+                        WorkspaceMembership.workspace_id == TEAM_WORKSPACE_ID,
+                        WorkspaceMembership.user_id == bob,
+                    )
                 )
-            )
+            ).one()
             membership.role = Role.MODERATOR
             await db.commit()
 
-    client.portal.call(make_bob_moderator)
+    portal.call(make_bob_moderator)
     client.post("/api/v1/sessions", json={"email": BOB_EMAIL, "password": BOB_PASSWORD})
 
     assert client.delete(f"/api/v1/meetings/{SPRINT_12_MEETING_ID}").status_code == 204
 
 
-def test_rename_is_stored_clears_generated_flag_and_is_audited(client: TestClient) -> None:
+def test_rename_is_stored_clears_generated_flag_and_is_audited(
+    client: TestClient, sessionmaker: async_sessionmaker[AsyncSession], portal: BlockingPortal
+) -> None:
     sign_in_as_alice(client)
     created = client.post(
         TEAM_MEETINGS, files={"file": ("call.wav", wav_bytes(), "audio/wav")}
@@ -378,12 +405,14 @@ def test_rename_is_stored_clears_generated_flag_and_is_audited(client: TestClien
     assert response.json()["name"] == "Planning"
     assert response.json()["name_is_generated"] is False
     assert client.get(f"/api/v1/meetings/{created['id']}").json()["name"] == "Planning"
-    [event] = audit_events(client)
+    [event] = audit_events(sessionmaker, portal)
     assert event.action is AuditAction.MEETING_RENAMED
     assert event.meeting_id == UUID(created["id"])
 
 
-def test_move_is_stored_and_audited_with_both_folders(client: TestClient) -> None:
+def test_move_is_stored_and_audited_with_both_folders(
+    client: TestClient, sessionmaker: async_sessionmaker[AsyncSession], portal: BlockingPortal
+) -> None:
     sign_in_as_alice(client)
     meeting = f"/api/v1/meetings/{SPRINT_12_MEETING_ID}"
 
@@ -391,12 +420,14 @@ def test_move_is_stored_and_audited_with_both_folders(client: TestClient) -> Non
 
     assert response.status_code == 200
     assert client.get(meeting).json()["folder_id"] == str(TEAM_DEFAULT_FOLDER_ID)
-    [event] = audit_events(client)
+    [event] = audit_events(sessionmaker, portal)
     assert event.action is AuditAction.MEETING_MOVED
     assert event.details == {"from": str(SPRINT_FOLDER_ID), "to": str(TEAM_DEFAULT_FOLDER_ID)}
 
 
-def test_move_to_another_workspaces_folder_is_422(client: TestClient) -> None:
+def test_move_to_another_workspaces_folder_is_422(
+    client: TestClient, sessionmaker: async_sessionmaker[AsyncSession], portal: BlockingPortal
+) -> None:
     sign_in_as_alice(client)
     meeting = f"/api/v1/meetings/{SPRINT_12_MEETING_ID}"
 
@@ -404,7 +435,7 @@ def test_move_to_another_workspaces_folder_is_422(client: TestClient) -> None:
 
     assert response.status_code == 422
     assert client.get(meeting).json()["folder_id"] == str(SPRINT_FOLDER_ID)
-    assert audit_events(client) == []
+    assert audit_events(sessionmaker, portal) == []
 
 
 @pytest.mark.usefixtures("bob")
@@ -462,15 +493,19 @@ def test_meeting_without_transcript_is_409(client: TestClient) -> None:
     assert response.json()["error"]["code"] == "NOT_TRANSCRIBED"
 
 
-def test_edited_revision_is_shown_and_the_original_stays_reachable(client: TestClient) -> None:
+def test_edited_revision_is_shown_and_the_original_stays_reachable(
+    client: TestClient, sessionmaker: async_sessionmaker[AsyncSession], portal: BlockingPortal
+) -> None:
     sign_in_as_alice(client)
     original_id = client.get(SPRINT_12_TRANSCRIPT).json()["revision"]["id"]
 
     async def add_edited_revision() -> None:
-        async with client.app.state.sessionmaker() as db:
-            transcript = await db.scalar(
-                select(Transcript).where(Transcript.meeting_id == SPRINT_12_MEETING_ID)
-            )
+        async with sessionmaker() as db:
+            transcript = (
+                await db.scalars(
+                    select(Transcript).where(Transcript.meeting_id == SPRINT_12_MEETING_ID)
+                )
+            ).one()
             edited = TranscriptRevision(
                 revision_id=uuid4(),
                 transcript_id=transcript.transcript_id,
@@ -494,7 +529,7 @@ def test_edited_revision_is_shown_and_the_original_stays_reachable(client: TestC
             transcript.current_revision_id = edited.revision_id
             await db.commit()
 
-    client.portal.call(add_edited_revision)
+    portal.call(add_edited_revision)
     body = client.get(SPRINT_12_TRANSCRIPT).json()
 
     assert body["revision"]["revision_type"] == "edited"

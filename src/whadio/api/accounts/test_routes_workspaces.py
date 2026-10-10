@@ -1,6 +1,8 @@
 import pytest
+from anyio.from_thread import BlockingPortal
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..audit.models import AuditAction, AuditEvent
 from ..conftest import BOB_EMAIL, BOB_PASSWORD
@@ -135,7 +137,9 @@ def test_personal_workspace_cannot_be_deleted(client: TestClient) -> None:
 
 
 @pytest.mark.usefixtures("bob")
-def test_owner_deletes_and_it_is_audited(client: TestClient) -> None:
+def test_owner_deletes_and_it_is_audited(
+    client: TestClient, sessionmaker: async_sessionmaker[AsyncSession], portal: BlockingPortal
+) -> None:
     sign_in_as_alice(client)
 
     assert client.delete(TEAM).status_code == 204
@@ -144,10 +148,10 @@ def test_owner_deletes_and_it_is_audited(client: TestClient) -> None:
     assert str(TEAM_WORKSPACE_ID) not in [i["id"] for i in client.get(WORKSPACES).json()["items"]]
 
     async def audit_events() -> list[AuditEvent]:
-        async with client.app.state.sessionmaker() as db:
+        async with sessionmaker() as db:
             return [*await db.scalars(select(AuditEvent))]
 
-    events = client.portal.call(audit_events)
+    events = portal.call(audit_events)
     assert len(events) == 1
     assert events[0].action is AuditAction.WORKSPACE_DELETED
     assert events[0].workspace_id == TEAM_WORKSPACE_ID
