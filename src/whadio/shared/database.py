@@ -1,5 +1,6 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from enum import StrEnum
 from typing import ClassVar
 
 import psycopg
@@ -19,15 +20,19 @@ class Base(DeclarativeBase):
     metadata: ClassVar[MetaData] = MetaData(
         naming_convention={
             "ix": "ix_%(table_name)s_%(column_0_name)s",
-            "uq": "uq_%(table_name)s_%(column_0_name)s",
+            "uq": "uq_%(table_name)s_%(column_0_N_name)s",
             "ck": "ck_%(table_name)s_%(constraint_name)s",
-            "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+            "fk": "fk_%(table_name)s_%(column_0_N_name)s_%(referred_table_name)s",
             "pk": "pk_%(table_name)s",
         },
     )
 
 
-class DatabaseSettings(BaseSettings):
+def enum_values(enum_type: type[StrEnum]) -> list[str]:
+    return [member.value for member in enum_type]
+
+
+class ConnectionSettings(BaseSettings):
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_prefix="WHADIO_DB_", env_file=".env", extra="ignore"
     )
@@ -35,6 +40,9 @@ class DatabaseSettings(BaseSettings):
     host: str = Field(default="localhost", description="PostgreSQL hostname.")
     port: int = Field(default=5432, ge=1, le=65535, description="PostgreSQL TCP port.")
     name: str = Field(default="whadio", description="PostgreSQL database name.")
+
+
+class DatabaseSettings(ConnectionSettings):
     app_password: SecretStr = Field(description="Password for the whadio_app role.")
 
     def application_url(self) -> URL:
@@ -48,14 +56,7 @@ class DatabaseSettings(BaseSettings):
         )
 
 
-class MigrationSettings(BaseSettings):
-    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
-        env_prefix="WHADIO_DB_", env_file=".env", extra="ignore"
-    )
-
-    host: str = Field(default="localhost", description="PostgreSQL hostname.")
-    port: int = Field(default=5432, ge=1, le=65535, description="PostgreSQL TCP port.")
-    name: str = Field(default="whadio", description="PostgreSQL database name.")
+class MigrationSettings(ConnectionSettings):
     owner_password: SecretStr = Field(description="Password for the whadio_owner migration role.")
 
     def migration_url(self) -> URL:

@@ -6,17 +6,22 @@ from sqlalchemy import (
     CheckConstraint,
     Constraint,
     DateTime,
+    Enum,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
     Numeric,
     Text,
     UniqueConstraint,
+    false,
+    func,
     text,
 )
 from sqlalchemy.orm import Mapped, MappedColumn
 
-from ..shared.database import Base
+from ..accounts.enums import LlmProvider, NotesTemplate
+from ..shared.database import Base, enum_values
+from .enums import AccessMode, MeetingSource, ProcessingState, RecordingStatus, RevisionType
 
 
 class Folder(Base):
@@ -27,12 +32,13 @@ class Folder(Base):
         ForeignKey("workspace.workspace_id", ondelete="CASCADE")
     )
     name: Mapped[str] = MappedColumn[str](Text)
-    created_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
-    is_default: Mapped[bool] = MappedColumn[bool]()
+    created_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
+    is_default: Mapped[bool] = MappedColumn[bool](server_default=false())
 
     __table_args__: tuple[Constraint | Index, ...] = (
-        Index("ix_folder_workspace_id", "workspace_id"),
-        Index("uq_folder_workspace_name", "workspace_id", text("lower(name)"), unique=True),
+        Index("uq_folder_workspace_name", "workspace_id", func.lower(name), unique=True),
         Index(
             "uq_folder_default", "workspace_id", unique=True, postgresql_where=text("is_default")
         ),
@@ -49,13 +55,42 @@ class Meeting(Base):
     )
     name: Mapped[str] = MappedColumn[str](Text)
     name_is_generated: Mapped[bool] = MappedColumn[bool]()
-    source_type: Mapped[str] = MappedColumn[str](Text)
-    recording_status: Mapped[str] = MappedColumn[str](Text)
-    processing_state: Mapped[str] = MappedColumn[str](Text)
+    source_type: Mapped[MeetingSource] = MappedColumn[MeetingSource](
+        Enum(
+            MeetingSource,
+            name="source",
+            native_enum=False,
+            create_constraint=True,
+            values_callable=enum_values,
+            validate_strings=True,
+        ),
+    )
+    recording_status: Mapped[RecordingStatus] = MappedColumn[RecordingStatus](
+        Enum(
+            RecordingStatus,
+            name="recording_status",
+            native_enum=False,
+            create_constraint=True,
+            values_callable=enum_values,
+            validate_strings=True,
+        ),
+    )
+    processing_state: Mapped[ProcessingState] = MappedColumn[ProcessingState](
+        Enum(
+            ProcessingState,
+            name="processing_state",
+            native_enum=False,
+            create_constraint=True,
+            values_callable=enum_values,
+            validate_strings=True,
+        ),
+    )
     storage_path: Mapped[str | None] = MappedColumn[str | None](Text)
     duration_seconds: Mapped[int | None] = MappedColumn[int | None]()
     recorded_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
-    created_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    created_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
     consent_confirmed_at: Mapped[datetime | None] = MappedColumn[datetime | None](
         DateTime(timezone=True)
     )
@@ -66,16 +101,18 @@ class Meeting(Base):
     recording_deleted_at: Mapped[datetime | None] = MappedColumn[datetime | None](
         DateTime(timezone=True)
     )
-    access_mode: Mapped[str] = MappedColumn[str](Text)
+    access_mode: Mapped[AccessMode] = MappedColumn[AccessMode](
+        Enum(
+            AccessMode,
+            name="access_mode",
+            native_enum=False,
+            create_constraint=True,
+            values_callable=enum_values,
+            validate_strings=True,
+        ),
+    )
 
     __table_args__: tuple[Constraint | Index, ...] = (
-        CheckConstraint("source_type IN ('extension', 'upload')", name="source"),
-        CheckConstraint("recording_status IN ('complete', 'partial')", name="recording_status"),
-        CheckConstraint(
-            "processing_state IN ('recording', 'queued', 'processing', 'processed', 'failed')",
-            name="processing_state",
-        ),
-        CheckConstraint("access_mode IN ('workspace', 'restricted')", name="access_mode"),
         CheckConstraint("duration_seconds IS NULL OR duration_seconds >= 0", name="duration"),
         Index("ix_meeting_folder_recorded", "folder_id", "recorded_at", "meeting_id"),
         Index("ix_meeting_created_at", "created_at", "meeting_id"),
@@ -96,7 +133,9 @@ class Transcript(Base):
     )
     language: Mapped[str] = MappedColumn[str](Text)
     model_name: Mapped[str] = MappedColumn[str](Text)
-    created_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    created_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
     current_revision_id: Mapped[UUID] = MappedColumn[UUID]()
 
     __table_args__: tuple[Constraint | Index, ...] = (
@@ -119,11 +158,22 @@ class TranscriptRevision(Base):
     transcript_id: Mapped[UUID] = MappedColumn[UUID](
         ForeignKey("transcript.transcript_id", ondelete="CASCADE")
     )
-    revision_type: Mapped[str] = MappedColumn[str](Text)
+    revision_type: Mapped[RevisionType] = MappedColumn[RevisionType](
+        Enum(
+            RevisionType,
+            name="revision_type",
+            native_enum=False,
+            create_constraint=True,
+            values_callable=enum_values,
+            validate_strings=True,
+        ),
+    )
     edited_by_user_id: Mapped[UUID | None] = MappedColumn[UUID | None](
         ForeignKey("user.user_id", ondelete="RESTRICT")
     )
-    created_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    created_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
     # The trigger stamps the top-level transaction, including inserts inside savepoints.
     initialization_xid: Mapped[str] = MappedColumn[str](
         Text, server_default=text("pg_current_xact_id()::text")
@@ -131,7 +181,6 @@ class TranscriptRevision(Base):
 
     __table_args__: tuple[Constraint | Index, ...] = (
         UniqueConstraint("transcript_id", "revision_id"),
-        CheckConstraint("revision_type IN ('original', 'edited')", name="revision_type"),
         Index(
             "uq_transcript_original",
             "transcript_id",
@@ -195,7 +244,9 @@ class GlossaryTerm(Base):
     source_meeting_id: Mapped[UUID | None] = MappedColumn[UUID | None](
         ForeignKey("meeting.meeting_id", ondelete="SET NULL")
     )
-    created_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    created_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     __table_args__: tuple[Constraint | Index, ...] = (UniqueConstraint("workspace_id", "term"),)
 
@@ -207,18 +258,36 @@ class Note(Base):
     meeting_id: Mapped[UUID] = MappedColumn[UUID](
         ForeignKey("meeting.meeting_id", ondelete="CASCADE")
     )
-    template: Mapped[str] = MappedColumn[str](Text)
+    template: Mapped[NotesTemplate] = MappedColumn[NotesTemplate](
+        Enum(
+            NotesTemplate,
+            name="template",
+            native_enum=False,
+            create_constraint=True,
+            values_callable=enum_values,
+            validate_strings=True,
+        ),
+    )
     content: Mapped[str] = MappedColumn[str](Text)
     model_name: Mapped[str] = MappedColumn[str](Text)
-    provider: Mapped[str] = MappedColumn[str](Text)
+    provider: Mapped[LlmProvider] = MappedColumn[LlmProvider](
+        Enum(
+            LlmProvider,
+            name="provider",
+            native_enum=False,
+            create_constraint=True,
+            values_callable=enum_values,
+            validate_strings=True,
+        ),
+    )
     created_by_user_id: Mapped[UUID | None] = MappedColumn[UUID | None](
         ForeignKey("user.user_id", ondelete="RESTRICT")
     )
-    created_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    created_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     __table_args__: tuple[Constraint | Index, ...] = (
-        CheckConstraint("template IN ('summary', 'detailed', 'interview')", name="template"),
-        CheckConstraint("provider IN ('Whadio', 'Anthropic', 'OpenAI', 'Google')", name="provider"),
         Index("ix_note_meeting_created", "meeting_id", "created_at"),
     )
 

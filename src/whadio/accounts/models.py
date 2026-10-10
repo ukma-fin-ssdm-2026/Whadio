@@ -5,16 +5,26 @@ from sqlalchemy import (
     CheckConstraint,
     Constraint,
     DateTime,
+    Enum,
     ForeignKey,
     Index,
     Text,
     UniqueConstraint,
+    false,
     func,
     text,
 )
 from sqlalchemy.orm import Mapped, MappedColumn
 
-from ..shared.database import Base
+from ..shared.database import Base, enum_values
+from .enums import (
+    InvitationRole,
+    InvitationStatus,
+    LlmProvider,
+    NotesTemplate,
+    SessionKind,
+    WorkspaceRole,
+)
 
 
 class User(Base):
@@ -24,9 +34,11 @@ class User(Base):
     email: Mapped[str] = MappedColumn[str](Text)
     name: Mapped[str] = MappedColumn[str](Text)
     password_hash: Mapped[str] = MappedColumn[str](Text)
-    is_administrator: Mapped[bool] = MappedColumn[bool]()
+    is_administrator: Mapped[bool] = MappedColumn[bool](server_default=false())
     terms_accepted_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
-    created_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    created_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     __table_args__: tuple[Constraint | Index, ...] = (
         Index("uq_user_email", func.lower(email), unique=True),
@@ -38,15 +50,20 @@ class Workspace(Base):
 
     workspace_id: Mapped[UUID] = MappedColumn[UUID](primary_key=True, default=uuid4)
     name: Mapped[str] = MappedColumn[str](Text)
-    default_template: Mapped[str] = MappedColumn[str](Text)
-    created_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
-    is_personal: Mapped[bool] = MappedColumn[bool]()
-
-    __table_args__: tuple[Constraint | Index, ...] = (
-        CheckConstraint(
-            "default_template IN ('summary', 'detailed', 'interview')", name="template"
+    default_template: Mapped[NotesTemplate] = MappedColumn[NotesTemplate](
+        Enum(
+            NotesTemplate,
+            name="template",
+            native_enum=False,
+            create_constraint=True,
+            values_callable=enum_values,
+            validate_strings=True,
         ),
     )
+    created_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
+    is_personal: Mapped[bool] = MappedColumn[bool](server_default=false())
 
 
 class WorkspaceMembership(Base):
@@ -57,12 +74,22 @@ class WorkspaceMembership(Base):
         ForeignKey("workspace.workspace_id", ondelete="CASCADE")
     )
     user_id: Mapped[UUID] = MappedColumn[UUID](ForeignKey("user.user_id", ondelete="RESTRICT"))
-    role: Mapped[str] = MappedColumn[str](Text)
-    joined_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    role: Mapped[WorkspaceRole] = MappedColumn[WorkspaceRole](
+        Enum(
+            WorkspaceRole,
+            name="role",
+            native_enum=False,
+            create_constraint=True,
+            values_callable=enum_values,
+            validate_strings=True,
+        ),
+    )
+    joined_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     __table_args__: tuple[Constraint | Index, ...] = (
         UniqueConstraint("workspace_id", "user_id"),
-        CheckConstraint("role IN ('Member', 'Moderator', 'Owner')", name="role"),
         Index(
             "uq_workspace_owner",
             "workspace_id",
@@ -81,21 +108,37 @@ class Invitation(Base):
         ForeignKey("workspace.workspace_id", ondelete="CASCADE")
     )
     invited_email: Mapped[str] = MappedColumn[str](Text)
-    role: Mapped[str] = MappedColumn[str](Text)
+    role: Mapped[InvitationRole] = MappedColumn[InvitationRole](
+        Enum(
+            InvitationRole,
+            name="role",
+            native_enum=False,
+            create_constraint=True,
+            values_callable=enum_values,
+            validate_strings=True,
+        ),
+    )
     invited_by_user_id: Mapped[UUID] = MappedColumn[UUID](
         ForeignKey("user.user_id", ondelete="RESTRICT")
     )
-    status: Mapped[str] = MappedColumn[str](Text)
+    status: Mapped[InvitationStatus] = MappedColumn[InvitationStatus](
+        Enum(
+            InvitationStatus,
+            name="status",
+            native_enum=False,
+            create_constraint=True,
+            values_callable=enum_values,
+            validate_strings=True,
+        ),
+    )
     token_hash: Mapped[str] = MappedColumn[str](Text)
-    created_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    created_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
     expires_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
     responded_at: Mapped[datetime | None] = MappedColumn[datetime | None](DateTime(timezone=True))
 
     __table_args__: tuple[Constraint | Index, ...] = (
-        CheckConstraint("role IN ('Member', 'Moderator')", name="role"),
-        CheckConstraint(
-            "status IN ('pending', 'accepted', 'declined', 'cancelled')", name="status"
-        ),
         CheckConstraint("expires_at > created_at", name="expiry"),
         UniqueConstraint("token_hash"),
         Index(
@@ -122,7 +165,9 @@ class PendingRegistration(Base):
     pending_registration_id: Mapped[UUID] = MappedColumn[UUID](primary_key=True, default=uuid4)
     email: Mapped[str] = MappedColumn[str](Text)
     token_hash: Mapped[str] = MappedColumn[str](Text)
-    created_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    created_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
     expires_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
 
     __table_args__: tuple[Constraint | Index, ...] = (
@@ -139,7 +184,9 @@ class PasswordReset(Base):
     password_reset_id: Mapped[UUID] = MappedColumn[UUID](primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = MappedColumn[UUID](ForeignKey("user.user_id", ondelete="CASCADE"))
     token_hash: Mapped[str] = MappedColumn[str](Text)
-    created_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    created_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
     expires_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
 
     __table_args__: tuple[Constraint | Index, ...] = (
@@ -155,14 +202,24 @@ class Session(Base):
 
     session_id: Mapped[UUID] = MappedColumn[UUID](primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = MappedColumn[UUID](ForeignKey("user.user_id", ondelete="CASCADE"))
-    kind: Mapped[str] = MappedColumn[str](Text)
+    kind: Mapped[SessionKind] = MappedColumn[SessionKind](
+        Enum(
+            SessionKind,
+            name="kind",
+            native_enum=False,
+            create_constraint=True,
+            values_callable=enum_values,
+            validate_strings=True,
+        ),
+    )
     token_hash: Mapped[str] = MappedColumn[str](Text)
-    created_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    created_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
     expires_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
 
     __table_args__: tuple[Constraint | Index, ...] = (
         UniqueConstraint("token_hash"),
-        CheckConstraint("kind IN ('browser', 'extension')", name="kind"),
         CheckConstraint("expires_at > created_at", name="expiry"),
         Index("ix_session_user_id", "user_id"),
         Index("ix_session_expires_at", "expires_at"),
@@ -177,13 +234,23 @@ class LlmProviderConfig(Base):
         ForeignKey("workspace.workspace_id", ondelete="CASCADE")
     )
     is_enabled: Mapped[bool] = MappedColumn[bool]()
-    provider: Mapped[str] = MappedColumn[str](Text)
+    provider: Mapped[LlmProvider] = MappedColumn[LlmProvider](
+        Enum(
+            LlmProvider,
+            name="provider",
+            native_enum=False,
+            create_constraint=True,
+            values_callable=enum_values,
+            validate_strings=True,
+        ),
+    )
     api_key_encrypted: Mapped[str | None] = MappedColumn[str | None](Text)
-    created_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    created_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     __table_args__: tuple[Constraint | Index, ...] = (
         UniqueConstraint("workspace_id"),
-        CheckConstraint("provider IN ('Whadio', 'Anthropic', 'OpenAI', 'Google')", name="provider"),
         CheckConstraint(
             "provider = 'Whadio' OR api_key_encrypted IS NOT NULL", name="encrypted_key"
         ),
@@ -196,7 +263,9 @@ class McpKey(Base):
     mcp_key_id: Mapped[UUID] = MappedColumn[UUID](primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = MappedColumn[UUID](ForeignKey("user.user_id", ondelete="CASCADE"))
     key_hash: Mapped[str] = MappedColumn[str](Text)
-    created_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    created_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
     expires_at: Mapped[datetime | None] = MappedColumn[datetime | None](DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = MappedColumn[datetime | None](DateTime(timezone=True))
 

@@ -6,15 +6,18 @@ from sqlalchemy import (
     CheckConstraint,
     Constraint,
     DateTime,
+    Enum,
     ForeignKey,
     Index,
     Text,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, MappedColumn
 
-from ..shared.database import Base
+from ..shared.database import Base, enum_values
+from .enums import CaptureStatus
 
 
 class CaptureSession(Base):
@@ -27,15 +30,25 @@ class CaptureSession(Base):
     opened_by_user_id: Mapped[UUID] = MappedColumn[UUID](
         ForeignKey("user.user_id", ondelete="RESTRICT")
     )
-    status: Mapped[str] = MappedColumn[str](Text)
+    status: Mapped[CaptureStatus] = MappedColumn[CaptureStatus](
+        Enum(
+            CaptureStatus,
+            name="status",
+            native_enum=False,
+            create_constraint=True,
+            values_callable=enum_values,
+            validate_strings=True,
+        ),
+    )
     last_chunk_seq: Mapped[int | None] = MappedColumn[int | None]()
     last_chunk_at: Mapped[datetime | None] = MappedColumn[datetime | None](DateTime(timezone=True))
-    created_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    created_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
     closed_at: Mapped[datetime | None] = MappedColumn[datetime | None](DateTime(timezone=True))
 
     __table_args__: tuple[Constraint | Index, ...] = (
         UniqueConstraint("meeting_id"),
-        CheckConstraint("status IN ('recording', 'idle', 'assembled', 'abandoned')", name="status"),
         CheckConstraint("last_chunk_seq IS NULL OR last_chunk_seq >= 0", name="sequence"),
         Index("ix_capture_session_status_last_chunk", "status", "last_chunk_at"),
     )
@@ -53,7 +66,9 @@ class CaptureChunk(Base):
     speaker_events: Mapped[JsonValue | None] = MappedColumn[JsonValue | None](
         JSONB(none_as_null=True), nullable=True
     )
-    received_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    received_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     __table_args__: tuple[Constraint | Index, ...] = (
         UniqueConstraint("capture_session_id", "seq"),

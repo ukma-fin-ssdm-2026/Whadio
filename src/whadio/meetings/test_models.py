@@ -6,6 +6,39 @@ from sqlalchemy.exc import IntegrityError
 
 
 @pytest.mark.slow
+def test_folder_cannot_move_to_another_workspace(
+    database_connection: Connection,
+    folder_id: UUID,
+    other_folder_id: UUID,
+) -> None:
+    # Arrange
+    command = text(
+        "UPDATE folder SET workspace_id = (SELECT workspace_id FROM folder "
+        "WHERE folder_id = :other) WHERE folder_id = :folder"
+    )
+    # Act
+    with pytest.raises(IntegrityError) as failure:
+        database_connection.execute(command, {"other": other_folder_id, "folder": folder_id})
+    # Assert
+    assert "Folders cannot move between workspaces" in str(failure.value.orig)
+
+
+@pytest.mark.slow
+def test_meeting_cannot_move_to_another_workspace_folder(
+    database_connection: Connection,
+    meeting_id: UUID,
+    other_folder_id: UUID,
+) -> None:
+    # Arrange
+    command = text("UPDATE meeting SET folder_id = :folder WHERE meeting_id = :meeting")
+    # Act
+    with pytest.raises(IntegrityError) as failure:
+        database_connection.execute(command, {"folder": other_folder_id, "meeting": meeting_id})
+    # Assert
+    assert "Meetings cannot move between workspaces" in str(failure.value.orig)
+
+
+@pytest.mark.slow
 def test_transcript_and_current_revision_can_be_created_together(
     database_connection: Connection,
     revision_id: UUID,

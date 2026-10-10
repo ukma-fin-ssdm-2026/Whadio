@@ -5,15 +5,19 @@ from sqlalchemy import (
     CheckConstraint,
     Constraint,
     DateTime,
+    Enum,
     ForeignKey,
     Index,
     Text,
     UniqueConstraint,
+    false,
+    func,
     text,
 )
 from sqlalchemy.orm import Mapped, MappedColumn
 
-from ..shared.database import Base
+from ..shared.database import Base, enum_values
+from .enums import ShareRequestStatus
 
 
 class MeetingAccessGrant(Base):
@@ -27,7 +31,9 @@ class MeetingAccessGrant(Base):
     granted_by_user_id: Mapped[UUID] = MappedColumn[UUID](
         ForeignKey("user.user_id", ondelete="RESTRICT")
     )
-    granted_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    granted_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     __table_args__: tuple[Constraint | Index, ...] = (
         UniqueConstraint("meeting_id", "user_id"),
@@ -46,9 +52,11 @@ class ExternalShare(Base):
         ForeignKey("user.user_id", ondelete="RESTRICT")
     )
     token_hash: Mapped[str] = MappedColumn[str](Text)
-    redact_speaker_names: Mapped[bool] = MappedColumn[bool]()
+    redact_speaker_names: Mapped[bool] = MappedColumn[bool](server_default=false())
     include_recording: Mapped[bool] = MappedColumn[bool]()
-    created_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    created_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
     recipient_user_id: Mapped[UUID | None] = MappedColumn[UUID | None](
         ForeignKey("user.user_id", ondelete="RESTRICT")
     )
@@ -72,13 +80,23 @@ class ShareAccessRequest(Base):
     requester_user_id: Mapped[UUID] = MappedColumn[UUID](
         ForeignKey("user.user_id", ondelete="RESTRICT")
     )
-    status: Mapped[str] = MappedColumn[str](Text)
-    requested_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    status: Mapped[ShareRequestStatus] = MappedColumn[ShareRequestStatus](
+        Enum(
+            ShareRequestStatus,
+            name="status",
+            native_enum=False,
+            create_constraint=True,
+            values_callable=enum_values,
+            validate_strings=True,
+        ),
+    )
+    requested_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
     decided_at: Mapped[datetime | None] = MappedColumn[datetime | None](DateTime(timezone=True))
 
     __table_args__: tuple[Constraint | Index, ...] = (
         UniqueConstraint("share_id", "requester_user_id"),
-        CheckConstraint("status IN ('pending', 'approved', 'declined')", name="status"),
         Index(
             "uq_share_access_request_approved",
             "share_id",
