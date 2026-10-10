@@ -134,8 +134,8 @@ async def serve_jobs[J: JobMessage, R: IResultMessage](
             fail()
 
         await _watch_consumer_cancel(channel, on_consumer_cancelled)
-        await runner.start()
         try:
+            await runner.start()
             # A job may hold its message for as long as its timeout allows; past the consumer
             # timeout RabbitMQ would hand the message to another worker while this one still runs.
             tag = await jobs.consume(
