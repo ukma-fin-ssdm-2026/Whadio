@@ -412,10 +412,15 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 - **Status:** Designed · **Caller:** Moderator or Owner · **Success:** `204`
 - **Rules:** the member loses access to the workspace and all of its meetings at once.
+  Before removing a restricted meeting's last selected recipient, a Moderator must explicitly
+  select another remaining member through the meeting access endpoint. Removal is refused
+  while any affected restricted meeting would have no recipient; it never grants the Owner
+  access automatically or changes the meeting to workspace access.
 - **Errors:**
   - `403 INSUFFICIENT_ROLE`: the caller is a plain member.
   - `404 NOT_FOUND`: no such workspace or member.
   - `409 OWNER_IMMUTABLE`: the target is the Owner.
+  - `409 RESTRICTED_MEETING_REQUIRES_RECIPIENT`: replacement access must be selected first.
 
 #### `GET /workspaces/{workspace_id}/invitations` · List pending invitations
 

@@ -2,7 +2,6 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
-    CheckConstraint,
     Constraint,
     DateTime,
     Enum,
@@ -53,7 +52,6 @@ class ExternalShare(Base):
     )
     token_hash: Mapped[str] = MappedColumn[str](Text)
     redact_speaker_names: Mapped[bool] = MappedColumn[bool](server_default=false())
-    include_recording: Mapped[bool] = MappedColumn[bool]()
     created_at: Mapped[datetime] = MappedColumn[datetime](
         DateTime(timezone=True), server_default=func.now()
     )
@@ -64,7 +62,6 @@ class ExternalShare(Base):
 
     __table_args__: tuple[Constraint | Index, ...] = (
         UniqueConstraint("token_hash"),
-        CheckConstraint("NOT include_recording", name="read_only_content"),
         Index("ix_external_share_meeting_id", "meeting_id"),
         Index("ix_external_share_recipient_user_id", "recipient_user_id"),
     )
