@@ -21,11 +21,11 @@ the architecture rules, the coding standards and the checks every change must pa
 [uv](https://docs.astral.sh/uv/) and Docker installed:
 
 ```bash
-uv sync                  # Python 3.13, the dependencies and the dev tools, in .venv
-uv run task setup        # also installs the git hooks
-cp .env.example .env     # local credentials for the Compose stack
-uv run task infra:up     # PostgreSQL, RabbitMQ, SeaweedFS and Mailpit
-uv run task dev          # the API on http://localhost:3000, with auto-reload
+uv sync --extra asr --extra cpu  # Python 3.13, the dependencies and the dev tools, in .venv
+uv run task setup                # also installs the git hooks
+cp .env.example .env             # local credentials for the Compose stack
+uv run task infra:up             # PostgreSQL, RabbitMQ, SeaweedFS and Mailpit
+uv run task dev                  # the API on http://localhost:3000, with auto-reload
 ```
 
 ## Running the API
@@ -45,6 +45,21 @@ including what each error means, is in [`docs/api/api-design.md`](docs/api/api-d
   are listed at the top of the Swagger page.
 - Starting the server writes the OpenAPI specification to `docs/api/openapi-generated.yaml`
   and `.json`; to regenerate it without a server, run `uv run whadio openapi`.
+
+## Running the workers
+
+The transcription and notes workers live in [`src/whadio/workers/`](src/whadio/workers/). They
+take jobs from RabbitMQ and publish their results to `processing.results`.
+
+- `uv run task workers:up` builds the image and starts both workers in Compose; `task workers:logs`
+  follows them and `task workers:down` stops them.
+- In `.env`, the notes worker needs `WHADIO_NOTES__API_KEY` (Anthropic). The ASR worker needs
+  `WHADIO_ASR__DIARIZATION__HF_TOKEN` from a Hugging Face account that accepted the conditions of
+  `pyannote/speaker-diarization-community-1`.
+- The ASR worker's first start downloads its models into the `asr-models` volume, which takes a
+  few minutes.
+- The ASR worker downloads recordings through presigned links signed for
+  `http://seaweedfs:8333`, the name it reaches storage by in Compose.
 
 ## Connecting an AI assistant (MCP)
 

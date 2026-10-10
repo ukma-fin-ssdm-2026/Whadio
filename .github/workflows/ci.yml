@@ -30,7 +30,7 @@ jobs:
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
 
       - name: Install dependencies
-        run: uv sync --locked
+        run: uv sync --locked --extra asr --extra cpu
 
       - name: Cache pre-commit environments
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -41,19 +41,20 @@ jobs:
       - name: Run the commit-hook checks on all files
         run: uv run --frozen task check
 
-      - name: Start and migrate the disposable test database
+      - name: Start PostgreSQL, RabbitMQ and SeaweedFS and migrate the test database
         env:
           WHADIO_DB_HOST: 127.0.0.1
         run: |
           cp .env.example .env
-          docker compose --profile core up --detach --wait postgres
+          docker compose --profile core up --detach --wait postgres rabbitmq seaweedfs
           uv run --frozen task db:upgrade
           uv run --frozen alembic check
 
+      # CI has no downloaded ML models; the tests that need them run locally.
       - name: Run the whole test suite
         env:
           WHADIO_TEST_DATABASE_URL: postgresql+psycopg://whadio_app:whadio-dev-app@127.0.0.1:5432/whadio
-        run: uv run --frozen task test
+        run: uv run --frozen task test -- -m "not models"
 
       - name: Audit dependencies and the git history
         run: uv run --frozen task audit
@@ -63,7 +64,7 @@ jobs:
 
       - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: docs/api
 
@@ -84,4 +85,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

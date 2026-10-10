@@ -8,6 +8,20 @@ x-healthcheck: &healthcheck
   retries: 20
   start_period: 20s
 
+x-worker: &worker
+  build: .
+  image: whadio:dev
+  init: true
+  # A worker exits with an error when it can no longer take jobs, and starts again here.
+  restart: on-failure
+  # Longer than the workers' shutdown grace of 1 minute, plus the time to stop a slot.
+  stop_grace_period: 90s
+  depends_on:
+    rabbitmq:
+      condition: service_healthy
+      # The GPU host runs the ASR worker without the main host's services.
+      required: false
+
 services:
   postgres:
     image: postgres:18.6-trixie
@@ -56,7 +70,8 @@ services:
     volumes:
       - seaweedfs-data:/data
     ports:
-      # Presigned URLs are signed for host and port, so clients must use this same port.
+      # Presigned URLs are signed for host and port, so clients must use this same port. Sign the
+      # ASR worker's links for http://seaweedfs:8333, the name it reaches storage by.
       - 127.0.0.1:8333:8333
     healthcheck:
       <<: *healthcheck
@@ -69,7 +84,28 @@ services:
       - 127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025
       - 127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025
 
+  notes-worker:
+    <<: *worker
+    profiles: [core]
+    command: [notes-worker]
+    environment:
+      WHADIO_BROKER__URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/whadio
+      # `:-`, not `:?`: Compose reads the whole file, so `:?` would break every command.
+      WHADIO_NOTES__API_KEY: ${WHADIO_NOTES__API_KEY:-}
+
+  asr-worker:
+    <<: *worker
+    profiles: [gpu]
+    command: [asr-worker]
+    environment:
+      WHADIO_BROKER__URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/whadio
+      WHADIO_ASR__DIARIZATION__HF_TOKEN: ${WHADIO_ASR__DIARIZATION__HF_TOKEN:-}
+      WHADIO_ASR__RECOGNIZER: ${WHADIO_ASR__RECOGNIZER:-parakeet}
+    volumes:
+      - asr-models:/var/cache/huggingface
+
 volumes:
   postgres-data:
   rabbitmq-data:
   seaweedfs-data:
+  asr-models:
