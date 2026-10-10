@@ -43,6 +43,21 @@ including what each error means, is in [`docs/api/api-design.md`](docs/api/api-d
 - Starting the server writes the OpenAPI specification to `docs/api/openapi-generated.yaml`
   and `.json`; to regenerate it without a server, run `uv run whadio openapi`.
 
+## Running the workers
+
+The transcription and notes workers live in [`src/whadio/workers/`](src/whadio/workers/). They
+take jobs from RabbitMQ and publish their results to `processing.results`.
+
+- `uv run task workers:up` builds the image and starts both workers in Compose; `task workers:logs`
+  follows them and `task workers:down` stops them.
+- In `.env`, the notes worker needs `WHADIO_NOTES__API_KEY` (Anthropic). The ASR worker needs
+  `WHADIO_ASR__DIARIZATION__HF_TOKEN` from a Hugging Face account that accepted the conditions of
+  `pyannote/speaker-diarization-community-1`.
+- The ASR worker's first start downloads its models into the `asr-models` volume, which takes a
+  few minutes.
+- The ASR worker downloads recordings through presigned links signed for
+  `http://seaweedfs:8333`, the name it reaches storage by in Compose.
+
 ## Connecting an AI assistant (MCP)
 
 The server also exposes a read-only MCP endpoint at `http://localhost:3000/mcp/` with four tools:
