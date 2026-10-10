@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Whadio MVP</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Workspaces">
+        <div class="brand">
+          <span>Whadio</span>
+        </div>
+
+        <section class="signed-in">
+          <span class="avatar" aria-hidden="true">MH</span>
+          <div>
+            <strong>Margaret Hamilton</strong>
+            <span>margaret@whadio.dev</span>
+          </div>
+        </section>
+
+        <nav class="side-nav" aria-label="Primary">
+          <button class="side-link is-active" type="button" id="homeButton">Home</button>
+          <button class="side-link" type="button" id="meetingsButton">Meetings</button>
+          <button class="side-link" type="button" id="workspacesButton">
+            <span>Workspaces</span>
+          </button>
+          <div id="workspaceTree"></div>
+        </nav>
+      </aside>
+
+      <main class="workspace">
+        <nav class="breadcrumbs" id="breadcrumbs" aria-label="Breadcrumb"></nav>
+
+        <header class="topbar">
+          <div>
+            <span class="eyebrow" id="roleLabel"></span>
+            <h1 id="workspaceTitle"></h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="ghost-button" type="button" id="providerButton" aria-pressed="false">
+              Provider: Whadio
+            </button>
+          </div>
+        </header>
+
+        <section class="home-view" id="homeView">
+          <div class="welcome-panel">
+            <div>
+              <h2>Choose a workspace</h2>
+              <p>Upload recordings and review processed meetings.</p>
+            </div>
+          </div>
+          <div class="workspace-grid" id="workspaceGrid"></div>
+        </section>
+
+        <section class="quick-start" id="quickStart" aria-label="Quick start">
+          <article class="quick-panel upload-panel">
+            <div class="upload-panel-header">
+              <h2>Upload recording</h2>
+              <p>Queue a file for notes and transcript processing.</p>
+            </div>
+            <form id="uploadForm" class="upload-form">
+              <label class="file-field">
+                <span class="visually-hidden">Recording file</span>
+                <input id="recordingFile" type="file" accept="audio/*,video/*" />
+              </label>
+              <label class="meeting-name-field">
+                <span class="visually-hidden">Meeting name</span>
+                <input id="meetingName" type="text" maxlength="200" placeholder="Meeting name" />
+              </label>
+              <label>
+                <span class="visually-hidden">Notes preset</span>
+                <select id="presetSelect">
+                  <option value="summary">Summary</option>
+                  <option value="detailed" selected>Detailed</option>
+                  <option value="interview">Interview</option>
+                </select>
+              </label>
+              <button class="primary-button" type="submit">Queue processing</button>
+            </form>
+          </article>
+        </section>
+
+        <section class="content-grid" id="workspaceView">
+          <div class="meeting-column">
+            <div class="section-heading">
+              <div>
+                <span class="eyebrow">Meetings</span>
+                <h2>Workspace library</h2>
+              </div>
+              <div class="filters" role="search">
+                <input id="searchInput" type="search" placeholder="Filter by name" />
+                <select id="stateFilter" aria-label="Filter by processing state">
+                  <option value="all">All states</option>
+                  <option value="processed">Processed</option>
+                  <option value="processing">Processing</option>
+                  <option value="queued">Queued</option>
+                  <option value="failed">Failed</option>
+                </select>
+              </div>
+            </div>
+            <div class="meeting-list" id="meetingList"></div>
+          </div>
+        </section>
+
+        <div class="meeting-view-bar" id="meetingViewBar" role="tablist" aria-label="Meeting views">
+          <button class="is-active" type="button" data-meeting-mode="notes">Notes</button>
+          <button type="button" data-meeting-mode="recording">Recording</button>
+        </div>
+
+        <section class="meeting-detail-view" id="meetingDetailView" aria-live="polite">
+          <article class="meeting-notes" id="meetingNotes"></article>
+          <aside class="transcript-panel" aria-label="Transcript">
+            <div class="transcript-panel-header">
+              <h2>Transcript</h2>
+              <input id="transcriptSearch" type="search" placeholder="Search transcript" />
+            </div>
+            <div class="transcript-stream" id="transcriptStream"></div>
+          </aside>
+        </section>
+      </main>
+    </div>
+
+    <template id="meetingTemplate">
+      <button class="meeting-item" type="button">
+        <span class="state-dot" aria-hidden="true"></span>
+        <span class="meeting-main">
+          <strong></strong>
+          <small></small>
+        </span>
+        <span class="state-pill"></span>
+      </button>
+    </template>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
