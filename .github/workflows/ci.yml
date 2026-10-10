@@ -30,7 +30,7 @@ jobs:
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
 
       - name: Install dependencies
-        run: uv sync --locked
+        run: uv sync --locked --extra asr --extra cpu
 
       - name: Cache pre-commit environments
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -41,8 +41,14 @@ jobs:
       - name: Run the commit-hook checks on all files
         run: uv run --frozen task check
 
+      - name: Start RabbitMQ and SeaweedFS
+        run: |
+          cp .env.example .env
+          docker compose up --detach --wait rabbitmq seaweedfs
+
+      # CI has no downloaded ML models; the tests that need them run locally.
       - name: Run the whole test suite
-        run: uv run --frozen task test
+        run: uv run --frozen task test -- -m "not models"
 
       - name: Audit dependencies and the git history
         run: uv run --frozen task audit
