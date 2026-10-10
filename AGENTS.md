@@ -106,6 +106,10 @@ uv run task dev                  # the API with auto-reload
 
 If a port is taken on your machine, set the matching `*_PORT` variable in `.env`.
 
+`uv run task workers:up` builds the image and starts the notes and ASR workers in Compose, with
+the keys described in `.env.example`. The ASR worker reaches storage as `seaweedfs:8333`, so its
+presigned links are signed for `http://seaweedfs:8333`.
+
 ## Verifying a change
 
 A change is done when `uv run task check` and `uv run task test` pass and a teammate has approved
