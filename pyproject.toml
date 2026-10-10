@@ -83,6 +83,7 @@ respect-type-ignore-comments = false
 
 [tool.ty.rules]
 all = "error"
+unsound-assignment = "ignore" # SQLAlchemy's mapped_column() returns MappedColumn[Any], not Mapped[T]
 
 [tool.basedpyright]
 include = ["src"]
