@@ -37,15 +37,20 @@ def database_settings() -> DatabaseSettings:
 
 
 @pytest.fixture
-def database_connection() -> Generator[Connection]:
-    settings = DatabaseTestSettings()
-    if settings.database_url is None:
-        pytest.skip("Set WHADIO_TEST_DATABASE_URL to run PostgreSQL integration tests")
-    engine = create_engine(settings.database_url.get_secret_value(), hide_parameters=True)
+def database_connection(database_settings: DatabaseSettings) -> Generator[Connection]:
+    engine = create_engine(
+        database_settings.application_url(),
+        hide_parameters=True,
+        connect_args={"connect_timeout": 10},
+    )
     try:
-        with engine.connect() as connection, connection.begin() as transaction:
-            yield connection
-            transaction.rollback()
+        with engine.connect() as connection:
+            transaction = connection.begin()
+            try:
+                yield connection
+            finally:
+                if transaction.is_active:
+                    transaction.rollback()
     finally:
         engine.dispose()
 
@@ -114,7 +119,40 @@ def revision_id(database_connection: Connection, meeting_id: UUID) -> UUID:
         {"id": transcript, "meeting": meeting_id, "revision": revision},
     )
     database_connection.execute(
-        text("INSERT INTO transcript_revision VALUES (:id, :transcript, 'original', NULL, now())"),
+        text(
+            "INSERT INTO transcript_revision "
+            "(revision_id, transcript_id, revision_type, edited_by_user_id, created_at) "
+            "VALUES (:id, :transcript, 'original', NULL, now())"
+        ),
         {"id": revision, "transcript": transcript},
     )
     return revision
+
+
+@pytest.fixture
+def committed_revision_id(
+    database_connection: Connection,
+    revision_id: UUID,
+    workspace_id: UUID,
+    owner_id: UUID,
+) -> Generator[UUID]:
+    database_connection.execute(
+        text("INSERT INTO speaker VALUES (:id, :revision, 'original speaker')"),
+        {"id": uuid4(), "revision": revision_id},
+    )
+    database_connection.execute(
+        text("INSERT INTO transcript_segment VALUES (:id, :revision, NULL, 0, 1, 'original')"),
+        {"id": uuid4(), "revision": revision_id},
+    )
+    database_connection.commit()
+    try:
+        yield revision_id
+    finally:
+        database_connection.rollback()
+        with database_connection.begin():
+            database_connection.execute(
+                text("DELETE FROM workspace WHERE workspace_id = :id"), {"id": workspace_id}
+            )
+            database_connection.execute(
+                text('DELETE FROM "user" WHERE user_id = :id'), {"id": owner_id}
+            )

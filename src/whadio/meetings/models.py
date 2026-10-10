@@ -32,6 +32,7 @@ class Folder(Base):
 
     __table_args__: tuple[Constraint | Index, ...] = (
         Index("ix_folder_workspace_id", "workspace_id"),
+        Index("uq_folder_workspace_name", "workspace_id", text("lower(name)"), unique=True),
         Index(
             "uq_folder_default", "workspace_id", unique=True, postgresql_where=text("is_default")
         ),
@@ -123,6 +124,10 @@ class TranscriptRevision(Base):
         ForeignKey("user.user_id", ondelete="RESTRICT")
     )
     created_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    # The trigger stamps the top-level transaction, including inserts inside savepoints.
+    initialization_xid: Mapped[str] = MappedColumn[str](
+        Text, server_default=text("pg_current_xact_id()::text")
+    )
 
     __table_args__: tuple[Constraint | Index, ...] = (
         UniqueConstraint("transcript_id", "revision_id"),

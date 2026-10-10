@@ -89,7 +89,7 @@ System level:
 Workspace level — exactly three roles; each has all the permissions of the previous one:
 
 - **Member** — records and uploads meetings; views, corrects, exports and shares the meetings accessible to them; organises them into folders; adds to the glossary.
-- **Moderator** — additionally restricts access to individual meetings, and manages the workspace's members.
+- **Moderator** — additionally manages folders, restricts access to individual meetings, and manages the workspace's members.
 - **Owner** — additionally configures the LLM provider and deletes the workspace.
 
 Folders carry no permissions: access is decided by the workspace role and by per-meeting
@@ -147,7 +147,7 @@ restriction, never by where a meeting is filed.
 - FR-031: A workspace lists the meetings accessible to the member, each with its name, its date and time, and its processing state; a workspace holding none states so. The list extends as the member scrolls, without reloading the page.
 - FR-032: Meetings can be filtered by name and by date range. A filter that matches nothing states so.
 - FR-033: After processing, the member is prompted to name the meeting; where no name is given the system applies one generated from the transcript. The name is editable at any time, and the meeting's date and time are stored separately from it and are not editable.
-- FR-034: A workspace can hold folders, which cannot be nested. A meeting created without a folder is placed in the workspace's default folder, and deleting a folder moves its meetings to the default folder without deleting any of them.
+- FR-034: A workspace can hold folders, which cannot be nested. Moderators and Owners can create, rename and delete folders; Members can browse them and move accessible meetings. A meeting created without a folder is placed in the workspace's default folder, and deleting a folder moves its meetings to the default folder without deleting any of them. The default folder cannot be deleted.
 - FR-035: A meeting can be moved to another folder in its workspace, carrying its recording, transcript and notes; only folders in the same workspace are offered. Existing notes are unchanged by the move, and the destination folder governs the context set of the next generation.
 - FR-036: A meeting can be deleted with its recording, transcript and notes by the member who recorded it or by a Moderator, on confirmation. No other member is offered the action, and notes elsewhere that used the meeting as context are unchanged.
 

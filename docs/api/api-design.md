@@ -1211,7 +1211,7 @@ tool set over automatic conversion.
 
 ### 6.12 Choices where the requirements are silent
 
-- **Who manages folders:** Moderators and the Owner.
+- **Who manages folders:** Moderators and the Owner, Members may browse folders and move accessible meetings.
 - **Who edits glossary terms:** any member can add one. Its author, a Moderator or the Owner
   can change or remove it.
 - **Who renames or moves a meeting:** any member who can read it. Deleting it stays with its

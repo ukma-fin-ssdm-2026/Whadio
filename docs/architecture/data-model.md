@@ -67,6 +67,8 @@ The model covers the data required for these key project functions:
 - One `USER` has zero or many `SESSION` rows.
 - `PENDING_REGISTRATION` is related to no other entity, because the account it leads to does not exist yet.
 - One `FOLDER` contains many meetings; each meeting belongs to exactly one folder.
+- Folder names are unique within a workspace ignoring case. Deleting a nondefault folder
+  moves its meetings to that workspace's default folder; workspace deletion removes them all.
 - One `USER` can create many meetings; each meeting has one creator.
 - One extension-recorded `MEETING` has zero or one `CAPTURE_SESSION`; uploaded meetings have none.
 - One `CAPTURE_SESSION` has many `CAPTURE_CHUNK` rows.
@@ -127,6 +129,9 @@ The model covers the data required for these key project functions:
 - If an external share has `redact_speaker_names = true`, it must not include the meeting recording.
 - A transcript's first revision must have `revision_type = original`.
 - The original transcript revision must be retained permanently. Edited transcript text or speaker-label changes create edited revisions and must not overwrite the original.
+- The original revision and its initial speakers and segments are created in one transaction.
+  The implementation-only `TRANSCRIPT_REVISION.initialization_xid` is stamped by a database
+  trigger and seals the original against appended or moved content after that transaction.
 - `TRANSCRIPT.current_revision_id` must point to a revision belonging to the same transcript.
 - `NOTE.created_by_user_id` is optional because first notes may be generated automatically; regenerations can store the requesting user.
 - `NOTE_CONTEXT_MEETING.context_meeting_id` is optional so the note can remain unchanged after a context meeting is deleted; `context_meeting_name_snapshot` preserves what was shown to readers.

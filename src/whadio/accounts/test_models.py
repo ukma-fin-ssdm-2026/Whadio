@@ -26,7 +26,8 @@ def test_workspace_cannot_lose_its_default_folder(
 ) -> None:
     # Arrange
     database_connection.execute(
-        text("DELETE FROM folder WHERE workspace_id = :id"), {"id": workspace_id}
+        text("UPDATE folder SET is_default = false WHERE workspace_id = :id"),
+        {"id": workspace_id},
     )
     # Act
     with pytest.raises(IntegrityError) as failure:
