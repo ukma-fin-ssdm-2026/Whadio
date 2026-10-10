@@ -209,6 +209,12 @@ type = "protected"
 protected_modules = ["whadio.contracts"]
 allowed_importers = ["whadio.processing", "whadio.workers"]
 
+[[tool.importlinter.contracts]]
+name = "Only the CLI imports the migration runtime"
+type = "protected"
+protected_modules = ["whadio.migrations"]
+allowed_importers = ["whadio.cli"]
+
 [tool.pytest]
 minversion = "9.0"
 strict = true

@@ -29,11 +29,13 @@ def openapi() -> None:
         typer.echo(f"Wrote {path}")
 
 
-@app.command(help="Apply database migrations using the owner role; run from the repository root.")
+@app.command(help="Apply the packaged database migrations using the owner role.")
 def db_upgrade(
-    config: Annotated[str, typer.Option(help="Alembic configuration file.")] = "alembic.ini",
+    config: Annotated[str | None, typer.Option(help="Optional Alembic configuration file.")] = None,
 ) -> None:
     from alembic import command
     from alembic.config import Config
 
-    command.upgrade(Config(config), "head")
+    configuration = Config(config)
+    configuration.set_main_option("script_location", "whadio:migrations")
+    command.upgrade(configuration, "head")

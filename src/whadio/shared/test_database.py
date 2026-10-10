@@ -1,6 +1,5 @@
 from asyncio import Runner, SelectorEventLoop
 from io import StringIO
-from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
@@ -15,10 +14,9 @@ from .database import Database, DatabaseSettings, MigrationSettings
 
 def test_initial_migration_uses_canonical_audit_action_constraint_name() -> None:
     # Arrange
-    root = Path(__file__).resolve().parents[3]
     output = StringIO()
-    config = Config(str(root / "alembic.ini"), output_buffer=output)
-    config.set_main_option("script_location", str(root / "migrations"))
+    config = Config(output_buffer=output)
+    config.set_main_option("script_location", "whadio:migrations")
     # Act
     command.upgrade(config, "0001", sql=True)
     # Assert

@@ -30,7 +30,7 @@ def run_migrations() -> None:
             context.run_migrations()
         return
 
-    settings = MigrationSettings()
+    settings = MigrationSettings.model_validate({})
     engine = create_migration_engine(settings)
     try:
         with engine.connect() as connection:
