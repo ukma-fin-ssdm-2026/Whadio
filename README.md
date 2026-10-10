@@ -21,11 +21,11 @@ the architecture rules, the coding standards and the checks every change must pa
 [uv](https://docs.astral.sh/uv/) and Docker installed:
 
 ```bash
-uv sync                  # Python 3.13, the dependencies and the dev tools, in .venv
-uv run task setup        # also installs the git hooks
-cp .env.example .env     # local credentials for the Compose stack
-uv run task infra:up     # PostgreSQL, RabbitMQ, SeaweedFS and Mailpit
-uv run task dev          # the API on http://localhost:3000, with auto-reload
+uv sync --extra asr --extra cpu  # Python 3.13, the dependencies and the dev tools, in .venv
+uv run task setup                # also installs the git hooks
+cp .env.example .env             # local credentials for the Compose stack
+uv run task infra:up             # PostgreSQL, RabbitMQ, SeaweedFS and Mailpit
+uv run task dev                  # the API on http://localhost:3000, with auto-reload
 ```
 
 ## Running the API

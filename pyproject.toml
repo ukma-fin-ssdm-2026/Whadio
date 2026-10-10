@@ -24,6 +24,21 @@ dependencies = [
 [project.scripts]
 whadio = "whadio.cli:app"
 
+[project.optional-dependencies]
+cpu = [
+    "torch==2.14.1",
+    "torchaudio==2.11.0",
+    "torchcodec==0.17.0",
+]
+asr = [
+    "faster-whisper>=1.2.1",
+    "httpx2>=2.13",
+    "lingua-language-detector>=2.2",
+    "numpy>=2.5",
+    "onnx-asr[hub]>=0.12",
+    "pyannote-audio==4.0.7",
+]
+
 [build-system]
 requires = ["uv_build>=0.11.16,<0.12"]
 build-backend = "uv_build"
@@ -49,6 +64,17 @@ dev = [
 [tool.uv]
 required-version = ">=0.11.16"
 
+# torch, torchaudio and torchcodec must come from one index: mismatched builds abort the process.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", extra = "cpu" }]
+torchaudio = [{ index = "pytorch-cpu", extra = "cpu" }]
+torchcodec = [{ index = "pytorch-cpu", extra = "cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [tool.ruff]
 line-length = 100
 
@@ -73,6 +99,7 @@ ignore = [
 "src/whadio/api/**/*.py" = ["PLR0913", "PLR0917"] # FastAPI injects every input as a parameter
 "src/whadio/api/accounts/fixtures.py" = ["S105"]  # public demo credentials, shown on the Swagger page
 "src/whadio/cli.py" = ["PLC0415"]                 # each command imports its own runtime
+"src/whadio/workers/asr/slot.py" = ["PLC0415"]    # model libraries load only in the slot's child
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "typing.Any".msg = "Any is banned: type the value, or validate it at the boundary"
@@ -95,7 +122,12 @@ pythonPlatform = "Linux"
 typeCheckingMode = "recommended"
 reportImplicitStringConcatenation = "none" # long literals are split across lines on purpose
 reportUnusedCallResult = "none"             # calls made for their effect, e.g. a lookup that raises 404
-allowedUntypedLibraries = ["yaml"]          # types-PyYAML leaves Representer.represent_scalar `value` untyped
+allowedUntypedLibraries = [
+    "yaml",           # types-PyYAML leaves Representer.represent_scalar `value` untyped
+    "faster_whisper", # ships no type information
+    "onnx_asr",       # load_model and load_vad take onnxruntime's untyped SessionOptions
+    "pyannote",       # Pipeline.from_pretrained takes a bare `dict`; pyannote.core is untyped
+]
 
 [tool.bandit.assert_used]
 skips = ["*/test_*.py"]
@@ -215,10 +247,14 @@ minversion = "9.0"
 strict = true
 testpaths = ["src"]
 addopts = ["--import-mode=importlib"]
-markers = ["slow: needs models or running services; left out of the commit hook"]
+markers = [
+    "slow: needs models or running services; left out of the commit hook",
+    "models: needs downloaded ML models; CI leaves it out (mark such tests slow as well)",
+]
 
 [tool.deptry]
 extend_exclude = ["src/.*/test_[^/]*\\.py"]
+per_rule_ignores = { DEP002 = ["torchaudio", "torchcodec"] } # declared to pin them to torch's index
 
 [tool.typos.files]
 extend-exclude = ["*.svg"] # PlantUML embeds its compressed source in every SVG

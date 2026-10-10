@@ -87,11 +87,11 @@ You need uv 0.11.16 or newer, Docker with Compose v2, and git. Every tool, Task 
 into `.venv`; never install project tools globally.
 
 ```bash
-uv sync                  # Python 3.13, the dependencies and the dev tools, in .venv
-uv run task setup        # also installs the git hooks
-cp .env.example .env     # local credentials for the Compose stack
-uv run task infra:up     # PostgreSQL, RabbitMQ, SeaweedFS and Mailpit
-uv run task dev          # the API with auto-reload
+uv sync --extra asr --extra cpu  # Python 3.13, the dependencies and the dev tools, in .venv
+uv run task setup                # also installs the git hooks
+cp .env.example .env             # local credentials for the Compose stack
+uv run task infra:up             # PostgreSQL, RabbitMQ, SeaweedFS and Mailpit
+uv run task dev                  # the API with auto-reload
 ```
 
 `uv run task --list` shows every task. Local addresses, with credentials in `.env`:
