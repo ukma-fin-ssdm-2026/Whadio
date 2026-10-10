@@ -20,6 +20,13 @@ def web(
     uvicorn.run("whadio.api.main:app", host=host, port=port)
 
 
+@app.command(help="Transcribe the recordings of the jobs of the transcription queue.")
+def asr_worker() -> None:
+    from .workers.asr.main import main
+
+    main()
+
+
 @app.command(help="Write meeting notes for the jobs of the notes queue.")
 def notes_worker() -> None:
     from .workers.notes.main import main
