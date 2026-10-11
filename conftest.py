@@ -1,4 +1,5 @@
-from collections.abc import Generator
+import asyncio
+from collections.abc import Awaitable, Callable, Generator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import ClassVar
@@ -9,6 +10,7 @@ from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import Connection, create_engine, delete, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import Session
 
 from whadio.accounts.enums import NotesTemplate, WorkspaceRole
@@ -54,6 +56,89 @@ def database_settings() -> DatabaseSettings:
         name=url.database or "whadio",
         app_password=SecretStr(url.password),
     )
+
+
+class AsyncDatabase:
+    """Runs a scenario in an async session whose transaction is rolled back afterwards."""
+
+    def __init__(self, settings: DatabaseSettings) -> None:
+        self._settings: DatabaseSettings = settings
+
+    def run[T](self, scenario: Callable[[AsyncSession], Awaitable[T]]) -> T:
+        async def run() -> T:
+            engine = create_async_engine(self._settings.application_url(), hide_parameters=True)
+            try:
+                async with engine.connect() as connection, connection.begin():
+                    async with AsyncSession(bind=connection, expire_on_commit=False) as session:
+                        found = await scenario(session)
+                    await connection.rollback()
+                    return found
+            finally:
+                await engine.dispose()
+
+        return asyncio.run(run(), loop_factory=asyncio.SelectorEventLoop)
+
+    @staticmethod
+    async def add_workspace(session: AsyncSession) -> tuple[UUID, UUID]:
+        """Returns the actor and the workspace's default folder, where meetings are added."""
+        actor, workspace, folder = uuid4(), uuid4(), uuid4()
+        session.add(
+            User(
+                user_id=actor,
+                email=f"{actor}@example.test",
+                name="test",
+                password_hash=uuid4().hex,
+                terms_accepted_at=datetime.now(UTC),
+            )
+        )
+        session.add(
+            Workspace(workspace_id=workspace, name="test", default_template=NotesTemplate.SUMMARY)
+        )
+        await session.flush()
+        session.add(
+            WorkspaceMembership(workspace_id=workspace, user_id=actor, role=WorkspaceRole.OWNER)
+        )
+        session.add(
+            Folder(folder_id=folder, workspace_id=workspace, name="default", is_default=True)
+        )
+        await session.flush()
+        return actor, folder
+
+    @staticmethod
+    async def add_meeting(
+        session: AsyncSession,
+        place: tuple[UUID, UUID],
+        *,
+        name_is_generated: bool = True,
+        access_mode: AccessMode = AccessMode.WORKSPACE,
+        state: ProcessingState = ProcessingState.QUEUED,
+    ) -> UUID:
+        actor, folder_id = place
+        meeting_id = uuid4()
+        now = datetime.now(UTC)
+        session.add(
+            Meeting(
+                meeting_id=meeting_id,
+                folder_id=folder_id,
+                created_by_user_id=actor,
+                name="Planning",
+                name_is_generated=name_is_generated,
+                source_type=MeetingSource.UPLOAD,
+                recording_status=RecordingStatus.COMPLETE,
+                processing_state=state,
+                storage_path=f"meetings/{meeting_id}",
+                recorded_at=now,
+                recording_delete_after=now + timedelta(days=90),
+                access_mode=access_mode,
+            )
+        )
+        await session.flush()
+        return meeting_id
+
+
+@pytest.fixture
+def async_database(database_settings: DatabaseSettings) -> AsyncDatabase:
+    return AsyncDatabase(database_settings)
 
 
 @pytest.fixture

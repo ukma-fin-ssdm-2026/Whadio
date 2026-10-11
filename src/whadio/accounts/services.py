@@ -1,8 +1,8 @@
 from typing import Protocol
 from uuid import UUID
 
-from .enums import WorkspaceRole
-from .repositories import IMembershipRepository
+from .enums import NotesTemplate, WorkspaceRole
+from .repositories import IMembershipRepository, IWorkspaceSettingsRepository
 
 
 class IWorkspaceMembership(Protocol):
@@ -20,3 +20,15 @@ class WorkspaceMembershipService:
 
     async def lock_role(self, workspace_id: UUID, user_id: UUID) -> WorkspaceRole | None:
         return await self._repository.lock_role(workspace_id, user_id)
+
+
+class IWorkspaceSettings(Protocol):
+    async def default_template(self, workspace_id: UUID, /) -> NotesTemplate: ...
+
+
+class WorkspaceSettingsService:
+    def __init__(self, repository: IWorkspaceSettingsRepository) -> None:
+        self._repository: IWorkspaceSettingsRepository = repository
+
+    async def default_template(self, workspace_id: UUID) -> NotesTemplate:
+        return await self._repository.default_template(workspace_id) or NotesTemplate.SUMMARY

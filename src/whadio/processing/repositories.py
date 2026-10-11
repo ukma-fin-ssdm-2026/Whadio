@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import exists, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .enums import JobStatus, JobType
@@ -23,6 +23,8 @@ class IJobRepository(Protocol):
     async def add(self, meeting_id: UUID, job_type: JobType, /) -> UUID: ...
 
     async def lock(self, job_id: UUID, /) -> Job | None: ...
+
+    async def has_unfinished(self, meeting_id: UUID, job_type: JobType, /) -> bool: ...
 
     async def mark_running(self, job_id: UUID, started_at: datetime, /) -> None: ...
 
@@ -62,6 +64,19 @@ class JobRepository:
             job_type=found.job_type,
             status=found.status,
             attempts=found.attempts,
+        )
+
+    async def has_unfinished(self, meeting_id: UUID, job_type: JobType) -> bool:
+        return bool(
+            await self._session.scalar(
+                select(
+                    exists().where(
+                        ProcessingJob.meeting_id == meeting_id,
+                        ProcessingJob.job_type == job_type,
+                        ProcessingJob.status.in_((JobStatus.QUEUED, JobStatus.RUNNING)),
+                    )
+                )
+            )
         )
 
     async def mark_running(self, job_id: UUID, started_at: datetime) -> None:

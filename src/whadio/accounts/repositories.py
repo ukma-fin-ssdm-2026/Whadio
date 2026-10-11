@@ -8,7 +8,7 @@ from .enums import NotesTemplate, WorkspaceRole
 from .models import Workspace, WorkspaceMembership
 
 
-class IWorkspaceSettings(Protocol):
+class IWorkspaceSettingsRepository(Protocol):
     async def default_template(self, workspace_id: UUID, /) -> NotesTemplate | None: ...
 
 

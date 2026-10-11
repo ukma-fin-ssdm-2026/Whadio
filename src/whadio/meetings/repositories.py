@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Protocol
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import Select, delete, exists, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..accounts.enums import LlmProvider, NotesTemplate
@@ -79,6 +79,13 @@ class PipelineMeeting:
 
 
 @dataclass(frozen=True, slots=True)
+class MeetingSummary:
+    meeting_id: UUID
+    name: str
+    recorded_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class TranscriptLine:
     start_seconds: Decimal
     end_seconds: Decimal
@@ -115,11 +122,15 @@ class GeneratedNotes:
     model_name: str
     content: str
     proposed_name: str
-    context_meeting_ids: tuple[UUID, ...]
+    context: tuple[MeetingSummary, ...]
 
 
-class IMeetingPipeline(Protocol):
+class IMeetingPipelineRepository(Protocol):
     async def meeting(self, meeting_id: UUID, /) -> PipelineMeeting | None: ...
+
+    async def lock(self, meeting_id: UUID, /) -> PipelineMeeting | None: ...
+
+    async def has_transcript(self, meeting_id: UUID, /) -> bool: ...
 
     async def set_state(self, meeting_id: UUID, state: ProcessingState, /) -> None: ...
 
@@ -134,11 +145,15 @@ class IMeetingPipeline(Protocol):
 
     async def transcript(self, meeting_id: UUID, /) -> StoredTranscript | None: ...
 
-    async def context(self, meeting: PipelineMeeting, limit: int, /) -> list[ContextCandidate]: ...
+    async def summaries(
+        self, folder_id: UUID, access_mode: AccessMode, state: ProcessingState, limit: int, /
+    ) -> list[MeetingSummary]: ...
 
     async def glossary(self, workspace_id: UUID, /) -> list[GlossaryItem]: ...
 
     async def save_notes(self, meeting_id: UUID, notes: GeneratedNotes, /) -> None: ...
+
+    async def rename(self, meeting_id: UUID, name: str, /) -> None: ...
 
 
 class MeetingPipelineRepository:
@@ -146,13 +161,15 @@ class MeetingPipelineRepository:
         self._session: AsyncSession = session
 
     async def meeting(self, meeting_id: UUID) -> PipelineMeeting | None:
-        row = (
-            await self._session.execute(
-                select(Meeting, Folder.workspace_id)
-                .join(Folder, Folder.folder_id == Meeting.folder_id)
-                .where(Meeting.meeting_id == meeting_id)
-            )
-        ).one_or_none()
+        return await self._pipeline_meeting(_meeting_with_workspace(meeting_id))
+
+    async def lock(self, meeting_id: UUID) -> PipelineMeeting | None:
+        return await self._pipeline_meeting(
+            _meeting_with_workspace(meeting_id).with_for_update(of=Meeting)
+        )
+
+    async def _pipeline_meeting(self, statement: Select[Meeting, UUID]) -> PipelineMeeting | None:
+        row = (await self._session.execute(statement)).one_or_none()
         if row is None:
             return None
         found, workspace_id = row
@@ -164,6 +181,11 @@ class MeetingPipelineRepository:
             name=found.name,
             name_is_generated=found.name_is_generated,
             recorded_at=found.recorded_at,
+        )
+
+    async def has_transcript(self, meeting_id: UUID) -> bool:
+        return bool(
+            await self._session.scalar(select(exists().where(Transcript.meeting_id == meeting_id)))
         )
 
     async def set_state(self, meeting_id: UUID, state: ProcessingState) -> None:
@@ -248,32 +270,22 @@ class MeetingPipelineRepository:
         unheard = sorted(set(speakers.values()) - set(order))
         return StoredTranscript(language=found.language, speakers=(*order, *unheard), lines=lines)
 
-    async def context(self, meeting: PipelineMeeting, limit: int) -> list[ContextCandidate]:
-        # Restricted meetings never reach another meeting's notes (FR-019).
-        others = await self._session.scalars(
-            select(Meeting)
+    async def summaries(
+        self, folder_id: UUID, access_mode: AccessMode, state: ProcessingState, limit: int
+    ) -> list[MeetingSummary]:
+        rows = await self._session.execute(
+            select(Meeting.meeting_id, Meeting.name, Meeting.recorded_at)
             .where(
-                Meeting.folder_id == meeting.folder_id,
-                Meeting.meeting_id != meeting.meeting_id,
-                Meeting.access_mode == AccessMode.WORKSPACE,
-                Meeting.processing_state == ProcessingState.PROCESSED,
+                Meeting.folder_id == folder_id,
+                Meeting.access_mode == access_mode,
+                Meeting.processing_state == state,
             )
             .order_by(Meeting.recorded_at.desc(), Meeting.meeting_id)
             .limit(limit)
         )
-        candidates: list[ContextCandidate] = []
-        for other in others:
-            transcript = await self.transcript(other.meeting_id)
-            if transcript is not None:
-                candidates.append(
-                    ContextCandidate(
-                        meeting_id=other.meeting_id,
-                        name=other.name,
-                        recorded_at=other.recorded_at,
-                        transcript=transcript,
-                    )
-                )
-        return candidates
+        return [
+            MeetingSummary(meeting_id, name, recorded_at) for meeting_id, name, recorded_at in rows
+        ]
 
     async def glossary(self, workspace_id: UUID) -> list[GlossaryItem]:
         return [
@@ -295,25 +307,25 @@ class MeetingPipelineRepository:
         )
         self._session.add(note)
         await self._session.flush()
-        rows = await self._session.execute(
-            select(Meeting.meeting_id, Meeting.name).where(
-                Meeting.meeting_id.in_(notes.context_meeting_ids)
-            )
-        )
-        names = dict(rows.all())
         self._session.add_all(
             NoteContextMeeting(
                 note_id=note.note_id,
-                context_meeting_id=context_id,
-                context_meeting_name_snapshot=names[context_id],
+                context_meeting_id=context.meeting_id,
+                context_meeting_name_snapshot=context.name,
             )
-            for context_id in notes.context_meeting_ids
-            if context_id in names
-        )
-        # A name a member gave the meeting is never replaced by a generated one (FR-033).
-        await self._session.execute(
-            update(Meeting)
-            .where(Meeting.meeting_id == meeting_id, Meeting.name_is_generated)
-            .values(name=notes.proposed_name)
+            for context in notes.context
         )
         await self._session.flush()
+
+    async def rename(self, meeting_id: UUID, name: str) -> None:
+        await self._session.execute(
+            update(Meeting).where(Meeting.meeting_id == meeting_id).values(name=name)
+        )
+
+
+def _meeting_with_workspace(meeting_id: UUID) -> Select[Meeting, UUID]:
+    return (
+        select(Meeting, Folder.workspace_id)
+        .join(Folder, Folder.folder_id == Meeting.folder_id)
+        .where(Meeting.meeting_id == meeting_id)
+    )
