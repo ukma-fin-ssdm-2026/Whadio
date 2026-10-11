@@ -180,7 +180,7 @@ Tests use pytest:
   no issue.
 - One concern per commit; never mix formatting with behaviour.
 - A pull request references its issue, needs one teammate's approval and follows the review rules
-  in `TeamCharter.md`, section 4. Its title follows the commit format, since a squash merge uses it.
+  in `TeamCharter.md`, section 11. Its title follows the commit format, since a squash merge uses it.
 - Disclose AI use: an "AI Usage" section in documents, and the tool named in review summaries
   (`TeamCharter.md`, section 9).
 
