@@ -162,10 +162,12 @@ Each story has acceptance criteria in Given/When/Then form.
 
 - US-014: As a Member, I want to file Meetings into Folders, move them when they are misfiled, and delete the ones that should not be kept, so that the Workspace stays in order and nothing lingers that shouldn't.
   - Acceptance criteria:
-    - [ ] Given a Member is in a Workspace, when they create a Folder with a name, then the Folder appears in that Workspace.
-    - [ ] Given a Member is creating a Folder, when they choose where it goes, then it cannot be placed inside another Folder.
+    - [ ] Given a Moderator or Owner is in a Workspace, when they create a Folder with a name, then the Folder appears in that Workspace.
+    - [ ] Given a Moderator or Owner is creating a Folder, when they choose where it goes, then it cannot be placed inside another Folder.
+    - [ ] Given a Member is not a Moderator or Owner, when they try to create, rename or delete a Folder, then the System refuses the action.
+    - [ ] Given a Moderator or Owner renames a Folder, when they save, then the new name is shown in the Workspace.
     - [ ] Given a Meeting is created without a Folder being chosen, when processing starts, then it is placed in the Workspace's default Folder.
-    - [ ] Given a Folder holds Meetings, when a Member deletes the Folder, then its Meetings are moved to the default Folder and none of them is deleted.
+    - [ ] Given a Folder holds Meetings, when a Moderator or Owner deletes the Folder, then its Meetings are moved to the default Folder and none of them is deleted.
     - [ ] Given a Workspace holds several Folders, when a Member opens a Folder, then only that Folder's Meetings are listed.
     - [ ] Given a Member opens a Meeting, when they move it to another Folder in the Workspace, then its recording, transcript and notes move with it and its existing notes are unchanged.
     - [ ] Given a Member is choosing where to move a Meeting, when they browse the targets, then only Folders in the same Workspace are offered.

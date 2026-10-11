@@ -30,6 +30,9 @@ uv run task dev                  # the API on http://localhost:3000, with auto-r
 
 ## Running the API
 
+Database setup, migrations and integration tests are documented in
+[Database implementation](docs/architecture/database.md).
+
 The backend API lives in [`src/whadio/api/`](src/whadio/api/). It is a stub: it implements 16
 of the 70 designed operations, answers with fixed demo data and stores nothing. The full design,
 including what each error means, is in [`docs/api/api-design.md`](docs/api/api-design.md).

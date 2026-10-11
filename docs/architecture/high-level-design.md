@@ -92,7 +92,7 @@ Source: [uml/component-diagram.puml](uml/component-diagram.puml)
 | Processing | The pipeline's orchestrator: publishes jobs, consumes results, tracks processing state, assembles the context set, limits regeneration. | FR-012, FR-014, FR-015, FR-018–FR-020, FR-022, FR-023, FR-025, FR-026 |
 | Export | Markdown and VTT export with the consent notice and attribution. | FR-040–FR-042 |
 | Notifications | Email to members when processing finishes or fails, before recordings expire, and when the meeting cap evicts a meeting; to a share's creator when an account requests access; registration, invitation and password-reset links to the address they are for. | FR-001, FR-006, FR-024, FR-038, FR-046, FR-048, NFR-003 |
-| Retention | Deletes recordings three months after the meeting and triggers the advance warning. | FR-046 |
+| Retention | Deletes recordings 90 days after the meeting and triggers the warning 7 days before deletion. | FR-046 |
 | Admin & Monitoring | The administrator dashboard: queue, failures, load and model usage, without meeting content. | FR-045 |
 | Audit | The append-only record of who changed a meeting's content or access: actor, action, target IDs and time, never content. Written by Meetings, Access Policy and Accounts & Workspaces; no API reads it, and the operator consults it in the database. | NFR-010 |
 
@@ -145,6 +145,10 @@ The deployable processes, all but the off-the-shelf services built from the same
 The notes worker needs no GPU: the model runs in `llm-runtime`, and the worker only builds the
 prompt and calls it. When every workspace uses its own provider key, `llm-runtime` can be stopped
 without touching the notes worker.
+
+Database migrations are packaged in `whadio.migrations` and run through the CLI as a separate
+composition root. That runtime may load all module models to populate schema metadata; backend
+modules, workers and other runtimes do not import it. This adds no backend-module dependency.
 
 ## 5. Interfaces
 
@@ -295,6 +299,6 @@ The architecture leaves room for these changes without restructuring:
 ## AI Usage
 
 This document and its diagrams were prepared and revised with the assistance of Claude Code (Claude
-Opus 5.5). The architecture follows the decisions of the team's working session of 2026-09-24 and
+Opus 5.5) with the later additions from OpenAI Codex. The architecture follows the decisions of the team's working session of 2026-09-24 and
 the architecture-lead decisions that followed it. The author reviewed and edited the content, and
 the document is reviewed through a pull request before merging.

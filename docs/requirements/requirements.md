@@ -44,7 +44,7 @@ Recorded with the reason, so that the boundary is a decision rather than an omis
 | Redaction of names spoken inside the transcript body | Requires named-entity recognition for Ukrainian. Speaker labels are redacted instead, which falls out of speaker separation at no extra cost. |
 | Reading transcripts aloud, colour-blind modes and similar accessibility work | Cannot be committed to this semester. The original recording already covers the audio case. |
 | An uptime guarantee | The service runs on a single host, and redundancy isn't in the budget. |
-| An owner-controlled switch for whether recordings are stored at all | Cut when the story set was consolidated. The retention policy already deletes recordings three months after the meeting; a workspace-level override would add a second deletion path to specify and verify. |
+| An owner-controlled switch for whether recordings are stored at all | Cut when the story set was consolidated. The retention policy already deletes recordings 90 days after the meeting; a workspace-level override would add a second deletion path to specify and verify. |
 | Sending a user's records out by email | Meeting content would leave the system, which the privacy requirement forbids. Users are warned before deletion and export themselves. |
 | Video capture | Audio only. |
 | Payments, pricing plans and paid tiers | The service is free and open-source. |
@@ -63,7 +63,7 @@ Recorded with the reason, so that the boundary is a decision rather than an omis
 | **Workspace** | The access boundary. Carries the membership list and the three workspace roles. Every User receives a personal workspace when their account is created; organisational workspaces are created by their Owner. Nothing crosses this boundary except a share: meetings do not move between workspaces, and are never used as context outside their own. |
 | **Folder** | The context boundary inside a workspace, and its only organisational subdivision. Carries no permissions of its own and cannot be nested. Every workspace has one default folder. |
 | **Meeting** | One record: its recording, its transcript and its notes. Moved, shared and deleted as a unit. |
-| **Recording** | The captured audio of a meeting. Deleted three months after the meeting under the retention policy. |
+| **Recording** | The captured audio of a meeting. Deleted 90 days after the meeting under the retention policy. |
 | **Transcript** | The text of a meeting, split into timestamped segments attributed to speakers. |
 | **Notes** | The text generated from a transcript by a language model, using a preset. A layer above the transcript, never a replacement for it. |
 | **Preset** | A named note format — a summary with action items, a detailed write-up, an interview. Each preset is a fixed prompt; users do not write their own. |
@@ -89,7 +89,7 @@ System level:
 Workspace level — exactly three roles; each has all the permissions of the previous one:
 
 - **Member** — records and uploads meetings; views, corrects, exports and shares the meetings accessible to them; organises them into folders; adds to the glossary.
-- **Moderator** — additionally restricts access to individual meetings, and manages the workspace's members.
+- **Moderator** — additionally manages folders, restricts access to individual meetings, and manages the workspace's members.
 - **Owner** — additionally configures the LLM provider and deletes the workspace.
 
 Folders carry no permissions: access is decided by the workspace role and by per-meeting
@@ -105,7 +105,7 @@ restriction, never by where a meeting is filed.
 - FR-004: Every path that returns meeting content requires a signed-in account. An unauthenticated request yields a sign-in prompt and none of the content.
 - FR-005: A User can create a workspace with a name, which is created with them as its Owner, holding one default folder and no meetings. A workspace submitted without a name is rejected.
 - FR-006: A Moderator can invite a person by email address to the workspace as a Member or a Moderator; the Owner role cannot be assigned by invitation, and nobody can be invited into a personal workspace. The invitation is a single-use link valid for 7 days, sent to that address in `verified` mode and handed over by the Moderator in `invite-only` mode. The invited person accepts or declines through the link. Acceptance requires an account with the invited address, or creates one with that address and its personal workspace, and joins it with the chosen role. A Moderator can list the workspace's pending invitations and cancel any of them. An invitation stops working once the Moderator who created it is no longer a Moderator or the Owner of the workspace. In `verified` mode an address can be invited to the same workspace at most once a day, counting invitations that were cancelled or declined, and in either mode a User can invite at most 20 addresses a day.
-- FR-007: A Moderator can remove a member, and change a member's role between Member and Moderator with effect from that member's next action. The Owner can be neither removed nor re-roled, and Members have no member-management actions.
+- FR-007: A Moderator can remove a member, and change a member's role between Member and Moderator with effect from that member's next action. The Owner can be neither removed nor re-roled, and Members have no member-management actions. Before removing the last selected recipient of a restricted meeting, a Moderator must explicitly select another remaining workspace member for that meeting. Removal must not automatically grant the Owner access or make the meeting available to the workspace.
 - FR-008: An Owner can delete a workspace together with its folders, meetings, recordings, transcripts and notes. No other role can delete a workspace, and a personal workspace cannot be deleted at all.
 - FR-047: An instance runs in one registration mode, chosen by its operator: `verified`, where anyone can register as in FR-001, or `invite-only`, where there is no open registration and accounts are created only through invitations (FR-006) or from links the operator issues (FR-049). A share link never creates an account, so on an `invite-only` instance a share reaches only accounts that already exist there. An `invite-only` instance may run without email; it then sends no notifications (FR-024, FR-038, FR-046), and its invitation links are only handed over. Switching modes affects new requests only: links already issued keep working until they expire.
 - FR-048: In `verified` mode, a User who forgot their password can request a reset for their email address, to which a single-use link valid for 1 hour is sent. Setting a new password through it ends every session and extension token of the account. A repeated request sends a new link and invalidates the earlier one, unless it comes within 20 minutes of the last link sent to that address, in which case nothing changes. A request for an address without an account gets the same response and sends nothing.
@@ -147,7 +147,7 @@ restriction, never by where a meeting is filed.
 - FR-031: A workspace lists the meetings accessible to the member, each with its name, its date and time, and its processing state; a workspace holding none states so. The list extends as the member scrolls, without reloading the page.
 - FR-032: Meetings can be filtered by name and by date range. A filter that matches nothing states so.
 - FR-033: After processing, the member is prompted to name the meeting; where no name is given the system applies one generated from the transcript. The name is editable at any time, and the meeting's date and time are stored separately from it and are not editable.
-- FR-034: A workspace can hold folders, which cannot be nested. A meeting created without a folder is placed in the workspace's default folder, and deleting a folder moves its meetings to the default folder without deleting any of them.
+- FR-034: A workspace can hold folders, which cannot be nested. Moderators and Owners can create, rename and delete folders; Members can browse them and move accessible meetings. A meeting created without a folder is placed in the workspace's default folder, and deleting a folder moves its meetings to the default folder without deleting any of them. The default folder cannot be deleted.
 - FR-035: A meeting can be moved to another folder in its workspace, carrying its recording, transcript and notes; only folders in the same workspace are offered. Existing notes are unchanged by the move, and the destination folder governs the context set of the next generation.
 - FR-036: A meeting can be deleted with its recording, transcript and notes by the member who recorded it or by a Moderator, on confirmation. No other member is offered the action, and notes elsewhere that used the meeting as context are unchanged.
 
@@ -155,7 +155,7 @@ restriction, never by where a meeting is filed.
 
 - FR-037: A Moderator can restrict a meeting to selected workspace members. A restricted meeting is withheld from every other member on every path that returns meeting content — the meeting list, direct links, a connected assistant, and the context set of other meetings' notes. Members are not offered the action.
 - FR-038: A Member can share a meeting outside the workspace by link. The recipient must be signed in and may read the transcript and notes only, with no download, export or onward share. Access is granted only after the Member who created the share approves the requesting account; the share is then bound to that account, and any other account opening the link sees none of the content. The creator is notified of each request; the notification names the requesting account and carries none of the meeting's content. A share can be revoked, after which the link denies access.
-- FR-039: A share can redact speaker names to Speaker 1, Speaker 2 and so on. A redacted share carries no recording.
+- FR-039: A share can redact speaker names to Speaker 1, Speaker 2 and so on. Shares carry no recording, whether speaker names are redacted or not (FR-038).
 
 ### Export and operations
 
@@ -168,7 +168,7 @@ restriction, never by where a meeting is filed.
 
 ### Retention
 
-- FR-046: Recordings are deleted three months after the meeting, with the members who have access warned in advance. The transcript and the notes survive the deletion.
+- FR-046: Recordings are deleted 90 days after the meeting, with the members who have access warned 7 days before deletion. The transcript and the notes survive the deletion.
 
 ## Non-functional requirements (NFR)
 

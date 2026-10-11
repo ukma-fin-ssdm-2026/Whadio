@@ -39,6 +39,11 @@ tasks:
     cmds:
       - uv run --frozen whadio openapi
 
+  db:upgrade:
+    desc: Apply the packaged database migrations using the owner role
+    cmds:
+      - uv run --frozen whadio db-upgrade
+
   infra:up:
     desc: Start PostgreSQL, RabbitMQ, SeaweedFS and Mailpit, and wait until they are healthy
     preconditions:
