@@ -6,15 +6,18 @@ readme = "README.md"
 requires-python = ">=3.13,<3.15"
 dependencies = [
     "aio-pika>=10.1",
+    "alembic>=1.16,<2",
     "anthropic>=1",
     "av>=19.0",
     "fastapi[standard-no-fastapi-cloud-cli]>=0.142",
     "fastmcp>=4.0.11",
     "mcp>=2.3",
     "minio>=7.2.20",
+    "psycopg[binary]>=3.2,<4",
     "pydantic>=2.13",
     "pydantic-settings>=2.15",
     "pyyaml>=6.0",
+    "sqlalchemy[asyncio]>=2.0,<3",
     "starlette>=1.7",
     "typer>=0.27",
     "urllib3>=2.5",
@@ -241,6 +244,12 @@ name = "Only processing and the workers use the job contracts"
 type = "protected"
 protected_modules = ["whadio.contracts"]
 allowed_importers = ["whadio.processing", "whadio.workers"]
+
+[[tool.importlinter.contracts]]
+name = "Only the CLI imports the migration runtime"
+type = "protected"
+protected_modules = ["whadio.migrations"]
+allowed_importers = ["whadio.cli"]
 
 [tool.pytest]
 minversion = "9.0"

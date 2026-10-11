@@ -412,10 +412,15 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 - **Status:** Designed · **Caller:** Moderator or Owner · **Success:** `204`
 - **Rules:** the member loses access to the workspace and all of its meetings at once.
+  Before removing a restricted meeting's last selected recipient, a Moderator must explicitly
+  select another remaining member through the meeting access endpoint. Removal is refused
+  while any affected restricted meeting would have no recipient; it never grants the Owner
+  access automatically or changes the meeting to workspace access.
 - **Errors:**
   - `403 INSUFFICIENT_ROLE`: the caller is a plain member.
   - `404 NOT_FOUND`: no such workspace or member.
   - `409 OWNER_IMMUTABLE`: the target is the Owner.
+  - `409 RESTRICTED_MEETING_REQUIRES_RECIPIENT`: replacement access must be selected first.
 
 #### `GET /workspaces/{workspace_id}/invitations` · List pending invitations
 
@@ -613,7 +618,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 - **Errors:**
   - `404 NOT_FOUND`: no such meeting, or the caller cannot read it.
   - `409 RECORDING_NOT_READY`: the meeting is still being captured.
-  - `410 RECORDING_DELETED`: retention removed the audio after 3 months (FR-046). The
+  - `410 RECORDING_DELETED`: retention removed the audio after 90 days (FR-046). The
     transcript and notes stay.
 
 #### `GET /meetings/{meeting_id}/transcript` · Get the transcript
@@ -985,6 +990,9 @@ status, and which operations return it.
   or cancelled.
 - **`DEFAULT_FOLDER`:** deleting the default folder, which receives the meetings of deleted
   folders (FR-034).
+- **`RESTRICTED_MEETING_REQUIRES_RECIPIENT`:** removing the last selected recipient of a
+  restricted meeting before a replacement is selected. Returned as `409` by
+  `DELETE /workspaces/{id}/members/{user_id}`.
 - **`FOLDER_EXISTS`, `TERM_EXISTS`:** a folder name or a glossary term that already exists in
   the workspace, ignoring case.
 - **`NOT_TRANSCRIBED`:** the meeting has no transcript yet, because it is recording, queued,
@@ -1014,7 +1022,7 @@ status, and which operations return it.
 
 **`410 Gone`**
 
-- **`RECORDING_DELETED`:** the recording was removed by the 3-month retention rule (FR-046).
+- **`RECORDING_DELETED`:** the recording was removed by the 90-day retention rule (FR-046).
   It is `410` rather than `404` so the client can explain that the transcript and notes still
   exist. Returned by `GET /meetings/{id}/recording`.
 - **`SHARE_REVOKED`:** the bound recipient reads a share that its creator revoked. It is
@@ -1211,7 +1219,7 @@ tool set over automatic conversion.
 
 ### 6.12 Choices where the requirements are silent
 
-- **Who manages folders:** Moderators and the Owner.
+- **Who manages folders:** Moderators and the Owner, Members may browse folders and move accessible meetings.
 - **Who edits glossary terms:** any member can add one. Its author, a Moderator or the Owner
   can change or remove it.
 - **Who renames or moves a meeting:** any member who can read it. Deleting it stays with its
@@ -1231,3 +1239,5 @@ This document and the API code were prepared with the assistance of Claude Code 
 and 2026-10-04, and the requirements merged in PR #46. The stub code was checked with a type
 checker and with scripted requests against every implemented operation. The author reviewed
 and edited the content, and the document is reviewed through a pull request before merging.
+
+These PR #63 review revisions were assisted by OpenAI Codex. Everything was reviewed by me.
