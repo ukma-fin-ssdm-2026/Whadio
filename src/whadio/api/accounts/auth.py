@@ -1,11 +1,15 @@
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Final
 
 from fastapi import Depends, Response
 from fastapi.security import APIKeyCookie, HTTPAuthorizationCredentials, HTTPBearer
 
+from ...accounts.enums import SessionKind
+from ...accounts.repositories import IdentityRepository
+from ...accounts.services import IdentityService
+from ..composition import Session
 from ..core.errors import ApiError, ErrorCode
-from .fixtures import ALICE, DEMO_EXTENSION_TOKEN, DEMO_SESSION_TOKEN
+from .fixtures import DEMO_SESSION_TOKEN
 from .schemas import UserRead
 
 SESSION_COOKIE: Final = "whadio_session"
@@ -36,18 +40,45 @@ def _unauthenticated() -> ApiError:
     )
 
 
-async def _browser_user(cookie: Cookie) -> UserRead:
-    if cookie != DEMO_SESSION_TOKEN:
+def _browser_credentials(cookie: Cookie) -> str:
+    if cookie is None:
         raise _unauthenticated()
-    return ALICE
+    return cookie
 
 
-async def _capture_user(cookie: Cookie, bearer: Bearer) -> UserRead:
+BrowserCredentials = Annotated[str, Depends(_browser_credentials)]
+
+
+async def _browser_user(token: BrowserCredentials, session: Session) -> UserRead:
+    user = await IdentityService(IdentityRepository(session)).session_user(
+        token, SessionKind.BROWSER, datetime.now(UTC)
+    )
+    if user is None:
+        raise _unauthenticated()
+    return UserRead(
+        id=user.user_id,
+        email=user.email,
+        name=user.name,
+        is_administrator=user.is_administrator,
+        created_at=user.created_at,
+    )
+
+
+async def _capture_user(cookie: Cookie, bearer: Bearer, session: Session) -> UserRead:
     if bearer is not None:
-        if bearer.credentials != DEMO_EXTENSION_TOKEN:
+        user = await IdentityService(IdentityRepository(session)).session_user(
+            bearer.credentials, SessionKind.EXTENSION, datetime.now(UTC)
+        )
+        if user is None:
             raise _unauthenticated()
-        return ALICE
-    return await _browser_user(cookie)
+        return UserRead(
+            id=user.user_id,
+            email=user.email,
+            name=user.name,
+            is_administrator=user.is_administrator,
+            created_at=user.created_at,
+        )
+    return await _browser_user(_browser_credentials(cookie), session)
 
 
 BrowserUser = Annotated[UserRead, Depends(_browser_user)]

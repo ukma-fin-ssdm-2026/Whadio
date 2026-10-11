@@ -48,7 +48,7 @@ class PageQuery(Input):
     cursor: str | None = Field(
         default=None,
         min_length=1,
-        max_length=512,
+        max_length=4096,
         description="Opaque `next_cursor` from the previous page; omit for the first page",
     )
 

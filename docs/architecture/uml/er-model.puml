@@ -148,7 +148,6 @@ entity "EXTERNAL_SHARE" as ExternalShare {
   * created_by_user_id : UUID <<FK>>
   * token_hash : string <<S>>
   * redact_speaker_names : boolean
-  * include_recording : boolean
   * created_at : datetime
   recipient_user_id : UUID <<FK, P, nullable>>
   revoked_at : datetime <<nullable>>
@@ -378,8 +377,8 @@ note bottom of ExternalShare
   bound to the one account its creator
   approves. Token is stored only as a
   hash. Speaker names may be redacted;
-  redacted shares do not include the
-  recording.
+  shares never include recordings,
+  exports or onward sharing.
 end note
 
 note right of ShareAccessRequest

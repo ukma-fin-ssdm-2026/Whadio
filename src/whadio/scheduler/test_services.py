@@ -1,0 +1,67 @@
+import asyncio
+from datetime import UTC, datetime
+from uuid import UUID, uuid4
+
+from sqlalchemy.exc import OperationalError
+
+from ..retention.services import RetentionResult
+from .services import RetentionScheduler
+
+
+class RetentionJobs:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.fail_cleanup: bool = False
+        self.stop: asyncio.Event | None = None
+
+    async def remove_deleted_meeting_recordings(self) -> list[UUID]:
+        self.calls.append("cleanup")
+        if self.fail_cleanup:
+            raise OperationalError("database unavailable", None, RuntimeError())
+        return []
+
+    async def run(self, now: datetime) -> RetentionResult:
+        del now
+        self.calls.append("retention")
+        if self.stop is not None:
+            self.stop.set()
+        return RetentionResult([], [], [uuid4()])
+
+
+def test_retention_still_runs_when_cleanup_database_access_fails() -> None:
+    # Arrange
+    jobs = RetentionJobs()
+    jobs.fail_cleanup = True
+    scheduler = RetentionScheduler(jobs, 60)
+    # Act
+    failures = asyncio.run(scheduler.tick())
+    # Assert
+    assert (jobs.calls, failures) == (["cleanup", "retention"], 2)
+
+
+def test_shutdown_interrupts_interval_wait() -> None:
+    # Arrange
+    async def scenario() -> list[str]:
+        jobs = RetentionJobs()
+        jobs.stop = asyncio.Event()
+        scheduler = RetentionScheduler(jobs, 3600, lambda: datetime(2026, 1, 1, tzinfo=UTC))
+        # Act
+        await asyncio.wait_for(scheduler.serve(jobs.stop), timeout=1)
+        return jobs.calls
+
+    # Assert
+    assert asyncio.run(scenario()) == ["cleanup", "retention"]
+
+
+def test_already_stopped_scheduler_runs_no_jobs() -> None:
+    # Arrange
+    async def scenario() -> list[str]:
+        jobs = RetentionJobs()
+        stop = asyncio.Event()
+        stop.set()
+        # Act
+        await RetentionScheduler(jobs, 60).serve(stop)
+        return jobs.calls
+
+    # Assert
+    assert asyncio.run(scenario()) == []

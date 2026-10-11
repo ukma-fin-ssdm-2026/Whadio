@@ -42,37 +42,21 @@ separate "Web API" component.
 
 ## 2. Implementation status
 
-The design has **70 operations**. The code implements **16 of them as stubs**:
+Access Policy, Meetings and Retention now have PostgreSQL-backed services. Meeting lists,
+folders, glossary, transcript revisions, notes, restrictions, shares, recipient share lists and
+recording playback use stored authorization. Folder deletion can be undone through its restore
+operation. Other operations below retain their design contracts; their Status labels describe
+the original design milestone and are not an assertion that every Designed operation is absent.
 
-- **Sessions:** sign in and sign out.
-- **Workspaces:** list, create, read, update, delete.
-- **Meetings:** list with filters, upload a recording, read, rename or move, delete.
-- **Transcript:** read the current revision.
-- **Notes:** list them, regenerate them.
-- **Health:** liveness.
+Accounts sign-in and workspace administration remain demos. Capture and Processing need their
+owners' implementations and runtime integration; upload and regeneration refuse with
+`503 INTEGRATION_UNAVAILABLE` until Processing can reserve durable jobs. Share access requests
+and retention warnings likewise require a Notifications adapter; delivery is outside this slice.
+MCP reads require stored personal keys. Demo credentials do not authorize meeting content.
 
-Every other operation in section 4 is **designed**: its contract is fixed here, and it is not
-yet in the code. Each operation in section 4 is marked *Stub* or *Designed*.
-
-**What a stub does:**
-- It answers with fixed demo data, listed at the top of the Swagger page. Writes return the
-  result they would have, but store nothing.
-- It validates all input for real: types, lengths, enums, unknown fields, cross-field rules
-  and the format of uploaded audio.
-- It authenticates for real against one demo account: a missing or unknown session gets `401`.
-- It returns errors that follow from the demo data:
-  - `404` for an id that does not exist;
-  - `409 PERSONAL_WORKSPACE` for deleting the personal workspace;
-  - `409 NOT_TRANSCRIBED` for the transcript of a queued meeting;
-  - `422` for a `folder_id` that is not a folder of the meeting's workspace;
-  - `413` and `415` for an upload that is too large or is not a supported audio format.
-
-**What a stub documents but never produces:**
-- role checks (`403 INSUFFICIENT_ROLE`);
-- limits (`429`, `409 REGENERATION_LIMIT`, `409 NOTES_IN_PROGRESS`);
-- the origin check (`403 ORIGIN_REJECTED`) and `Idempotency-Key` replays (section 6.8);
-- the `X-Request-ID` header on successful responses: the stub sets it on errors only;
-- MCP key authentication (section 6.11).
+List operations in this slice use bounded database queries and opaque cursors scoped to the
+resource and signed-in caller. A deleted cursor anchor does not invalidate later pages. Folder
+counts include only visible meetings; note versions on later pages are not marked current.
 
 ## 3. Resource model
 
@@ -412,10 +396,15 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 - **Status:** Designed · **Caller:** Moderator or Owner · **Success:** `204`
 - **Rules:** the member loses access to the workspace and all of its meetings at once.
+  Before removing a restricted meeting's last selected recipient, a Moderator must explicitly
+  select another remaining member through the meeting access endpoint. Removal is refused
+  while any affected restricted meeting would have no recipient; it never grants the Owner
+  access automatically or changes the meeting to workspace access.
 - **Errors:**
   - `403 INSUFFICIENT_ROLE`: the caller is a plain member.
   - `404 NOT_FOUND`: no such workspace or member.
   - `409 OWNER_IMMUTABLE`: the target is the Owner.
+  - `409 RESTRICTED_MEETING_REQUIRES_RECIPIENT`: replacement access must be selected first.
 
 #### `GET /workspaces/{workspace_id}/invitations` · List pending invitations
 
@@ -522,6 +511,20 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - `409 FOLDER_EXISTS`: the new name is taken.
   - `409 DEFAULT_FOLDER`: the default folder cannot be deleted.
 
+#### `POST /workspaces/{workspace_id}/folders/{folder_id}/restore` · Undo folder deletion
+
+- **Status:** Implemented · **Caller:** Moderator or Owner · **Success:** `200`, the restored folder
+- **Rules:** restores the deleted folder's identity/name and all surviving meetings moved from it
+  to the default folder in one action (NFR-005). Recording references, transcripts, notes and
+  access grants stay unchanged. Restored meeting moves are audited. Recovery remains available
+  until used or the workspace is deleted; deleted meetings are not recreated.
+- **Errors:**
+  - `403 INSUFFICIENT_ROLE`: caller is a plain member.
+  - `404 NOT_FOUND`: no workspace membership or no pending recovery for this folder.
+  - `409 FOLDER_EXISTS`: its former name is now occupied, ignoring case.
+  - `409 FOLDER_RECOVERY_CONFLICT`: a surviving meeting was moved out of the default folder after
+    deletion. The restore changes nothing; it does not overwrite those subsequent moves.
+
 #### `GET`, `POST /workspaces/{workspace_id}/glossary-terms` · List or add terms
 
 - **Status:** Designed · **Caller:** any member · **Success:** `200`, a page in alphabetical
@@ -622,7 +625,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   revision
 - **Rules:**
   - Timestamped segments with speaker labels (FR-027).
-  - Designed, not in the stub: `?revision_id=` selects another revision. The original is
+  - `?revision_id=` selects another revision. The original is
     always reachable through `original_revision_id` (NFR-006, NFR-011).
 - **Errors:**
   - `404 NOT_FOUND`: no such meeting, or the caller cannot read it; or no such revision.
@@ -985,6 +988,9 @@ status, and which operations return it.
   or cancelled.
 - **`DEFAULT_FOLDER`:** deleting the default folder, which receives the meetings of deleted
   folders (FR-034).
+- **`RESTRICTED_MEETING_REQUIRES_RECIPIENT`:** removing the last selected recipient of a
+  restricted meeting before a replacement is selected. Returned as `409` by
+  `DELETE /workspaces/{id}/members/{user_id}`.
 - **`FOLDER_EXISTS`, `TERM_EXISTS`:** a folder name or a glossary term that already exists in
   the workspace, ignoring case.
 - **`NOT_TRANSCRIBED`:** the meeting has no transcript yet, because it is recording, queued,
@@ -1231,3 +1237,5 @@ This document and the API code were prepared with the assistance of Claude Code 
 and 2026-10-04, and the requirements merged in PR #46. The stub code was checked with a type
 checker and with scripted requests against every implemented operation. The author reviewed
 and edited the content, and the document is reviewed through a pull request before merging.
+
+These PR #63 review revisions were assisted by OpenAI Codex. Everything was reviewed by me.

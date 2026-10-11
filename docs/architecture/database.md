@@ -4,9 +4,33 @@ Whadio stores structured data in PostgreSQL. Audio files live in object storage;
 stores their references. This guide explains where the schema lives, how to apply it, and which
 rules PostgreSQL enforces.
 
-**Implemented:** SQLAlchemy models, Alembic migrations, the shared transaction helper, and
-database regression tests. **Still unfinished:** repositories and business services. The HTTP API
-continues to use demo fixtures; running migrations does not connect those routes to PostgreSQL.
+**Implemented:** SQLAlchemy models, Alembic migrations, shared transactions, and Access Policy,
+Meetings and Retention services. Meeting content, folders, glossary, shares, exports and MCP
+use PostgreSQL. Accounts write routes remain demos; Capture, Processing and notification delivery
+still need integration. Content routes require stored sessions or MCP
+keys; the demo sign-in does not create them.
+
+Access Policy and Meetings emit typed content audit events through `audit/contracts.py`.
+The runtime wires Audit's writer through the `content_audit` dependency using the same database
+session as the change. The writer flushes events without committing; failure rolls back the
+event and the change together.
+
+Meetings persistence implements ingest and hosted capacity eviction. Processing owns orchestration,
+processing-state decisions and regeneration limits. The runtime injects its `IMeetingProcessing`
+port for durable job reservation; the default adapter refuses requests until connected.
+Processing uses `MeetingService.processing_snapshot()` to lock and authorize before deciding,
+then `save_processing_state()` to persist its state, sanitized failure code and absolute
+regeneration count in the same transaction. Meetings does not choose transitions or enforce limits.
+`save_initial_transcript()` atomically stores the original revision, speakers and segments with
+its source job ID. Replaying that job returns the current version without overwriting edits;
+a different job cannot replace an existing transcript. `MeetingPersistence.save_generated_notes()`
+preserves earlier notes and emits the successful-regeneration audit event; Processing separately
+persists the resulting state. Notification delivery remains outside these modules' scope.
+
+Upload cleanup is reserved in a separate committed transaction before writing storage. The ingest
+transaction locks that cleanup row and removes it only alongside a successful meeting and job
+reservation. A rollback or crash leaves a durable cleanup task. `SKIP LOCKED` keeps the scheduler
+from removing an upload in progress.
 
 ## Where the schema lives
 
@@ -15,8 +39,8 @@ Three kinds of files work together:
 | Location | Purpose |
 | --- | --- |
 | `src/whadio/<module>/models.py` | Defines the module's tables, columns, foreign keys, checks, and indexes in Python using SQLAlchemy. |
-| `migrations/versions/` | Contains the ordered changes that create or upgrade an actual database, including triggers and privileges. |
-| `migrations/env.py` | Loads the module models so Alembic can compare database structure with SQLAlchemy metadata. |
+| `src/whadio/migrations/versions/` | Contains the packaged changes that create or upgrade a database, including triggers and privileges. |
+| `src/whadio/migrations/env.py` | Loads the module models so Alembic can compare database structure with SQLAlchemy metadata. |
 
 Changing a model does not update an existing database. A migration applies that change. Some
 safeguards, such as triggers and audit privileges, are defined in migrations rather than model
@@ -24,12 +48,12 @@ metadata, so `Base.metadata.create_all()` is not a substitute for running Alembi
 
 The [data model](data-model.md) defines the entities and integrity rules. The
 [high-level design](high-level-design.md) defines module responsibilities. This implementation
-maps their 25 entities to these owners:
+maps the domain entities and the implementation-only cleanup queue to these owners:
 
 | Module | Tables it owns |
 | --- | --- |
 | Accounts & Workspaces | user, workspace, workspace_membership, invitation, pending_registration, password_reset, session, llm_provider_config, mcp_key |
-| Meetings | folder, meeting, transcript, transcript_revision, speaker, transcript_segment, glossary_term, note, note_context_meeting |
+| Meetings | folder, meeting, transcript, transcript_revision, speaker, transcript_segment, glossary_term, note, note_context_meeting, recording_deletion |
 | Access Policy | meeting_access_grant, external_share, share_access_request |
 | Capture | capture_session, capture_chunk |
 | Processing | processing_job |
@@ -40,25 +64,35 @@ request recording-expiration data and state changes through Meetings. Other modu
 owning module's service interface instead of reading or writing its tables directly. Foreign keys
 refer to table names, so one module's models do not import another module's models.
 
-## What each migration adds
+## Initial migration
 
-Alembic records the applied revision in `alembic_version` and runs the revisions needed to reach
-the requested version. The current head is 0004.
+Revision `0001` creates the complete initial schema: typed-value storage, defaults, keys,
+indexes, integrity triggers, the original-transcript seal, folder-deletion guards and audit
+privileges. Its SQL file holds the table-specific trigger functions. There is one initial
+revision and no intermediate correction steps in that baseline.
 
-| Revision | Adds |
-| --- | --- |
-| 0001 | The initial tables, relationships, checks, and indexes. |
-| 0002 | Integrity triggers and restrictions that make existing audit events immutable to the application role. |
-| 0003 | Protection against appending or moving content into an original transcript after its creation transaction, seal spoofing, and edited-to-original relabelling. |
-| 0004 | Case-insensitive folder-name uniqueness and preservation of meetings when a nondefault folder is deleted. |
+Revision `0002` adds recording cleanup and warning state and case-insensitive glossary uniqueness.
+Revision `0003` adds the nonnegative regeneration request counter. Existing actor-attributed notes
+provide its initial lower bound; new requests, including ultimately failed runs, increment it in
+the same transaction as job reservation. Downgrade refuses to discard nonzero counters.
 
-Migration history is frozen: do not edit 0001 or 0002. Future schema changes belong in new
-revisions. Review autogenerated migrations manually; Alembic's metadata comparison cannot verify
-all triggers, privileges, or data transformations.
+The unreleased revisions were consolidated before deployment. Disposable databases created
+with the earlier revision chain must be recreated; this migration is not an upgrade path for
+that superseded development history. Future schema changes use new revisions. Review generated
+migrations manually: metadata comparison cannot verify triggers or privileges.
 
-Revision 0004 refuses to upgrade a database with duplicate folder names in the same workspace,
-ignoring case. Resolve those conflicts explicitly before upgrading. It does not silently rename
-existing folders.
+Revision `0004` adds sanitized failure codes, original transcript job provenance and folder
+recovery snapshots. Deleting a folder remembers its identity and the meetings moved to the default
+folder; restoration recreates it and returns those surviving meetings in one audited transaction.
+Restoration refuses name conflicts and later meeting moves. Workspace deletion removes recovery
+snapshots. Downgrade refuses to discard populated recovery or processing provenance. The current
+head is `0004`.
+
+Cleanup passes use UUID keyset windows and advance after each batch, including failed or locked
+items. Each pass attempts each selected item at most once; failed items remain durable for the
+next pass. API list cursors include the resource and caller scope and the final item's sort key.
+List queries are bounded, note-context rows are fetched together, and visible folder counts are
+aggregated for the returned page without loading meeting content.
 
 ## Configure and apply the schema
 
@@ -79,16 +113,15 @@ initialization does not change an existing PostgreSQL role's password. Applicati
 not require the owner password, and neither connection string is stored in `alembic.ini`.
 
 `WHADIO_DB_HOST`, `WHADIO_DB_PORT`, and `WHADIO_DB_NAME` select the database for host-side commands.
-The database port must match `POSTGRES_PORT` if the Compose port has been overridden. On this
-Windows machine, use `127.0.0.1` instead of `localhost` for host-side connections.
+The database port must match `POSTGRES_PORT` if the Compose port has been overridden. Use
+`127.0.0.1` for host-side connections when IPv6 resolution of `localhost` is unavailable.
 
 From the repository root, with the intended database selected:
 
-```powershell
-$env:WHADIO_DB_HOST = '127.0.0.1'
-uv run whadio db-upgrade
-uv run alembic current
-uv run alembic check
+```bash
+WHADIO_DB_HOST=127.0.0.1 uv run whadio db-upgrade
+WHADIO_DB_HOST=127.0.0.1 uv run alembic current
+WHADIO_DB_HOST=127.0.0.1 uv run alembic check
 ```
 
 `db-upgrade` applies migrations through the current head. `current` shows the applied revision.
@@ -105,15 +138,16 @@ uv run alembic upgrade head --sql
 
 Foreign keys, checks, and indexes validate relationships, enum values, case-insensitive email
 uniqueness, token lookup uniqueness, membership uniqueness, pending invitation uniqueness, and
-capture chunk sequence uniqueness. External shares store `include_recording = false`, matching
+capture chunk sequence uniqueness. External shares have no recording option, matching
 the API's transcript-and-notes-only contract.
 
 Some checks run at transaction end so related rows can be created together. For example, a
 workspace, its Owner membership, and its default folder can be inserted in one transaction; the
 completed transaction must contain exactly one Owner and one default folder. A restricted meeting
 must have at least one access grant, and every transcript must have exactly one original revision.
-Removing a member must also remove their grants and resolve any empty restricted access list
-within that transaction.
+Removing a member must also remove their grants. Before removing the last selected recipient,
+a Moderator explicitly selects another remaining member; removal never grants the Owner access
+or unrestricts the meeting. The transaction must retain at least one selected recipient.
 
 ### Original transcript content
 
@@ -122,7 +156,7 @@ stamps the implementation-only `transcript_revision.initialization_xid` with the
 transaction ID, overriding any caller-supplied value. Initial inserts and moves into the original
 are allowed during that transaction, including through savepoints; later transactions are refused.
 Original rows also reject updates, independent deletes, and moves out of the original. Edited
-revisions cannot be relabelled as originals. Existing revisions are sealed when 0003 is applied.
+revisions cannot be relabelled as originals.
 
 Deleting the containing transcript through a meeting or workspace cascade also deletes its
 original content. Immutability preserves provenance while the meeting exists; it does not prevent
@@ -133,8 +167,8 @@ the required deletion of a meeting and its content.
 Folder names are unique per workspace ignoring case, including the default folder's name.
 Folders and meetings cannot move between workspaces.
 
-Deleting a nondefault folder moves its meetings to that workspace's default folder in the same
-transaction. Meeting IDs stay the same, preserving recording references, transcripts, notes, and
+The Meetings service moves a nondefault folder's meetings to the default folder and writes one
+audit event per move before deleting the folder, in the same transaction. Meeting IDs stay the same, preserving recording references, transcripts, notes, and
 access rows. Rolling back the deletion also rolls back the moves. The default folder cannot be
 deleted while its workspace exists.
 
@@ -150,26 +184,34 @@ workspace or meeting foreign keys, so deleting those targets does not delete the
 event's actor references an existing account; account deletion is outside the current requirements.
 
 These restrictions protect existing events. They do not automatically generate events or prevent
-the application from inserting incorrect ones. The future Audit writer must validate details as
-IDs and enum values and reject content or names.
+the application from inserting incorrect ones. The Audit writer accepts `MeetingMoved` and
+`ContentEvent`; actions use the schema's `AuditAction` enum, and details contain IDs only.
+Future actions must likewise use typed events without content or names.
 
 ## Rules that services must implement
 
-Database safeguards protect stored data. Services still need to implement these use cases:
+Database safeguards protect stored data. Services enforce these use cases:
 
-| Rule | Remaining service responsibility |
+| Rule | Service responsibility |
 | --- | --- |
 | Folder permissions (FR-034) | Only Moderators and Owners may create, rename, or delete folders. Members may browse and move accessible meetings. |
 | Meeting access (NFR-007, NFR-009, ADR-003) | Check permissions through Access Policy on every content path, including shares, exports, MCP, and folder context assembly. |
 | Transcript edits (FR-028) | Save edits as edited revisions and expose the original with an edited marker. The API's promise to preserve earlier edited revisions must also be implemented by services. |
-| Audit events (NFR-010, ADR-005) | Write actor-attributed events in the same transaction as the change. Folder deletion needs one `meeting_moved` event per moved meeting; its database trigger does not write those events. |
+| Audit events (NFR-010, ADR-005) | Write actor-attributed events in the same transaction as the change. `FolderService.delete_folder` writes one `meeting_moved` event per moved meeting. The database trigger only refuses invalid deletion. |
 | Recording retention (FR-046) | Delete audio 90 days after the meeting, warn accessible members seven days beforehand, and keep transcripts and notes. |
-| Account and sharing flows | Complete registration, enforce invitation throttling, approve external shares, and send notifications. |
+| Account and sharing flows | Share approval and revocation use services. Accounts writes and notification delivery remain unfinished. |
 
 The retention interval and folder permissions above are confirmed product decisions. Storing
 `recording_delete_after` and `recording_deleted_at` does not run a retention schedule or send a
-warning. Repositories and services remain unfinished, and the current HTTP fixtures do not verify
-these use cases against the database.
+warning. Retention uses injected storage and transactional notification collaborators; its
+scheduler runs through `uv run whadio scheduler` (one instance per deployment), or
+`uv run whadio scheduler --once` for one pass. It drains recording cleanup before scanning expiry,
+continues after database failures and stops cleanly on SIGINT/SIGTERM. Configure storage with the
+`WHADIO_STORAGE__*` variables and the interval with `WHADIO_RETENTION_INTERVAL_SECONDS`, shown in
+`.env.example`. Warning delivery is deliberately unavailable until Notifications is connected;
+failed warnings are not marked sent, and expiry and cleanup continue independently. The one-pass
+command exits unsuccessfully if any work fails. Database tests exercise the service
+and content-route behavior, but do not establish that those runtime integrations are complete.
 
 ## Transactions and verification
 
@@ -180,10 +222,22 @@ independently. A session belongs to one use case and must not be shared across c
 The runtime that constructs `Database` must close it on shutdown. Application code generates UUIDs;
 timestamps use timezone-aware PostgreSQL values.
 
-Pytest loads the shared fixtures in the repository's `conftest.py`. Database tests are marked
+The CLI loads migrations from the installed package, so `whadio db-upgrade` works outside a
+checkout. `uv run task db:upgrade` is the repository shortcut. The migration environment is a
+composition root; it imports each module's models without moving ownership out of that module.
+
+Fixed-value columns use module-owned `StrEnum` types. Notes templates and provider values live
+in Accounts and are reused by Meetings. Database CHECK constraints remain in force, and migrations retain
+their own value snapshots rather than importing mutable application enums. Creation timestamps,
+the straightforward false flags, and the processing retry counter have server defaults.
+
+Pytest loads the shared fixtures in the repository's `conftest.py`. Fixtures create rows through
+the ORM models; refusal tests may use raw SQL to exercise database safeguards. Database tests are marked
 `slow` and need a migrated, disposable database. Set `WHADIO_TEST_DATABASE_URL` to its
 `whadio_app` connection URL, then run `uv run task test`. Without that setting, database tests are
-skipped: a passing fast suite is not database verification.
+skipped: a passing fast suite is not database verification. CI starts PostgreSQL using Compose,
+applies the packaged migrations as `whadio_owner`, checks schema drift, and runs the complete suite
+as `whadio_app`. Local push hooks require the same connection URL to run database tests.
 
 Most fixtures roll their transaction back. Original-sealing tests commit their initial data to
 exercise a later transaction, then clean up only their own workspace and account. Never point
@@ -194,9 +248,26 @@ agreement, privilege denials, deferred invariants, provenance protection, folder
 cascades, rollback, and concurrency. A full downgrade removes schema and data; perform downgrade
 checks only on disposable databases.
 
-Before opening a PR, run `uv run task check` and the full test suite against a disposable database.
-Record the PostgreSQL version, test totals and skips, migration results, and any coverage limits
-in the PR description. Keep CI unchanged while its changes remain deferred by the team.
+Run `uv run task check` and the full test suite against a disposable database before relying on
+database verification results.
+
+The decision to retain database integrity guards and the original-transcript transaction seal is
+recorded in [ADR-006](decisions/ADR-006.md). Services retain authorization and workflow decisions.
+
+## Folder deletion
+
+`meetings.services.FolderService.delete_folder` authorizes a Moderator or Owner, locks the
+workspace and acting membership through `lock_role()`, then the source and default folders,
+moves meetings with `UPDATE ... RETURNING`, writes one
+`meeting_moved` event per returned ID, and deletes the empty folder. Wire `FolderRepository`,
+`WorkspaceMembershipService` (with its `MembershipRepository`) and `AuditWriter` to the same
+`Database.transaction()` session. Ordinary membership `role()` lookups are plain reads; only
+`lock_role()` takes the workspace and membership locks needed by folder deletion. A failure
+rolls back the moves, audit events and deletion together. The database trigger refuses direct
+deletion of an occupied folder; workspace deletion still cascades. The HTTP folder endpoints
+are implemented. Deletion also records the folder and moved meeting IDs in a recovery snapshot;
+restoration refuses to overwrite subsequent moves and restores the surviving meetings atomically.
+
 
 ## AI Usage
 

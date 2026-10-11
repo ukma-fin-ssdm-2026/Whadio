@@ -4,7 +4,7 @@ tasks:
   setup:
     desc: Install the dependencies and the git hooks
     cmds:
-      - uv sync --locked
+      - uv sync --locked --extra asr --extra cpu
       - uv run --frozen pre-commit install --install-hooks
 
   dev:
@@ -39,26 +39,49 @@ tasks:
     cmds:
       - uv run --frozen whadio openapi
 
+  db:upgrade:
+    desc: Apply the packaged database migrations using the owner role
+    cmds:
+      - uv run --frozen whadio db-upgrade
+
   infra:up:
     desc: Start PostgreSQL, RabbitMQ, SeaweedFS and Mailpit, and wait until they are healthy
     preconditions:
       - sh: test -f .env
         msg: Copy .env.example to .env first
     cmds:
-      - docker compose up --detach --wait
+      - docker compose up --detach --wait postgres rabbitmq seaweedfs mailpit
 
   infra:down:
-    desc: Stop the services and keep their data
+    desc: Stop the services and the workers, and keep their data
     cmds:
-      - docker compose down
+      - docker compose --profile core --profile gpu down
 
   infra:reset:
-    desc: Stop the services and delete their data
-    prompt: This deletes the local database, broker and storage data. Continue?
+    desc: Stop the services and the workers, and delete their data
+    prompt: This deletes the local database, broker and storage data, and the downloaded models. Continue?
     cmds:
-      - docker compose down --volumes
+      - docker compose --profile core --profile gpu down --volumes
 
   infra:logs:
     desc: Follow the services' logs
     cmds:
       - docker compose logs --follow {{.CLI_ARGS}}
+
+  workers:up:
+    desc: Build and start the notes and ASR workers; the first start downloads the models
+    preconditions:
+      - sh: test -f .env
+        msg: Copy .env.example to .env first
+    cmds:
+      - docker compose --profile core --profile gpu up --detach --build notes-worker asr-worker
+
+  workers:down:
+    desc: Stop the notes and ASR workers
+    cmds:
+      - docker compose --profile core --profile gpu stop notes-worker asr-worker
+
+  workers:logs:
+    desc: Follow the workers' logs
+    cmds:
+      - docker compose --profile core --profile gpu logs --follow notes-worker asr-worker

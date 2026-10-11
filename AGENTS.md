@@ -23,6 +23,7 @@ When the code and these documents disagree, stop and ask instead of picking one.
 
 ```text
 src/whadio/
+  migrations/     packaged Alembic revisions and database integrity guards
   cli.py          the `whadio` command: `web`, `openapi`; the workers and the scheduler add theirs
   api/            the `web` runtime: FastAPI app, one subpackage of routes per module, MCP server
   scheduler/      the `scheduler` runtime: periodic jobs
@@ -87,11 +88,11 @@ You need uv 0.11.16 or newer, Docker with Compose v2, and git. Every tool, Task 
 into `.venv`; never install project tools globally.
 
 ```bash
-uv sync                  # Python 3.13, the dependencies and the dev tools, in .venv
-uv run task setup        # also installs the git hooks
-cp .env.example .env     # local credentials for the Compose stack
-uv run task infra:up     # PostgreSQL, RabbitMQ, SeaweedFS and Mailpit
-uv run task dev          # the API with auto-reload
+uv sync --extra asr --extra cpu  # Python 3.13, the dependencies and the dev tools, in .venv
+uv run task setup                # also installs the git hooks
+cp .env.example .env             # local credentials for the Compose stack
+uv run task infra:up             # PostgreSQL, RabbitMQ, SeaweedFS and Mailpit
+uv run task dev                  # the API with auto-reload
 ```
 
 `uv run task --list` shows every task. Local addresses, with credentials in `.env`:
@@ -105,6 +106,10 @@ uv run task dev          # the API with auto-reload
 | Mailpit | SMTP `localhost:1025`, UI <http://localhost:8025> |
 
 If a port is taken on your machine, set the matching `*_PORT` variable in `.env`.
+
+`uv run task workers:up` builds the image and starts the notes and ASR workers in Compose, with
+the keys described in `.env.example`. The ASR worker reaches storage as `seaweedfs:8333`, so its
+presigned links are signed for `http://seaweedfs:8333`.
 
 ## Verifying a change
 

@@ -1,13 +1,19 @@
+import asyncio
 from datetime import UTC, datetime
 from typing import Annotated, Final
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, File, Form, Query, Request, Response, UploadFile
-from starlette.concurrency import run_in_threadpool
+from fastapi import APIRouter, File, Form, Query, Response, UploadFile
+from pydantic import Field
 
+from ...accounts.enums import NotesTemplate
+from ...meetings.enums import MeetingSource
+from ...meetings.services import RecordingInput
+from ...shared.errors import Failure, UseCaseError
+from ...shared.pagination import ListCursor
 from ..accounts.auth import BrowserUser, CaptureUser
-from ..accounts.fixtures import workspace
-from ..accounts.schemas import Provider, WorkspaceId
+from ..accounts.schemas import Preset, Provider, WorkspaceId
+from ..composition import Meetings, Persistence, Processing, Recordings, UploadGuard
 from ..core.errors import (
     DOC_INVALID,
     DOC_MALFORMED,
@@ -16,19 +22,11 @@ from ..core.errors import (
     ErrorCode,
     error_responses,
 )
-from ..core.schemas import Page, PageQuery, paginate
+from ..core.pagination import list_page, list_window
+from ..core.schemas import Output, Page, PageQuery
 from .audio import SUPPORTED_FORMATS, is_supported_audio
-from .fixtures import (
-    RETENTION,
-    folder_in,
-    meeting,
-    meetings_of,
-    notes,
-    transcribed,
-    transcript,
-)
+from .pagination import meeting_filter, meeting_page
 from .schemas import (
-    AccessMode,
     JobKind,
     JobStatus,
     MeetingId,
@@ -40,15 +38,24 @@ from .schemas import (
     NoteRead,
     NotesRequest,
     ProcessingJobRead,
-    ProcessingState,
-    RecordingStatus,
-    SourceType,
     TranscriptRead,
 )
+from .views import meeting_read, meeting_summary, notes_read, transcript_read
 
 router = APIRouter()
 
 MAX_UPLOAD_BYTES: Final = 500 * 1024 * 1024
+
+
+async def _validate_upload(file: UploadFile) -> None:
+    size = await asyncio.to_thread(file.file.seek, 0, 2)
+    await file.seek(0)
+    if size > MAX_UPLOAD_BYTES:
+        raise ApiError(413, ErrorCode.PAYLOAD_TOO_LARGE, "The recording exceeds 500 MiB")
+    if not await asyncio.to_thread(is_supported_audio, file.file):
+        raise ApiError(415, ErrorCode.UNSUPPORTED_MEDIA_TYPE, "The file is not supported audio")
+    await file.seek(0)
+
 
 _WORKSPACE_NOT_FOUND = "`NOT_FOUND`: no such workspace, or the caller is not a member"
 _MEETING_NOT_FOUND = (
@@ -75,17 +82,17 @@ _NOT_TRANSCRIBED = f"`{ErrorCode.NOT_TRANSCRIBED}`: the meeting is not processed
 async def list_meetings(
     workspace_id: WorkspaceId,
     query: Annotated[MeetingListQuery, Query()],
-    _user: BrowserUser,
+    user: BrowserUser,
+    service: Meetings,
 ) -> Page[MeetingSummary]:
-    matching: list[MeetingSummary] = [
-        item
-        for item in meetings_of(workspace_id)
-        if (query.folder_id is None or item.folder_id == query.folder_id)
-        and (query.name is None or query.name.casefold() in item.name.casefold())
-        and (query.recorded_from is None or item.recorded_at >= query.recorded_from)
-        and (query.recorded_to is None or item.recorded_at < query.recorded_to)
+    matching = [
+        meeting_summary(item, workspace_id)
+        for item in await service.list_meetings(
+            user.id,
+            meeting_filter(workspace_id, query),
+        )
     ]
-    return paginate(matching, query)
+    return meeting_page(matching, query.limit)
 
 
 @router.post(
@@ -127,48 +134,71 @@ async def upload_recording(
     workspace_id: WorkspaceId,
     file: Annotated[UploadFile, File(description=f"The recording: {SUPPORTED_FORMATS}")],
     user: CaptureUser,
-    request: Request,
+    service: Meetings,
+    persistence: Persistence,
+    processing: Processing,
+    recordings: Recordings,
+    upload_guard: UploadGuard,
     response: Response,
     folder_id: Annotated[
         UUID | None, Form(description="Destination folder; the default folder when omitted")
     ] = None,
     name: Annotated[MeetingName | None, Form(description="Meeting name")] = None,
 ) -> MeetingRead:
-    workspace(workspace_id)
-    target_folder_id = folder_in(workspace_id, folder_id)
-    if file.size is not None and file.size > MAX_UPLOAD_BYTES:
-        raise ApiError(413, ErrorCode.PAYLOAD_TOO_LARGE, "The file is larger than 500 MiB")
-    is_audio = await run_in_threadpool(is_supported_audio, file.file)
-    await file.seek(0)
-    if not is_audio:
-        raise ApiError(
-            415,
-            ErrorCode.UNSUPPORTED_MEDIA_TYPE,
-            f"The file is not a supported audio format: {SUPPORTED_FORMATS}",
+    folders = await service.folders(user.id, workspace_id)
+    if folder_id is not None and folder_id not in {item.folder_id for item in folders}:
+        raise UseCaseError(Failure.VALIDATION_ERROR)
+    if name is not None and not name.strip():
+        raise UseCaseError(Failure.VALIDATION_ERROR)
+    try:
+        await _validate_upload(file)
+        now = datetime.now(UTC)
+        key = f"recordings/{uuid4()}"
+        await upload_guard.reserve(key)
+        await recordings.put(key, file.file)
+        meeting = await persistence.ingest(
+            user.id,
+            workspace_id,
+            RecordingInput(key, now, MeetingSource.UPLOAD, name=name, folder_id=folder_id),
+            now,
         )
-    now = datetime.now(UTC)
-    created = MeetingRead(
-        id=uuid4(),
-        workspace_id=workspace_id,
-        folder_id=target_folder_id,
-        name=name or f"Meeting {now:%Y-%m-%d %H:%M} UTC",
-        name_is_generated=name is None,
-        recorded_at=now,
-        processing_state=ProcessingState.QUEUED,
-        recording_status=RecordingStatus.COMPLETE,
-        source_type=SourceType.UPLOAD,
-        duration_seconds=None,
-        access_mode=AccessMode.WORKSPACE,
-        created_by_user_id=user.id,
-        created_at=now,
-        failure_reason=None,
-        is_edited=False,
-        recording_available=True,
-        recording_delete_after=now + RETENTION,
-        consent_confirmed_at=None,
-    )
-    response.headers["Location"] = str(request.url_for("get_meeting", meeting_id=created.id))
-    return created
+        await processing.queue_transcription(meeting.meeting_id)
+        response.headers["Location"] = f"/api/v1/meetings/{meeting.meeting_id}"
+        await upload_guard.release(key)
+        return meeting_read(meeting, workspace_id, is_edited=False)
+    except BaseException:
+        await asyncio.shield(recordings.rollback())
+        raise
+    finally:
+        await file.close()
+
+
+class PlaybackLink(Output):
+    url: str = Field(description="Authorized playback link, valid for five minutes.")
+    expires_at: datetime = Field(description="When the playback link expires.")
+
+
+@router.get(
+    "/meetings/{meeting_id}/recording",
+    tags=["meetings"],
+    summary="Get a recording playback link",
+    responses=error_responses(
+        {
+            401: DOC_UNAUTHENTICATED,
+            404: _MEETING_NOT_FOUND,
+            409: "`RECORDING_NOT_READY`: recording is still being captured",
+            410: "`RECORDING_DELETED`: retention removed the recording",
+        }
+    ),
+)
+async def recording_link(
+    meeting_id: MeetingId,
+    user: BrowserUser,
+    service: Meetings,
+    recordings: Recordings,
+) -> PlaybackLink:
+    link = await recordings.playback(service, user.id, meeting_id)
+    return PlaybackLink(url=link.url, expires_at=link.expires_at)
 
 
 @router.get(
@@ -181,8 +211,18 @@ async def upload_recording(
         {401: DOC_UNAUTHENTICATED, 404: _MEETING_NOT_FOUND, 422: DOC_INVALID}
     ),
 )
-async def get_meeting(meeting_id: MeetingId, _user: BrowserUser) -> MeetingRead:
-    return meeting(meeting_id)
+async def get_meeting(meeting_id: MeetingId, user: BrowserUser, service: Meetings) -> MeetingRead:
+    target = await service.get(user.id, meeting_id)
+    workspace_id = await service.workspace_id(user.id, meeting_id)
+    try:
+        version = await service.transcript(user.id, meeting_id)
+    except UseCaseError as error:
+        if error.code != Failure.NOT_TRANSCRIBED:
+            raise
+        is_edited = False
+    else:
+        is_edited = version.is_edited
+    return meeting_read(target, workspace_id, is_edited=is_edited)
 
 
 @router.patch(
@@ -204,15 +244,12 @@ async def get_meeting(meeting_id: MeetingId, _user: BrowserUser) -> MeetingRead:
     ),
 )
 async def update_meeting(
-    meeting_id: MeetingId, payload: MeetingUpdate, _user: BrowserUser
+    meeting_id: MeetingId, payload: MeetingUpdate, user: BrowserUser, service: Meetings
 ) -> MeetingRead:
-    target = meeting(meeting_id)
-    if payload.folder_id is not None:
-        folder_in(target.workspace_id, payload.folder_id)
-    changes = payload.model_dump(exclude_none=True)
-    if payload.name is not None:
-        changes["name_is_generated"] = False
-    return target.model_copy(update=changes)
+    await service.update(
+        user.id, meeting_id, datetime.now(UTC), name=payload.name, folder_id=payload.folder_id
+    )
+    return await get_meeting(meeting_id, user, service)
 
 
 @router.delete(
@@ -233,8 +270,8 @@ async def update_meeting(
         }
     ),
 )
-async def delete_meeting(meeting_id: MeetingId, _user: BrowserUser) -> None:
-    meeting(meeting_id)
+async def delete_meeting(meeting_id: MeetingId, user: BrowserUser, service: Meetings) -> None:
+    await service.delete(user.id, meeting_id, datetime.now(UTC))
 
 
 @router.get(
@@ -253,8 +290,15 @@ async def delete_meeting(meeting_id: MeetingId, _user: BrowserUser) -> None:
         }
     ),
 )
-async def get_transcript(meeting_id: MeetingId, _user: BrowserUser) -> TranscriptRead:
-    return transcript(meeting_id)
+async def get_transcript(
+    meeting_id: MeetingId,
+    user: BrowserUser,
+    service: Meetings,
+    revision_id: Annotated[
+        UUID | None, Query(description="Revision to read; current when omitted")
+    ] = None,
+) -> TranscriptRead:
+    return transcript_read(await service.transcript(user.id, meeting_id, revision_id))
 
 
 # --- Notes ---
@@ -272,9 +316,18 @@ async def get_transcript(meeting_id: MeetingId, _user: BrowserUser) -> Transcrip
     ),
 )
 async def list_notes(
-    meeting_id: MeetingId, query: Annotated[PageQuery, Query()], _user: BrowserUser
+    meeting_id: MeetingId,
+    query: Annotated[PageQuery, Query()],
+    user: BrowserUser,
+    service: Meetings,
 ) -> Page[NoteRead]:
-    return paginate(notes(meeting_id), query)
+    scope = f"notes:{meeting_id}:{user.id}"
+    versions = await service.notes(
+        user.id, meeting_id, list_window(query, scope, chronological=True)
+    )
+    last = versions[min(len(versions), query.limit) - 1].note if versions else None
+    cursor = None if last is None else ListCursor(last.created_at.isoformat(), last.note_id)
+    return list_page(notes_read(versions), query, scope, cursor)
 
 
 @router.post(
@@ -316,24 +369,26 @@ async def list_notes(
 async def regenerate_notes(
     meeting_id: MeetingId,
     payload: NotesRequest,
-    _user: BrowserUser,
-    request: Request,
+    user: BrowserUser,
+    processing: Processing,
+    service: Meetings,
     response: Response,
 ) -> ProcessingJobRead:
-    target = transcribed(meeting_id)
-    preset = payload.preset or workspace(target.workspace_id).default_preset
-    provider = (
-        Provider.WHADIO
-        if payload.use_builtin_model
-        else workspace(target.workspace_id).notes_provider
+    await service.get(user.id, meeting_id)
+    job = await processing.queue_notes(
+        meeting_id,
+        user.id,
+        None if payload.preset is None else NotesTemplate(payload.preset.value),
+        use_builtin_model=payload.use_builtin_model,
+        now=datetime.now(UTC),
     )
-    response.headers["Location"] = str(request.url_for("get_meeting", meeting_id=meeting_id))
+    response.headers["Location"] = f"/api/v1/meetings/{meeting_id}"
     return ProcessingJobRead(
-        id=uuid4(),
-        meeting_id=meeting_id,
+        id=job.job_id,
+        meeting_id=job.meeting_id,
         kind=JobKind.NOTES,
         status=JobStatus.QUEUED,
-        preset=preset,
-        provider=provider,
-        created_at=datetime.now(UTC),
+        preset=Preset(job.preset.value),
+        provider=Provider(job.provider.value.lower()),
+        created_at=job.created_at,
     )

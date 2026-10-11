@@ -20,6 +20,20 @@ def web(
     uvicorn.run("whadio.api.main:app", host=host, port=port)
 
 
+@app.command(help="Transcribe the recordings of the jobs of the transcription queue.")
+def asr_worker() -> None:
+    from .workers.asr.main import main
+
+    main()
+
+
+@app.command(help="Write meeting notes for the jobs of the notes queue.")
+def notes_worker() -> None:
+    from .workers.notes.main import main
+
+    main()
+
+
 @app.command(help="Write the OpenAPI specification to docs/api without starting the server.")
 def openapi() -> None:
     from .api.app import create_app
@@ -29,11 +43,26 @@ def openapi() -> None:
         typer.echo(f"Wrote {path}")
 
 
-@app.command(help="Apply database migrations using the owner role; run from the repository root.")
+@app.command(
+    help="Run recording retention and deleted-meeting cleanup; one instance per deployment."
+)
+def scheduler(
+    *,
+    once: Annotated[bool, typer.Option(help="Run one pass and exit.")] = False,
+) -> None:
+    from .scheduler.main import main
+
+    if main(once=once):
+        raise typer.Exit(code=1)
+
+
+@app.command(help="Apply the packaged database migrations using the owner role.")
 def db_upgrade(
-    config: Annotated[str, typer.Option(help="Alembic configuration file.")] = "alembic.ini",
+    config: Annotated[str | None, typer.Option(help="Optional Alembic configuration file.")] = None,
 ) -> None:
     from alembic import command
     from alembic.config import Config
 
-    command.upgrade(Config(config), "head")
+    configuration = Config(config)
+    configuration.set_main_option("script_location", "whadio:migrations")
+    command.upgrade(configuration, "head")
