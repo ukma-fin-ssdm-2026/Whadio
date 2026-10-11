@@ -3,8 +3,6 @@
 Team's repository URL: <https://github.com/ukma-fin-ssdm-2026/waterfall/tree/main>
 Reviewed commit SHA: `ee2c003582951b07d7e12e453d7739e03c35b619`.
 
-**State:** preliminary, will be enhanced later.
-
 ## Strong sides
 
 1. Consistent error contracts - the team is using a single error model for all errors.
@@ -31,6 +29,10 @@ No AI was used when writing the above portion of the file.
 ## AI Review
 
 Was done by: Claude Code (Opus 5.5@xhigh).
+
+<details>
+
+<summary>Raw AI output</summary>
 
 ### Strengths
 1. **Thin controllers behind repository interfaces, with one error contract** — Controllers only handle HTTP concerns. They take `IVacancyRepository` / `ISavedVacancyRepository` through constructor injection (`src/api/Controllers/VacanciesController.cs:22-26`, `src/api/Controllers/SavedVacanciesController.cs:24-32`), and the implementations are registered in one place (`src/api/Program.cs:77-78`). Swapping the in-memory stub for EF Core later should touch only the `Services` layer. Error responses all come from one factory, `ApiErrorResponse.Create` (`src/api/Models/Common/ApiErrorResponse.cs:14-32`), through shared helpers `ErrorNotFound` / `ErrorBadRequest` / `ErrorConflict` in `src/api/Controllers/ApiControllerBase.cs:46-94`. So every 4xx has the same `code` / `message` / `request_id` / `details` shape, and no action builds error JSON by hand. All repository methods are async and pass a `CancellationToken` through (`src/api/Services/IVacancyRepository.cs:10-14`), so the contract is ready for a real database.
@@ -90,10 +92,12 @@ The design doc defers JWT only for saved vacancies (`docs/api/api-design.md:10`)
 - Set Kestrel `Limits.MaxRequestBodySize` to roughly 64 KB and add `AddRateLimiter` on the write routes.
 - Replace `AllowAll` CORS with an explicit origin list. The native MAUI client does not need CORS at all.
 
+</details>
+
 ## Comparison between human and AI review
 
-Given the correct prompt and the context of requirements on the code review criteria used on the course, Claude has described more points than we did and in much greater detail, listing the exact paths and lines for the errors or lines of interest. Additionally, Claude has explore each problem in much more detail, unveiling more issues that we did.
+Given the correct prompt and the context of requirements on the code review criteria used on the course, Claude has described more points than we did and in much greater detail, listing the exact paths and lines for the errors or lines of interest. Additionally, Claude has explored each problem in much more detail, unveiling more issues than we did.
 
-In general, the responses overlap; we suspect that this is due to the "obviousness" of the strengths and weaknesses (given the small number of actual points to explore given the code from Lab04). However, there are some disagreements: where Claude has named usage of controllers as a good thing for consolidating business logic, we believe that this makes the framework code seep into the business logic, making future change of the API framework and/or reuse of business logic much harder, which in the future will require refactoring.
+In general, the responses overlap; we suspect that this is due to the "obviousness" of the strengths and weaknesses (given the small number of actual points to explore given the code from Lab04). However, there are some disagreements: where Claude has named usage of controllers as a good thing for consolidating business logic, we believe that this makes the framework code seep into the business logic, making future change of the API framework and/or reuse of business logic much harder, which in the future will require refactoring. Some misses of Claude were inconsistent commenting between modules (like MCP using English) and the bad practice of using non-English comments in the main code.
 
 No AI was used in the comparison between human and AI review.
