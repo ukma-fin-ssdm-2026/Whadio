@@ -4,8 +4,22 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .enums import WorkspaceRole
+from .enums import NotesTemplate, WorkspaceRole
 from .models import Workspace, WorkspaceMembership
+
+
+class IWorkspaceSettings(Protocol):
+    async def default_template(self, workspace_id: UUID, /) -> NotesTemplate | None: ...
+
+
+class WorkspaceSettingsRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session: AsyncSession = session
+
+    async def default_template(self, workspace_id: UUID) -> NotesTemplate | None:
+        return await self._session.scalar(
+            select(Workspace.default_template).where(Workspace.workspace_id == workspace_id)
+        )
 
 
 class IMembershipRepository(Protocol):
