@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from typing import Protocol
 from uuid import UUID
 
 from ..accounts.enums import LlmProvider, NotesTemplate
@@ -13,6 +14,25 @@ from .models import (
     TranscriptRevision,
     TranscriptSegment,
 )
+
+
+@dataclass(frozen=True)
+class EvictionNotice:
+    meeting_id: UUID
+    triggering_meeting_id: UUID
+    recipient_id: UUID
+    meeting_name: str | None
+    occurred_at: datetime
+
+
+class IEvictionNotifier(Protocol):
+    async def enqueue(self, notice: EvictionNotice) -> None:
+        """Reserve a durable, deduplicated notice in the caller's transaction.
+
+        Delivery must use this pre-deletion recipient/title snapshot, never reauthorize
+        against the deleted meeting. Failure must abort ingest; do not send before commit.
+        """
+        ...
 
 
 @dataclass(frozen=True)

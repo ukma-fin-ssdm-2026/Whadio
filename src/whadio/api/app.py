@@ -9,7 +9,13 @@ from ..shared.database import Database
 from . import meta
 from .access_policy import routes as access_routes
 from .accounts import routes_sessions, routes_workspaces
-from .composition import CompositionRoot, runtime_database, transaction
+from .composition import (
+    CompositionRoot,
+    RuntimeIntegrations,
+    connect_integrations,
+    runtime_database,
+    transaction,
+)
 from .core.errors import register_error_handlers
 from .export import routes as export_routes
 from .mcp_server import build_mcp_server
@@ -62,7 +68,9 @@ async def _export_spec(app: FastAPI) -> AsyncGenerator[None]:
     yield
 
 
-def create_app(database: Database | None = None) -> FastAPI:
+def create_app(
+    database: Database | None = None, *, integrations: RuntimeIntegrations | None = None
+) -> FastAPI:
     composition = CompositionRoot(database)
     mcp_app = build_mcp_server(composition.database).http_app(path="/")
     app = FastAPI(
@@ -89,4 +97,6 @@ def create_app(database: Database | None = None) -> FastAPI:
     register_error_handlers(app)
     app.dependency_overrides[transaction] = composition.transaction
     app.dependency_overrides[runtime_database] = composition.database
+    if integrations is not None:
+        connect_integrations(app, integrations)
     return app

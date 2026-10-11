@@ -2,12 +2,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from ..access_policy.services import IEvictionAccess
 from ..accounts.enums import LlmProvider, NotesTemplate
 from ..accounts.services import IWorkspaceCapacity
-from ..audit.contracts import ContentEvent, IContentAuditWriter
+from ..audit.contracts import ContentEvent, IContentAuditWriter, NotesPreset
 from ..audit.enums import AuditAction
 from ..shared.errors import Failure, UseCaseError
-from .contracts import ContextReference
+from .contracts import ContextReference, EvictionNotice, IEvictionNotifier
 from .models import Meeting, Note
 from .repositories import IMeetingRepository
 from .services import MeetingService, RecordingInput
@@ -29,6 +30,8 @@ class PersistenceDependencies:
     repository: IMeetingRepository
     capacity: IWorkspaceCapacity
     audit: IContentAuditWriter
+    access: IEvictionAccess
+    notifications: IEvictionNotifier
 
 
 class MeetingPersistence:
@@ -44,6 +47,8 @@ class MeetingPersistence:
         self._repository: IMeetingRepository = dependencies.repository
         self._capacity: IWorkspaceCapacity = dependencies.capacity
         self._audit: IContentAuditWriter = dependencies.audit
+        self._access: IEvictionAccess = dependencies.access
+        self._notifications: IEvictionNotifier = dependencies.notifications
         self._hosted_limit: int | None = hosted_limit
 
     async def ingest(
@@ -54,23 +59,38 @@ class MeetingPersistence:
         now: datetime,
     ) -> Meeting:
         await self._meetings.folders(actor_id, workspace_id)
+        overflow: list[Meeting] = []
         if self._hosted_limit is not None:
             workspaces = await self._capacity.capacity_workspaces(workspace_id)
             if not workspaces:
                 raise UseCaseError(Failure.NOT_FOUND)
-            for old in await self._repository.capacity_overflow(workspaces, self._hosted_limit):
-                scope = await self._repository.scope(old.meeting_id)
-                await self._repository.remove(old.meeting_id, now)
-                await self._audit.write(
-                    ContentEvent(
-                        actor_id,
-                        scope.workspace_id,
+            overflow = await self._repository.capacity_overflow(workspaces, self._hosted_limit)
+        meeting = await self._meetings.create(actor_id, workspace_id, recording, now)
+        for old in overflow:
+            scope = await self._repository.scope(old.meeting_id)
+            recipients = await self._access.eviction_recipients(scope, actor_id)
+            for recipient_id, can_read in recipients.items():
+                await self._notifications.enqueue(
+                    EvictionNotice(
                         old.meeting_id,
-                        AuditAction.MEETING_EVICTED,
+                        meeting.meeting_id,
+                        recipient_id,
+                        old.name if can_read else None,
                         now,
                     )
                 )
-        return await self._meetings.create(actor_id, workspace_id, recording, now)
+            await self._repository.remove(old.meeting_id, now)
+            await self._audit.write(
+                ContentEvent(
+                    actor_id,
+                    scope.workspace_id,
+                    old.meeting_id,
+                    AuditAction.MEETING_EVICTED,
+                    now,
+                    triggering_meeting_id=meeting.meeting_id,
+                )
+            )
+        return meeting
 
     async def save_generated_notes(
         self,
@@ -103,6 +123,6 @@ class MeetingPersistence:
                     meeting_id,
                     AuditAction.NOTES_REGENERATED,
                     now,
-                    subject_id=note.note_id,
+                    preset=NotesPreset(notes.preset.value),
                 )
             )

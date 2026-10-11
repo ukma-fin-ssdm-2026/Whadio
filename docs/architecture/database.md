@@ -32,6 +32,36 @@ transaction locks that cleanup row and removes it only alongside a successful me
 reservation. A rollback or crash leaves a durable cleanup task. `SKIP LOCKED` keeps the scheduler
 from removing an upload in progress.
 
+`IMeetingProcessing` lives in `meetings/processing.py`, so Processing can implement the port
+without importing the web runtime. `create_app(integrations=RuntimeIntegrations(...))` accepts
+session-bound factories for Processing, share-request notices and eviction notices. Each receives
+the same `AsyncSession` as the use case and Audit; it must reserve durable work without committing
+or publishing before commit. Absent adapters explicitly refuse work with
+`INTEGRATION_UNAVAILABLE`, including hosted eviction. Tests' adapters are not production delivery.
+
+Hosted ingest locks capacity before selecting old meetings, creates the triggering meeting and
+records its ID in eviction audit details. Before deletion, Access Policy snapshots the uploader
+and the old creator (only while still a member), deduplicates them and checks workspace or active
+bound-share read access. `IEvictionNotifier` reserves each `EvictionNotice` with the old name only
+for authorized recipients. The snapshot survives deletion; notice failure aborts the whole ingest.
+Successful regeneration records its actual preset in audit details, without content or names.
+
+Remaining integrations belong to their module owners:
+
+- **Processing (Denys):** durable job reservation/publication, provider selection, transitions,
+  regeneration limits, result consumption and idempotent calls to Meetings' persistence ports.
+- **Notifications (after MVP owner assignment):** transactional durable adapters for share requests,
+  eviction and retention warnings, deduplication and delivery. The scheduler accepts a session-bound
+  `IRetentionNotifier` factory; its executable still defaults to the explicitly unavailable
+  adapter. Seven-day warnings are not delivered yet.
+- **Accounts (Denys):** replace demo sign-in/workspace administration with persisted accounts,
+  sessions and membership writes. Stored-identity reads and membership/capacity interfaces are
+  implemented, but normal demo sign-in does not establish an identity for meeting routes.
+- **Capture (unassigned):** submit verified recordings through ingest and reserve Processing work.
+
+These ports complete the integration boundaries of this slice, not end-to-end MVP behavior.
+Retention deletion and recording cleanup continue independently of unavailable warning delivery.
+
 ## Where the schema lives
 
 Three kinds of files work together:
@@ -86,7 +116,7 @@ recovery snapshots. Deleting a folder remembers its identity and the meetings mo
 folder; restoration recreates it and returns those surviving meetings in one audited transaction.
 Restoration refuses name conflicts and later meeting moves. Workspace deletion removes recovery
 snapshots. Downgrade refuses to discard populated recovery or processing provenance. The current
-head is `0004`.
+head is `0005`. Revision `0005` changes only the branch-added `failure_reason` column from TEXT to VARCHAR(20), matching the ORM enum. Its fixed-code CHECK remains intact, including on downgrade back to TEXT. No existing integrity triggers, privileges or locking rules change.
 
 Cleanup passes use UUID keyset windows and advance after each batch, including failed or locked
 items. Each pass attempts each selected item at most once; failed items remain durable for the

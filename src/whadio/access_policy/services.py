@@ -64,6 +64,12 @@ class IRetentionAccess(Protocol):
     async def recipients(self, scope: MeetingScope) -> list[UUID]: ...
 
 
+class IEvictionAccess(Protocol):
+    async def eviction_recipients(self, scope: MeetingScope, uploader_id: UUID) -> dict[UUID, bool]:
+        """Return required recipients and their read permission before deletion."""
+        ...
+
+
 class AccessPolicy:
     def __init__(self, repository: IAccessRepository, memberships: IWorkspaceDirectory) -> None:
         self._repository: IAccessRepository = repository
@@ -100,6 +106,19 @@ class AccessPolicy:
             return members
         granted = await self._repository.grants(scope.meeting_id)
         return [user_id for user_id in members if user_id in granted]
+
+    async def eviction_recipients(self, scope: MeetingScope, uploader_id: UUID) -> dict[UUID, bool]:
+        members = await self._memberships.members(scope.workspace_id)
+        recipients = {uploader_id}
+        if scope.creator_id in members:
+            recipients.add(scope.creator_id)
+        readers = set(await self.recipients(scope))
+        readers.update(
+            share.recipient_user_id
+            for share in await self._repository.shares(scope.meeting_id)
+            if share.recipient_user_id is not None and share.revoked_at is None
+        )
+        return {recipient: recipient in readers for recipient in sorted(recipients)}
 
 
 @dataclass(frozen=True)

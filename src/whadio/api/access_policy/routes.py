@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Self
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Request, Response
+from fastapi import APIRouter, Path, Query, Request, Response
 from pydantic import Field, model_validator
 
 from ...access_policy.models import ExternalShare, ShareAccessRequest
@@ -14,8 +14,11 @@ from ..composition import Access, Meetings
 from ..core.errors import ApiError, ErrorCode, error_responses
 from ..core.pagination import list_page, list_window
 from ..core.schemas import Input, Output, Page, PageQuery
-from ..meetings.schemas import AccessMode, NoteRead, TranscriptRead
+from ..meetings.schemas import AccessMode, MeetingId, NoteRead, TranscriptRead
 from ..meetings.views import notes_read, transcript_read
+
+ShareId = Annotated[UUID, Path(description="External share identifier")]
+RequestId = Annotated[UUID, Path(description="Share access request identifier")]
 
 router = APIRouter(
     tags=["access"],
@@ -51,8 +54,11 @@ class AccessRead(Output):
     member_ids: list[UUID] = Field(description="Selected members")
 
 
-@router.get("/meetings/{meeting_id}/access")
-async def read_access(meeting_id: UUID, user: BrowserUser, service: Access) -> AccessRead:
+@router.get(
+    "/meetings/{meeting_id}/access",
+    description="Read the access mode and selected members of a meeting the caller can read.",
+)
+async def read_access(meeting_id: MeetingId, user: BrowserUser, service: Access) -> AccessRead:
     restricted, members = await service.read_access(user.id, meeting_id)
     return AccessRead(
         access_mode=AccessMode.RESTRICTED if restricted else AccessMode.WORKSPACE,
@@ -60,9 +66,16 @@ async def read_access(meeting_id: UUID, user: BrowserUser, service: Access) -> A
     )
 
 
-@router.put("/meetings/{meeting_id}/access")
+@router.put(
+    "/meetings/{meeting_id}/access",
+    description=(
+        "Replace meeting access as a Moderator or Owner who can read it. "
+        "Restricted access requires selected workspace members; unselected "
+        "members lose access immediately."
+    ),
+)
 async def replace_access(
-    meeting_id: UUID, payload: AccessInput, user: BrowserUser, service: Access
+    meeting_id: MeetingId, payload: AccessInput, user: BrowserUser, service: Access
 ) -> AccessRead:
     await service.replace_access(
         user.id,
@@ -100,9 +113,12 @@ def _share_read(share: ExternalShare) -> ShareRead:
     )
 
 
-@router.get("/meetings/{meeting_id}/shares")
+@router.get(
+    "/meetings/{meeting_id}/shares",
+    description="List shares of a meeting the caller can read, newest first.",
+)
 async def list_shares(
-    meeting_id: UUID, query: Annotated[PageQuery, Query()], user: BrowserUser, service: Access
+    meeting_id: MeetingId, query: Annotated[PageQuery, Query()], user: BrowserUser, service: Access
 ) -> Page[ShareRead]:
     scope = f"meeting-shares:{meeting_id}:{user.id}"
     shares = await service.shares(
@@ -113,7 +129,10 @@ async def list_shares(
     return list_page([_share_read(item) for item in shares], query, scope, cursor)
 
 
-@router.get("/users/me/shares")
+@router.get(
+    "/users/me/shares",
+    description="List active shares bound to the signed-in account, newest first.",
+)
 async def recipient_shares(
     query: Annotated[PageQuery, Query()], user: BrowserUser, service: Access
 ) -> Page[ShareRead]:
@@ -124,9 +143,17 @@ async def recipient_shares(
     return list_page([_share_read(item) for item in shares], query, scope, cursor)
 
 
-@router.post("/meetings/{meeting_id}/shares", status_code=201)
+@router.post(
+    "/meetings/{meeting_id}/shares",
+    status_code=201,
+    description=(
+        "Create a read-only share of an accessible meeting. Disclose its token "
+        "once in the link fragment; a share creator must approve the recipient "
+        "account."
+    ),
+)
 async def create_share(
-    meeting_id: UUID,
+    meeting_id: MeetingId,
     payload: ShareInput,
     user: BrowserUser,
     service: Access,
@@ -147,8 +174,15 @@ async def create_share(
     )
 
 
-@router.delete("/shares/{share_id}", status_code=204)
-async def revoke_share(share_id: UUID, user: BrowserUser, service: Access) -> None:
+@router.delete(
+    "/shares/{share_id}",
+    status_code=204,
+    description=(
+        "Revoke a share as its creator. Its bound recipient can no longer read "
+        "the meeting through it."
+    ),
+)
+async def revoke_share(share_id: ShareId, user: BrowserUser, service: Access) -> None:
     await service.revoke(user.id, share_id, datetime.now(UTC))
 
 
@@ -177,9 +211,17 @@ async def _request_read(
     )
 
 
-@router.post("/shares/{share_id}/access-requests", status_code=201)
+@router.post(
+    "/shares/{share_id}/access-requests",
+    status_code=201,
+    description=(
+        "Request access with a token from the share link fragment. Requires an "
+        "existing account and reserves the creator notification in the same "
+        "transaction."
+    ),
+)
 async def request_access(
-    share_id: UUID, payload: RequestInput, user: BrowserUser, service: Access, response: Response
+    share_id: ShareId, payload: RequestInput, user: BrowserUser, service: Access, response: Response
 ) -> RequestRead:
     requested = await service.request_access(user.id, share_id, payload.token, datetime.now(UTC))
     response.headers["Location"] = (
@@ -188,9 +230,12 @@ async def request_access(
     return await _request_read(requested, user.id, service)
 
 
-@router.get("/shares/{share_id}/access-requests")
+@router.get(
+    "/shares/{share_id}/access-requests",
+    description="List access requests for a share as its creator, newest first.",
+)
 async def list_requests(
-    share_id: UUID, query: Annotated[PageQuery, Query()], user: BrowserUser, service: Access
+    share_id: ShareId, query: Annotated[PageQuery, Query()], user: BrowserUser, service: Access
 ) -> Page[RequestRead]:
     scope = f"share-requests:{share_id}:{user.id}"
     requests = await service.requests(
@@ -207,15 +252,24 @@ async def list_requests(
     )
 
 
-@router.post("/share-access-requests/{request_id}/approve")
-async def approve_request(request_id: UUID, user: BrowserUser, service: Access) -> RequestRead:
+@router.post(
+    "/share-access-requests/{request_id}/approve",
+    description=(
+        "Approve a pending request as the share creator, binding the share to "
+        "that one account. Refuses revoked or already bound shares."
+    ),
+)
+async def approve_request(request_id: RequestId, user: BrowserUser, service: Access) -> RequestRead:
     return await _request_read(
         await service.decide(user.id, request_id, datetime.now(UTC), approve=True), user.id, service
     )
 
 
-@router.post("/share-access-requests/{request_id}/decline")
-async def decline_request(request_id: UUID, user: BrowserUser, service: Access) -> RequestRead:
+@router.post(
+    "/share-access-requests/{request_id}/decline",
+    description="Decline a pending access request as the share creator.",
+)
+async def decline_request(request_id: RequestId, user: BrowserUser, service: Access) -> RequestRead:
     return await _request_read(
         await service.decide(user.id, request_id, datetime.now(UTC), approve=False),
         user.id,
@@ -223,7 +277,7 @@ async def decline_request(request_id: UUID, user: BrowserUser, service: Access) 
     )
 
 
-async def _shared_meeting(share_id: UUID, user_id: UUID, access: Access) -> UUID:
+async def _shared_meeting(share_id: ShareId, user_id: UUID, access: Access) -> UUID:
     try:
         permission = await access.policy.authorize_share(share_id, user_id, ContentPath.READ)
     except UseCaseError as error:
@@ -235,9 +289,16 @@ async def _shared_meeting(share_id: UUID, user_id: UUID, access: Access) -> UUID
     return permission.meeting_id
 
 
-@router.get("/shares/{share_id}/transcript")
+@router.get(
+    "/shares/{share_id}/transcript",
+    description=(
+        "Read a transcript through an active share bound to the caller, "
+        "applying speaker-name redaction where configured. Export and onward "
+        "sharing are not permitted."
+    ),
+)
 async def shared_transcript(
-    share_id: UUID,
+    share_id: ShareId,
     user: BrowserUser,
     access: Access,
     meetings: Meetings,
@@ -251,9 +312,15 @@ async def shared_transcript(
     )
 
 
-@router.get("/shares/{share_id}/notes")
+@router.get(
+    "/shares/{share_id}/notes",
+    description=(
+        "List notes through an active share bound to the caller, applying "
+        "configured speaker-name redaction."
+    ),
+)
 async def shared_notes(
-    share_id: UUID,
+    share_id: ShareId,
     query: Annotated[PageQuery, Query()],
     user: BrowserUser,
     access: Access,

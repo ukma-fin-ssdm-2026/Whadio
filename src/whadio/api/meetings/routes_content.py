@@ -2,19 +2,22 @@ from datetime import UTC, datetime
 from typing import Annotated, Self
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Path, Query, Response
 from pydantic import Field, model_validator
 
 from ...meetings.models import Folder, GlossaryTerm
 from ...meetings.services import TermUpdate, TranscriptEdit
 from ...shared.pagination import ListCursor
 from ..accounts.auth import BrowserUser
+from ..accounts.schemas import WorkspaceId
 from ..composition import Folders, Meetings
 from ..core.errors import error_responses
 from ..core.pagination import list_page, list_window
 from ..core.schemas import DisplayText, Input, Output, Page, PageQuery
-from .schemas import RevisionRead, RevisionType, TranscriptRead
+from .schemas import FolderId, MeetingId, RevisionRead, RevisionType, TranscriptRead
 from .views import transcript_read
+
+TermId = Annotated[UUID, Path(description="Glossary term identifier")]
 
 router = APIRouter(
     tags=["meetings"],
@@ -51,9 +54,18 @@ async def _folder_read(folder: Folder, user: BrowserUser, service: Meetings) -> 
     )
 
 
-@router.get("/workspaces/{workspace_id}/folders")
+@router.get(
+    "/workspaces/{workspace_id}/folders",
+    description=(
+        "List workspace folders with counts of meetings the caller can read. "
+        "Restricted meetings without access are excluded from counts."
+    ),
+)
 async def list_folders(
-    workspace_id: UUID, query: Annotated[PageQuery, Query()], user: BrowserUser, service: Meetings
+    workspace_id: WorkspaceId,
+    query: Annotated[PageQuery, Query()],
+    user: BrowserUser,
+    service: Meetings,
 ) -> Page[FolderRead]:
     scope = f"folders:{workspace_id}:{user.id}"
     folders = await service.folders(user.id, workspace_id, list_window(query, scope))
@@ -82,9 +94,16 @@ async def list_folders(
     )
 
 
-@router.post("/workspaces/{workspace_id}/folders", status_code=201)
+@router.post(
+    "/workspaces/{workspace_id}/folders",
+    status_code=201,
+    description=(
+        "Create a folder in this workspace. Requires a Moderator or Owner; "
+        "names are unique ignoring case."
+    ),
+)
 async def create_folder(
-    workspace_id: UUID,
+    workspace_id: WorkspaceId,
     payload: FolderInput,
     user: BrowserUser,
     service: Meetings,
@@ -95,25 +114,53 @@ async def create_folder(
     return await _folder_read(folder, user, service)
 
 
-@router.patch("/workspaces/{workspace_id}/folders/{folder_id}")
+@router.patch(
+    "/workspaces/{workspace_id}/folders/{folder_id}",
+    description=(
+        "Rename a workspace folder. Requires a Moderator or Owner and a name "
+        "unique within the workspace."
+    ),
+)
 async def rename_folder(
-    workspace_id: UUID, folder_id: UUID, payload: FolderInput, user: BrowserUser, service: Meetings
+    workspace_id: WorkspaceId,
+    folder_id: FolderId,
+    payload: FolderInput,
+    user: BrowserUser,
+    service: Meetings,
 ) -> FolderRead:
     return await _folder_read(
         await service.rename_folder(user.id, workspace_id, folder_id, payload.name), user, service
     )
 
 
-@router.delete("/workspaces/{workspace_id}/folders/{folder_id}", status_code=204)
+@router.delete(
+    "/workspaces/{workspace_id}/folders/{folder_id}",
+    status_code=204,
+    description=(
+        "Delete a non-default folder and move its meetings to the default "
+        "folder, preserving their content and access restrictions. Requires a "
+        "Moderator or Owner."
+    ),
+)
 async def delete_folder(
-    workspace_id: UUID, folder_id: UUID, user: BrowserUser, service: Folders
+    workspace_id: WorkspaceId, folder_id: FolderId, user: BrowserUser, service: Folders
 ) -> None:
     await service.delete_folder(user.id, workspace_id, folder_id, datetime.now(UTC))
 
 
-@router.post("/workspaces/{workspace_id}/folders/{folder_id}/restore")
+@router.post(
+    "/workspaces/{workspace_id}/folders/{folder_id}/restore",
+    description=(
+        "Restore a deleted folder and its previous meeting placement. Requires "
+        "a Moderator or Owner; refuses to overwrite later moves."
+    ),
+)
 async def restore_folder(
-    workspace_id: UUID, folder_id: UUID, user: BrowserUser, folders: Folders, meetings: Meetings
+    workspace_id: WorkspaceId,
+    folder_id: FolderId,
+    user: BrowserUser,
+    folders: Folders,
+    meetings: Meetings,
 ) -> FolderRead:
     folder = await folders.restore_folder(user.id, workspace_id, folder_id, datetime.now(UTC))
     return await _folder_read(folder, user, meetings)
@@ -145,9 +192,18 @@ class RevisionInput(Input):
         return self
 
 
-@router.get("/meetings/{meeting_id}/transcript/revisions")
+@router.get(
+    "/meetings/{meeting_id}/transcript/revisions",
+    description=(
+        "List transcript revisions newest first for an accessible meeting, "
+        "including original provenance and current revision status."
+    ),
+)
 async def list_revisions(
-    meeting_id: UUID, query: Annotated[PageQuery, Query()], user: BrowserUser, service: Meetings
+    meeting_id: MeetingId,
+    query: Annotated[PageQuery, Query()],
+    user: BrowserUser,
+    service: Meetings,
 ) -> Page[RevisionRead]:
     current = await service.transcript(user.id, meeting_id)
     scope = f"revisions:{meeting_id}:{user.id}"
@@ -173,9 +229,17 @@ async def list_revisions(
     )
 
 
-@router.post("/meetings/{meeting_id}/transcript/revisions", status_code=201)
+@router.post(
+    "/meetings/{meeting_id}/transcript/revisions",
+    status_code=201,
+    description=(
+        "Create a transcript revision with text corrections or speaker renames. "
+        "Requires meeting access and the current base revision; preserves the "
+        "original transcript."
+    ),
+)
 async def edit_transcript(
-    meeting_id: UUID,
+    meeting_id: MeetingId,
     payload: RevisionInput,
     user: BrowserUser,
     service: Meetings,
@@ -244,9 +308,15 @@ def _term_read(term: GlossaryTerm) -> TermRead:
     )
 
 
-@router.get("/workspaces/{workspace_id}/glossary-terms")
+@router.get(
+    "/workspaces/{workspace_id}/glossary-terms",
+    description="List the workspace glossary for a signed-in workspace member.",
+)
 async def glossary(
-    workspace_id: UUID, query: Annotated[PageQuery, Query()], user: BrowserUser, service: Meetings
+    workspace_id: WorkspaceId,
+    query: Annotated[PageQuery, Query()],
+    user: BrowserUser,
+    service: Meetings,
 ) -> Page[TermRead]:
     scope = f"glossary:{workspace_id}:{user.id}"
     terms = await service.glossary(user.id, workspace_id, list_window(query, scope))
@@ -255,9 +325,20 @@ async def glossary(
     return list_page([_term_read(item) for item in terms], query, scope, cursor)
 
 
-@router.post("/workspaces/{workspace_id}/glossary-terms", status_code=201)
+@router.post(
+    "/workspaces/{workspace_id}/glossary-terms",
+    status_code=201,
+    description=(
+        "Add a workspace glossary term as a member. Terms are unique ignoring "
+        "case; any source meeting must be accessible."
+    ),
+)
 async def add_term(
-    workspace_id: UUID, payload: TermInput, user: BrowserUser, service: Meetings, response: Response
+    workspace_id: WorkspaceId,
+    payload: TermInput,
+    user: BrowserUser,
+    service: Meetings,
+    response: Response,
 ) -> TermRead:
     term = GlossaryTerm(
         term_id=uuid4(),
@@ -276,9 +357,19 @@ async def add_term(
     return _term_read(created)
 
 
-@router.patch("/workspaces/{workspace_id}/glossary-terms/{term_id}")
+@router.patch(
+    "/workspaces/{workspace_id}/glossary-terms/{term_id}",
+    description=(
+        "Update a glossary term as its author, a Moderator or the Owner. A "
+        "changed term must remain unique ignoring case."
+    ),
+)
 async def update_term(
-    workspace_id: UUID, term_id: UUID, payload: TermPatch, user: BrowserUser, service: Meetings
+    workspace_id: WorkspaceId,
+    term_id: TermId,
+    payload: TermPatch,
+    user: BrowserUser,
+    service: Meetings,
 ) -> TermRead:
     return _term_read(
         await service.update_term(
@@ -290,8 +381,12 @@ async def update_term(
     )
 
 
-@router.delete("/workspaces/{workspace_id}/glossary-terms/{term_id}", status_code=204)
+@router.delete(
+    "/workspaces/{workspace_id}/glossary-terms/{term_id}",
+    status_code=204,
+    description="Remove a glossary term as its author, a Moderator or the Owner.",
+)
 async def delete_term(
-    workspace_id: UUID, term_id: UUID, user: BrowserUser, service: Meetings
+    workspace_id: WorkspaceId, term_id: TermId, user: BrowserUser, service: Meetings
 ) -> None:
     await service.delete_term(user.id, workspace_id, term_id)

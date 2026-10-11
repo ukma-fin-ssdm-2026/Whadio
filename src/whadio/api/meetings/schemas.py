@@ -54,6 +54,7 @@ class JobStatus(StrEnum):
 
 
 MeetingId = Annotated[UUID, Path(description="Meeting identifier", examples=[MEETING_ID_EXAMPLE])]
+FolderId = Annotated[UUID, Path(description="Folder identifier", examples=[FOLDER_ID_EXAMPLE])]
 MeetingName = Annotated[
     DisplayText,
     Field(min_length=1, max_length=200, description="Meeting name", examples=["Sprint 12 review"]),

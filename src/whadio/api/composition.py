@@ -1,5 +1,6 @@
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
@@ -9,14 +10,20 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..access_policy.repositories import AccessRepository
-from ..access_policy.services import AccessCollaborators, AccessPolicy, AccessService
+from ..access_policy.services import (
+    AccessCollaborators,
+    AccessPolicy,
+    AccessService,
+    IShareRequestNotifier,
+)
 from ..accounts.enums import NotesTemplate
 from ..accounts.repositories import MembershipRepository
 from ..accounts.services import WorkspaceMembershipService
 from ..audit.contracts import IContentAuditWriter
 from ..audit.services import AuditWriter
-from ..meetings.contracts import QueuedNotes
+from ..meetings.contracts import EvictionNotice, IEvictionNotifier, QueuedNotes
 from ..meetings.persistence import MeetingPersistence, PersistenceDependencies
+from ..meetings.processing import IMeetingProcessing
 from ..meetings.recordings import RecordingObjects
 from ..meetings.repositories import FolderRepository, MeetingRepository
 from ..meetings.services import FolderService, MeetingService
@@ -24,7 +31,6 @@ from ..meetings.settings import MeetingSettings
 from ..shared.database import Database, DatabaseSettings, IUseCaseTransactions
 from ..shared.errors import Failure, UseCaseError
 from ..shared.storage import connect_s3_storage
-from .processing_port import IMeetingProcessing
 
 
 class CompositionRoot:
@@ -97,15 +103,30 @@ class UnavailableMeetingProcessing:
         raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
 
 
-def meeting_processing() -> IMeetingProcessing:
+def meeting_processing(session: Session) -> IMeetingProcessing:
+    del session
     return UnavailableMeetingProcessing()
 
 
 Processing = Annotated[IMeetingProcessing, Depends(meeting_processing)]
 
 
+class UnavailableEvictionNotifications:
+    async def enqueue(self, notice: EvictionNotice) -> None:
+        del notice
+        raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+
+
+def eviction_notifications(session: Session) -> IEvictionNotifier:
+    del session
+    return UnavailableEvictionNotifications()
+
+
 def meeting_persistence(
-    session: Session, meetings: Meetings, audit: ContentAudit
+    session: Session,
+    meetings: Meetings,
+    audit: ContentAudit,
+    notifications: Annotated[IEvictionNotifier, Depends(eviction_notifications)],
 ) -> MeetingPersistence:
     settings = MeetingSettings()
     return MeetingPersistence(
@@ -114,6 +135,10 @@ def meeting_persistence(
             MeetingRepository(session),
             WorkspaceMembershipService(MembershipRepository(session)),
             audit,
+            AccessPolicy(
+                AccessRepository(session), WorkspaceMembershipService(MembershipRepository(session))
+            ),
+            notifications,
         ),
         hosted_limit=1000 if settings.meetings_hosted else None,
     )
@@ -166,14 +191,23 @@ class UnavailableShareNotifications:
         raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
 
 
-def access_service(session: Session, audit: ContentAudit) -> AccessService:
+def share_notifications(session: Session) -> IShareRequestNotifier:
+    del session
+    return UnavailableShareNotifications()
+
+
+def access_service(
+    session: Session,
+    audit: ContentAudit,
+    notifications: Annotated[IShareRequestNotifier, Depends(share_notifications)],
+) -> AccessService:
     return AccessService(
         AccessCollaborators(
             AccessRepository(session),
             MeetingRepository(session),
             WorkspaceMembershipService(MembershipRepository(session)),
             audit,
-            UnavailableShareNotifications(),
+            notifications,
         )
     )
 
@@ -190,3 +224,28 @@ def folder_service(session: Session) -> FolderService:
 
 
 Folders = Annotated[FolderService, Depends(folder_service)]
+
+
+@dataclass(frozen=True)
+class RuntimeIntegrations:
+    processing: Callable[[AsyncSession], IMeetingProcessing] | None = None
+    shares: Callable[[AsyncSession], IShareRequestNotifier] | None = None
+    evictions: Callable[[AsyncSession], IEvictionNotifier] | None = None
+
+
+def connect_integrations(app: FastAPI, integrations: RuntimeIntegrations) -> None:
+    def processing(session: Session) -> IMeetingProcessing:
+        factory = integrations.processing
+        return UnavailableMeetingProcessing() if factory is None else factory(session)
+
+    def shares(session: Session) -> IShareRequestNotifier:
+        factory = integrations.shares
+        return UnavailableShareNotifications() if factory is None else factory(session)
+
+    def evictions(session: Session) -> IEvictionNotifier:
+        factory = integrations.evictions
+        return UnavailableEvictionNotifications() if factory is None else factory(session)
+
+    app.dependency_overrides[meeting_processing] = processing
+    app.dependency_overrides[share_notifications] = shares
+    app.dependency_overrides[eviction_notifications] = evictions

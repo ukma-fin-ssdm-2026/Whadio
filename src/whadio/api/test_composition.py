@@ -26,7 +26,13 @@ from ..accounts.repositories import MembershipRepository
 from ..audit.contracts import ContentEvent
 from ..audit.models import AuditEvent
 from ..audit.services import AuditWriter
-from ..meetings.contracts import ContextReference, MeetingFilter, QueuedNotes
+from ..meetings.contracts import (
+    ContextReference,
+    EvictionNotice,
+    IEvictionNotifier,
+    MeetingFilter,
+    QueuedNotes,
+)
 from ..meetings.enums import (
     AccessMode,
     MeetingSource,
@@ -97,6 +103,14 @@ class ProcessingFixture:
         return QueuedNotes(
             uuid4(), meeting_id, preset or NotesTemplate.SUMMARY, LlmProvider.WHADIO, now
         )
+
+
+class EvictionNotices:
+    def __init__(self) -> None:
+        self.notices: list[EvictionNotice] = []
+
+    async def enqueue(self, notice: EvictionNotice) -> None:
+        self.notices.append(notice)
 
 
 class MemoryObjects:
@@ -356,13 +370,17 @@ class Unit:
     database: Database
 
 
-def persistence_fixture(unit: Unit, *, hosted_limit: int | None = None) -> MeetingPersistence:
+def persistence_fixture(
+    unit: Unit, *, hosted_limit: int | None = None, notifications: IEvictionNotifier | None = None
+) -> MeetingPersistence:
     return MeetingPersistence(
         PersistenceDependencies(
             unit.meetings,
             MeetingRepository(unit.session),
             MembershipRepository(unit.session),
             AuditWriter(unit.session),
+            unit.access.policy,
+            EvictionNotices() if notifications is None else notifications,
         ),
         hosted_limit=hosted_limit,
     )
@@ -1093,11 +1111,13 @@ def test_successful_regeneration_preserves_previous_notes_and_audits_requester(
             assert (
                 len(versions),
                 {v.note.content for v in versions},
-                None if event is None else (event.actor_user_id, event.action),
+                None
+                if event is None
+                else (event.actor_user_id, event.action, event.details, event.subject_id),
             ) == (
                 2,
                 {"new notes", "Alice will send the report"},
-                (unit.member, "notes_regenerated"),
+                (unit.member, "notes_regenerated", {"preset": "summary"}, None),
             )
 
     asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)

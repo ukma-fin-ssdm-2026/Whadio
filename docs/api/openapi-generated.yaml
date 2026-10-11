@@ -561,6 +561,8 @@ paths:
       tags:
       - meetings
       summary: Get a recording playback link
+      description: Get a five-minute playback link after checking meeting access.
+        Refuses unfinished recordings and recordings removed by retention.
       operationId: recording_link_api_v1_meetings__meeting_id__recording_get
       security:
       - sessionCookie: []
@@ -1000,6 +1002,8 @@ paths:
       tags:
       - meetings
       summary: List Folders
+      description: List workspace folders with counts of meetings the caller can read.
+        Restricted meetings without access are excluded from counts.
       operationId: list_folders_api_v1_workspaces__workspace_id__folders_get
       security:
       - sessionCookie: []
@@ -1010,7 +1014,11 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
           title: Workspace Id
+        description: Workspace identifier
       - name: limit
         in: query
         required: false
@@ -1077,6 +1085,8 @@ paths:
       tags:
       - meetings
       summary: Create Folder
+      description: Create a folder in this workspace. Requires a Moderator or Owner;
+        names are unique ignoring case.
       operationId: create_folder_api_v1_workspaces__workspace_id__folders_post
       security:
       - sessionCookie: []
@@ -1087,7 +1097,11 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
           title: Workspace Id
+        description: Workspace identifier
       requestBody:
         required: true
         content:
@@ -1136,6 +1150,8 @@ paths:
       tags:
       - meetings
       summary: Rename Folder
+      description: Rename a workspace folder. Requires a Moderator or Owner and a
+        name unique within the workspace.
       operationId: rename_folder_api_v1_workspaces__workspace_id__folders__folder_id__patch
       security:
       - sessionCookie: []
@@ -1146,14 +1162,22 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
           title: Workspace Id
+        description: Workspace identifier
       - name: folder_id
         in: path
         required: true
         schema:
           type: string
           format: uuid
+          description: Folder identifier
+          examples:
+          - e8f7d6c5-b4a3-4291-8f7e-6d5c4b3a2918
           title: Folder Id
+        description: Folder identifier
       requestBody:
         required: true
         content:
@@ -1201,6 +1225,9 @@ paths:
       tags:
       - meetings
       summary: Delete Folder
+      description: Delete a non-default folder and move its meetings to the default
+        folder, preserving their content and access restrictions. Requires a Moderator
+        or Owner.
       operationId: delete_folder_api_v1_workspaces__workspace_id__folders__folder_id__delete
       security:
       - sessionCookie: []
@@ -1211,14 +1238,22 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
           title: Workspace Id
+        description: Workspace identifier
       - name: folder_id
         in: path
         required: true
         schema:
           type: string
           format: uuid
+          description: Folder identifier
+          examples:
+          - e8f7d6c5-b4a3-4291-8f7e-6d5c4b3a2918
           title: Folder Id
+        description: Folder identifier
       responses:
         '204':
           description: Successful Response
@@ -1257,6 +1292,8 @@ paths:
       tags:
       - meetings
       summary: Restore Folder
+      description: Restore a deleted folder and its previous meeting placement. Requires
+        a Moderator or Owner; refuses to overwrite later moves.
       operationId: restore_folder_api_v1_workspaces__workspace_id__folders__folder_id__restore_post
       security:
       - sessionCookie: []
@@ -1267,14 +1304,22 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
           title: Workspace Id
+        description: Workspace identifier
       - name: folder_id
         in: path
         required: true
         schema:
           type: string
           format: uuid
+          description: Folder identifier
+          examples:
+          - e8f7d6c5-b4a3-4291-8f7e-6d5c4b3a2918
           title: Folder Id
+        description: Folder identifier
       responses:
         '200':
           description: Successful Response
@@ -1317,6 +1362,8 @@ paths:
       tags:
       - meetings
       summary: List Revisions
+      description: List transcript revisions newest first for an accessible meeting,
+        including original provenance and current revision status.
       operationId: list_revisions_api_v1_meetings__meeting_id__transcript_revisions_get
       security:
       - sessionCookie: []
@@ -1327,7 +1374,11 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
           title: Meeting Id
+        description: Meeting identifier
       - name: limit
         in: query
         required: false
@@ -1394,6 +1445,9 @@ paths:
       tags:
       - meetings
       summary: Edit Transcript
+      description: Create a transcript revision with text corrections or speaker renames.
+        Requires meeting access and the current base revision; preserves the original
+        transcript.
       operationId: edit_transcript_api_v1_meetings__meeting_id__transcript_revisions_post
       security:
       - sessionCookie: []
@@ -1404,7 +1458,11 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
           title: Meeting Id
+        description: Meeting identifier
       requestBody:
         required: true
         content:
@@ -1453,6 +1511,7 @@ paths:
       tags:
       - meetings
       summary: Glossary
+      description: List the workspace glossary for a signed-in workspace member.
       operationId: glossary_api_v1_workspaces__workspace_id__glossary_terms_get
       security:
       - sessionCookie: []
@@ -1463,7 +1522,11 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
           title: Workspace Id
+        description: Workspace identifier
       - name: limit
         in: query
         required: false
@@ -1530,6 +1593,8 @@ paths:
       tags:
       - meetings
       summary: Add Term
+      description: Add a workspace glossary term as a member. Terms are unique ignoring
+        case; any source meeting must be accessible.
       operationId: add_term_api_v1_workspaces__workspace_id__glossary_terms_post
       security:
       - sessionCookie: []
@@ -1540,7 +1605,11 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
           title: Workspace Id
+        description: Workspace identifier
       requestBody:
         required: true
         content:
@@ -1589,6 +1658,8 @@ paths:
       tags:
       - meetings
       summary: Update Term
+      description: Update a glossary term as its author, a Moderator or the Owner.
+        A changed term must remain unique ignoring case.
       operationId: update_term_api_v1_workspaces__workspace_id__glossary_terms__term_id__patch
       security:
       - sessionCookie: []
@@ -1599,14 +1670,20 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
           title: Workspace Id
+        description: Workspace identifier
       - name: term_id
         in: path
         required: true
         schema:
           type: string
           format: uuid
+          description: Glossary term identifier
           title: Term Id
+        description: Glossary term identifier
       requestBody:
         required: true
         content:
@@ -1654,6 +1731,7 @@ paths:
       tags:
       - meetings
       summary: Delete Term
+      description: Remove a glossary term as its author, a Moderator or the Owner.
       operationId: delete_term_api_v1_workspaces__workspace_id__glossary_terms__term_id__delete
       security:
       - sessionCookie: []
@@ -1664,14 +1742,20 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
           title: Workspace Id
+        description: Workspace identifier
       - name: term_id
         in: path
         required: true
         schema:
           type: string
           format: uuid
+          description: Glossary term identifier
           title: Term Id
+        description: Glossary term identifier
       responses:
         '204':
           description: Successful Response
@@ -1710,6 +1794,8 @@ paths:
       tags:
       - access
       summary: Read Access
+      description: Read the access mode and selected members of a meeting the caller
+        can read.
       operationId: read_access_api_v1_meetings__meeting_id__access_get
       security:
       - sessionCookie: []
@@ -1720,7 +1806,11 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
           title: Meeting Id
+        description: Meeting identifier
       responses:
         '200':
           description: Successful Response
@@ -1774,6 +1864,9 @@ paths:
       tags:
       - access
       summary: Replace Access
+      description: Replace meeting access as a Moderator or Owner who can read it.
+        Restricted access requires selected workspace members; unselected members
+        lose access immediately.
       operationId: replace_access_api_v1_meetings__meeting_id__access_put
       security:
       - sessionCookie: []
@@ -1784,7 +1877,11 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
           title: Meeting Id
+        description: Meeting identifier
       requestBody:
         required: true
         content:
@@ -1845,6 +1942,7 @@ paths:
       tags:
       - access
       summary: List Shares
+      description: List shares of a meeting the caller can read, newest first.
       operationId: list_shares_api_v1_meetings__meeting_id__shares_get
       security:
       - sessionCookie: []
@@ -1855,7 +1953,11 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
           title: Meeting Id
+        description: Meeting identifier
       - name: limit
         in: query
         required: false
@@ -1934,6 +2036,9 @@ paths:
       tags:
       - access
       summary: Create Share
+      description: Create a read-only share of an accessible meeting. Disclose its
+        token once in the link fragment; a share creator must approve the recipient
+        account.
       operationId: create_share_api_v1_meetings__meeting_id__shares_post
       security:
       - sessionCookie: []
@@ -1944,7 +2049,11 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
           title: Meeting Id
+        description: Meeting identifier
       requestBody:
         required: true
         content:
@@ -2005,6 +2114,7 @@ paths:
       tags:
       - access
       summary: Recipient Shares
+      description: List active shares bound to the signed-in account, newest first.
       operationId: recipient_shares_api_v1_users_me_shares_get
       security:
       - sessionCookie: []
@@ -2088,6 +2198,8 @@ paths:
       tags:
       - access
       summary: Revoke Share
+      description: Revoke a share as its creator. Its bound recipient can no longer
+        read the meeting through it.
       operationId: revoke_share_api_v1_shares__share_id__delete
       security:
       - sessionCookie: []
@@ -2098,7 +2210,9 @@ paths:
         schema:
           type: string
           format: uuid
+          description: External share identifier
           title: Share Id
+        description: External share identifier
       responses:
         '204':
           description: Successful Response
@@ -2149,6 +2263,8 @@ paths:
       tags:
       - access
       summary: Request Access
+      description: Request access with a token from the share link fragment. Requires
+        an existing account and reserves the creator notification in the same transaction.
       operationId: request_access_api_v1_shares__share_id__access_requests_post
       security:
       - sessionCookie: []
@@ -2159,7 +2275,9 @@ paths:
         schema:
           type: string
           format: uuid
+          description: External share identifier
           title: Share Id
+        description: External share identifier
       requestBody:
         required: true
         content:
@@ -2219,6 +2337,7 @@ paths:
       tags:
       - access
       summary: List Requests
+      description: List access requests for a share as its creator, newest first.
       operationId: list_requests_api_v1_shares__share_id__access_requests_get
       security:
       - sessionCookie: []
@@ -2229,7 +2348,9 @@ paths:
         schema:
           type: string
           format: uuid
+          description: External share identifier
           title: Share Id
+        description: External share identifier
       - name: limit
         in: query
         required: false
@@ -2309,6 +2430,8 @@ paths:
       tags:
       - access
       summary: Approve Request
+      description: Approve a pending request as the share creator, binding the share
+        to that one account. Refuses revoked or already bound shares.
       operationId: approve_request_api_v1_share_access_requests__request_id__approve_post
       security:
       - sessionCookie: []
@@ -2319,7 +2442,9 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Share access request identifier
           title: Request Id
+        description: Share access request identifier
       responses:
         '200':
           description: Successful Response
@@ -2374,6 +2499,7 @@ paths:
       tags:
       - access
       summary: Decline Request
+      description: Decline a pending access request as the share creator.
       operationId: decline_request_api_v1_share_access_requests__request_id__decline_post
       security:
       - sessionCookie: []
@@ -2384,7 +2510,9 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Share access request identifier
           title: Request Id
+        description: Share access request identifier
       responses:
         '200':
           description: Successful Response
@@ -2439,6 +2567,9 @@ paths:
       tags:
       - access
       summary: Shared Transcript
+      description: Read a transcript through an active share bound to the caller,
+        applying speaker-name redaction where configured. Export and onward sharing
+        are not permitted.
       operationId: shared_transcript_api_v1_shares__share_id__transcript_get
       security:
       - sessionCookie: []
@@ -2449,7 +2580,9 @@ paths:
         schema:
           type: string
           format: uuid
+          description: External share identifier
           title: Share Id
+        description: External share identifier
       - name: revision_id
         in: query
         required: false
@@ -2515,6 +2648,8 @@ paths:
       tags:
       - access
       summary: Shared Notes
+      description: List notes through an active share bound to the caller, applying
+        configured speaker-name redaction.
       operationId: shared_notes_api_v1_shares__share_id__notes_get
       security:
       - sessionCookie: []
@@ -2525,7 +2660,9 @@ paths:
         schema:
           type: string
           format: uuid
+          description: External share identifier
           title: Share Id
+        description: External share identifier
       - name: limit
         in: query
         required: false
@@ -2605,6 +2742,8 @@ paths:
       tags:
       - export
       summary: Export Transcript
+      description: Download the current transcript of an accessible meeting as Markdown
+        or WebVTT. External share access does not authorize exports.
       operationId: export_transcript_api_v1_meetings__meeting_id__transcript_export_get
       security:
       - sessionCookie: []
@@ -2615,7 +2754,11 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
           title: Meeting Id
+        description: Meeting identifier
       - name: format
         in: query
         required: false
@@ -2668,6 +2811,8 @@ paths:
       tags:
       - export
       summary: Export Notes
+      description: Download the current notes of an accessible meeting as Markdown.
+        Requires existing notes; external share access does not authorize exports.
       operationId: export_notes_api_v1_meetings__meeting_id__notes_export_get
       security:
       - sessionCookie: []
@@ -2678,7 +2823,11 @@ paths:
         schema:
           type: string
           format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
           title: Meeting Id
+        description: Meeting identifier
       responses:
         '200':
           description: Successful Response

@@ -16,6 +16,7 @@ from ..meetings.persistence import MeetingPersistence, PersistenceDependencies
 from ..meetings.repositories import MeetingRepository
 from ..meetings.services import MeetingService, RecordingInput
 from ..shared.database import Database, DatabaseSettings
+from .test_composition import EvictionNotices
 
 pytestmark = pytest.mark.slow
 
@@ -35,7 +36,14 @@ def _services(session: AsyncSession, *, hosted_limit: int | None = None) -> Meet
         repository, AccessPolicy(AccessRepository(session), memberships), audit
     )
     return MeetingPersistence(
-        PersistenceDependencies(service, repository, memberships, audit),
+        PersistenceDependencies(
+            service,
+            repository,
+            memberships,
+            audit,
+            AccessPolicy(AccessRepository(session), memberships),
+            EvictionNotices(),
+        ),
         hosted_limit=hosted_limit,
     )
 

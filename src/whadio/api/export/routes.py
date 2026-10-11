@@ -1,6 +1,5 @@
 from enum import StrEnum
 from typing import Annotated
-from uuid import UUID
 
 from fastapi import APIRouter, Query, Response
 
@@ -8,6 +7,7 @@ from ...export.services import ExportService
 from ..accounts.auth import BrowserUser
 from ..composition import Meetings
 from ..core.errors import ApiError, ErrorCode, error_responses
+from ..meetings.schemas import MeetingId
 
 router = APIRouter(
     tags=["export"],
@@ -26,9 +26,15 @@ class TranscriptFormat(StrEnum):
     VTT = "vtt"
 
 
-@router.get("/meetings/{meeting_id}/transcript/export")
+@router.get(
+    "/meetings/{meeting_id}/transcript/export",
+    description=(
+        "Download the current transcript of an accessible meeting as Markdown "
+        "or WebVTT. External share access does not authorize exports."
+    ),
+)
 async def export_transcript(
-    meeting_id: UUID,
+    meeting_id: MeetingId,
     user: BrowserUser,
     meetings: Meetings,
     *,
@@ -51,8 +57,15 @@ async def export_transcript(
     )
 
 
-@router.get("/meetings/{meeting_id}/notes/export")
-async def export_notes(meeting_id: UUID, user: BrowserUser, meetings: Meetings) -> Response:
+@router.get(
+    "/meetings/{meeting_id}/notes/export",
+    description=(
+        "Download the current notes of an accessible meeting as Markdown. "
+        "Requires existing notes; external share access does not authorize "
+        "exports."
+    ),
+)
+async def export_notes(meeting_id: MeetingId, user: BrowserUser, meetings: Meetings) -> Response:
     content = await ExportService(meetings).notes_markdown(user.id, meeting_id)
     if content is None:
         raise ApiError(409, ErrorCode.NO_NOTES, "No notes yet")

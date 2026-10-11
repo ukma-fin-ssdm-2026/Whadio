@@ -190,6 +190,10 @@ class PlaybackLink(Output):
             410: "`RECORDING_DELETED`: retention removed the recording",
         }
     ),
+    description=(
+        "Get a five-minute playback link after checking meeting access. Refuses "
+        "unfinished recordings and recordings removed by retention."
+    ),
 )
 async def recording_link(
     meeting_id: MeetingId,

@@ -45,6 +45,8 @@ class AuditWriter:
                 ("from_folder_id", event.from_folder_id),
                 ("to_folder_id", event.to_folder_id),
                 ("requester_user_id", event.requester_id),
+                ("meeting_id", event.triggering_meeting_id),
+                ("preset", event.preset),
             )
             if value is not None
         }

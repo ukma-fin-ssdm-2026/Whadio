@@ -3,7 +3,7 @@ from typing import Protocol
 from uuid import UUID
 
 from ..accounts.enums import NotesTemplate
-from ..meetings.contracts import QueuedNotes
+from .contracts import QueuedNotes
 
 
 class IMeetingProcessing(Protocol):
