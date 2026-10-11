@@ -302,4 +302,3 @@ This document and its diagrams were prepared and revised with the assistance of 
 Opus 5.5) with the later additions from OpenAI Codex. The architecture follows the decisions of the team's working session of 2026-09-24 and
 the architecture-lead decisions that followed it. The author reviewed and edited the content, and
 the document is reviewed through a pull request before merging.
-
