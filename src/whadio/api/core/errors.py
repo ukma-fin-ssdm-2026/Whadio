@@ -124,6 +124,7 @@ _LOCATION = TypeAdapter(tuple[str | int, ...])
 _HTTP_STATUS_CODES: Final[Mapping[int, ErrorCode]] = {
     404: ErrorCode.NOT_FOUND,
     405: ErrorCode.METHOD_NOT_ALLOWED,
+    413: ErrorCode.PAYLOAD_TOO_LARGE,
 }
 
 

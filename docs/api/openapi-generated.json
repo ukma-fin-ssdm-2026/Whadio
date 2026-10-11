@@ -757,6 +757,16 @@
               }
             }
           },
+          "400": {
+            "description": "`MALFORMED_REQUEST`: invalid or repeated Content-Length header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
             "content": {
@@ -778,7 +788,7 @@
             }
           },
           "413": {
-            "description": "`PAYLOAD_TOO_LARGE`: the file is larger than 500 MiB",
+            "description": "`PAYLOAD_TOO_LARGE`: the file is larger than 500 MiB or the multipart request exceeds 501 MiB",
             "content": {
               "application/json": {
                 "schema": {

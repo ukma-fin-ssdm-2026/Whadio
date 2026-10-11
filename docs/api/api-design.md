@@ -565,6 +565,10 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   **Success:** `201`, the meeting in state `queued`; `Location` points to it
 - **Rules:**
   - Multipart: an audio `file`, plus an optional `folder_id` and `name` (FR-013).
+  - The file limit is 500 MiB. The HTTP boundary allows a total request of 501 MiB,
+    including multipart overhead. Oversized declared bodies are rejected before parsing;
+    incoming bytes are counted even without a length header or with an understated length.
+    Rejection stops parsing, closes partial upload files and does not call the upload use case.
   - The meeting is queued for processing at once. Its speakers are labelled `Speaker 1`,
     `Speaker 2`, and so on (FR-016).
   - `folder_id` must be a folder of this workspace; without it, the default folder is used.
@@ -573,8 +577,10 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - Without `name`, the meeting is named after its date and time until it is renamed
     (FR-033).
 - **Errors:**
+  - `400 MALFORMED_REQUEST`: an invalid or repeated `Content-Length` header.
   - `404 NOT_FOUND`: no such workspace, or the caller is not a member.
-  - `413 PAYLOAD_TOO_LARGE`: the file is larger than 500 MiB.
+  - `413 PAYLOAD_TOO_LARGE`: the file is larger than 500 MiB, or the complete multipart request
+    exceeds 501 MiB.
   - `415 UNSUPPORTED_MEDIA_TYPE`: the content is not a supported audio format, so no meeting is
     created (FR-013).
 

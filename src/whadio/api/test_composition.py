@@ -66,9 +66,40 @@ from ..shared.errors import Failure, UseCaseError
 from ..shared.storage import ObjectStorageError, PresignedUrl
 from .app import create_app
 from .composition import folder_service, meeting_processing, recording_objects, transaction
+from .core.errors import ErrorCode, ErrorResponse
 from .mcp_server import build_mcp_server
+from .meetings import routes as meeting_routes
 
 pytestmark = pytest.mark.slow
+
+
+def test_multipart_allowance_does_not_relax_file_size_limit(
+    database_settings: DatabaseSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        storage, processing = MemoryObjects(), ProcessingFixture()
+        recording = _wav()
+        monkeypatch.setattr(meeting_routes, "MAX_UPLOAD_BYTES", len(recording) - 1)
+        async with (
+            unit_fixture(database_settings) as unit,
+            client_fixture(unit, unit.member, processing, storage) as client,
+        ):
+            # Act
+            response = await client.post(
+                f"/api/v1/workspaces/{unit.workspace}/meetings",
+                files={"file": ("audio.wav", recording, "audio/wav")},
+            )
+            error = ErrorResponse.model_validate_json(response.content).error
+            # Assert
+            assert (response.status_code, error.code, processing.transcriptions, storage.data) == (
+                413,
+                ErrorCode.PAYLOAD_TOO_LARGE,
+                [],
+                {},
+            )
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
 
 
 class FailingContentAuditWriter:

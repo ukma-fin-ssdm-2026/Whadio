@@ -1,6 +1,6 @@
 import asyncio
 from datetime import UTC, datetime
-from typing import Annotated, Final
+from typing import Annotated
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile
@@ -40,11 +40,10 @@ from .schemas import (
     ProcessingJobRead,
     TranscriptRead,
 )
+from .upload_limits import MAX_UPLOAD_BYTES, RecordingUploadRoute
 from .views import meeting_read, meeting_summary, notes_read, transcript_read
 
-router = APIRouter()
-
-MAX_UPLOAD_BYTES: Final = 500 * 1024 * 1024
+router = APIRouter(route_class=RecordingUploadRoute)
 
 
 async def _validate_upload(file: UploadFile) -> None:
@@ -120,9 +119,11 @@ async def list_meetings(
         },
         **error_responses(
             {
+                400: "`MALFORMED_REQUEST`: invalid or repeated Content-Length header",
                 401: DOC_UNAUTHENTICATED,
                 404: _WORKSPACE_NOT_FOUND,
-                413: f"`{ErrorCode.PAYLOAD_TOO_LARGE}`: the file is larger than 500 MiB",
+                413: f"`{ErrorCode.PAYLOAD_TOO_LARGE}`: the file is larger than 500 MiB "
+                "or the multipart request exceeds 501 MiB",
                 415: f"`{ErrorCode.UNSUPPORTED_MEDIA_TYPE}`: the content is not a supported "
                 "audio format",
                 422: f"{DOC_INVALID}; `folder_id` must be a folder of this workspace",
