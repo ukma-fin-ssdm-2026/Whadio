@@ -990,6 +990,9 @@ status, and which operations return it.
   or cancelled.
 - **`DEFAULT_FOLDER`:** deleting the default folder, which receives the meetings of deleted
   folders (FR-034).
+- **`RESTRICTED_MEETING_REQUIRES_RECIPIENT`:** removing the last selected recipient of a
+  restricted meeting before a replacement is selected. Returned as `409` by
+  `DELETE /workspaces/{id}/members/{user_id}`.
 - **`FOLDER_EXISTS`, `TERM_EXISTS`:** a folder name or a glossary term that already exists in
   the workspace, ignoring case.
 - **`NOT_TRANSCRIBED`:** the meeting has no transcript yet, because it is recording, queued,
@@ -1236,3 +1239,5 @@ This document and the API code were prepared with the assistance of Claude Code 
 and 2026-10-04, and the requirements merged in PR #46. The stub code was checked with a type
 checker and with scripted requests against every implemented operation. The author reviewed
 and edited the content, and the document is reviewed through a pull request before merging.
+
+These PR #63 review revisions were assisted by OpenAI Codex. Everything was reviewed by me.

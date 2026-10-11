@@ -5,7 +5,6 @@ from sqlalchemy import (
     CheckConstraint,
     Constraint,
     DateTime,
-    Enum,
     ForeignKey,
     Index,
     Text,
@@ -14,7 +13,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, MappedColumn
 
-from ..shared.database import Base, enum_values
+from ..shared.database import Base, enum_type
 from .enums import JobStatus, JobType
 
 
@@ -26,24 +25,10 @@ class ProcessingJob(Base):
         ForeignKey("meeting.meeting_id", ondelete="CASCADE")
     )
     job_type: Mapped[JobType] = MappedColumn[JobType](
-        Enum(
-            JobType,
-            name="job_type",
-            native_enum=False,
-            create_constraint=True,
-            values_callable=enum_values,
-            validate_strings=True,
-        ),
+        enum_type(JobType, "job_type"),
     )
     status: Mapped[JobStatus] = MappedColumn[JobStatus](
-        Enum(
-            JobStatus,
-            name="status",
-            native_enum=False,
-            create_constraint=True,
-            values_callable=enum_values,
-            validate_strings=True,
-        ),
+        enum_type(JobStatus, "status"),
     )
     failure_reason: Mapped[str | None] = MappedColumn[str | None](Text)
     created_at: Mapped[datetime] = MappedColumn[datetime](

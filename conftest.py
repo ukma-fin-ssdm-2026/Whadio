@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy import Connection, create_engine, text
+from sqlalchemy import Connection, create_engine, delete, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
@@ -79,6 +79,39 @@ def database_connection(database_settings: DatabaseSettings) -> Generator[Connec
 def database_session(database_connection: Connection) -> Generator[Session]:
     with Session(bind=database_connection, expire_on_commit=False) as session:
         yield session
+
+
+@pytest.fixture
+def committed_workspace(database_settings: DatabaseSettings) -> Generator[tuple[UUID, UUID]]:
+    engine = create_engine(database_settings.application_url(), hide_parameters=True)
+    actor, workspace = uuid4(), uuid4()
+    try:
+        with Session(engine) as session, session.begin():
+            session.add(
+                User(
+                    user_id=actor,
+                    email=f"{actor}@example.test",
+                    name="test",
+                    password_hash=uuid4().hex,
+                    terms_accepted_at=datetime.now(UTC),
+                )
+            )
+            session.add(
+                Workspace(
+                    workspace_id=workspace, name="test", default_template=NotesTemplate.SUMMARY
+                )
+            )
+            session.flush()
+            session.add(
+                WorkspaceMembership(workspace_id=workspace, user_id=actor, role=WorkspaceRole.OWNER)
+            )
+            session.add(Folder(workspace_id=workspace, name="default", is_default=True))
+        yield actor, workspace
+    finally:
+        with engine.begin() as connection:
+            connection.execute(delete(Workspace).where(Workspace.workspace_id == workspace))
+            connection.execute(delete(User).where(User.user_id == actor))
+        engine.dispose()
 
 
 @pytest.fixture

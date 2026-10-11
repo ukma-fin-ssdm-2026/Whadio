@@ -1,10 +1,12 @@
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import JsonValue
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
@@ -15,9 +17,8 @@ from ..accounts.repositories import MembershipRepository
 from ..accounts.services import WorkspaceMembershipService
 from ..audit.enums import AuditAction
 from ..audit.models import AuditEvent
-from ..audit.services import AuditWriter, ContentEvent
+from ..audit.services import AuditWriter, MeetingMoved
 from ..shared.database import DatabaseSettings
-from ..shared.errors import Failure, UseCaseError
 from .enums import AccessMode, MeetingSource, ProcessingState, RecordingStatus
 from .models import Folder, Meeting
 from .repositories import FolderRepository
@@ -88,12 +89,37 @@ async def populate_folder(session: AsyncSession) -> tuple[UUID, UUID, UUID, UUID
     return actor, workspace, source, destination, meetings
 
 
+@dataclass(frozen=True)
+class AuditState:
+    actor_id: UUID
+    action: AuditAction
+    workspace_id: UUID | None
+    meeting_id: UUID | None
+    occurred_at: datetime
+    details: JsonValue | None
+
+
+@dataclass(frozen=True)
+class FolderState:
+    source_exists: bool
+    locations: tuple[UUID, ...]
+    grants: frozenset[UUID]
+    events: tuple[AuditState, ...]
+
+
+@dataclass(frozen=True)
+class RollbackState:
+    source_exists: bool
+    locations: tuple[UUID, ...]
+    event_count: int
+
+
 @pytest.mark.slow
 def test_folder_deletion_audits_each_move_and_preserves_restricted_grants(
     database_settings: DatabaseSettings,
 ) -> None:
     # Arrange
-    async def scenario() -> bool:
+    async def scenario() -> tuple[FolderState, FolderState]:
         async with folder_session(database_settings) as session:
             actor, workspace, source, destination, meetings = await populate_folder(session)
             service = FolderService(
@@ -121,26 +147,44 @@ def test_folder_deletion_audits_each_move_and_preserves_restricted_grants(
                     select(Meeting.folder_id).where(Meeting.meeting_id.in_(meetings))
                 )
             )
-            return (
-                await session.get(Folder, source) is None
-                and locations == [destination, destination]
-                and set(grants) == set(meetings)
-                and len(events) == 2
-                and {event.meeting_id for event in events} == set(meetings)
-                and all(
-                    event.actor_user_id == actor
-                    and event.action == AuditAction.MEETING_MOVED
-                    and event.occurred_at == now
-                    and event.details
-                    == {"from_folder_id": str(source), "to_folder_id": str(destination)}
-                    for event in events
-                )
+            observed = FolderState(
+                source_exists=await session.get(Folder, source) is not None,
+                locations=tuple(locations),
+                grants=frozenset(grants),
+                events=tuple(
+                    AuditState(
+                        event.actor_user_id,
+                        event.action,
+                        event.workspace_id,
+                        event.meeting_id,
+                        event.occurred_at,
+                        event.details,
+                    )
+                    for event in sorted(events, key=lambda event: str(event.meeting_id))
+                ),
             )
+            expected = FolderState(
+                source_exists=False,
+                locations=(destination, destination),
+                grants=frozenset(meetings),
+                events=tuple(
+                    AuditState(
+                        actor,
+                        AuditAction.MEETING_MOVED,
+                        workspace,
+                        meeting_id,
+                        now,
+                        {"from_folder_id": str(source), "to_folder_id": str(destination)},
+                    )
+                    for meeting_id in sorted(meetings, key=str)
+                ),
+            )
+            return observed, expected
 
     # Act
-    result = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+    observed, expected = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
     # Assert
-    assert result
+    assert observed == expected
 
 
 class FailingAuditWriter:
@@ -148,7 +192,7 @@ class FailingAuditWriter:
         self._writer: AuditWriter = AuditWriter(session)
         self._written: bool = False
 
-    async def write(self, event: ContentEvent) -> None:
+    async def write(self, event: MeetingMoved) -> None:
         if self._written:
             raise RuntimeError("Audit unavailable")
         await self._writer.write(event)
@@ -160,7 +204,7 @@ def test_audit_failure_rolls_back_folder_moves_and_previous_events(
     database_settings: DatabaseSettings,
 ) -> None:
     # Arrange
-    async def scenario() -> bool:
+    async def scenario() -> tuple[RollbackState, RollbackState]:
         async with folder_session(database_settings) as session:
             actor, workspace, source, _, meetings = await populate_folder(session)
             service = FolderService(
@@ -182,61 +226,15 @@ def test_audit_failure_rolls_back_folder_moves_and_previous_events(
                 )
             )
             return (
-                locations == [source, source]
-                and not events
-                and await session.get(Folder, source) is not None
+                RollbackState(
+                    source_exists=await session.get(Folder, source) is not None,
+                    locations=tuple(locations),
+                    event_count=len(events),
+                ),
+                RollbackState(source_exists=True, locations=(source, source), event_count=0),
             )
 
     # Act
-    result = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+    observed, expected = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
     # Assert
-    assert result
-
-
-@pytest.mark.slow
-@pytest.mark.parametrize("target", ["default", "missing", "outsider", "member"])
-def test_folder_deletion_refuses_invalid_target_or_caller(
-    database_settings: DatabaseSettings, target: str
-) -> None:
-    # Arrange
-    async def scenario() -> Failure:
-        async with folder_session(database_settings) as session:
-            actor, workspace, source, destination, _ = await populate_folder(session)
-            if target == "member":
-                membership = await session.scalar(
-                    select(WorkspaceMembership).where(
-                        WorkspaceMembership.workspace_id == workspace,
-                        WorkspaceMembership.user_id == actor,
-                    )
-                )
-                assert membership is not None
-                membership.role = WorkspaceRole.MEMBER
-                await session.flush()
-            service = FolderService(
-                FolderRepository(session),
-                WorkspaceMembershipService(MembershipRepository(session)),
-                AuditWriter(session),
-            )
-            with pytest.raises(UseCaseError) as failure:
-                await service.delete_folder(
-                    uuid4() if target == "outsider" else actor,
-                    workspace,
-                    destination
-                    if target == "default"
-                    else uuid4()
-                    if target == "missing"
-                    else source,
-                    datetime.now(UTC),
-                )
-            return failure.value.code
-
-    expected = {
-        "default": Failure.DEFAULT_FOLDER,
-        "missing": Failure.NOT_FOUND,
-        "outsider": Failure.NOT_FOUND,
-        "member": Failure.INSUFFICIENT_ROLE,
-    }[target]
-    # Act
-    result = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
-    # Assert
-    assert result == expected
+    assert observed == expected

@@ -10,30 +10,29 @@ from .models import AuditEvent
 
 
 @dataclass(frozen=True)
-class ContentEvent:
+class MeetingMoved:
     actor_id: UUID
     workspace_id: UUID
     meeting_id: UUID
-    action: AuditAction
     occurred_at: datetime
     from_folder_id: UUID
     to_folder_id: UUID
 
 
 class IAuditWriter(Protocol):
-    async def write(self, event: ContentEvent) -> None: ...
+    async def write(self, event: MeetingMoved) -> None: ...
 
 
 class AuditWriter:
     def __init__(self, session: AsyncSession) -> None:
         self._session: AsyncSession = session
 
-    async def write(self, event: ContentEvent) -> None:
+    async def write(self, event: MeetingMoved) -> None:
         self._session.add(
             AuditEvent(
                 occurred_at=event.occurred_at,
                 actor_user_id=event.actor_id,
-                action=event.action,
+                action=AuditAction.MEETING_MOVED,
                 workspace_id=event.workspace_id,
                 meeting_id=event.meeting_id,
                 details={

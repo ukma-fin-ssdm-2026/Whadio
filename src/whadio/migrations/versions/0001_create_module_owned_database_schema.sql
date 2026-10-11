@@ -163,27 +163,7 @@ BEGIN
     RETURN NEW;
 END $$;
 
-CREATE FUNCTION protect_original_segment() RETURNS trigger
-LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
-BEGIN
-    IF TG_OP <> 'INSERT' AND EXISTS (
-        SELECT 1 FROM transcript_revision
-        WHERE revision_id = OLD.revision_id AND revision_type = 'original'
-    ) THEN
-        RAISE EXCEPTION 'Original content is immutable' USING ERRCODE = '23514';
-    END IF;
-    IF TG_OP <> 'DELETE' AND EXISTS (
-        SELECT 1 FROM transcript_revision
-        WHERE revision_id = NEW.revision_id AND revision_type = 'original'
-          AND initialization_xid <> pg_current_xact_id()::text
-    ) THEN
-        RAISE EXCEPTION 'Original content is immutable' USING ERRCODE = '23514';
-    END IF;
-    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
-    RETURN NEW;
-END $$;
-
-CREATE FUNCTION protect_original_speaker() RETURNS trigger
+CREATE FUNCTION protect_original_content() RETURNS trigger
 LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
 BEGIN
     IF TG_OP <> 'INSERT' AND EXISTS (
@@ -213,12 +193,12 @@ CREATE TRIGGER original_revision_immutable BEFORE UPDATE OR DELETE ON transcript
 FOR EACH ROW EXECUTE FUNCTION protect_original_revision_row();
 
 CREATE TRIGGER original_segment_immutable BEFORE INSERT OR UPDATE OR DELETE ON transcript_segment
-FOR EACH ROW EXECUTE FUNCTION protect_original_segment();
+FOR EACH ROW EXECUTE FUNCTION protect_original_content();
 
 CREATE TRIGGER original_speaker_immutable BEFORE INSERT OR UPDATE OR DELETE ON speaker
-FOR EACH ROW EXECUTE FUNCTION protect_original_speaker();
+FOR EACH ROW EXECUTE FUNCTION protect_original_content();
 
-CREATE FUNCTION preserve_folder_meetings() RETURNS trigger
+CREATE FUNCTION guard_folder_deletion() RETURNS trigger
 LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
 BEGIN
     PERFORM 1 FROM workspace WHERE workspace_id = OLD.workspace_id FOR UPDATE;
@@ -232,5 +212,5 @@ BEGIN
     END IF;
     RETURN OLD;
 END $$;
-CREATE TRIGGER folder_preserve_meetings BEFORE DELETE ON folder
-FOR EACH ROW EXECUTE FUNCTION preserve_folder_meetings();
+CREATE TRIGGER folder_deletion_guard BEFORE DELETE ON folder
+FOR EACH ROW EXECUTE FUNCTION guard_folder_deletion();

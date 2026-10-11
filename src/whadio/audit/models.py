@@ -6,7 +6,6 @@ from sqlalchemy import (
     CheckConstraint,
     Constraint,
     DateTime,
-    Enum,
     ForeignKey,
     Index,
     func,
@@ -14,7 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, MappedColumn
 
-from ..shared.database import Base, enum_values
+from ..shared.database import Base, enum_type
 from .enums import AuditAction
 
 
@@ -29,14 +28,7 @@ class AuditEvent(Base):
         ForeignKey("user.user_id", ondelete="RESTRICT")
     )
     action: Mapped[AuditAction] = MappedColumn[AuditAction](
-        Enum(
-            AuditAction,
-            name="action",
-            native_enum=False,
-            create_constraint=True,
-            values_callable=enum_values,
-            validate_strings=True,
-        ),
+        enum_type(AuditAction, "action"),
     )
     workspace_id: Mapped[UUID | None] = MappedColumn[UUID | None]()
     meeting_id: Mapped[UUID | None] = MappedColumn[UUID | None]()

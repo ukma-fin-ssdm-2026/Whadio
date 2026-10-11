@@ -3,8 +3,7 @@ from uuid import UUID
 
 from ..accounts.enums import WorkspaceRole
 from ..accounts.services import IWorkspaceMembership
-from ..audit.enums import AuditAction
-from ..audit.services import ContentEvent, IAuditWriter
+from ..audit.services import IAuditWriter, MeetingMoved
 from ..shared.errors import Failure, UseCaseError
 from .repositories import IFolderRepository
 
@@ -24,7 +23,7 @@ class FolderService:
         self, actor_id: UUID, workspace_id: UUID, folder_id: UUID, now: datetime
     ) -> None:
         """Move, audit and delete using collaborators sharing the caller's transaction."""
-        role = await self._memberships.role(workspace_id, actor_id)
+        role = await self._memberships.lock_role(workspace_id, actor_id)
         if role is None:
             raise UseCaseError(Failure.NOT_FOUND)
         if role not in (WorkspaceRole.OWNER, WorkspaceRole.MODERATOR):
@@ -39,11 +38,10 @@ class FolderService:
             raise UseCaseError(Failure.NOT_FOUND)
         for meeting_id in await self._repository.move_meetings(folder_id, destination.folder_id):
             await self._audit.write(
-                ContentEvent(
+                MeetingMoved(
                     actor_id,
                     workspace_id,
                     meeting_id,
-                    AuditAction.MEETING_MOVED,
                     now,
                     folder_id,
                     destination.folder_id,

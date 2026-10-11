@@ -23,6 +23,7 @@ When the code and these documents disagree, stop and ask instead of picking one.
 
 ```text
 src/whadio/
+  migrations/     packaged Alembic revisions and database integrity guards
   cli.py          the `whadio` command: `web`, `openapi`; the workers and the scheduler add theirs
   api/            the `web` runtime: FastAPI app, one subpackage of routes per module, MCP server
   scheduler/      the `scheduler` runtime: periodic jobs

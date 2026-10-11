@@ -1035,9 +1035,8 @@ def downgrade() -> None:
         "prevent_folder_workspace_move",
         "prevent_meeting_workspace_move",
         "protect_original_revision_row",
-        "protect_original_segment",
-        "protect_original_speaker",
-        "preserve_folder_meetings",
+        "protect_original_content",
+        "guard_folder_deletion",
     ):
         arguments = "uuid" if function == "assert_meeting_access" else ""
         op.execute(f"DROP FUNCTION {function}({arguments})")

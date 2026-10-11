@@ -146,6 +146,10 @@ The notes worker needs no GPU: the model runs in `llm-runtime`, and the worker o
 prompt and calls it. When every workspace uses its own provider key, `llm-runtime` can be stopped
 without touching the notes worker.
 
+Database migrations are packaged in `whadio.migrations` and run through the CLI as a separate
+composition root. That runtime may load all module models to populate schema metadata; backend
+modules, workers and other runtimes do not import it. This adds no backend-module dependency.
+
 ## 5. Interfaces
 
 The interfaces between the components in the [component diagram](#3-components). Endpoint paths and
@@ -292,14 +296,11 @@ The architecture leaves room for these changes without restructuring:
   correction restricted to the built-in model. It would also keep `llm-runtime` running for every
   transcription, including in workspaces that use their own provider.
 
-Database migrations are packaged in `whadio.migrations` and run through the CLI as a separate
-composition root. That runtime may load all module models to populate schema metadata; backend
-modules, workers and other runtimes do not import it. This adds no backend-module dependency.
-
 ## AI Usage
-
 
 This document and its diagrams were prepared and revised with the assistance of Claude Code (Claude
 Opus 5.5). The architecture follows the decisions of the team's working session of 2026-09-24 and
 the architecture-lead decisions that followed it. The author reviewed and edited the content, and
 the document is reviewed through a pull request before merging.
+
+These PR #63 review revisions were assisted by OpenAI Codex. Everything was reviewed by me.

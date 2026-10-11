@@ -6,7 +6,6 @@ from sqlalchemy import (
     CheckConstraint,
     Constraint,
     DateTime,
-    Enum,
     ForeignKey,
     Index,
     Text,
@@ -16,7 +15,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, MappedColumn
 
-from ..shared.database import Base, enum_values
+from ..shared.database import Base, enum_type
 from .enums import CaptureStatus
 
 
@@ -31,14 +30,7 @@ class CaptureSession(Base):
         ForeignKey("user.user_id", ondelete="RESTRICT")
     )
     status: Mapped[CaptureStatus] = MappedColumn[CaptureStatus](
-        Enum(
-            CaptureStatus,
-            name="status",
-            native_enum=False,
-            create_constraint=True,
-            values_callable=enum_values,
-            validate_strings=True,
-        ),
+        enum_type(CaptureStatus, "status"),
     )
     last_chunk_seq: Mapped[int | None] = MappedColumn[int | None]()
     last_chunk_at: Mapped[datetime | None] = MappedColumn[datetime | None](DateTime(timezone=True))

@@ -6,7 +6,7 @@ from typing import ClassVar
 import psycopg
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy import URL, Engine, MetaData, create_engine, pool
+from sqlalchemy import URL, Engine, Enum, MetaData, create_engine, pool
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -30,6 +30,17 @@ class Base(DeclarativeBase):
 
 def enum_values(enum_type: type[StrEnum]) -> list[str]:
     return [member.value for member in enum_type]
+
+
+def enum_type(enum: type[StrEnum], name: str) -> Enum:
+    return Enum(
+        enum,
+        name=name,
+        native_enum=False,
+        create_constraint=True,
+        values_callable=enum_values,
+        validate_strings=True,
+    )
 
 
 class ConnectionSettings(BaseSettings):

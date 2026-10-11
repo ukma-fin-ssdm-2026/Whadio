@@ -142,8 +142,9 @@ workspace or meeting foreign keys, so deleting those targets does not delete the
 event's actor references an existing account; account deletion is outside the current requirements.
 
 These restrictions protect existing events. They do not automatically generate events or prevent
-the application from inserting incorrect ones. The future Audit writer must validate details as
-IDs and enum values and reject content or names.
+the application from inserting incorrect ones. The Audit writer accepts a typed `MeetingMoved` event and assigns `meeting_moved` itself;
+its details contain only source and destination folder IDs. Future actions need their own typed
+events with IDs and enum values, never content or names.
 
 ## Rules that services must implement
 
@@ -154,7 +155,7 @@ Database safeguards protect stored data. Services still need to implement these 
 | Folder permissions (FR-034) | Only Moderators and Owners may create, rename, or delete folders. Members may browse and move accessible meetings. |
 | Meeting access (NFR-007, NFR-009, ADR-003) | Check permissions through Access Policy on every content path, including shares, exports, MCP, and folder context assembly. |
 | Transcript edits (FR-028) | Save edits as edited revisions and expose the original with an edited marker. The API's promise to preserve earlier edited revisions must also be implemented by services. |
-| Audit events (NFR-010, ADR-005) | Write actor-attributed events in the same transaction as the change. Folder deletion needs one `meeting_moved` event per moved meeting; its database trigger does not write those events. |
+| Audit events (NFR-010, ADR-005) | Write actor-attributed events in the same transaction as the change. `FolderService.delete_folder` already writes one `meeting_moved` event per moved meeting. The database trigger only refuses invalid deletion; other actions still need service integration. |
 | Recording retention (FR-046) | Delete audio 90 days after the meeting, warn accessible members seven days beforehand, and keep transcripts and notes. |
 | Account and sharing flows | Complete registration, enforce invitation throttling, approve external shares, and send notifications. |
 
@@ -201,13 +202,18 @@ checks only on disposable databases.
 Run `uv run task check` and the full test suite against a disposable database before relying on
 database verification results.
 
+The decision to retain database integrity guards and the original-transcript transaction seal is
+recorded in [ADR-006](decisions/ADR-006.md). Services retain authorization and workflow decisions.
+
 ## Folder deletion
 
 `meetings.services.FolderService.delete_folder` authorizes a Moderator or Owner, locks the
-workspace and source folder, moves meetings with `UPDATE ... RETURNING`, writes one
+workspace and acting membership through `lock_role()`, then the source and default folders,
+moves meetings with `UPDATE ... RETURNING`, writes one
 `meeting_moved` event per returned ID, and deletes the empty folder. Wire `FolderRepository`,
 `WorkspaceMembershipService` (with its `MembershipRepository`) and `AuditWriter` to the same
-`Database.transaction()` session. A failure
+`Database.transaction()` session. Ordinary membership `role()` lookups are plain reads; only
+`lock_role()` takes the workspace and membership locks needed by folder deletion. A failure
 rolls back the moves, audit events and deletion together. The database trigger refuses direct
 deletion of an occupied folder; workspace deletion still cascades. The HTTP folder endpoints
 remain designed and are wired by the API implementation.
@@ -217,3 +223,5 @@ remain designed and are wired by the API implementation.
 
 This implementation guide was prepared and clarified with OpenAI Codex using the requirements,
 architecture, models, migrations, and tests. The author reviewed and edited the content, and the document is reviewed through a pull request before merging.
+
+These PR #63 review revisions were assisted by OpenAI Codex. Everything was reviewed by me.

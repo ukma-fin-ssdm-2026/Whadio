@@ -5,7 +5,6 @@ from sqlalchemy import (
     CheckConstraint,
     Constraint,
     DateTime,
-    Enum,
     ForeignKey,
     Index,
     Text,
@@ -16,7 +15,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, MappedColumn
 
-from ..shared.database import Base, enum_values
+from ..shared.database import Base, enum_type
 from .enums import (
     InvitationRole,
     InvitationStatus,
@@ -51,14 +50,7 @@ class Workspace(Base):
     workspace_id: Mapped[UUID] = MappedColumn[UUID](primary_key=True, default=uuid4)
     name: Mapped[str] = MappedColumn[str](Text)
     default_template: Mapped[NotesTemplate] = MappedColumn[NotesTemplate](
-        Enum(
-            NotesTemplate,
-            name="template",
-            native_enum=False,
-            create_constraint=True,
-            values_callable=enum_values,
-            validate_strings=True,
-        ),
+        enum_type(NotesTemplate, "template"),
     )
     created_at: Mapped[datetime] = MappedColumn[datetime](
         DateTime(timezone=True), server_default=func.now()
@@ -75,14 +67,7 @@ class WorkspaceMembership(Base):
     )
     user_id: Mapped[UUID] = MappedColumn[UUID](ForeignKey("user.user_id", ondelete="RESTRICT"))
     role: Mapped[WorkspaceRole] = MappedColumn[WorkspaceRole](
-        Enum(
-            WorkspaceRole,
-            name="role",
-            native_enum=False,
-            create_constraint=True,
-            values_callable=enum_values,
-            validate_strings=True,
-        ),
+        enum_type(WorkspaceRole, "role"),
     )
     joined_at: Mapped[datetime] = MappedColumn[datetime](
         DateTime(timezone=True), server_default=func.now()
@@ -109,27 +94,13 @@ class Invitation(Base):
     )
     invited_email: Mapped[str] = MappedColumn[str](Text)
     role: Mapped[InvitationRole] = MappedColumn[InvitationRole](
-        Enum(
-            InvitationRole,
-            name="role",
-            native_enum=False,
-            create_constraint=True,
-            values_callable=enum_values,
-            validate_strings=True,
-        ),
+        enum_type(InvitationRole, "role"),
     )
     invited_by_user_id: Mapped[UUID] = MappedColumn[UUID](
         ForeignKey("user.user_id", ondelete="RESTRICT")
     )
     status: Mapped[InvitationStatus] = MappedColumn[InvitationStatus](
-        Enum(
-            InvitationStatus,
-            name="status",
-            native_enum=False,
-            create_constraint=True,
-            values_callable=enum_values,
-            validate_strings=True,
-        ),
+        enum_type(InvitationStatus, "status"),
     )
     token_hash: Mapped[str] = MappedColumn[str](Text)
     created_at: Mapped[datetime] = MappedColumn[datetime](
@@ -203,14 +174,7 @@ class Session(Base):
     session_id: Mapped[UUID] = MappedColumn[UUID](primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = MappedColumn[UUID](ForeignKey("user.user_id", ondelete="CASCADE"))
     kind: Mapped[SessionKind] = MappedColumn[SessionKind](
-        Enum(
-            SessionKind,
-            name="kind",
-            native_enum=False,
-            create_constraint=True,
-            values_callable=enum_values,
-            validate_strings=True,
-        ),
+        enum_type(SessionKind, "kind"),
     )
     token_hash: Mapped[str] = MappedColumn[str](Text)
     created_at: Mapped[datetime] = MappedColumn[datetime](
@@ -235,14 +199,7 @@ class LlmProviderConfig(Base):
     )
     is_enabled: Mapped[bool] = MappedColumn[bool]()
     provider: Mapped[LlmProvider] = MappedColumn[LlmProvider](
-        Enum(
-            LlmProvider,
-            name="provider",
-            native_enum=False,
-            create_constraint=True,
-            values_callable=enum_values,
-            validate_strings=True,
-        ),
+        enum_type(LlmProvider, "provider"),
     )
     api_key_encrypted: Mapped[str | None] = MappedColumn[str | None](Text)
     created_at: Mapped[datetime] = MappedColumn[datetime](

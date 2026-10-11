@@ -6,7 +6,6 @@ from sqlalchemy import (
     CheckConstraint,
     Constraint,
     DateTime,
-    Enum,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -20,7 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, MappedColumn
 
 from ..accounts.enums import LlmProvider, NotesTemplate
-from ..shared.database import Base, enum_values
+from ..shared.database import Base, enum_type
 from .enums import AccessMode, MeetingSource, ProcessingState, RecordingStatus, RevisionType
 
 
@@ -56,34 +55,13 @@ class Meeting(Base):
     name: Mapped[str] = MappedColumn[str](Text)
     name_is_generated: Mapped[bool] = MappedColumn[bool]()
     source_type: Mapped[MeetingSource] = MappedColumn[MeetingSource](
-        Enum(
-            MeetingSource,
-            name="source",
-            native_enum=False,
-            create_constraint=True,
-            values_callable=enum_values,
-            validate_strings=True,
-        ),
+        enum_type(MeetingSource, "source"),
     )
     recording_status: Mapped[RecordingStatus] = MappedColumn[RecordingStatus](
-        Enum(
-            RecordingStatus,
-            name="recording_status",
-            native_enum=False,
-            create_constraint=True,
-            values_callable=enum_values,
-            validate_strings=True,
-        ),
+        enum_type(RecordingStatus, "recording_status"),
     )
     processing_state: Mapped[ProcessingState] = MappedColumn[ProcessingState](
-        Enum(
-            ProcessingState,
-            name="processing_state",
-            native_enum=False,
-            create_constraint=True,
-            values_callable=enum_values,
-            validate_strings=True,
-        ),
+        enum_type(ProcessingState, "processing_state"),
     )
     storage_path: Mapped[str | None] = MappedColumn[str | None](Text)
     duration_seconds: Mapped[int | None] = MappedColumn[int | None]()
@@ -102,14 +80,7 @@ class Meeting(Base):
         DateTime(timezone=True)
     )
     access_mode: Mapped[AccessMode] = MappedColumn[AccessMode](
-        Enum(
-            AccessMode,
-            name="access_mode",
-            native_enum=False,
-            create_constraint=True,
-            values_callable=enum_values,
-            validate_strings=True,
-        ),
+        enum_type(AccessMode, "access_mode"),
     )
 
     __table_args__: tuple[Constraint | Index, ...] = (
@@ -159,14 +130,7 @@ class TranscriptRevision(Base):
         ForeignKey("transcript.transcript_id", ondelete="CASCADE")
     )
     revision_type: Mapped[RevisionType] = MappedColumn[RevisionType](
-        Enum(
-            RevisionType,
-            name="revision_type",
-            native_enum=False,
-            create_constraint=True,
-            values_callable=enum_values,
-            validate_strings=True,
-        ),
+        enum_type(RevisionType, "revision_type"),
     )
     edited_by_user_id: Mapped[UUID | None] = MappedColumn[UUID | None](
         ForeignKey("user.user_id", ondelete="RESTRICT")
@@ -259,26 +223,12 @@ class Note(Base):
         ForeignKey("meeting.meeting_id", ondelete="CASCADE")
     )
     template: Mapped[NotesTemplate] = MappedColumn[NotesTemplate](
-        Enum(
-            NotesTemplate,
-            name="template",
-            native_enum=False,
-            create_constraint=True,
-            values_callable=enum_values,
-            validate_strings=True,
-        ),
+        enum_type(NotesTemplate, "template"),
     )
     content: Mapped[str] = MappedColumn[str](Text)
     model_name: Mapped[str] = MappedColumn[str](Text)
     provider: Mapped[LlmProvider] = MappedColumn[LlmProvider](
-        Enum(
-            LlmProvider,
-            name="provider",
-            native_enum=False,
-            create_constraint=True,
-            values_callable=enum_values,
-            validate_strings=True,
-        ),
+        enum_type(LlmProvider, "provider"),
     )
     created_by_user_id: Mapped[UUID | None] = MappedColumn[UUID | None](
         ForeignKey("user.user_id", ondelete="RESTRICT")

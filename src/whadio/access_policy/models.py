@@ -4,7 +4,6 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     Constraint,
     DateTime,
-    Enum,
     ForeignKey,
     Index,
     Text,
@@ -15,7 +14,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, MappedColumn
 
-from ..shared.database import Base, enum_values
+from ..shared.database import Base, enum_type
 from .enums import ShareRequestStatus
 
 
@@ -78,14 +77,7 @@ class ShareAccessRequest(Base):
         ForeignKey("user.user_id", ondelete="RESTRICT")
     )
     status: Mapped[ShareRequestStatus] = MappedColumn[ShareRequestStatus](
-        Enum(
-            ShareRequestStatus,
-            name="status",
-            native_enum=False,
-            create_constraint=True,
-            values_callable=enum_values,
-            validate_strings=True,
-        ),
+        enum_type(ShareRequestStatus, "status"),
     )
     requested_at: Mapped[datetime] = MappedColumn[datetime](
         DateTime(timezone=True), server_default=func.now()
