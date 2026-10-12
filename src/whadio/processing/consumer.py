@@ -28,6 +28,7 @@ from .services import IJobPublisher, JobRequest, ProcessingService
 logger = logging.getLogger(__name__)
 
 _RECONSUME_DELAY: Final = timedelta(seconds=1)
+_REPUBLISH_INTERVAL: Final = timedelta(seconds=30)
 
 
 class IDelivery(Protocol):
@@ -45,7 +46,7 @@ class IDelivery(Protocol):
 class IResultHandler(Protocol):
     """Each call runs in a transaction of its own and returns after the commit."""
 
-    async def handle(self, result: ProcessingResult, /) -> list[JobRequest]: ...
+    async def handle(self, result: ProcessingResult, /) -> None: ...
 
     async def dead_lettered(self, job_id: UUID, /) -> None: ...
 
@@ -83,8 +84,7 @@ class _DeadLetter(BaseModel):
 
 async def handle_delivery(
     delivery: IDelivery,
-    handle: Callable[[ProcessingResult], Awaitable[list[JobRequest]]],
-    publisher: IJobPublisher,
+    handle: Callable[[ProcessingResult], Awaitable[None]],
     publishers: Collection[str],
 ) -> None:
     """Leave a delivery whose handling raised unsettled, for the caller to return to the queue."""
@@ -104,8 +104,7 @@ async def handle_delivery(
         )
         await delivery.reject(requeue=False)
         return
-    for request in await handle(result):
-        await publisher.publish(request)
+    await handle(result)
     await delivery.ack()
 
 
@@ -127,24 +126,63 @@ async def handle_dead_letter(
     await delivery.ack()
 
 
-class TransactionalResultHandler:
-    """`IResultHandler` that runs each call in a transaction of its own."""
+class IJobPublishing(Protocol):
+    async def publish_next(self) -> bool: ...
+
+
+class ProcessingTransactions:
+    """Runs each call in a transaction of its own: `IResultHandler` and `IJobPublishing`.
+
+    After a result's commit, which may have queued a job, it sets `queued`.
+    """
 
     def __init__(
         self,
         database: IUseCaseTransactions,
         processing: Callable[[AsyncSession], ProcessingService],
+        publisher: IJobPublisher,
+        queued: asyncio.Event,
     ) -> None:
         self._database: IUseCaseTransactions = database
         self._processing: Callable[[AsyncSession], ProcessingService] = processing
+        self._publisher: IJobPublisher = publisher
+        self._queued: asyncio.Event = queued
 
-    async def handle(self, result: ProcessingResult) -> list[JobRequest]:
+    async def handle(self, result: ProcessingResult) -> None:
         async with self._database.transaction() as session:
-            return await self._processing(session).handle(result)
+            await self._processing(session).handle(result)
+        self._queued.set()
 
     async def dead_lettered(self, job_id: UUID) -> None:
         async with self._database.transaction() as session:
             await self._processing(session).dead_lettered(job_id, datetime.now(UTC))
+
+    async def publish_next(self) -> bool:
+        async with self._database.transaction() as session:
+            return await self._processing(session).publish_next(self._publisher, datetime.now(UTC))
+
+
+async def serve_publishing(
+    publishing: IJobPublishing,
+    queued: asyncio.Event,
+    stop: asyncio.Event,
+    interval: timedelta = _REPUBLISH_INTERVAL,
+) -> None:
+    """Publish every unpublished job whenever `queued` is set, and at least every `interval`, so a
+    job whose publish failed goes out on a later round."""
+    while not stop.is_set():
+        queued.clear()
+        try:
+            while not stop.is_set() and await publishing.publish_next():
+                pass
+        except Exception:
+            logger.exception("Publishing a job failed; it is retried on the next round")
+        waits = (asyncio.create_task(queued.wait()), asyncio.create_task(stop.wait()))
+        await asyncio.wait(
+            waits, timeout=interval.total_seconds(), return_when=asyncio.FIRST_COMPLETED
+        )
+        for wait in waits:
+            wait.cancel()
 
 
 @asynccontextmanager
@@ -194,11 +232,10 @@ async def _consume_until_a_failure(
         await channel.set_qos(prefetch_count=1)
         for queue in (*ALL_QUEUES, queues.results, queues.dead_letters):
             await declare_queue(channel, queue.name, queue.arguments)
-        publisher = AmqpJobPublisher(MessagePublisher(channel, broker.user))
 
         async def on_result(message: AbstractIncomingMessage) -> None:
             try:
-                await handle_delivery(message, handler.handle, publisher, publishers)
+                await handle_delivery(message, handler.handle, publishers)
             except Exception:
                 logger.exception("Handling a result failed; returning it to the queue")
                 failed.set()

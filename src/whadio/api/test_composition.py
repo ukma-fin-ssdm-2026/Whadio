@@ -62,8 +62,6 @@ from ..meetings.recordings import RecordingObjects
 from ..meetings.repositories import MeetingRepository
 from ..meetings.retention import IRetentionMeetings, RetentionMeetings
 from ..meetings.services import MeetingService, RecordingInput, TranscriptEdit
-from ..processing.models import ProcessingJob
-from ..processing.services import JobRequest
 from ..retention.services import RetentionService, StorageUnavailableError
 from ..shared.database import Database, DatabaseSettings
 from ..shared.errors import Failure, UseCaseError
@@ -1523,108 +1521,19 @@ def test_mcp_rejects_revoked_key(
 # --- Queueing transcription for an upload ---
 
 
-class CommitCheckingPublisher:
-    """Records, for each published job, whether another transaction could already see it."""
-
-    def __init__(self, database: Database) -> None:
-        self._database: Database = database
-        self.committed: list[bool] = []
-
-    async def publish(self, request: JobRequest) -> None:
-        async with self._database.transaction() as session:
-            job = await session.get(ProcessingJob, request.job_id)
-        self.committed.append(job is not None)
-
-
-@pytest.fixture
-def committed_meeting(
-    database_settings: DatabaseSettings, committed_workspace: tuple[UUID, UUID]
-) -> UUID:
-    actor, workspace = committed_workspace
-
-    async def add() -> UUID:
-        database = Database(database_settings)
-        try:
-            async with database.transaction() as session:
-                folder = await session.scalar(
-                    select(Folder.folder_id).where(
-                        Folder.workspace_id == workspace, Folder.is_default
-                    )
-                )
-                assert folder is not None
-                return await AsyncDatabase.add_meeting(session, (actor, folder))
-        finally:
-            await database.close()
-
-    return asyncio.run(add(), loop_factory=asyncio.SelectorEventLoop)
-
-
-def test_queued_transcription_is_published_only_after_the_commit(
-    database_settings: DatabaseSettings, committed_meeting: UUID
-) -> None:
+def test_upload_is_unavailable_without_a_broker(async_database: AsyncDatabase) -> None:
     # Arrange
-    async def scenario() -> tuple[list[bool], list[bool]]:
-        database = Database(database_settings)
-        publisher = CommitCheckingPublisher(database)
-        root = CompositionRoot(database, storage=MemoryObjects(), publisher=publisher)
+    async def scenario(session: AsyncSession) -> Failure | None:
+        meeting_id = await AsyncDatabase.add_meeting(
+            session, await AsyncDatabase.add_workspace(session)
+        )
+        # Act
         try:
-            transaction = root.transaction()
-            session = await anext(transaction)
-            await root.processing(session).queue_transcription(committed_meeting)
-            before = list(publisher.committed)
-            # Act
-            await anext(transaction, None)
-            return before, publisher.committed
-        finally:
-            await database.close()
+            await CompositionRoot().processing(session).queue_transcription(meeting_id)
+        except UseCaseError as error:
+            return error.code
+        return None
 
-    before, after = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
-    # Assert
-    assert (before, after) == ([], [True])
-
-
-def test_transcription_queued_in_a_failed_transaction_is_never_published(
-    database_settings: DatabaseSettings, committed_meeting: UUID
-) -> None:
-    # Arrange
-    async def scenario() -> list[bool]:
-        database = Database(database_settings)
-        publisher = CommitCheckingPublisher(database)
-        root = CompositionRoot(database, storage=MemoryObjects(), publisher=publisher)
-        try:
-            transaction = root.transaction()
-            session = await anext(transaction)
-            await root.processing(session).queue_transcription(committed_meeting)
-            # Act
-            with pytest.raises(RuntimeError):
-                await transaction.athrow(RuntimeError("the upload failed"))
-            return publisher.committed
-        finally:
-            await database.close()
-
-    published = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
-    # Assert
-    assert published == []
-
-
-def test_upload_is_unavailable_without_a_broker(
-    database_settings: DatabaseSettings, committed_meeting: UUID
-) -> None:
-    # Arrange
-    async def scenario() -> Failure | None:
-        database = Database(database_settings)
-        root = CompositionRoot(database, storage=MemoryObjects())
-        try:
-            async with database.transaction() as session:
-                # Act
-                try:
-                    await root.processing(session).queue_transcription(committed_meeting)
-                except UseCaseError as error:
-                    return error.code
-                return None
-        finally:
-            await database.close()
-
-    failure = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+    failure = async_database.run(scenario)
     # Assert
     assert failure is Failure.INTEGRATION_UNAVAILABLE

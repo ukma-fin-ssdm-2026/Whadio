@@ -46,8 +46,8 @@ from .services import (
     DEAD_LETTERED,
     MAX_ATTEMPTS,
     TRANSCRIPT_EXISTS,
+    UNPUBLISHABLE,
     JobRequest,
-    MeetingProcessing,
     ProcessingService,
 )
 
@@ -106,6 +106,7 @@ def meeting_row(name: str = "Meeting 2026-10-11 12:00 UTC", *, generated: bool =
 class FakeJobs:
     def __init__(self) -> None:
         self.jobs: dict[UUID, Job] = {}
+        self.published: set[UUID] = set()
         self.failure_reasons: dict[UUID, str | None] = {}
 
     async def add(self, meeting_id: UUID, job_type: JobType) -> UUID:
@@ -116,6 +117,16 @@ class FakeJobs:
     async def lock(self, job_id: UUID) -> Job | None:
         return self.jobs.get(job_id)
 
+    async def next_unpublished(self) -> Job | None:
+        return next(
+            (
+                job
+                for job in self.jobs.values()
+                if job.status is JobStatus.QUEUED and job.job_id not in self.published
+            ),
+            None,
+        )
+
     async def has_unfinished(self, meeting_id: UUID, job_type: JobType) -> bool:
         return any(
             job.meeting_id == meeting_id
@@ -124,11 +135,18 @@ class FakeJobs:
             for job in self.jobs.values()
         )
 
+    async def mark_published(
+        self, job_id: UUID, _published_at: datetime, context: tuple[ContextReference, ...]
+    ) -> None:
+        self.published.add(job_id)
+        self.jobs[job_id] = replace(self.jobs[job_id], sent_context=context)
+
     async def mark_running(self, job_id: UUID, _started_at: datetime) -> None:
         job = self.jobs[job_id]
         self.jobs[job_id] = replace(job, status=JobStatus.RUNNING, attempts=job.attempts + 1)
 
     async def requeue(self, job_id: UUID) -> None:
+        self.published.discard(job_id)
         self.jobs[job_id] = replace(self.jobs[job_id], status=JobStatus.QUEUED)
 
     async def finish(
@@ -214,12 +232,24 @@ class FakeStorage:
         )
 
 
+class FakePublisher:
+    def __init__(self) -> None:
+        self.requests: list[JobRequest] = []
+        self.unavailable: bool = False
+
+    async def publish(self, request: JobRequest) -> None:
+        if self.unavailable:
+            raise ConnectionError
+        self.requests.append(request)
+
+
 @dataclass
 class Pipeline:
     service: ProcessingService
     jobs: FakeJobs
     meetings: FakeMeetings
     notes: FakeNotes
+    publisher: FakePublisher = field(default_factory=FakePublisher)
 
     @property
     def meeting_id(self) -> UUID:
@@ -242,9 +272,13 @@ def add_job(
     *,
     status: JobStatus = JobStatus.RUNNING,
     attempts: int = 1,
+    sent: tuple[ContextReference, ...] = (),
 ) -> UUID:
     job_id = uuid4()
-    pipeline.jobs.jobs[job_id] = Job(job_id, pipeline.meeting_id, job_type, status, attempts)
+    pipeline.jobs.jobs[job_id] = Job(
+        job_id, pipeline.meeting_id, job_type, status, attempts, sent_context=sent
+    )
+    pipeline.jobs.published.add(job_id)
     return job_id
 
 
@@ -299,45 +333,54 @@ def notes_ready(
     )
 
 
-def handle(pipeline: Pipeline, result: ProcessingResult) -> list[JobRequest]:
-    return asyncio.run(pipeline.service.handle(result))
+def handle(pipeline: Pipeline, result: ProcessingResult) -> None:
+    asyncio.run(pipeline.service.handle(result))
+
+
+def queue(pipeline: Pipeline) -> None:
+    asyncio.run(pipeline.service.queue_transcription(pipeline.meeting_id))
+
+
+def publish_all(pipeline: Pipeline) -> list[JobRequest]:
+    """Every request published so far, after publishing the jobs still waiting."""
+
+    async def run() -> None:
+        while await pipeline.service.publish_next(pipeline.publisher, NOW):
+            pass
+
+    asyncio.run(run())
+    return pipeline.publisher.requests
 
 
 def notes_requests(requests: list[JobRequest]) -> list[NotesRequested]:
     return [request for request in requests if isinstance(request, NotesRequested)]
 
 
+def transcription_requests(requests: list[JobRequest]) -> list[TranscriptionRequested]:
+    return [request for request in requests if isinstance(request, TranscriptionRequested)]
+
+
 # --- Queueing ---
-
-
-def test_queueing_publishes_a_presigned_link_to_the_recording() -> None:
-    # Arrange
-    pipeline = make_pipeline()
-    # Act
-    request = asyncio.run(pipeline.service.queue_transcription(pipeline.meeting_id))
-    # Assert
-    assert str(request.audio.url) == "http://storage.test/recordings/meetings/recording.mp4"
 
 
 def test_queueing_records_a_queued_transcription_job() -> None:
     # Arrange
     pipeline = make_pipeline()
     # Act
-    request = asyncio.run(pipeline.service.queue_transcription(pipeline.meeting_id))
+    queue(pipeline)
     # Assert
-    assert (
-        pipeline.jobs.jobs[request.job_id].job_type,
-        pipeline.jobs.jobs[request.job_id].status,
-    ) == (JobType.TRANSCRIPTION, JobStatus.QUEUED)
+    assert [(job.job_type, job.status) for job in pipeline.jobs.jobs.values()] == [
+        (JobType.TRANSCRIPTION, JobStatus.QUEUED)
+    ]
 
 
-def test_queueing_passes_the_workspace_glossary() -> None:
+def test_queueing_publishes_nothing_by_itself() -> None:
     # Arrange
     pipeline = make_pipeline()
     # Act
-    request = asyncio.run(pipeline.service.queue_transcription(pipeline.meeting_id))
+    queue(pipeline)
     # Assert
-    assert [entry.term for entry in request.glossary] == ["Whadio"]
+    assert pipeline.publisher.requests == []
 
 
 def test_queueing_an_unknown_meeting_is_refused() -> None:
@@ -350,24 +393,13 @@ def test_queueing_an_unknown_meeting_is_refused() -> None:
     assert failure.value.code == "NOT_FOUND"
 
 
-def test_queueing_without_a_recording_is_refused() -> None:
-    # Arrange
-    pipeline = make_pipeline()
-    pipeline.meetings.meeting.storage_path = None
-    # Act
-    with pytest.raises(UseCaseError) as failure:
-        asyncio.run(pipeline.service.queue_transcription(pipeline.meeting_id))
-    # Assert
-    assert failure.value.code == "NOT_FOUND"
-
-
 def test_queueing_a_meeting_with_an_unfinished_transcription_is_refused() -> None:
     # Arrange
     pipeline = make_pipeline()
     add_job(pipeline, JobType.TRANSCRIPTION, status=JobStatus.QUEUED, attempts=0)
     # Act
     with pytest.raises(UseCaseError) as failure:
-        asyncio.run(pipeline.service.queue_transcription(pipeline.meeting_id))
+        queue(pipeline)
     # Assert
     assert failure.value.code == "ALREADY_PROCESSED"
 
@@ -378,38 +410,100 @@ def test_queueing_a_meeting_with_a_transcript_is_refused() -> None:
     pipeline.meetings.transcript = stored_version()
     # Act
     with pytest.raises(UseCaseError) as failure:
-        asyncio.run(pipeline.service.queue_transcription(pipeline.meeting_id))
+        queue(pipeline)
     # Assert
     assert failure.value.code == "ALREADY_PROCESSED"
-
-
-def test_upload_queueing_leaves_the_request_to_publish_after_the_commit() -> None:
-    # Arrange
-    pipeline = make_pipeline()
-    pending: list[JobRequest] = []
-    # Act
-    asyncio.run(
-        MeetingProcessing(pipeline.service, pending).queue_transcription(pipeline.meeting_id)
-    )
-    # Assert
-    assert [(type(request), request.meeting_id) for request in pending] == [
-        (TranscriptionRequested, pipeline.meeting_id)
-    ]
 
 
 def test_notes_regeneration_is_unavailable() -> None:
     # Arrange
     pipeline = make_pipeline()
-    processing = MeetingProcessing(pipeline.service, [])
     # Act
     with pytest.raises(UseCaseError) as failure:
         asyncio.run(
-            processing.queue_notes(
+            pipeline.service.queue_notes(
                 pipeline.meeting_id, uuid4(), None, use_builtin_model=True, now=NOW
             )
         )
     # Assert
     assert failure.value.code == "INTEGRATION_UNAVAILABLE"
+
+
+# --- Publishing ---
+
+
+def test_queued_transcription_is_published_with_a_presigned_link() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    queue(pipeline)
+    # Act
+    requests = publish_all(pipeline)
+    # Assert
+    assert [str(request.audio.url) for request in transcription_requests(requests)] == [
+        "http://storage.test/recordings/meetings/recording.mp4"
+    ]
+
+
+def test_published_transcription_carries_the_workspace_glossary() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    queue(pipeline)
+    # Act
+    requests = publish_all(pipeline)
+    # Assert
+    assert [
+        [entry.term for entry in request.glossary] for request in transcription_requests(requests)
+    ] == [["Whadio"]]
+
+
+def test_published_job_is_not_published_again() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    queue(pipeline)
+    publish_all(pipeline)
+    # Act
+    requests = publish_all(pipeline)
+    # Assert
+    assert len(requests) == 1
+
+
+def test_job_whose_publish_failed_is_published_on_the_next_round() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    queue(pipeline)
+    pipeline.publisher.unavailable = True
+    with pytest.raises(ConnectionError):
+        publish_all(pipeline)
+    pipeline.publisher.unavailable = False
+    # Act
+    requests = publish_all(pipeline)
+    # Assert
+    assert len(requests) == 1
+
+
+def test_job_without_a_recording_fails_its_meeting_instead_of_publishing() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    queue(pipeline)
+    pipeline.meetings.meeting.storage_path = None
+    # Act
+    requests = publish_all(pipeline)
+    # Assert
+    assert (requests, pipeline.meetings.update) == (
+        [],
+        ProcessingUpdate(ProcessingState.FAILED, ProcessingFailure.TRANSCRIPTION_FAILED),
+    )
+
+
+def test_job_without_a_recording_records_why_it_failed() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    queue(pipeline)
+    pipeline.meetings.meeting.storage_path = None
+    # Act
+    publish_all(pipeline)
+    # Assert
+    assert list(pipeline.jobs.failure_reasons.values()) == [UNPUBLISHABLE]
 
 
 # --- Results ---
@@ -489,8 +583,9 @@ def test_ready_transcript_queues_notes_with_the_workspace_preset() -> None:
     # Arrange
     pipeline = make_pipeline()
     job_id = add_job(pipeline, JobType.TRANSCRIPTION)
+    handle(pipeline, transcript_ready(pipeline, job_id))
     # Act
-    requests = handle(pipeline, transcript_ready(pipeline, job_id))
+    requests = publish_all(pipeline)
     # Assert
     assert [request.preset for request in notes_requests(requests)] == [NotesPreset.DETAILED]
 
@@ -499,8 +594,9 @@ def test_notes_request_leaves_a_generated_name_out() -> None:
     # Arrange
     pipeline = make_pipeline(meeting_row(generated=True))
     job_id = add_job(pipeline, JobType.TRANSCRIPTION)
+    handle(pipeline, transcript_ready(pipeline, job_id))
     # Act
-    requests = handle(pipeline, transcript_ready(pipeline, job_id))
+    requests = publish_all(pipeline)
     # Assert
     assert [request.meeting.name for request in notes_requests(requests)] == [None]
 
@@ -509,8 +605,9 @@ def test_notes_request_carries_a_name_a_member_gave() -> None:
     # Arrange
     pipeline = make_pipeline(meeting_row("Sprint review", generated=False))
     job_id = add_job(pipeline, JobType.TRANSCRIPTION)
+    handle(pipeline, transcript_ready(pipeline, job_id))
     # Act
-    requests = handle(pipeline, transcript_ready(pipeline, job_id))
+    requests = publish_all(pipeline)
     # Assert
     assert [request.meeting.name for request in notes_requests(requests)] == ["Sprint review"]
 
@@ -521,12 +618,28 @@ def test_notes_request_carries_the_context_meetings() -> None:
     other = meeting_row("Earlier sync")
     pipeline.meetings.others = [ContextTranscript(other, stored_version())]
     job_id = add_job(pipeline, JobType.TRANSCRIPTION)
+    handle(pipeline, transcript_ready(pipeline, job_id))
     # Act
-    requests = handle(pipeline, transcript_ready(pipeline, job_id))
+    requests = publish_all(pipeline)
     # Assert
     assert [
         [context.meeting_id for context in request.context] for request in notes_requests(requests)
     ] == [[other.meeting_id]]
+
+
+def test_published_notes_job_remembers_the_context_it_sent() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    other = meeting_row("Earlier sync")
+    pipeline.meetings.others = [ContextTranscript(other, stored_version())]
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION)
+    handle(pipeline, transcript_ready(pipeline, job_id))
+    # Act
+    publish_all(pipeline)
+    # Assert
+    assert [
+        job.sent_context for job in pipeline.jobs.jobs.values() if job.job_type is JobType.NOTES
+    ] == [(ContextReference(other.meeting_id, "Earlier sync"),)]
 
 
 def test_notes_request_tells_apart_speakers_with_the_same_name() -> None:
@@ -536,8 +649,9 @@ def test_notes_request_tells_apart_speakers_with_the_same_name() -> None:
         ContextTranscript(meeting_row("Earlier sync"), stored_version("Anna", "Anna"))
     ]
     job_id = add_job(pipeline, JobType.TRANSCRIPTION)
+    handle(pipeline, transcript_ready(pipeline, job_id))
     # Act
-    requests = handle(pipeline, transcript_ready(pipeline, job_id))
+    requests = publish_all(pipeline)
     # Assert
     assert [
         [context.transcript.speakers for context in request.context]
@@ -565,23 +679,32 @@ def test_ready_notes_are_saved_with_the_provider() -> None:
 def test_ready_notes_keep_only_context_meetings_that_were_sent() -> None:
     # Arrange
     pipeline = make_pipeline()
-    sent = meeting_row("Earlier sync")
-    pipeline.meetings.others = [ContextTranscript(sent, stored_version())]
-    job_id = add_job(pipeline, JobType.NOTES)
+    sent = ContextReference(uuid4(), "Earlier sync")
+    job_id = add_job(pipeline, JobType.NOTES, sent=(sent,))
     # Act
     handle(pipeline, notes_ready(pipeline, job_id, (uuid4(), sent.meeting_id)))
     # Assert
-    assert (None if pipeline.notes.saved is None else pipeline.notes.saved.context) == (
-        ContextReference(sent.meeting_id, "Earlier sync"),
-    )
+    assert (None if pipeline.notes.saved is None else pipeline.notes.saved.context) == (sent,)
+
+
+def test_ready_notes_keep_the_context_names_as_sent() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    renamed = meeting_row("Renamed since")
+    pipeline.meetings.others = [ContextTranscript(renamed, stored_version())]
+    sent = ContextReference(renamed.meeting_id, "Earlier sync")
+    job_id = add_job(pipeline, JobType.NOTES, sent=(sent,))
+    # Act
+    handle(pipeline, notes_ready(pipeline, job_id, (sent.meeting_id,)))
+    # Assert
+    assert (None if pipeline.notes.saved is None else pipeline.notes.saved.context) == (sent,)
 
 
 def test_ready_notes_save_a_repeated_context_meeting_once() -> None:
     # Arrange
     pipeline = make_pipeline()
-    sent = meeting_row("Earlier sync")
-    pipeline.meetings.others = [ContextTranscript(sent, stored_version())]
-    job_id = add_job(pipeline, JobType.NOTES)
+    sent = ContextReference(uuid4(), "Earlier sync")
+    job_id = add_job(pipeline, JobType.NOTES, sent=(sent,))
     # Act
     handle(pipeline, notes_ready(pipeline, job_id, (sent.meeting_id, sent.meeting_id)))
     # Assert
@@ -598,24 +721,24 @@ def test_ready_notes_mark_the_meeting_processed() -> None:
     assert pipeline.meetings.update.state is ProcessingState.PROCESSED
 
 
-def test_duplicate_result_of_a_finished_job_is_ignored() -> None:
+def test_duplicate_result_of_a_finished_job_queues_nothing_more() -> None:
     # Arrange
     pipeline = make_pipeline()
     job_id = add_job(pipeline, JobType.TRANSCRIPTION)
     handle(pipeline, transcript_ready(pipeline, job_id))
     # Act
-    requests = handle(pipeline, transcript_ready(pipeline, job_id))
+    handle(pipeline, transcript_ready(pipeline, job_id))
     # Assert
-    assert requests == []
+    assert len(notes_requests(publish_all(pipeline))) == 1
 
 
 def test_result_of_an_unknown_job_is_ignored() -> None:
     # Arrange
     pipeline = make_pipeline()
     # Act
-    requests = handle(pipeline, transcript_ready(pipeline, uuid4()))
+    handle(pipeline, transcript_ready(pipeline, uuid4()))
     # Assert
-    assert requests == []
+    assert (pipeline.jobs.jobs, pipeline.meetings.saved) == ({}, None)
 
 
 def test_result_of_another_meeting_changes_nothing() -> None:
@@ -644,9 +767,9 @@ def test_transcript_for_a_notes_job_changes_nothing() -> None:
     pipeline = make_pipeline()
     job_id = add_job(pipeline, JobType.NOTES)
     # Act
-    requests = handle(pipeline, transcript_ready(pipeline, job_id))
+    handle(pipeline, transcript_ready(pipeline, job_id))
     # Assert
-    assert (requests, pipeline.meetings.saved) == ([], None)
+    assert (len(pipeline.jobs.jobs), pipeline.meetings.saved) == (1, None)
 
 
 def test_start_of_another_kind_of_job_changes_nothing() -> None:
@@ -666,25 +789,27 @@ def test_retryable_failure_publishes_the_same_job_again() -> None:
     # Arrange
     pipeline = make_pipeline()
     job_id = add_job(pipeline, JobType.TRANSCRIPTION)
-    failed = transcription_failed(pipeline, job_id, TranscriptionFailure.AUDIO_LINK_EXPIRED)
+    handle(
+        pipeline, transcription_failed(pipeline, job_id, TranscriptionFailure.AUDIO_LINK_EXPIRED)
+    )
     # Act
-    requests = handle(pipeline, failed)
+    requests = publish_all(pipeline)
     # Assert
     assert [(type(request), request.job_id) for request in requests] == [
         (TranscriptionRequested, job_id)
     ]
 
 
-def test_redelivered_failure_of_a_requeued_job_publishes_nothing() -> None:
+def test_redelivered_failure_of_a_requeued_job_publishes_nothing_more() -> None:
     # Arrange
     pipeline = make_pipeline()
     job_id = add_job(pipeline, JobType.TRANSCRIPTION)
     failed = transcription_failed(pipeline, job_id, TranscriptionFailure.AUDIO_LINK_EXPIRED)
     handle(pipeline, failed)
     # Act
-    requests = handle(pipeline, failed)
+    handle(pipeline, failed)
     # Assert
-    assert requests == []
+    assert len(publish_all(pipeline)) == 1
 
 
 def test_retryable_failure_past_the_attempt_limit_fails_the_meeting() -> None:

@@ -1,6 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from pydantic import JsonValue
 from sqlalchemy import (
     CheckConstraint,
     Constraint,
@@ -11,6 +12,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, MappedColumn
 
 from ..shared.database import Base, enum_type
@@ -37,9 +39,18 @@ class ProcessingJob(Base):
     attempts: Mapped[int] = MappedColumn[int](server_default=text("0"))
     started_at: Mapped[datetime | None] = MappedColumn[datetime | None](DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = MappedColumn[datetime | None](DateTime(timezone=True))
+    published_at: Mapped[datetime | None] = MappedColumn[datetime | None](DateTime(timezone=True))
+    sent_context: Mapped[JsonValue | None] = MappedColumn[JsonValue | None](
+        JSONB(none_as_null=True), nullable=True
+    )
 
     __table_args__: tuple[Constraint | Index, ...] = (
         CheckConstraint("attempts >= 0", name="attempts"),
         Index("ix_processing_job_meeting_id", "meeting_id"),
         Index("ix_processing_job_status_created", "status", "created_at"),
+        Index(
+            "ix_processing_job_unpublished",
+            "created_at",
+            postgresql_where=text("status = 'queued' AND published_at IS NULL"),
+        ),
     )

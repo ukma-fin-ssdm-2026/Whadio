@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
-from weakref import WeakKeyDictionary
 
 from fastapi import Depends, FastAPI
 from pydantic import ValidationError
@@ -43,18 +42,14 @@ from ..meetings.repositories import FolderRepository, MeetingRepository
 from ..meetings.services import FolderService, MeetingService, WorkspaceContent
 from ..meetings.settings import MeetingSettings
 from ..processing.consumer import (
+    ProcessingTransactions,
     ResultSource,
-    TransactionalResultHandler,
     job_publisher,
+    serve_publishing,
     serve_results,
 )
 from ..processing.repositories import JobRepository
-from ..processing.services import (
-    IJobPublisher,
-    JobRequest,
-    MeetingProcessing,
-    ProcessingService,
-)
+from ..processing.services import ProcessingService
 from ..shared.database import Database, DatabaseSettings, IUseCaseTransactions
 from ..shared.errors import Failure, UseCaseError
 from ..shared.storage import IObjectStorage, connect_s3_storage
@@ -64,18 +59,11 @@ logger = logging.getLogger(__name__)
 
 
 class CompositionRoot:
-    def __init__(
-        self,
-        database: Database | None = None,
-        *,
-        storage: IObjectStorage | None = None,
-        publisher: IJobPublisher | None = None,
-    ) -> None:
+    def __init__(self, database: Database | None = None) -> None:
         self._database: Database | None = database
-        self._storage: IObjectStorage | None = storage
-        self._publisher: IJobPublisher | None = publisher
-        # Job requests each open transaction queued, published once it commits.
-        self._pending: WeakKeyDictionary[AsyncSession, list[JobRequest]] = WeakKeyDictionary()
+        self._storage: IObjectStorage | None = None
+        # Present while jobs are being published; setting it publishes the ones just committed.
+        self._queued: asyncio.Event | None = None
 
     def database(self) -> Database:
         if self._database is None:
@@ -88,18 +76,14 @@ class CompositionRoot:
     async def transaction(self) -> AsyncGenerator[AsyncSession]:
         async with self.database().transaction() as session:
             yield session
-        # Reached only after the commit, so a worker never gets a job the database lacks.
-        pending = self._pending.pop(session, [])
-        if self._publisher is not None:
-            for request in pending:
-                await self._publisher.publish(request)
+        # Reached only after the commit, which may have queued a job.
+        if self._queued is not None:
+            self._queued.set()
 
     def processing(self, session: AsyncSession) -> IMeetingProcessing:
-        if self._publisher is None:
+        if self._queued is None:
             return UnavailableMeetingProcessing()
-        return MeetingProcessing(
-            self._processing_service(session), self._pending.setdefault(session, [])
-        )
+        return self._processing_service(session)
 
     def _processing_service(self, session: AsyncSession) -> ProcessingService:
         if self._storage is None:
@@ -127,33 +111,41 @@ class CompositionRoot:
     async def lifespan(self, _app: FastAPI) -> AsyncGenerator[None]:
         settings, storage = WebSettings(), MeetingSettings().storage
         stop = asyncio.Event()
-        consumer: asyncio.Task[None] | None = None
+        tasks: list[asyncio.Task[None]] = []
         try:
             async with AsyncExitStack() as stack:
                 if settings.broker is not None and storage is not None:
                     self._storage = connect_s3_storage(storage)
-                    self._publisher = await stack.enter_async_context(
-                        job_publisher(settings.broker)
+                    queued = asyncio.Event()
+                    transactions = ProcessingTransactions(
+                        self.database(),
+                        self._processing_service,
+                        await stack.enter_async_context(job_publisher(settings.broker)),
+                        queued,
                     )
-                    consumer = asyncio.create_task(
-                        serve_results(
-                            settings.broker,
-                            TransactionalResultHandler(self.database(), self._processing_service),
-                            ResultSource(
-                                settings.worker_broker_users
-                                or [user for user in [settings.broker.user] if user is not None]
-                            ),
-                            stop,
-                        )
-                    )
-                    consumer.add_done_callback(_log_failure)
+                    tasks = [
+                        asyncio.create_task(serve_publishing(transactions, queued, stop)),
+                        asyncio.create_task(
+                            serve_results(
+                                settings.broker,
+                                transactions,
+                                ResultSource(
+                                    settings.worker_broker_users
+                                    or [user for user in [settings.broker.user] if user is not None]
+                                ),
+                                stop,
+                            )
+                        ),
+                    ]
+                    for task in tasks:
+                        task.add_done_callback(_log_failure)
+                    self._queued = queued
                 try:
                     yield
                 finally:
                     stop.set()
-                    if consumer is not None:
-                        await asyncio.gather(consumer, return_exceptions=True)
-                    self._publisher = None
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                    self._queued = None
         finally:
             if self._database is not None:
                 await self._database.close()
@@ -161,7 +153,7 @@ class CompositionRoot:
 
 def _log_failure(task: asyncio.Task[None]) -> None:
     if not task.cancelled() and task.exception() is not None:
-        logger.error("The processing results consumer stopped", exc_info=task.exception())
+        logger.error("A processing task stopped", exc_info=task.exception())
 
 
 async def transaction() -> AsyncSession:

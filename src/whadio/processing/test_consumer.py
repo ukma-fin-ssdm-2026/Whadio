@@ -33,10 +33,11 @@ from ..shared.broker import BrokerSettings, MessagePublisher, connect, declare_q
 from ..shared.storage import PresignedUrl
 from .consumer import (
     AmqpJobPublisher,
+    ProcessingTransactions,
     ResultSource,
-    TransactionalResultHandler,
     handle_dead_letter,
     handle_delivery,
+    serve_publishing,
     serve_results,
 )
 from .enums import JobType
@@ -90,9 +91,8 @@ class RecordingHandler:
     def __init__(self) -> None:
         self.handled: asyncio.Queue[UUID] = asyncio.Queue()
 
-    async def handle(self, result: ProcessingResult) -> list[JobRequest]:
+    async def handle(self, result: ProcessingResult) -> None:
         await self.handled.put(result.job_id)
-        return []
 
     async def dead_lettered(self, job_id: UUID) -> None:
         await self.handled.put(job_id)
@@ -138,8 +138,8 @@ def notes_request() -> NotesRequested:
     )
 
 
-async def no_follow_ups(_result: ProcessingResult) -> list[JobRequest]:
-    return []
+async def accept(_result: ProcessingResult) -> None:
+    pass
 
 
 async def publish_amqp(request: JobRequest) -> list[str]:
@@ -190,7 +190,7 @@ def test_message_that_is_not_a_result_is_rejected_without_requeue() -> None:
     # Arrange
     delivery = FakeDelivery(b'{"type": "unknown"}')
     # Act
-    asyncio.run(handle_delivery(delivery, no_follow_ups, FakePublisher(), {WORKER}))
+    asyncio.run(handle_delivery(delivery, accept, {WORKER}))
     # Assert
     assert delivery.outcome == "reject requeue=False"
 
@@ -199,7 +199,7 @@ def test_result_from_an_unexpected_publisher_is_rejected_without_requeue() -> No
     # Arrange
     delivery = FakeDelivery(started_body(), user_id="someone-else")
     # Act
-    asyncio.run(handle_delivery(delivery, no_follow_ups, FakePublisher(), {WORKER}))
+    asyncio.run(handle_delivery(delivery, accept, {WORKER}))
     # Assert
     assert delivery.outcome == "reject requeue=False"
 
@@ -208,7 +208,7 @@ def test_result_without_a_publisher_is_rejected_without_requeue() -> None:
     # Arrange
     delivery = FakeDelivery(started_body(), user_id=None)
     # Act
-    asyncio.run(handle_delivery(delivery, no_follow_ups, FakePublisher(), {WORKER}))
+    asyncio.run(handle_delivery(delivery, accept, {WORKER}))
     # Assert
     assert delivery.outcome == "reject requeue=False"
 
@@ -217,35 +217,21 @@ def test_handled_result_is_acknowledged() -> None:
     # Arrange
     delivery = FakeDelivery(started_body())
     # Act
-    asyncio.run(handle_delivery(delivery, no_follow_ups, FakePublisher(), {WORKER}))
+    asyncio.run(handle_delivery(delivery, accept, {WORKER}))
     # Assert
     assert delivery.outcome == "ack"
-
-
-def test_follow_up_jobs_are_published() -> None:
-    # Arrange
-    delivery = FakeDelivery(started_body())
-    publisher = FakePublisher()
-
-    async def handle(result: ProcessingResult) -> list[JobRequest]:
-        return [transcription_request(result.job_id)]
-
-    # Act
-    asyncio.run(handle_delivery(delivery, handle, publisher, {WORKER}))
-    # Assert
-    assert [request.type for request in publisher.published] == ["transcription_requested"]
 
 
 def test_result_whose_handling_fails_is_left_unsettled() -> None:
     # Arrange
     delivery = FakeDelivery(started_body())
 
-    async def handle(_result: ProcessingResult) -> list[JobRequest]:
+    async def handle(_result: ProcessingResult) -> None:
         raise RuntimeError("database unavailable")
 
     # Act
     with pytest.raises(RuntimeError):
-        asyncio.run(handle_delivery(delivery, handle, FakePublisher(), {WORKER}))
+        asyncio.run(handle_delivery(delivery, handle, {WORKER}))
     # Assert
     assert delivery.outcome == "unsettled"
 
@@ -363,7 +349,7 @@ def processing_service(session: AsyncSession) -> ProcessingService:
             )
         ),
         WorkspaceSettingsService(WorkspaceSettingsRepository(session)),
-        UnusedStorage(),
+        SigningStorage(),
     )
 
 
@@ -373,7 +359,7 @@ class UnavailableEvictions:
         raise AssertionError
 
 
-class UnusedStorage:
+class SigningStorage:
     def put(self, key: str, data: BinaryIO, *, content_type: str) -> None:
         del key, data, content_type
         raise AssertionError
@@ -383,21 +369,29 @@ class UnusedStorage:
         raise AssertionError
 
     def presign_get(self, key: str, *, expires_in: timedelta) -> PresignedUrl:
-        del key, expires_in
-        raise AssertionError
+        return PresignedUrl(f"http://storage.test/{key}", NOW + expires_in)
+
+
+def transactions(session: AsyncSession, publisher: FakePublisher) -> ProcessingTransactions:
+    return ProcessingTransactions(
+        SavepointTransactions(session), processing_service, publisher, asyncio.Event()
+    )
+
+
+async def queued_job(session: AsyncSession) -> tuple[UUID, UUID]:
+    meeting_id = await AsyncDatabase.add_meeting(
+        session, await AsyncDatabase.add_workspace(session)
+    )
+    return meeting_id, await JobRepository(session).add(meeting_id, JobType.TRANSCRIPTION)
 
 
 @pytest.mark.slow
 def test_handled_result_changes_the_database(async_database: AsyncDatabase) -> None:
     # Arrange
     async def scenario(session: AsyncSession) -> ProcessingState | None:
-        meeting_id = await AsyncDatabase.add_meeting(
-            session, await AsyncDatabase.add_workspace(session)
-        )
-        job_id = await JobRepository(session).add(meeting_id, JobType.TRANSCRIPTION)
-        handler = TransactionalResultHandler(SavepointTransactions(session), processing_service)
+        meeting_id, job_id = await queued_job(session)
         # Act
-        await handler.handle(
+        await transactions(session, FakePublisher()).handle(
             JobStarted(
                 job_id=job_id, meeting_id=meeting_id, kind=JobKind.TRANSCRIPTION, started_at=NOW
             )
@@ -409,3 +403,77 @@ def test_handled_result_changes_the_database(async_database: AsyncDatabase) -> N
     state = async_database.run(scenario)
     # Assert
     assert state is ProcessingState.PROCESSING
+
+
+@pytest.mark.slow
+def test_queued_job_is_published_once(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> int:
+        _, job_id = await queued_job(session)
+        publisher = FakePublisher()
+        publishing = transactions(session, publisher)
+        # Act
+        while await publishing.publish_next():
+            pass
+        await publishing.publish_next()
+        return [request.job_id for request in publisher.published].count(job_id)
+
+    published = async_database.run(scenario)
+    # Assert
+    assert published == 1
+
+
+# --- Publishing rounds ---
+
+
+class FakePublishing:
+    def __init__(self, failures: int = 0) -> None:
+        self.waiting: int = 1
+        self.published: asyncio.Event = asyncio.Event()
+        self._failures: int = failures
+
+    async def publish_next(self) -> bool:
+        if self._failures:
+            self._failures -= 1
+            raise ConnectionError
+        if not self.waiting:
+            return False
+        self.waiting -= 1
+        self.published.set()
+        return True
+
+
+async def serve_until_published(
+    publishing: FakePublishing, interval: timedelta, *, wake: bool
+) -> bool:
+    queued, stop = asyncio.Event(), asyncio.Event()
+    serving = asyncio.create_task(serve_publishing(publishing, queued, stop, interval))
+    if wake:
+        queued.set()
+    try:
+        async with asyncio.timeout(5):
+            await publishing.published.wait()
+        return True
+    finally:
+        stop.set()
+        await serving
+
+
+def test_queued_jobs_are_published_at_once_when_woken() -> None:
+    # Arrange
+    publishing = FakePublishing()
+    # Act
+    published = asyncio.run(serve_until_published(publishing, timedelta(hours=1), wake=True))
+    # Assert
+    assert published
+
+
+def test_job_whose_publish_failed_is_published_on_a_later_round() -> None:
+    # Arrange
+    publishing = FakePublishing(failures=1)
+    # Act
+    published = asyncio.run(
+        serve_until_published(publishing, timedelta(milliseconds=10), wake=False)
+    )
+    # Assert
+    assert published

@@ -51,6 +51,7 @@ MAX_ATTEMPTS: Final = 5
 AUDIO_LINK_LIFETIME: Final = timedelta(hours=24)
 DEAD_LETTERED: Final = "dead_lettered"
 TRANSCRIPT_EXISTS: Final = "transcript_exists"
+UNPUBLISHABLE: Final = "unpublishable"
 
 JobRequest = TranscriptionRequested | NotesRequested
 
@@ -111,10 +112,11 @@ class IGeneratedNotes(Protocol):
 
 
 class ProcessingService:
-    """Runs inside the caller's transaction and returns the job requests to publish.
+    """Runs inside the caller's transaction. Queueing only records a job; `publish_next` sends
+    it, in a later transaction, so a job is never published before its row is committed and
+    never lost when a publish fails.
 
-    The caller publishes them only after committing, so a worker never answers a job the database
-    does not have yet.
+    It is also Meetings' `IMeetingProcessing`.
     """
 
     def __init__(
@@ -131,22 +133,56 @@ class ProcessingService:
         self._workspaces: IWorkspaceSettings = workspaces
         self._storage: IObjectStorage = storage
 
-    async def queue_transcription(self, meeting_id: UUID) -> TranscriptionRequested:
+    async def queue_transcription(self, meeting_id: UUID) -> None:
         # The lock serializes two submissions of the same meeting, so only one finds no job.
-        found = await self._meetings.pipeline_meeting(meeting_id, lock=True)
-        if found is None:
+        if await self._meetings.pipeline_meeting(meeting_id, lock=True) is None:
             raise UseCaseError(Failure.NOT_FOUND)
         if await self._meetings.current_transcript(
             meeting_id
         ) is not None or await self._jobs.has_unfinished(meeting_id, JobType.TRANSCRIPTION):
             raise UseCaseError(Failure.ALREADY_PROCESSED)
-        job_id = await self._jobs.add(meeting_id, JobType.TRANSCRIPTION)
+        await self._jobs.add(meeting_id, JobType.TRANSCRIPTION)
         await self._meetings.save_processing_state(
             meeting_id, ProcessingUpdate(ProcessingState.QUEUED)
         )
-        return await self._transcription_request(job_id, found)
 
-    async def handle(self, result: ProcessingResult) -> list[JobRequest]:
+    async def queue_notes(
+        self,
+        meeting_id: UUID,
+        requester_id: UUID,
+        preset: NotesTemplate | None,
+        *,
+        use_builtin_model: bool,
+        now: datetime,
+    ) -> QueuedNotes:
+        # Regenerating notes is outside the MVP.
+        del meeting_id, requester_id, preset, use_builtin_model, now
+        raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+
+    async def publish_next(self, publisher: IJobPublisher, now: datetime) -> bool:
+        """Publish the oldest unpublished job; False when none is left.
+
+        A failed publish raises, and the caller's rollback leaves the job for the next round. A
+        commit that fails after the publish sends the job twice, which `handle` absorbs.
+        """
+        job = await self._jobs.next_unpublished()
+        if job is None:
+            return False
+        try:
+            request, context = await self._request(job)
+        except UseCaseError:
+            # The recording or the transcript is gone, which no retry brings back.
+            await self._jobs.finish(job.job_id, JobStatus.FAILED, now, UNPUBLISHABLE)
+            await self._meetings.save_processing_state(
+                job.meeting_id,
+                ProcessingUpdate(ProcessingState.FAILED, _GENERAL_FAILURES[job.job_type]),
+            )
+            return True
+        await publisher.publish(request)
+        await self._jobs.mark_published(job.job_id, now, context)
+        return True
+
+    async def handle(self, result: ProcessingResult) -> None:
         """Drop a result that does not fit its job's state, type or meeting, changing nothing."""
         job = await self._jobs.lock(result.job_id)
         # A job of a deleted meeting is gone with it.
@@ -156,21 +192,19 @@ class ProcessingService:
             or job.job_type != _job_type(result)
             or job.status not in _accepted_statuses(result)
         ):
-            return []
+            return
         match result:
             case JobStarted():
                 await self._jobs.mark_running(job.job_id, result.started_at)
                 await self._meetings.save_processing_state(
                     job.meeting_id, ProcessingUpdate(ProcessingState.PROCESSING)
                 )
-                return []
             case TranscriptReady():
-                return await self._transcript_ready(job, result)
+                await self._transcript_ready(job, result)
             case NotesReady():
                 await self._notes_ready(job, result)
-                return []
             case TranscriptionFailed() | NotesFailed():
-                return await self._failed(job, result)
+                await self._failed(job, result)
 
     async def dead_lettered(self, job_id: UUID, now: datetime) -> None:
         job = await self._jobs.lock(job_id)
@@ -182,16 +216,15 @@ class ProcessingService:
             ProcessingUpdate(ProcessingState.FAILED, _GENERAL_FAILURES[job.job_type]),
         )
 
-    async def _transcript_ready(self, job: Job, result: TranscriptReady) -> list[JobRequest]:
-        found = await self._meetings.pipeline_meeting(job.meeting_id, lock=True)
-        if found is None:
-            return []
+    async def _transcript_ready(self, job: Job, result: TranscriptReady) -> None:
+        if await self._meetings.pipeline_meeting(job.meeting_id, lock=True) is None:
+            return
         if await self._meetings.current_transcript(job.meeting_id) is not None:
             # Meetings keeps one original transcript; another job's result cannot replace it.
             await self._jobs.finish(
                 job.job_id, JobStatus.FAILED, result.finished_at, TRANSCRIPT_EXISTS
             )
-            return []
+            return
         await self._jobs.finish(job.job_id, JobStatus.SUCCEEDED, result.finished_at, None)
         await self._meetings.save_initial_transcript(
             job.meeting_id,
@@ -221,18 +254,14 @@ class ProcessingService:
                 ProcessingState.PROCESSING, duration_seconds=round(result.duration_seconds)
             ),
         )
-        notes_job = await self._jobs.add(job.meeting_id, JobType.NOTES)
-        return [await self._notes_request(notes_job, found)]
+        await self._jobs.add(job.meeting_id, JobType.NOTES)
 
     async def _notes_ready(self, job: Job, result: NotesReady) -> None:
         # Locked, the meeting cannot be renamed by a member between the name check and the save.
-        found = await self._meetings.pipeline_meeting(job.meeting_id, lock=True)
-        if found is None:
+        if await self._meetings.pipeline_meeting(job.meeting_id, lock=True) is None:
             return
-        sent = {
-            other.meeting.meeting_id: other.meeting.name
-            for other in await self._meetings.notes_context(found.meeting, MAX_CONTEXT_MEETINGS)
-        }
+        # The names as they were sent, so the note keeps them after a rename or deletion.
+        sent = {reference.meeting_id: reference.name for reference in job.sent_context}
         await self._jobs.finish(job.job_id, JobStatus.SUCCEEDED, result.finished_at, None)
         await self._notes.save_generated_notes(
             job.meeting_id,
@@ -256,15 +285,10 @@ class ProcessingService:
             job.meeting_id, ProcessingUpdate(ProcessingState.PROCESSED)
         )
 
-    async def _failed(
-        self, job: Job, result: TranscriptionFailed | NotesFailed
-    ) -> list[JobRequest]:
-        found = await self._meetings.pipeline_meeting(job.meeting_id)
-        if found is not None and result.reason.retryable and job.attempts < MAX_ATTEMPTS:
+    async def _failed(self, job: Job, result: TranscriptionFailed | NotesFailed) -> None:
+        if result.reason.retryable and job.attempts < MAX_ATTEMPTS:
             await self._jobs.requeue(job.job_id)
-            if job.job_type is JobType.TRANSCRIPTION:
-                return [await self._transcription_request(job.job_id, found)]
-            return [await self._notes_request(job.job_id, found)]
+            return
         await self._jobs.finish(job.job_id, JobStatus.FAILED, result.finished_at, result.reason)
         await self._meetings.save_processing_state(
             job.meeting_id,
@@ -273,7 +297,14 @@ class ProcessingService:
                 _FAILURES.get(result.reason, _GENERAL_FAILURES[job.job_type]),
             ),
         )
-        return []
+
+    async def _request(self, job: Job) -> tuple[JobRequest, tuple[ContextReference, ...]]:
+        found = await self._meetings.pipeline_meeting(job.meeting_id)
+        if found is None:
+            raise UseCaseError(Failure.NOT_FOUND)
+        if job.job_type is JobType.TRANSCRIPTION:
+            return await self._transcription_request(job.job_id, found), ()
+        return await self._notes_request(job.job_id, found)
 
     async def _transcription_request(
         self, job_id: UUID, found: PipelineMeeting
@@ -292,13 +323,19 @@ class ProcessingService:
             glossary=await self._glossary(found.workspace_id),
         )
 
-    async def _notes_request(self, job_id: UUID, found: PipelineMeeting) -> NotesRequested:
+    async def _notes_request(
+        self, job_id: UUID, found: PipelineMeeting
+    ) -> tuple[NotesRequested, tuple[ContextReference, ...]]:
+        """The request, and the context meetings it sends, as `handle` checks the notes against."""
         meeting = found.meeting
         transcript = await self._meetings.current_transcript(meeting.meeting_id)
         if transcript is None:
             raise UseCaseError(Failure.NOT_TRANSCRIBED)
         template = await self._workspaces.default_template(found.workspace_id)
         context = await self._meetings.notes_context(meeting, MAX_CONTEXT_MEETINGS)
+        sent = tuple(
+            ContextReference(other.meeting.meeting_id, other.meeting.name) for other in context
+        )
         return NotesRequested(
             job_id=job_id,
             meeting_id=meeting.meeting_id,
@@ -318,7 +355,7 @@ class ProcessingService:
                 for other in context
             ),
             glossary=await self._glossary(found.workspace_id),
-        )
+        ), sent
 
     async def _glossary(self, workspace_id: UUID) -> tuple[GlossaryEntry, ...]:
         return tuple(
@@ -327,35 +364,6 @@ class ProcessingService:
             )
             for item in await self._meetings.workspace_glossary(workspace_id)
         )
-
-
-class IPendingPublications(Protocol):
-    def append(self, request: JobRequest, /) -> None: ...
-
-
-class MeetingProcessing:
-    """Meetings' `IMeetingProcessing`: queues in the caller's transaction, and leaves the request
-    to be published once that transaction commits."""
-
-    def __init__(self, processing: ProcessingService, pending: IPendingPublications) -> None:
-        self._processing: ProcessingService = processing
-        self._pending: IPendingPublications = pending
-
-    async def queue_transcription(self, meeting_id: UUID) -> None:
-        self._pending.append(await self._processing.queue_transcription(meeting_id))
-
-    async def queue_notes(
-        self,
-        meeting_id: UUID,
-        requester_id: UUID,
-        preset: NotesTemplate | None,
-        *,
-        use_builtin_model: bool,
-        now: datetime,
-    ) -> QueuedNotes:
-        # Regenerating notes is outside the MVP.
-        del meeting_id, requester_id, preset, use_builtin_model, now
-        raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
 
 
 def _job_type(result: ProcessingResult) -> JobType:

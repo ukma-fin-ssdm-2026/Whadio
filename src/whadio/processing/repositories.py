@@ -1,11 +1,13 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Final, Protocol
 from uuid import UUID
 
+from pydantic import BaseModel, Field, TypeAdapter
 from sqlalchemy import exists, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..meetings.contracts import ContextReference
 from .enums import JobStatus, JobType
 from .models import ProcessingJob
 
@@ -17,6 +19,7 @@ class Job:
     job_type: JobType
     status: JobStatus
     attempts: int
+    sent_context: tuple[ContextReference, ...] = ()
 
 
 class IJobRepository(Protocol):
@@ -24,7 +27,13 @@ class IJobRepository(Protocol):
 
     async def lock(self, job_id: UUID, /) -> Job | None: ...
 
+    async def next_unpublished(self) -> Job | None: ...
+
     async def has_unfinished(self, meeting_id: UUID, job_type: JobType, /) -> bool: ...
+
+    async def mark_published(
+        self, job_id: UUID, published_at: datetime, context: tuple[ContextReference, ...], /
+    ) -> None: ...
 
     async def mark_running(self, job_id: UUID, started_at: datetime, /) -> None: ...
 
@@ -38,6 +47,14 @@ class IJobRepository(Protocol):
         failure_reason: str | None,
         /,
     ) -> None: ...
+
+
+class _SentMeeting(BaseModel):
+    meeting_id: UUID = Field(description="Context meeting sent with the notes request")
+    name: str = Field(description="Its name as sent")
+
+
+_SENT_CONTEXT: Final = TypeAdapter(list[_SentMeeting])
 
 
 class JobRepository:
@@ -56,15 +73,18 @@ class JobRepository:
         found = await self._session.scalar(
             select(ProcessingJob).where(ProcessingJob.processing_job_id == job_id).with_for_update()
         )
-        if found is None:
-            return None
-        return Job(
-            job_id=found.processing_job_id,
-            meeting_id=found.meeting_id,
-            job_type=found.job_type,
-            status=found.status,
-            attempts=found.attempts,
+        return None if found is None else _job(found)
+
+    async def next_unpublished(self) -> Job | None:
+        # Skipping locked rows lets several web instances publish side by side, each job once.
+        found = await self._session.scalar(
+            select(ProcessingJob)
+            .where(ProcessingJob.status == JobStatus.QUEUED, ProcessingJob.published_at.is_(None))
+            .order_by(ProcessingJob.created_at)
+            .limit(1)
+            .with_for_update(skip_locked=True)
         )
+        return None if found is None else _job(found)
 
     async def has_unfinished(self, meeting_id: UUID, job_type: JobType) -> bool:
         return bool(
@@ -76,6 +96,21 @@ class JobRepository:
                         ProcessingJob.status.in_((JobStatus.QUEUED, JobStatus.RUNNING)),
                     )
                 )
+            )
+        )
+
+    async def mark_published(
+        self, job_id: UUID, published_at: datetime, context: tuple[ContextReference, ...]
+    ) -> None:
+        await self._session.execute(
+            update(ProcessingJob)
+            .where(ProcessingJob.processing_job_id == job_id)
+            .values(
+                published_at=published_at,
+                sent_context=_SENT_CONTEXT.dump_python(
+                    [_SentMeeting(meeting_id=item.meeting_id, name=item.name) for item in context],
+                    mode="json",
+                ),
             )
         )
 
@@ -94,7 +129,7 @@ class JobRepository:
         await self._session.execute(
             update(ProcessingJob)
             .where(ProcessingJob.processing_job_id == job_id)
-            .values(status=JobStatus.QUEUED)
+            .values(status=JobStatus.QUEUED, published_at=None)
         )
 
     async def finish(
@@ -105,3 +140,15 @@ class JobRepository:
             .where(ProcessingJob.processing_job_id == job_id)
             .values(status=status, finished_at=finished_at, failure_reason=failure_reason)
         )
+
+
+def _job(found: ProcessingJob) -> Job:
+    sent = [] if found.sent_context is None else _SENT_CONTEXT.validate_python(found.sent_context)
+    return Job(
+        job_id=found.processing_job_id,
+        meeting_id=found.meeting_id,
+        job_type=found.job_type,
+        status=found.status,
+        attempts=found.attempts,
+        sent_context=tuple(ContextReference(item.meeting_id, item.name) for item in sent),
+    )
