@@ -61,8 +61,9 @@ class ErrorDetail(BaseModel):
     )
     provided_value: JsonValue = Field(
         default=None,
-        description="The value the client sent, when it is safe to echo back",
-        examples=["alice@"],
+        description="The value the client sent, for a query or path parameter only; body "
+        "fields, headers and cookies are never echoed back",
+        examples=["500"],
     )
 
 
@@ -120,6 +121,8 @@ DOC_INVALID = "`VALIDATION_ERROR`: a parameter or field is invalid; `details` na
 # --- Translating every failure into the envelope ---
 
 _LOCATION = TypeAdapter(tuple[str | int, ...])
+# A body, header or cookie can carry a password or token; the threat model keeps them out of URLs.
+_ECHOED_LOCATIONS: Final = frozenset({"query", "path"})
 
 _HTTP_STATUS_CODES: Final[Mapping[int, ErrorCode]] = {
     404: ErrorCode.NOT_FOUND,
@@ -198,9 +201,9 @@ def _validation_detail(error: Mapping[str, object]) -> ErrorDetail:
         parts = _LOCATION.validate_python(error.get("loc", ()))
     except ValidationError:
         parts = ()
-    is_missing = error.get("type") == "missing"
+    is_echoed = bool(parts) and parts[0] in _ECHOED_LOCATIONS and error.get("type") != "missing"
     return ErrorDetail(
         field=".".join(str(part) for part in parts[1:]) or None,
         message=str(error.get("msg", "Invalid value")).removeprefix("Value error, "),
-        provided_value=None if is_missing else jsonable_encoder(error.get("input")),
+        provided_value=jsonable_encoder(error.get("input")) if is_echoed else None,
     )

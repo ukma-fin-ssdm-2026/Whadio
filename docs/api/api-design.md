@@ -889,7 +889,7 @@ unknown routes:
   "error": {
     "code": "VALIDATION_ERROR",
     "message": "Request contains invalid fields",
-    "details": [{"field": "email", "message": "value is not a valid email address", "provided_value": "alice@"}],
+    "details": [{"field": "limit", "message": "Input should be less than or equal to 100", "provided_value": "500"}],
     "request_id": "req_4f9c2a1be07d"
   }
 }
@@ -899,6 +899,9 @@ unknown routes:
   return is listed in its documented responses.
 - **`message`** is for people and may change. Clients never parse it.
 - **`details`** names each invalid field, for validation errors.
+- **`details[].provided_value`** echoes what the client sent for a query or path parameter.
+  It is always `null` for body fields, headers and cookies, which can carry a password or a
+  token.
 - **`request_id`** equals the `X-Request-ID` response header. Server errors are logged with
   it and never echo internals.
 
