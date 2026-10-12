@@ -39,7 +39,7 @@ class AuditWriter:
     def __init__(self, session: AsyncSession) -> None:
         self._session: AsyncSession = session
 
-    async def write(self, event: MeetingMoved | ContentEvent) -> None:
+    async def write(self, event: MeetingMoved | WorkspaceDeleted | ContentEvent) -> None:
         if isinstance(event, MeetingMoved):
             event = ContentEvent(
                 event.actor_id,
@@ -50,6 +50,17 @@ class AuditWriter:
                 from_folder_id=event.from_folder_id,
                 to_folder_id=event.to_folder_id,
             )
+        if isinstance(event, WorkspaceDeleted):
+            self._session.add(
+                AuditEvent(
+                    occurred_at=event.occurred_at,
+                    actor_user_id=event.actor_id,
+                    action=AuditAction.WORKSPACE_DELETED,
+                    workspace_id=event.workspace_id,
+                )
+            )
+            await self._session.flush()
+            return
         details = {
             key: str(value)
             for key, value in (

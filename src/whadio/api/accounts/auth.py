@@ -1,15 +1,15 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Annotated, Final
 
 from fastapi import Depends, Response
 from fastapi.security import APIKeyCookie, HTTPAuthorizationCredentials, HTTPBearer
 
 from ...accounts.enums import SessionKind
+from ...accounts.models import User
 from ...accounts.repositories import IdentityRepository
 from ...accounts.services import IdentityService
 from ..composition import Session
 from ..core.errors import ApiError, ErrorCode
-from .fixtures import DEMO_SESSION_TOKEN
 from .schemas import UserRead
 
 SESSION_COOKIE: Final = "whadio_session"
@@ -47,12 +47,7 @@ def _browser_credentials(cookie: Cookie) -> str:
 BrowserCredentials = Annotated[str, Depends(_browser_credentials)]
 
 
-async def _browser_user(token: BrowserCredentials, session: Session) -> UserRead:
-    user = await IdentityService(IdentityRepository(session)).session_user(
-        token, SessionKind.BROWSER, datetime.now(UTC)
-    )
-    if user is None:
-        raise _unauthenticated()
+def user_read(user: User) -> UserRead:
     return UserRead(
         id=user.user_id,
         email=user.email,
@@ -62,6 +57,15 @@ async def _browser_user(token: BrowserCredentials, session: Session) -> UserRead
     )
 
 
+async def _browser_user(token: BrowserCredentials, session: Session) -> UserRead:
+    user = await IdentityService(IdentityRepository(session)).session_user(
+        token, SessionKind.BROWSER, datetime.now(UTC)
+    )
+    if user is None:
+        raise _unauthenticated()
+    return user_read(user)
+
+
 async def _capture_user(cookie: Cookie, bearer: Bearer, session: Session) -> UserRead:
     if bearer is not None:
         user = await IdentityService(IdentityRepository(session)).session_user(
@@ -69,13 +73,7 @@ async def _capture_user(cookie: Cookie, bearer: Bearer, session: Session) -> Use
         )
         if user is None:
             raise _unauthenticated()
-        return UserRead(
-            id=user.user_id,
-            email=user.email,
-            name=user.name,
-            is_administrator=user.is_administrator,
-            created_at=user.created_at,
-        )
+        return user_read(user)
     return await _browser_user(_browser_credentials(cookie), session)
 
 

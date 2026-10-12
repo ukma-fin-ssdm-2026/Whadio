@@ -14,9 +14,11 @@ from ..audit.services import IAuditWriter, MeetingMoved
 from ..shared.errors import Failure, UseCaseError
 from ..shared.pagination import ListWindow
 from .contracts import (
+    ContextTranscript,
     InitialTranscript,
     MeetingFilter,
     NoteVersion,
+    PipelineMeeting,
     ProcessingUpdate,
     TranscriptVersion,
 )
@@ -595,8 +597,10 @@ class MeetingService:
 
     async def save_processing_state(self, meeting_id: UUID, update: ProcessingUpdate) -> None:
         """Persist Processing's decision without choosing transitions or enforcing job limits."""
-        if (update.state == ProcessingState.FAILED) != (update.failure is not None) or (
-            update.regeneration_count is not None and update.regeneration_count < 0
+        if (
+            (update.state == ProcessingState.FAILED) != (update.failure is not None)
+            or (update.regeneration_count is not None and update.regeneration_count < 0)
+            or (update.duration_seconds is not None and update.duration_seconds < 0)
         ):
             raise UseCaseError(Failure.VALIDATION_ERROR)
         meeting = await self._repository.get(meeting_id, lock=True)
@@ -604,7 +608,48 @@ class MeetingService:
         meeting.failure_reason = update.failure
         if update.regeneration_count is not None:
             meeting.regeneration_count = update.regeneration_count
+        if update.duration_seconds is not None:
+            meeting.duration_seconds = update.duration_seconds
         await self._repository.save(meeting)
+
+    # --- For Processing, which acts for no member, so nothing here checks access ---
+
+    async def pipeline_meeting(
+        self, meeting_id: UUID, *, lock: bool = False
+    ) -> PipelineMeeting | None:
+        try:
+            scope = await self._repository.scope(meeting_id, lock=lock)
+        except UseCaseError as error:
+            if error.code == Failure.NOT_FOUND:
+                return None
+            raise
+        return PipelineMeeting(await self._repository.get(meeting_id), scope.workspace_id)
+
+    async def current_transcript(self, meeting_id: UUID) -> TranscriptVersion | None:
+        try:
+            return await self._repository.version(meeting_id)
+        except UseCaseError as error:
+            if error.code == Failure.NOT_TRANSCRIBED:
+                return None
+            raise
+
+    async def notes_context(self, meeting: Meeting, limit: int) -> list[ContextTranscript]:
+        """Processed meetings of the same folder; a restricted one never reaches another
+        meeting's notes (FR-019)."""
+        context: list[ContextTranscript] = []
+        # One extra row makes up for the meeting itself.
+        for other in await self._repository.processed_in_folder(meeting.folder_id, limit + 1):
+            transcript = (
+                None
+                if other.meeting_id == meeting.meeting_id
+                else await self.current_transcript(other.meeting_id)
+            )
+            if transcript is not None:
+                context.append(ContextTranscript(other, transcript))
+        return context[:limit]
+
+    async def workspace_glossary(self, workspace_id: UUID) -> list[GlossaryTerm]:
+        return await self._repository.glossary(workspace_id)
 
     async def _authorize(
         self, actor_id: UUID, meeting_id: UUID, *, lock: bool = False
@@ -698,3 +743,26 @@ class FolderService:
                 )
             )
         return folder
+
+
+class WorkspaceContent:
+    """What a workspace holds, for Accounts (`IWorkspaceContent`); the Owner check is theirs."""
+
+    def __init__(self, repository: IMeetingRepository) -> None:
+        self._repository: IMeetingRepository = repository
+
+    async def add_default_folder(self, workspace_id: UUID, now: datetime) -> None:
+        await self._repository.save_folder(
+            Folder(
+                folder_id=uuid4(),
+                workspace_id=workspace_id,
+                name="General",
+                created_at=now,
+                is_default=True,
+            )
+        )
+
+    async def remove_meetings(self, workspace_id: UUID, now: datetime) -> None:
+        # One by one, so each recording is queued for deletion from storage.
+        for meeting_id in await self._repository.workspace_meetings(workspace_id):
+            await self._repository.remove(meeting_id, now)

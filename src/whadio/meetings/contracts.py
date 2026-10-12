@@ -7,6 +7,7 @@ from uuid import UUID
 from ..accounts.enums import LlmProvider, NotesTemplate
 from .enums import ProcessingFailure, ProcessingState
 from .models import (
+    Meeting,
     Note,
     NoteContextMeeting,
     Speaker,
@@ -97,6 +98,7 @@ class ProcessingUpdate:
     state: ProcessingState
     failure: ProcessingFailure | None = None
     regeneration_count: int | None = None
+    duration_seconds: int | None = None
 
 
 @dataclass(frozen=True)
@@ -106,3 +108,15 @@ class QueuedNotes:
     preset: NotesTemplate
     provider: LlmProvider
     created_at: datetime
+
+
+@dataclass(frozen=True)
+class PipelineMeeting:
+    meeting: Meeting
+    workspace_id: UUID
+
+
+@dataclass(frozen=True)
+class ContextTranscript:
+    meeting: Meeting
+    transcript: TranscriptVersion

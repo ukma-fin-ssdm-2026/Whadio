@@ -1,5 +1,7 @@
+import asyncio
+import logging
 from collections.abc import AsyncGenerator, Callable
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated
@@ -17,8 +19,19 @@ from ..access_policy.services import (
     IShareRequestNotifier,
 )
 from ..accounts.enums import NotesTemplate
-from ..accounts.repositories import MembershipRepository
-from ..accounts.services import WorkspaceMembershipService
+from ..accounts.passwords import Argon2PasswordHasher
+from ..accounts.repositories import (
+    MembershipRepository,
+    SessionRepository,
+    WorkspaceRepository,
+    WorkspaceSettingsRepository,
+)
+from ..accounts.services import (
+    SignInService,
+    WorkspaceMembershipService,
+    WorkspaceService,
+    WorkspaceSettingsService,
+)
 from ..audit.contracts import IContentAuditWriter
 from ..audit.services import AuditWriter
 from ..meetings.contracts import EvictionNotice, IEvictionNotifier, QueuedNotes
@@ -26,16 +39,32 @@ from ..meetings.persistence import MeetingPersistence, PersistenceDependencies
 from ..meetings.processing import IMeetingProcessing
 from ..meetings.recordings import RecordingObjects
 from ..meetings.repositories import FolderRepository, MeetingRepository
-from ..meetings.services import FolderService, MeetingService
+from ..meetings.services import FolderService, MeetingService, WorkspaceContent
 from ..meetings.settings import MeetingSettings
+from ..processing.consumer import (
+    ProcessingTransactions,
+    ResultSource,
+    WorkerUsers,
+    job_publisher,
+    serve_publishing,
+    serve_results,
+)
+from ..processing.repositories import JobRepository
+from ..processing.services import ProcessingService
 from ..shared.database import Database, DatabaseSettings, IUseCaseTransactions
 from ..shared.errors import Failure, UseCaseError
-from ..shared.storage import connect_s3_storage
+from ..shared.storage import IObjectStorage, connect_s3_storage
+from .settings import WebSettings
+
+logger = logging.getLogger(__name__)
 
 
 class CompositionRoot:
     def __init__(self, database: Database | None = None) -> None:
         self._database: Database | None = database
+        self._storage: IObjectStorage | None = None
+        # Present while jobs are being published; setting it publishes the ones just committed.
+        self._queued: asyncio.Event | None = None
 
     def database(self) -> Database:
         if self._database is None:
@@ -48,14 +77,90 @@ class CompositionRoot:
     async def transaction(self) -> AsyncGenerator[AsyncSession]:
         async with self.database().transaction() as session:
             yield session
+        # Reached only after the commit, which may have queued a job.
+        if self._queued is not None:
+            self._queued.set()
+
+    def processing(self, session: AsyncSession) -> IMeetingProcessing:
+        if self._queued is None:
+            return UnavailableMeetingProcessing()
+        return self._processing_service(session)
+
+    def _processing_service(self, session: AsyncSession) -> ProcessingService:
+        if self._storage is None:
+            raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+        meetings = meeting_service(session, AuditWriter(session))
+        memberships = WorkspaceMembershipService(MembershipRepository(session))
+        return ProcessingService(
+            JobRepository(session),
+            meetings,
+            MeetingPersistence(
+                PersistenceDependencies(
+                    meetings,
+                    MeetingRepository(session),
+                    memberships,
+                    AuditWriter(session),
+                    AccessPolicy(AccessRepository(session), memberships),
+                    UnavailableEvictionNotifications(),
+                )
+            ),
+            WorkspaceSettingsService(WorkspaceSettingsRepository(session)),
+            self._storage,
+        )
 
     @asynccontextmanager
     async def lifespan(self, _app: FastAPI) -> AsyncGenerator[None]:
+        settings, storage = WebSettings(), MeetingSettings().storage
+        stop = asyncio.Event()
+        tasks: list[asyncio.Task[None]] = []
         try:
-            yield
+            async with AsyncExitStack() as stack:
+                if settings.broker is not None and storage is not None:
+                    self._storage = connect_s3_storage(storage)
+                    queued = asyncio.Event()
+                    transactions = ProcessingTransactions(
+                        self.database(),
+                        self._processing_service,
+                        await stack.enter_async_context(job_publisher(settings.broker)),
+                        queued,
+                    )
+                    tasks = [
+                        asyncio.create_task(serve_publishing(transactions, queued, stop)),
+                        asyncio.create_task(
+                            serve_results(
+                                settings.broker,
+                                transactions,
+                                ResultSource(
+                                    WorkerUsers(
+                                        transcription=settings.asr_broker_user
+                                        or settings.broker.user
+                                        or "",
+                                        notes=settings.notes_broker_user
+                                        or settings.broker.user
+                                        or "",
+                                    )
+                                ),
+                                stop,
+                            )
+                        ),
+                    ]
+                    for task in tasks:
+                        task.add_done_callback(_log_failure)
+                    self._queued = queued
+                try:
+                    yield
+                finally:
+                    stop.set()
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                    self._queued = None
         finally:
             if self._database is not None:
                 await self._database.close()
+
+
+def _log_failure(task: asyncio.Task[None]) -> None:
+    if not task.cancelled() and task.exception() is not None:
+        logger.error("A processing task stopped", exc_info=task.exception())
 
 
 async def transaction() -> AsyncSession:
@@ -224,6 +329,25 @@ def folder_service(session: Session) -> FolderService:
 
 
 Folders = Annotated[FolderService, Depends(folder_service)]
+
+
+def sign_in_service(session: Session) -> SignInService:
+    return SignInService(SessionRepository(session), Argon2PasswordHasher())
+
+
+SignIns = Annotated[SignInService, Depends(sign_in_service)]
+
+
+def workspace_service(session: Session) -> WorkspaceService:
+    return WorkspaceService(
+        WorkspaceRepository(session),
+        WorkspaceMembershipService(MembershipRepository(session)),
+        WorkspaceContent(MeetingRepository(session)),
+        AuditWriter(session),
+    )
+
+
+Workspaces = Annotated[WorkspaceService, Depends(workspace_service)]
 
 
 @dataclass(frozen=True)

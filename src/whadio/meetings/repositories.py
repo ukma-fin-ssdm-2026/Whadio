@@ -31,6 +31,10 @@ from .models import (
 class IMeetingRepository(Protocol):
     async def capacity_overflow(self, workspace_ids: list[UUID], limit: int) -> list[Meeting]: ...
 
+    async def workspace_meetings(self, workspace_id: UUID) -> list[UUID]: ...
+
+    async def processed_in_folder(self, folder_id: UUID, limit: int) -> list[Meeting]: ...
+
     async def save_notes(self, note: Note, context: tuple[ContextReference, ...]) -> None: ...
 
     async def reserve_upload(self, key: str) -> None: ...
@@ -135,6 +139,27 @@ class MeetingRepository:
                 .order_by(Meeting.created_at, Meeting.meeting_id)
                 .limit(overflow)
                 .with_for_update(of=Meeting)
+            )
+        )
+
+    async def workspace_meetings(self, workspace_id: UUID) -> list[UUID]:
+        return list(
+            await self._session.scalars(
+                select(Meeting.meeting_id).join(Folder).where(Folder.workspace_id == workspace_id)
+            )
+        )
+
+    async def processed_in_folder(self, folder_id: UUID, limit: int) -> list[Meeting]:
+        return list(
+            await self._session.scalars(
+                select(Meeting)
+                .where(
+                    Meeting.folder_id == folder_id,
+                    Meeting.processing_state == ProcessingState.PROCESSED,
+                    Meeting.access_mode == AccessMode.WORKSPACE,
+                )
+                .order_by(Meeting.recorded_at.desc(), Meeting.meeting_id.desc())
+                .limit(limit)
             )
         )
 
