@@ -3028,9 +3028,10 @@ components:
           - value is not a valid email address
         provided_value:
           $ref: '#/components/schemas/JsonValue'
-          description: The value the client sent, when it is safe to echo back
+          description: The value the client sent, for a query or path parameter only;
+            body fields, headers and cookies are never echoed back
           examples:
-          - alice@
+          - '500'
       type: object
       required:
       - field
