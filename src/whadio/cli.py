@@ -43,6 +43,19 @@ def openapi() -> None:
         typer.echo(f"Wrote {path}")
 
 
+@app.command(
+    help="Run recording retention and deleted-meeting cleanup; one instance per deployment."
+)
+def scheduler(
+    *,
+    once: Annotated[bool, typer.Option(help="Run one pass and exit.")] = False,
+) -> None:
+    from .scheduler.main import main
+
+    if main(once=once):
+        raise typer.Exit(code=1)
+
+
 @app.command(help="Apply the packaged database migrations using the owner role.")
 def db_upgrade(
     config: Annotated[str | None, typer.Option(help="Optional Alembic configuration file.")] = None,

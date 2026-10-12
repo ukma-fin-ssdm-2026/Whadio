@@ -3,6 +3,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
@@ -10,7 +11,11 @@ from pydantic import JsonValue
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from conftest import AsyncDatabase
+
 from ..access_policy.models import MeetingAccessGrant
+from ..access_policy.repositories import AccessRepository
+from ..access_policy.services import AccessPolicy
 from ..accounts.enums import NotesTemplate, WorkspaceRole
 from ..accounts.models import User, Workspace, WorkspaceMembership
 from ..accounts.repositories import MembershipRepository
@@ -19,10 +24,11 @@ from ..audit.enums import AuditAction
 from ..audit.models import AuditEvent
 from ..audit.services import AuditWriter, MeetingMoved
 from ..shared.database import DatabaseSettings
+from .contracts import InitialSegment, InitialSpeaker, InitialTranscript, ProcessingUpdate
 from .enums import AccessMode, MeetingSource, ProcessingState, RecordingStatus
 from .models import Folder, Meeting
-from .repositories import FolderRepository
-from .services import FolderService
+from .repositories import FolderRepository, MeetingRepository
+from .services import FolderService, MeetingService
 
 
 @asynccontextmanager
@@ -238,3 +244,89 @@ def test_audit_failure_rolls_back_folder_moves_and_previous_events(
     observed, expected = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
     # Assert
     assert observed == expected
+
+
+# --- For Processing ---
+
+
+def pipeline_service(session: AsyncSession) -> MeetingService:
+    memberships = WorkspaceMembershipService(MembershipRepository(session))
+    return MeetingService(
+        MeetingRepository(session),
+        AccessPolicy(AccessRepository(session), memberships),
+        AuditWriter(session),
+    )
+
+
+async def transcribed(session: AsyncSession, meeting_id: UUID) -> None:
+    await pipeline_service(session).save_initial_transcript(
+        meeting_id,
+        InitialTranscript(
+            job_id=uuid4(),
+            language="uk",
+            model_name="parakeet",
+            speakers=(InitialSpeaker("Speaker 1", "Speaker 1"),),
+            segments=(InitialSegment("Speaker 1", Decimal(0), Decimal(1), "Привіт"),),
+        ),
+        datetime.now(UTC),
+    )
+
+
+@pytest.mark.slow
+def test_notes_context_holds_only_processed_open_meetings_of_the_folder(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[list[UUID], UUID]:
+        place = await AsyncDatabase.add_workspace(session)
+        meeting = await AsyncDatabase.add_meeting(session, place, state=ProcessingState.PROCESSED)
+        context = await AsyncDatabase.add_meeting(session, place, state=ProcessingState.PROCESSED)
+        restricted = await AsyncDatabase.add_meeting(
+            session, place, state=ProcessingState.PROCESSED, access_mode=AccessMode.RESTRICTED
+        )
+        queued = await AsyncDatabase.add_meeting(session, place)
+        for transcribed_id in (meeting, context, restricted, queued):
+            await transcribed(session, transcribed_id)
+        service = pipeline_service(session)
+        target = await service.pipeline_meeting(meeting)
+        assert target is not None
+        # Act
+        found = await service.notes_context(target.meeting, 5)
+        return [other.meeting.meeting_id for other in found], context
+
+    found, context = async_database.run(scenario)
+    # Assert
+    assert found == [context]
+
+
+@pytest.mark.slow
+def test_pipeline_meeting_of_a_deleted_meeting_is_none(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> bool:
+        # Act
+        found = await pipeline_service(session).pipeline_meeting(uuid4())
+        return found is None
+
+    missing = async_database.run(scenario)
+    # Assert
+    assert missing
+
+
+@pytest.mark.slow
+def test_processing_update_records_the_duration(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> int | None:
+        meeting_id = await AsyncDatabase.add_meeting(
+            session, await AsyncDatabase.add_workspace(session)
+        )
+        # Act
+        await pipeline_service(session).save_processing_state(
+            meeting_id, ProcessingUpdate(ProcessingState.PROCESSING, duration_seconds=62)
+        )
+        return await session.scalar(
+            select(Meeting.duration_seconds).where(Meeting.meeting_id == meeting_id)
+        )
+
+    duration = async_database.run(scenario)
+    # Assert
+    assert duration == 62

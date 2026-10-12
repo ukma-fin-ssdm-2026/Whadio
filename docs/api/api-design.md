@@ -42,37 +42,22 @@ separate "Web API" component.
 
 ## 2. Implementation status
 
-The design has **70 operations**. The code implements **16 of them as stubs**:
+Access Policy, Meetings and Retention now have PostgreSQL-backed services. Meeting lists,
+folders, glossary, transcript revisions, notes, restrictions, shares, recipient share lists and
+recording playback use stored authorization. Folder deletion can be undone through its restore
+operation. Other operations below retain their design contracts; their Status labels describe
+the original design milestone and are not an assertion that every Designed operation is absent.
 
-- **Sessions:** sign in and sign out.
-- **Workspaces:** list, create, read, update, delete.
-- **Meetings:** list with filters, upload a recording, read, rename or move, delete.
-- **Transcript:** read the current revision.
-- **Notes:** list them, regenerate them.
-- **Health:** liveness.
+Sign-in, sign-out and workspace administration use stored accounts and sessions. An upload is
+stored and queued for transcription and notes, which the workers run; without a broker and
+object storage it refuses with `503 INTEGRATION_UNAVAILABLE`. Notes regeneration is outside the
+MVP and always refuses with `503 INTEGRATION_UNAVAILABLE`. Share access requests and retention
+warnings require a Notifications adapter; delivery is outside this slice. MCP reads require
+stored personal keys.
 
-Every other operation in section 4 is **designed**: its contract is fixed here, and it is not
-yet in the code. Each operation in section 4 is marked *Stub* or *Designed*.
-
-**What a stub does:**
-- It answers with fixed demo data, listed at the top of the Swagger page. Writes return the
-  result they would have, but store nothing.
-- It validates all input for real: types, lengths, enums, unknown fields, cross-field rules
-  and the format of uploaded audio.
-- It authenticates for real against one demo account: a missing or unknown session gets `401`.
-- It returns errors that follow from the demo data:
-  - `404` for an id that does not exist;
-  - `409 PERSONAL_WORKSPACE` for deleting the personal workspace;
-  - `409 NOT_TRANSCRIBED` for the transcript of a queued meeting;
-  - `422` for a `folder_id` that is not a folder of the meeting's workspace;
-  - `413` and `415` for an upload that is too large or is not a supported audio format.
-
-**What a stub documents but never produces:**
-- role checks (`403 INSUFFICIENT_ROLE`);
-- limits (`429`, `409 REGENERATION_LIMIT`, `409 NOTES_IN_PROGRESS`);
-- the origin check (`403 ORIGIN_REJECTED`) and `Idempotency-Key` replays (section 6.8);
-- the `X-Request-ID` header on successful responses: the stub sets it on errors only;
-- MCP key authentication (section 6.11).
+List operations in this slice use bounded database queries and opaque cursors scoped to the
+resource and signed-in caller. A deleted cursor anchor does not invalidate later pages. Folder
+counts include only visible meetings; note versions on later pages are not marked current.
 
 ## 3. Resource model
 
@@ -527,6 +512,20 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - `409 FOLDER_EXISTS`: the new name is taken.
   - `409 DEFAULT_FOLDER`: the default folder cannot be deleted.
 
+#### `POST /workspaces/{workspace_id}/folders/{folder_id}/restore` · Undo folder deletion
+
+- **Status:** Implemented · **Caller:** Moderator or Owner · **Success:** `200`, the restored folder
+- **Rules:** restores the deleted folder's identity/name and all surviving meetings moved from it
+  to the default folder in one action (NFR-005). Recording references, transcripts, notes and
+  access grants stay unchanged. Restored meeting moves are audited. Recovery remains available
+  until used or the workspace is deleted; deleted meetings are not recreated.
+- **Errors:**
+  - `403 INSUFFICIENT_ROLE`: caller is a plain member.
+  - `404 NOT_FOUND`: no workspace membership or no pending recovery for this folder.
+  - `409 FOLDER_EXISTS`: its former name is now occupied, ignoring case.
+  - `409 FOLDER_RECOVERY_CONFLICT`: a surviving meeting was moved out of the default folder after
+    deletion. The restore changes nothing; it does not overwrite those subsequent moves.
+
 #### `GET`, `POST /workspaces/{workspace_id}/glossary-terms` · List or add terms
 
 - **Status:** Designed · **Caller:** any member · **Success:** `200`, a page in alphabetical
@@ -567,6 +566,10 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   **Success:** `201`, the meeting in state `queued`; `Location` points to it
 - **Rules:**
   - Multipart: an audio `file`, plus an optional `folder_id` and `name` (FR-013).
+  - The file limit is 500 MiB. The HTTP boundary allows a total request of 501 MiB,
+    including multipart overhead. Oversized declared bodies are rejected before parsing;
+    incoming bytes are counted even without a length header or with an understated length.
+    Rejection stops parsing, closes partial upload files and does not call the upload use case.
   - The meeting is queued for processing at once. Its speakers are labelled `Speaker 1`,
     `Speaker 2`, and so on (FR-016).
   - `folder_id` must be a folder of this workspace; without it, the default folder is used.
@@ -575,8 +578,10 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - Without `name`, the meeting is named after its date and time until it is renamed
     (FR-033).
 - **Errors:**
+  - `400 MALFORMED_REQUEST`: an invalid or repeated `Content-Length` header.
   - `404 NOT_FOUND`: no such workspace, or the caller is not a member.
-  - `413 PAYLOAD_TOO_LARGE`: the file is larger than 500 MiB.
+  - `413 PAYLOAD_TOO_LARGE`: the file is larger than 500 MiB, or the complete multipart request
+    exceeds 501 MiB.
   - `415 UNSUPPORTED_MEDIA_TYPE`: the content is not a supported audio format, so no meeting is
     created (FR-013).
 
@@ -627,7 +632,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   revision
 - **Rules:**
   - Timestamped segments with speaker labels (FR-027).
-  - Designed, not in the stub: `?revision_id=` selects another revision. The original is
+  - `?revision_id=` selects another revision. The original is
     always reachable through `original_revision_id` (NFR-006, NFR-011).
 - **Errors:**
   - `404 NOT_FOUND`: no such meeting, or the caller cannot read it; or no such revision.
@@ -662,8 +667,11 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /meetings/{meeting_id}/notes` · Regenerate the notes
 
-- **Status:** Stub · **Caller:** any member who can read it · **Success:** `202`, the queued
-  job; `Location` points to the meeting to poll
+- **Status:** Designed; outside the MVP. The server answers every request that passes the read
+  check with `503 INTEGRATION_UNAVAILABLE`, and its OpenAPI specification documents only that.
+  What follows is the planned behaviour.
+- **Caller:** any member who can read it · **Success:** `202`, the queued job; `Location`
+  points to the meeting to poll
 - **Rules:**
   - `preset` defaults to the workspace's. `use_builtin_model` bypasses a configured provider,
     for example after it failed (FR-023).
@@ -676,6 +684,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - `409 NOT_TRANSCRIBED`: there is no transcript to write notes from.
   - `409 NOTES_IN_PROGRESS`: a run is already queued or running.
   - `409 REGENERATION_LIMIT`: the meeting used up its regenerations.
+  - `503 INTEGRATION_UNAVAILABLE`: regeneration is not available yet; it is outside the MVP.
 
 #### `GET /meetings/{meeting_id}/transcript/export` · Download the transcript
 

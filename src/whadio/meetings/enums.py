@@ -27,3 +27,11 @@ class AccessMode(StrEnum):
 class RevisionType(StrEnum):
     ORIGINAL = "original"
     EDITED = "edited"
+
+
+class ProcessingFailure(StrEnum):
+    TRANSCRIPTION_FAILED = "transcription_failed"
+    NOTES_FAILED = "notes_failed"
+    PROVIDER_UNAVAILABLE = "provider_unavailable"
+    PROVIDER_REJECTED = "provider_rejected"
+    PROCESSING_TIMEOUT = "processing_timeout"

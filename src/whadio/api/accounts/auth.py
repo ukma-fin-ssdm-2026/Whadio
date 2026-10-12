@@ -1,16 +1,18 @@
-from datetime import timedelta
+from datetime import UTC, datetime
 from typing import Annotated, Final
 
 from fastapi import Depends, Response
 from fastapi.security import APIKeyCookie, HTTPAuthorizationCredentials, HTTPBearer
 
+from ...accounts.enums import SessionKind
+from ...accounts.models import User
+from ...accounts.repositories import IdentityRepository
+from ...accounts.services import IdentityService
+from ..composition import Session
 from ..core.errors import ApiError, ErrorCode
-from .fixtures import ALICE, DEMO_EXTENSION_TOKEN, DEMO_SESSION_TOKEN
 from .schemas import UserRead
 
 SESSION_COOKIE: Final = "whadio_session"
-BROWSER_SESSION_TTL: Final = timedelta(days=14)
-EXTENSION_TOKEN_TTL: Final = timedelta(hours=24)
 
 session_cookie = APIKeyCookie(
     name=SESSION_COOKIE,
@@ -36,29 +38,54 @@ def _unauthenticated() -> ApiError:
     )
 
 
-async def _browser_user(cookie: Cookie) -> UserRead:
-    if cookie != DEMO_SESSION_TOKEN:
+def _browser_credentials(cookie: Cookie) -> str:
+    if cookie is None:
         raise _unauthenticated()
-    return ALICE
+    return cookie
 
 
-async def _capture_user(cookie: Cookie, bearer: Bearer) -> UserRead:
+BrowserCredentials = Annotated[str, Depends(_browser_credentials)]
+
+
+def user_read(user: User) -> UserRead:
+    return UserRead(
+        id=user.user_id,
+        email=user.email,
+        name=user.name,
+        is_administrator=user.is_administrator,
+        created_at=user.created_at,
+    )
+
+
+async def _browser_user(token: BrowserCredentials, session: Session) -> UserRead:
+    user = await IdentityService(IdentityRepository(session)).session_user(
+        token, SessionKind.BROWSER, datetime.now(UTC)
+    )
+    if user is None:
+        raise _unauthenticated()
+    return user_read(user)
+
+
+async def _capture_user(cookie: Cookie, bearer: Bearer, session: Session) -> UserRead:
     if bearer is not None:
-        if bearer.credentials != DEMO_EXTENSION_TOKEN:
+        user = await IdentityService(IdentityRepository(session)).session_user(
+            bearer.credentials, SessionKind.EXTENSION, datetime.now(UTC)
+        )
+        if user is None:
             raise _unauthenticated()
-        return ALICE
-    return await _browser_user(cookie)
+        return user_read(user)
+    return await _browser_user(_browser_credentials(cookie), session)
 
 
 BrowserUser = Annotated[UserRead, Depends(_browser_user)]
 CaptureUser = Annotated[UserRead, Depends(_capture_user)]
 
 
-def set_session_cookie(response: Response) -> None:
+def set_session_cookie(response: Response, token: str, expires_at: datetime) -> None:
     response.set_cookie(
         SESSION_COOKIE,
-        DEMO_SESSION_TOKEN,
-        max_age=int(BROWSER_SESSION_TTL.total_seconds()),
+        token,
+        expires=expires_at,
         httponly=True,
         secure=True,
         samesite="strict",
