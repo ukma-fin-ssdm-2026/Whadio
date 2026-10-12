@@ -156,7 +156,7 @@ class ISessionRepository(Protocol):
     async def by_email(self, email: str, /) -> User | None: ...
 
     async def add_session(
-        self, user_id: UUID, kind: SessionKind, token: str, expires_at: datetime, /
+        self, user_id: UUID, kind: SessionKind, token: str, expires_at: datetime, now: datetime, /
     ) -> None: ...
 
     async def end_sessions(self, tokens: Collection[str], /) -> None: ...
@@ -177,7 +177,7 @@ class SessionRepository:
         )
 
     async def add_session(
-        self, user_id: UUID, kind: SessionKind, token: str, expires_at: datetime
+        self, user_id: UUID, kind: SessionKind, token: str, expires_at: datetime, now: datetime
     ) -> None:
         self._session.add(
             Session(
@@ -185,6 +185,7 @@ class SessionRepository:
                 kind=kind,
                 token_hash=hashlib.sha256(token.encode()).hexdigest(),
                 expires_at=expires_at,
+                created_at=now,
             )
         )
         await self._session.flush()
