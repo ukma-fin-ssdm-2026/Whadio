@@ -24,7 +24,8 @@ from ..access_policy.repositories import AccessRepository
 from ..access_policy.services import AccessCollaborators, AccessPolicy, AccessService, ContentPath
 from ..accounts.enums import LlmProvider, NotesTemplate, SessionKind, WorkspaceRole
 from ..accounts.models import McpKey, Session, User, Workspace, WorkspaceMembership
-from ..accounts.repositories import MembershipRepository
+from ..accounts.repositories import MembershipRepository, WorkspaceSettingsRepository
+from ..accounts.services import WorkspaceSettingsService
 from ..audit.contracts import ContentEvent
 from ..audit.models import AuditEvent
 from ..audit.services import AuditWriter
@@ -62,6 +63,10 @@ from ..meetings.recordings import RecordingObjects
 from ..meetings.repositories import MeetingRepository
 from ..meetings.retention import IRetentionMeetings, RetentionMeetings
 from ..meetings.services import MeetingService, RecordingInput, TranscriptEdit
+from ..processing.enums import JobStatus, JobType
+from ..processing.models import ProcessingJob
+from ..processing.repositories import JobRepository
+from ..processing.services import ProcessingService
 from ..retention.services import RetentionService, StorageUnavailableError
 from ..shared.database import Database, DatabaseSettings
 from ..shared.errors import Failure, UseCaseError
@@ -69,6 +74,7 @@ from ..shared.storage import ObjectStorageError, PresignedUrl
 from .app import create_app
 from .composition import (
     CompositionRoot,
+    RuntimeIntegrations,
     folder_service,
     meeting_processing,
     recording_objects,
@@ -77,6 +83,7 @@ from .composition import (
 from .core.errors import ErrorCode, ErrorResponse
 from .mcp_server import build_mcp_server
 from .meetings import routes as meeting_routes
+from .meetings.schemas import MeetingRead
 
 pytestmark = pytest.mark.slow
 
@@ -1537,3 +1544,55 @@ def test_upload_is_unavailable_without_a_broker(async_database: AsyncDatabase) -
     failure = async_database.run(scenario)
     # Assert
     assert failure is Failure.INTEGRATION_UNAVAILABLE
+
+
+def test_upload_queues_a_transcription_job_to_publish(database_settings: DatabaseSettings) -> None:
+    # Arrange
+    async def scenario() -> None:
+        storage = MemoryObjects()
+        try:
+            async with unit_fixture(database_settings) as unit:
+                app = create_app(
+                    unit.database,
+                    integrations=RuntimeIntegrations(
+                        processing=lambda _session: ProcessingService(
+                            JobRepository(unit.session),
+                            unit.meetings,
+                            persistence_fixture(unit),
+                            WorkspaceSettingsService(WorkspaceSettingsRepository(unit.session)),
+                            storage,
+                        )
+                    ),
+                )
+                app.dependency_overrides[recording_objects] = lambda: RecordingObjects(storage)
+
+                async def savepoint() -> AsyncGenerator[AsyncSession]:
+                    async with unit.session.begin_nested():
+                        yield unit.session
+
+                app.dependency_overrides[transaction] = savepoint
+                token = await _browser_token(unit, unit.member)
+                async with AsyncClient(
+                    transport=ASGITransport(app),
+                    base_url="https://example.test",
+                    headers={"Cookie": f"whadio_session={token}"},
+                ) as client:
+                    # Act
+                    response = await client.post(
+                        f"/api/v1/workspaces/{unit.workspace}/meetings",
+                        files={"file": ("audio.wav", _wav(), "audio/wav")},
+                    )
+                meeting_id = MeetingRead.model_validate_json(response.content).id
+                jobs = await unit.session.execute(
+                    select(
+                        ProcessingJob.job_type, ProcessingJob.status, ProcessingJob.published_at
+                    ).where(ProcessingJob.meeting_id == meeting_id)
+                )
+                # Assert
+                assert [tuple(job) for job in jobs] == [
+                    (JobType.TRANSCRIPTION, JobStatus.QUEUED, None)
+                ]
+        finally:
+            await _clean_uploads(database_settings, storage)
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
