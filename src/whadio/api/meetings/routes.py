@@ -337,39 +337,22 @@ async def list_notes(
 
 @router.post(
     "/meetings/{meeting_id}/notes",
-    status_code=202,
+    status_code=503,
     tags=["notes"],
-    summary="Regenerate the notes",
+    summary="Regenerate the notes (not available yet)",
     description=(
-        "Any member who can read the meeting. Queues notes generation with the chosen preset "
-        "and answers at once with `202`: generation runs in a worker. Poll the meeting in "
-        "`Location` until `processing_state` is `processed` or `failed`.\n\n"
-        "Limits: one run at a time, and a configured number of regenerations per "
-        "meeting (3 by default); every requested run counts, failed ones included. The "
-        "transcript is never regenerated, and a failed run keeps the previous notes current."
+        "Regenerating notes is outside the MVP. After checking that the caller can read the "
+        f"meeting, this always answers `503 {ErrorCode.INTEGRATION_UNAVAILABLE}`. The planned "
+        "behaviour is in `docs/api/api-design.md`."
     ),
-    response_description="The queued job",
-    responses={
-        202: {
-            "headers": {
-                "Location": {
-                    "description": "URL of the meeting to poll",
-                    "schema": {"type": "string", "format": "uri"},
-                }
-            }
-        },
-        **error_responses(
-            {
-                400: DOC_MALFORMED,
-                401: DOC_UNAUTHENTICATED,
-                404: _MEETING_NOT_FOUND,
-                409: f"`{ErrorCode.NOTES_IN_PROGRESS}`: a run is already queued or running; "
-                f"`{ErrorCode.REGENERATION_LIMIT}`: the meeting used up its regenerations; "
-                f"{_NOT_TRANSCRIBED}",
-                422: DOC_INVALID,
-            }
-        ),
-    },
+    responses=error_responses(
+        {
+            401: DOC_UNAUTHENTICATED,
+            404: _MEETING_NOT_FOUND,
+            422: DOC_INVALID,
+            503: f"`{ErrorCode.INTEGRATION_UNAVAILABLE}`: regenerating notes is not available yet",
+        }
+    ),
 )
 async def regenerate_notes(
     meeting_id: MeetingId,

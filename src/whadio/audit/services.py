@@ -20,8 +20,19 @@ class MeetingMoved:
     to_folder_id: UUID
 
 
+@dataclass(frozen=True)
+class WorkspaceDeleted:
+    actor_id: UUID
+    workspace_id: UUID
+    occurred_at: datetime
+
+
 class IAuditWriter(Protocol):
     async def write(self, event: MeetingMoved) -> None: ...
+
+
+class IWorkspaceAuditWriter(Protocol):
+    async def write(self, event: WorkspaceDeleted) -> None: ...
 
 
 class AuditWriter:

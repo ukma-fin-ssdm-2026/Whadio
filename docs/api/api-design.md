@@ -666,8 +666,11 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /meetings/{meeting_id}/notes` · Regenerate the notes
 
-- **Status:** Stub · **Caller:** any member who can read it · **Success:** `202`, the queued
-  job; `Location` points to the meeting to poll
+- **Status:** Designed; outside the MVP. The server answers every request that passes the read
+  check with `503 INTEGRATION_UNAVAILABLE`, and its OpenAPI specification documents only that.
+  What follows is the planned behaviour.
+- **Caller:** any member who can read it · **Success:** `202`, the queued job; `Location`
+  points to the meeting to poll
 - **Rules:**
   - `preset` defaults to the workspace's. `use_builtin_model` bypasses a configured provider,
     for example after it failed (FR-023).
@@ -680,6 +683,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - `409 NOT_TRANSCRIBED`: there is no transcript to write notes from.
   - `409 NOTES_IN_PROGRESS`: a run is already queued or running.
   - `409 REGENERATION_LIMIT`: the meeting used up its regenerations.
+  - `503 INTEGRATION_UNAVAILABLE`: regeneration is not available yet; it is outside the MVP.
 
 #### `GET /meetings/{meeting_id}/transcript/export` · Download the transcript
 

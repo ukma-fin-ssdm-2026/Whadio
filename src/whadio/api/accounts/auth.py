@@ -13,8 +13,6 @@ from .fixtures import DEMO_SESSION_TOKEN
 from .schemas import UserRead
 
 SESSION_COOKIE: Final = "whadio_session"
-BROWSER_SESSION_TTL: Final = timedelta(days=14)
-EXTENSION_TOKEN_TTL: Final = timedelta(hours=24)
 
 session_cookie = APIKeyCookie(
     name=SESSION_COOKIE,
@@ -85,11 +83,11 @@ BrowserUser = Annotated[UserRead, Depends(_browser_user)]
 CaptureUser = Annotated[UserRead, Depends(_capture_user)]
 
 
-def set_session_cookie(response: Response) -> None:
+def set_session_cookie(response: Response, token: str, expires_at: datetime) -> None:
     response.set_cookie(
         SESSION_COOKIE,
-        DEMO_SESSION_TOKEN,
-        max_age=int(BROWSER_SESSION_TTL.total_seconds()),
+        token,
+        expires=expires_at,
         httponly=True,
         secure=True,
         samesite="strict",

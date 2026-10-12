@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from .contracts import UserProfile
 from .enums import SessionKind, WorkspaceRole
