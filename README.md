@@ -33,16 +33,16 @@ uv run task dev                  # the API on http://localhost:3000, with auto-r
 Database setup, migrations and integration tests are documented in
 [Database implementation](docs/architecture/database.md).
 
-The backend API lives in [`src/whadio/api/`](src/whadio/api/). It is a stub: it implements 16
-of the 70 designed operations, answers with fixed demo data and stores nothing. The full design,
+The backend API lives in [`src/whadio/api/`](src/whadio/api/). It stores its data in
+PostgreSQL and the recordings in SeaweedFS, and queues jobs on RabbitMQ, so start the services and
+apply the migrations first: `uv run task infra:up`, then `uv run task db:upgrade`. The full design,
 including what each error means, is in [`docs/api/api-design.md`](docs/api/api-design.md).
-`uv run task dev` starts it; `uv run whadio web` runs it without auto-reload.
+`uv run task dev` starts the API; `uv run whadio web` runs it without auto-reload.
 
 - Swagger UI: <http://localhost:3000/api-docs> (ReDoc: <http://localhost:3000/redoc>; the
   specification: <http://localhost:3000/openapi.json>)
-- Sign in with `POST /api/v1/sessions` as `alice@whadio.dev` with the password
-  `whadio-demo-pass`; the browser keeps the session cookie for the other calls. The demo ids
-  are listed at the top of the Swagger page.
+- Sign in with `POST /api/v1/sessions`; the browser keeps the session cookie for the other
+  calls. Accounts cannot be created through the API yet.
 - Starting the server writes the OpenAPI specification to `docs/api/openapi-generated.yaml`
   and `.json`; to regenerate it without a server, run `uv run whadio openapi`.
 
@@ -64,13 +64,14 @@ take jobs from RabbitMQ and publish their results to `processing.results`.
 ## Connecting an AI assistant (MCP)
 
 The server also exposes a read-only MCP endpoint at `http://localhost:3000/mcp/` with four tools:
-`list_meetings`, `search_meetings`, `get_transcript` and `get_notes`. They read the same demo
-data as the REST stubs. The stub needs no key; personal MCP keys are designed but not
-implemented yet.
+`list_meetings`, `search_meetings`, `get_transcript` and `get_notes`. They read the meetings the
+key's owner can access, and every call needs a personal MCP key as a Bearer token. Issuing keys
+through the API is not implemented yet.
 
 - MCP Inspector: `npx @modelcontextprotocol/inspector`, choose the *Streamable HTTP* transport
-  and the URL `http://localhost:3000/mcp/`.
-- Claude Code: `claude mcp add --transport http whadio http://localhost:3000/mcp/`.
+  the URL `http://localhost:3000/mcp/`, and the header `Authorization: Bearer <key>`.
+- Claude Code: `claude mcp add --transport http whadio http://localhost:3000/mcp/ --header
+  "Authorization: Bearer <key>"`.
 
 # Documentation
 
