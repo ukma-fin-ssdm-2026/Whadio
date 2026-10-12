@@ -122,7 +122,7 @@ class SignInService:
         await self._sessions.end_expired_sessions(user.user_id, now)
         token = secrets.token_urlsafe(32)
         expires_at = now + SESSION_LIFETIMES[kind]
-        await self._sessions.add_session(user.user_id, kind, token, expires_at)
+        await self._sessions.add_session(user.user_id, kind, token, expires_at, now)
         return SignedIn(token, expires_at, user)
 
     async def sign_out(self, tokens: Collection[str]) -> None:
