@@ -16,8 +16,13 @@ class WebSettings(BaseSettings):
         description="Broker the web queues jobs on and reads results from; without it, and "
         "without storage, uploads answer 503",
     )
-    worker_broker_users: list[str] = Field(
-        default_factory=list[str],
-        description="Broker users the workers publish results as; a result from any other user "
-        "is rejected. The web's own broker user when empty, for a broker that all share",
+    asr_broker_user: str | None = Field(
+        default=None,
+        description="Broker user the ASR worker publishes as; transcription results from any "
+        "other user are rejected. The web's own broker user when unset",
+    )
+    notes_broker_user: str | None = Field(
+        default=None,
+        description="Broker user the notes worker publishes as; notes results from any other "
+        "user are rejected. The web's own broker user when unset",
     )

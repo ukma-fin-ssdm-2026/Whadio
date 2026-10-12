@@ -44,6 +44,7 @@ from ..meetings.settings import MeetingSettings
 from ..processing.consumer import (
     ProcessingTransactions,
     ResultSource,
+    WorkerUsers,
     job_publisher,
     serve_publishing,
     serve_results,
@@ -130,8 +131,14 @@ class CompositionRoot:
                                 settings.broker,
                                 transactions,
                                 ResultSource(
-                                    settings.worker_broker_users
-                                    or [user for user in [settings.broker.user] if user is not None]
+                                    WorkerUsers(
+                                        transcription=settings.asr_broker_user
+                                        or settings.broker.user
+                                        or "",
+                                        notes=settings.notes_broker_user
+                                        or settings.broker.user
+                                        or "",
+                                    )
                                 ),
                                 stop,
                             )

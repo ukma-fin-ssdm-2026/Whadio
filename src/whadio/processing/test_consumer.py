@@ -22,7 +22,12 @@ from ..contracts.common import JobKind, Transcript
 from ..contracts.notes import MeetingBrief, NotesPreset, NotesRequested
 from ..contracts.queues import PROCESSING_RESULTS, QueueSpec
 from ..contracts.results import JobStarted, ProcessingResult
-from ..contracts.transcription import AudioLink, TranscriptionRequested
+from ..contracts.transcription import (
+    AudioLink,
+    TranscriptionFailed,
+    TranscriptionFailure,
+    TranscriptionRequested,
+)
 from ..meetings.contracts import EvictionNotice
 from ..meetings.enums import ProcessingState
 from ..meetings.models import Meeting
@@ -35,6 +40,7 @@ from .consumer import (
     AmqpJobPublisher,
     ProcessingTransactions,
     ResultSource,
+    WorkerUsers,
     handle_dead_letter,
     handle_delivery,
     serve_publishing,
@@ -46,6 +52,7 @@ from .services import JobRequest, ProcessingService
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 WORKER = "whadio-asr"
+WORKERS = WorkerUsers(transcription=WORKER, notes="whadio-notes")
 
 
 class FakeDelivery:
@@ -106,9 +113,9 @@ class _StackSettings(BaseSettings):
     broker: BrokerSettings = Field(description="Connection to the Compose stack's RabbitMQ")
 
 
-def started_body() -> bytes:
+def started_body(kind: JobKind = JobKind.TRANSCRIPTION) -> bytes:
     return (
-        JobStarted(job_id=uuid4(), meeting_id=uuid4(), kind=JobKind.NOTES, started_at=NOW)
+        JobStarted(job_id=uuid4(), meeting_id=uuid4(), kind=kind, started_at=NOW)
         .model_dump_json()
         .encode()
     )
@@ -169,7 +176,12 @@ async def _serve_one_result(broker: BrokerSettings) -> tuple[UUID, UUID]:
             )
             consumer = asyncio.create_task(
                 serve_results(
-                    broker, handler, ResultSource({broker.user or ""}, results, dead_letters), stop
+                    broker,
+                    handler,
+                    ResultSource(
+                        WorkerUsers(broker.user or "", broker.user or ""), results, dead_letters
+                    ),
+                    stop,
                 )
             )
             async with asyncio.timeout(30):
@@ -190,7 +202,7 @@ def test_message_that_is_not_a_result_is_rejected_without_requeue() -> None:
     # Arrange
     delivery = FakeDelivery(b'{"type": "unknown"}')
     # Act
-    asyncio.run(handle_delivery(delivery, accept, {WORKER}))
+    asyncio.run(handle_delivery(delivery, accept, WORKERS))
     # Assert
     assert delivery.outcome == "reject requeue=False"
 
@@ -199,7 +211,7 @@ def test_result_from_an_unexpected_publisher_is_rejected_without_requeue() -> No
     # Arrange
     delivery = FakeDelivery(started_body(), user_id="someone-else")
     # Act
-    asyncio.run(handle_delivery(delivery, accept, {WORKER}))
+    asyncio.run(handle_delivery(delivery, accept, WORKERS))
     # Assert
     assert delivery.outcome == "reject requeue=False"
 
@@ -208,7 +220,7 @@ def test_result_without_a_publisher_is_rejected_without_requeue() -> None:
     # Arrange
     delivery = FakeDelivery(started_body(), user_id=None)
     # Act
-    asyncio.run(handle_delivery(delivery, accept, {WORKER}))
+    asyncio.run(handle_delivery(delivery, accept, WORKERS))
     # Assert
     assert delivery.outcome == "reject requeue=False"
 
@@ -217,9 +229,42 @@ def test_handled_result_is_acknowledged() -> None:
     # Arrange
     delivery = FakeDelivery(started_body())
     # Act
-    asyncio.run(handle_delivery(delivery, accept, {WORKER}))
+    asyncio.run(handle_delivery(delivery, accept, WORKERS))
     # Assert
     assert delivery.outcome == "ack"
+
+
+def test_notes_start_from_the_notes_worker_is_acknowledged() -> None:
+    # Arrange
+    delivery = FakeDelivery(started_body(JobKind.NOTES), user_id=WORKERS.notes)
+    # Act
+    asyncio.run(handle_delivery(delivery, accept, WORKERS))
+    # Assert
+    assert delivery.outcome == "ack"
+
+
+def test_notes_start_from_the_asr_worker_is_rejected_without_requeue() -> None:
+    # Arrange
+    delivery = FakeDelivery(started_body(JobKind.NOTES), user_id=WORKERS.transcription)
+    # Act
+    asyncio.run(handle_delivery(delivery, accept, WORKERS))
+    # Assert
+    assert delivery.outcome == "reject requeue=False"
+
+
+def test_transcription_result_from_the_notes_worker_is_rejected_without_requeue() -> None:
+    # Arrange
+    failed = TranscriptionFailed(
+        job_id=uuid4(),
+        meeting_id=uuid4(),
+        finished_at=NOW,
+        reason=TranscriptionFailure.UNSUPPORTED_AUDIO,
+    )
+    delivery = FakeDelivery(failed.model_dump_json().encode(), user_id=WORKERS.notes)
+    # Act
+    asyncio.run(handle_delivery(delivery, accept, WORKERS))
+    # Assert
+    assert delivery.outcome == "reject requeue=False"
 
 
 def test_result_whose_handling_fails_is_left_unsettled() -> None:
@@ -231,7 +276,7 @@ def test_result_whose_handling_fails_is_left_unsettled() -> None:
 
     # Act
     with pytest.raises(RuntimeError):
-        asyncio.run(handle_delivery(delivery, handle, {WORKER}))
+        asyncio.run(handle_delivery(delivery, handle, WORKERS))
     # Assert
     assert delivery.outcome == "unsettled"
 

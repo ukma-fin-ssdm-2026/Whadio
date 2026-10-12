@@ -11,6 +11,8 @@ from aio_pika.abc import AbstractChannel, AbstractIncomingMessage
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..contracts.common import JobKind
+from ..contracts.notes import NotesFailed, NotesReady
 from ..contracts.queues import (
     ALL_QUEUES,
     DEAD_LETTERS,
@@ -19,8 +21,8 @@ from ..contracts.queues import (
     TRANSCRIPTION_REQUESTS,
     QueueSpec,
 )
-from ..contracts.results import ProcessingResult, parse_result
-from ..contracts.transcription import TranscriptionRequested
+from ..contracts.results import JobStarted, ProcessingResult, parse_result
+from ..contracts.transcription import TranscriptionFailed, TranscriptionRequested, TranscriptReady
 from ..shared.broker import BrokerSettings, MessagePublisher, connect, declare_queue
 from ..shared.database import IUseCaseTransactions
 from .services import IJobPublisher, JobRequest, ProcessingService
@@ -82,13 +84,30 @@ class _DeadLetter(BaseModel):
     job_id: UUID = Field(description="Processing job the dead-lettered message belongs to")
 
 
+@dataclass(frozen=True, slots=True)
+class WorkerUsers:
+    """Broker users the workers publish as; each kind of result is accepted from its worker only."""
+
+    transcription: str
+    notes: str
+
+    def publisher_of(self, result: ProcessingResult) -> str:
+        match result:
+            case JobStarted():
+                return self.transcription if result.kind is JobKind.TRANSCRIPTION else self.notes
+            case TranscriptReady() | TranscriptionFailed():
+                return self.transcription
+            case NotesReady() | NotesFailed():
+                return self.notes
+
+
 async def handle_delivery(
     delivery: IDelivery,
     handle: Callable[[ProcessingResult], Awaitable[None]],
-    publishers: Collection[str],
+    workers: WorkerUsers,
 ) -> None:
     """Leave a delivery whose handling raised unsettled, for the caller to return to the queue."""
-    if delivery.user_id not in publishers:
+    if delivery.user_id not in (workers.transcription, workers.notes):
         logger.warning(
             "Rejected a message on %s from an unexpected publisher", PROCESSING_RESULTS.name
         )
@@ -102,6 +121,10 @@ async def handle_delivery(
             PROCESSING_RESULTS.name,
             error.error_count(),
         )
+        await delivery.reject(requeue=False)
+        return
+    if delivery.user_id != workers.publisher_of(result):
+        logger.warning("Rejected a %s from the other worker's broker user", result.type)
         await delivery.reject(requeue=False)
         return
     await handle(result)
@@ -196,8 +219,7 @@ async def job_publisher(broker: BrokerSettings) -> AsyncGenerator[AmqpJobPublish
 
 @dataclass(frozen=True, slots=True)
 class ResultSource:
-    publishers: Collection[str]
-    """Broker users of the workers; a result from anyone else is rejected."""
+    workers: WorkerUsers
     results: QueueSpec = PROCESSING_RESULTS
     dead_letters: QueueSpec = DEAD_LETTERS
 
@@ -224,9 +246,13 @@ async def _consume_until_a_failure(
     source: ResultSource,
     stop: asyncio.Event,
 ) -> bool:
-    publishers, queues = source.publishers, source
+    workers, queues = source.workers, source
     # Requests are dead-lettered from the web's own publications.
-    senders = {*publishers, *([] if broker.user is None else [broker.user])}
+    senders = {
+        workers.transcription,
+        workers.notes,
+        *([] if broker.user is None else [broker.user]),
+    }
     failed = asyncio.Event()
     async with await open_channel() as channel:
         await channel.set_qos(prefetch_count=1)
@@ -235,7 +261,7 @@ async def _consume_until_a_failure(
 
         async def on_result(message: AbstractIncomingMessage) -> None:
             try:
-                await handle_delivery(message, handler.handle, publishers)
+                await handle_delivery(message, handler.handle, workers)
             except Exception:
                 logger.exception("Handling a result failed; returning it to the queue")
                 failed.set()

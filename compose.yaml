@@ -21,6 +21,9 @@ x-worker: &worker
       condition: service_healthy
       # The GPU host runs the ASR worker without the main host's services.
       required: false
+    rabbitmq-users:
+      condition: service_completed_successfully
+      required: false
 
 services:
   postgres:
@@ -59,6 +62,27 @@ services:
       <<: *healthcheck
       test: [CMD, rabbitmq-diagnostics, -q, check_port_connectivity]
 
+  # Runs once before the workers start and gives each of them a broker user of its own.
+  rabbitmq-users:
+    image: rabbitmq:4.3.6-management
+    profiles: [core]
+    entrypoint: [sh, /users.sh]
+    # The management API can come up a little after the port the health check probes.
+    restart: on-failure
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQADMIN_TARGET_HOST: rabbitmq
+      RABBITMQADMIN_TARGET_PORT: 15672
+      RABBITMQADMIN_USERNAME: ${RABBITMQ_USER:?set RABBITMQ_USER in .env}
+      RABBITMQADMIN_PASSWORD: ${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in .env}
+      # `:-`, not `:?`, so an older .env still runs the infrastructure; users.sh asks for them.
+      RABBITMQ_ASR_PASSWORD: ${RABBITMQ_ASR_PASSWORD:-}
+      RABBITMQ_NOTES_PASSWORD: ${RABBITMQ_NOTES_PASSWORD:-}
+    volumes:
+      - ./infra/rabbitmq/users.sh:/users.sh:ro
+
   seaweedfs:
     image: chrislusf/seaweedfs:4.48
     profiles: [core]
@@ -89,7 +113,7 @@ services:
     profiles: [core]
     command: [notes-worker]
     environment:
-      WHADIO_BROKER__URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/whadio
+      WHADIO_BROKER__URL: amqp://whadio-notes:${RABBITMQ_NOTES_PASSWORD:-}@rabbitmq:5672/whadio
       # `:-`, not `:?`: Compose reads the whole file, so `:?` would break every command.
       WHADIO_NOTES__API_KEY: ${WHADIO_NOTES__API_KEY:-}
 
@@ -98,7 +122,7 @@ services:
     profiles: [gpu]
     command: [asr-worker]
     environment:
-      WHADIO_BROKER__URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/whadio
+      WHADIO_BROKER__URL: amqp://whadio-asr:${RABBITMQ_ASR_PASSWORD:-}@rabbitmq:5672/whadio
       WHADIO_ASR__DIARIZATION__HF_TOKEN: ${WHADIO_ASR__DIARIZATION__HF_TOKEN:-}
       WHADIO_ASR__RECOGNIZER: ${WHADIO_ASR__RECOGNIZER:-parakeet}
     volumes:
