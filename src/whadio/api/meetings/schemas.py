@@ -41,18 +41,6 @@ class RevisionType(StrEnum):
     EDITED = "edited"
 
 
-class JobKind(StrEnum):
-    TRANSCRIPTION = "transcription"
-    NOTES = "notes"
-
-
-class JobStatus(StrEnum):
-    QUEUED = "queued"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-
-
 MeetingId = Annotated[UUID, Path(description="Meeting identifier", examples=[MEETING_ID_EXAMPLE])]
 FolderId = Annotated[UUID, Path(description="Folder identifier", examples=[FOLDER_ID_EXAMPLE])]
 MeetingName = Annotated[
@@ -189,19 +177,6 @@ class TranscriptRead(Output):
 # --- Notes ---
 
 
-class NotesRequest(Input):
-    preset: Preset | None = Field(
-        default=None,
-        description="Notes preset; defaults to the workspace's. Prompts are fixed and never shown",
-    )
-    use_builtin_model: bool = Field(
-        default=False,
-        strict=True,
-        description="Generate with the built-in model even if the workspace configured a "
-        "provider, e.g. after that provider failed",
-    )
-
-
 class ContextMeetingRead(Output):
     meeting_id: UUID | None = Field(
         description="Meeting used as context; null once that meeting was deleted"
@@ -225,13 +200,3 @@ class NoteRead(Output):
     context_meetings: list[ContextMeetingRead] = Field(
         description="Meetings of the same folder used as context"
     )
-
-
-class ProcessingJobRead(Output):
-    id: UUID = Field(description="Job identifier")
-    meeting_id: UUID = Field(description="Meeting being processed")
-    kind: JobKind = Field(description="Pipeline stage")
-    status: JobStatus = Field(description="Job state")
-    preset: Preset | None = Field(description="Notes preset, for notes jobs")
-    provider: Provider | None = Field(description="Notes provider, for notes jobs")
-    created_at: datetime = Field(description="When the job was queued")

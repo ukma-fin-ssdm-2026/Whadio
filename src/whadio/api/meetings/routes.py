@@ -6,13 +6,12 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile
 from pydantic import Field
 
-from ...accounts.enums import NotesTemplate
 from ...meetings.enums import MeetingSource
 from ...meetings.services import RecordingInput
 from ...shared.errors import Failure, UseCaseError
 from ...shared.pagination import ListCursor
 from ..accounts.auth import BrowserUser, CaptureUser
-from ..accounts.schemas import Preset, Provider, WorkspaceId
+from ..accounts.schemas import WorkspaceId
 from ..composition import Meetings, Persistence, Processing, Recordings, UploadGuard
 from ..core.errors import (
     DOC_INVALID,
@@ -27,8 +26,6 @@ from ..core.schemas import Output, Page, PageQuery
 from .audio import SUPPORTED_FORMATS, is_supported_audio
 from .pagination import meeting_filter, meeting_page
 from .schemas import (
-    JobKind,
-    JobStatus,
     MeetingId,
     MeetingListQuery,
     MeetingName,
@@ -36,8 +33,6 @@ from .schemas import (
     MeetingSummary,
     MeetingUpdate,
     NoteRead,
-    NotesRequest,
-    ProcessingJobRead,
     TranscriptRead,
 )
 from .upload_limits import MAX_UPLOAD_BYTES, RecordingUploadRoute
@@ -337,67 +332,23 @@ async def list_notes(
 
 @router.post(
     "/meetings/{meeting_id}/notes",
-    status_code=202,
+    status_code=503,
     tags=["notes"],
-    summary="Regenerate the notes",
+    summary="Regenerate the notes (not available yet)",
     description=(
-        "**Not available yet:** regenerating notes is outside the MVP, so this answers "
-        f"`503 {ErrorCode.INTEGRATION_UNAVAILABLE}`. The rest describes the planned behaviour.\n\n"
-        "Any member who can read the meeting. Queues notes generation with the chosen preset "
-        "and answers at once with `202`: generation runs in a worker. Poll the meeting in "
-        "`Location` until `processing_state` is `processed` or `failed`.\n\n"
-        "Limits: one run at a time, and a configured number of regenerations per "
-        "meeting (3 by default); every requested run counts, failed ones included. The "
-        "transcript is never regenerated, and a failed run keeps the previous notes current."
+        "Regenerating notes is outside the MVP. After checking that the caller can read the "
+        f"meeting, this always answers `503 {ErrorCode.INTEGRATION_UNAVAILABLE}`. The planned "
+        "behaviour is in `docs/api/api-design.md`."
     ),
-    response_description="The queued job",
-    responses={
-        202: {
-            "headers": {
-                "Location": {
-                    "description": "URL of the meeting to poll",
-                    "schema": {"type": "string", "format": "uri"},
-                }
-            }
-        },
-        **error_responses(
-            {
-                400: DOC_MALFORMED,
-                401: DOC_UNAUTHENTICATED,
-                404: _MEETING_NOT_FOUND,
-                409: f"`{ErrorCode.NOTES_IN_PROGRESS}`: a run is already queued or running; "
-                f"`{ErrorCode.REGENERATION_LIMIT}`: the meeting used up its regenerations; "
-                f"{_NOT_TRANSCRIBED}",
-                422: DOC_INVALID,
-                503: f"`{ErrorCode.INTEGRATION_UNAVAILABLE}`: regenerating notes is not "
-                "available yet",
-            }
-        ),
-    },
+    responses=error_responses(
+        {
+            401: DOC_UNAUTHENTICATED,
+            404: _MEETING_NOT_FOUND,
+            422: DOC_INVALID,
+            503: f"`{ErrorCode.INTEGRATION_UNAVAILABLE}`: regenerating notes is not available yet",
+        }
+    ),
 )
-async def regenerate_notes(
-    meeting_id: MeetingId,
-    payload: NotesRequest,
-    user: BrowserUser,
-    processing: Processing,
-    service: Meetings,
-    response: Response,
-) -> ProcessingJobRead:
+async def regenerate_notes(meeting_id: MeetingId, user: BrowserUser, service: Meetings) -> None:
     await service.get(user.id, meeting_id)
-    job = await processing.queue_notes(
-        meeting_id,
-        user.id,
-        None if payload.preset is None else NotesTemplate(payload.preset.value),
-        use_builtin_model=payload.use_builtin_model,
-        now=datetime.now(UTC),
-    )
-    response.headers["Location"] = f"/api/v1/meetings/{meeting_id}"
-    return ProcessingJobRead(
-        id=job.job_id,
-        meeting_id=job.meeting_id,
-        kind=JobKind.NOTES,
-        status=JobStatus.QUEUED,
-        preset=Preset(job.preset.value),
-        provider=Provider(job.provider.value.lower()),
-        created_at=job.created_at,
-    )
+    raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)

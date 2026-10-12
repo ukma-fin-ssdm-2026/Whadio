@@ -933,13 +933,10 @@ paths:
     post:
       tags:
       - notes
-      summary: Regenerate the notes
-      description: |-
-        **Not available yet:** regenerating notes is outside the MVP, so this answers `503 INTEGRATION_UNAVAILABLE`. The rest describes the planned behaviour.
-
-        Any member who can read the meeting. Queues notes generation with the chosen preset and answers at once with `202`: generation runs in a worker. Poll the meeting in `Location` until `processing_state` is `processed` or `failed`.
-
-        Limits: one run at a time, and a configured number of regenerations per meeting (3 by default); every requested run counts, failed ones included. The transcript is never regenerated, and a failed run keeps the previous notes current.
+      summary: Regenerate the notes (not available yet)
+      description: Regenerating notes is outside the MVP. After checking that the
+        caller can read the meeting, this always answers `503 INTEGRATION_UNAVAILABLE`.
+        The planned behaviour is in `docs/api/api-design.md`.
       operationId: regenerate_notes_api_v1_meetings__meeting_id__notes_post
       security:
       - sessionCookie: []
@@ -955,28 +952,10 @@ paths:
           - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
           title: Meeting Id
         description: Meeting identifier
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/NotesRequest'
       responses:
-        '202':
-          description: The queued job
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProcessingJobRead'
-          headers:
-            Location:
-              description: URL of the meeting to poll
-              schema:
-                type: string
-                format: uri
-        '400':
-          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
-            valid JSON'
+        '503':
+          description: '`INTEGRATION_UNAVAILABLE`: regenerating notes is not available
+            yet'
           content:
             application/json:
               schema:
@@ -994,24 +973,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          description: '`NOTES_IN_PROGRESS`: a run is already queued or running; `REGENERATION_LIMIT`:
-            the meeting used up its regenerations; `NOT_TRANSCRIBED`: the meeting
-            is not processed yet'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
             names each'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '503':
-          description: '`INTEGRATION_UNAVAILABLE`: regenerating notes is not available
-            yet'
           content:
             application/json:
               schema:
@@ -3141,20 +3105,6 @@ components:
       required:
       - status
       title: Health
-    JobKind:
-      type: string
-      enum:
-      - transcription
-      - notes
-      title: JobKind
-    JobStatus:
-      type: string
-      enum:
-      - queued
-      - running
-      - succeeded
-      - failed
-      title: JobStatus
     JsonValue: {}
     MeetingRead:
       properties:
@@ -3425,23 +3375,6 @@ components:
       - is_current
       - context_meetings
       title: NoteRead
-    NotesRequest:
-      properties:
-        preset:
-          anyOf:
-          - $ref: '#/components/schemas/Preset'
-          - type: 'null'
-          description: Notes preset; defaults to the workspace's. Prompts are fixed
-            and never shown
-        use_builtin_model:
-          type: boolean
-          title: Use Builtin Model
-          description: Generate with the built-in model even if the workspace configured
-            a provider, e.g. after that provider failed
-          default: false
-      additionalProperties: false
-      type: object
-      title: NotesRequest
     PageInfo:
       properties:
         limit:
@@ -3613,49 +3546,6 @@ components:
       - detailed
       - interview
       title: Preset
-    ProcessingJobRead:
-      properties:
-        id:
-          type: string
-          format: uuid
-          title: Id
-          description: Job identifier
-        meeting_id:
-          type: string
-          format: uuid
-          title: Meeting Id
-          description: Meeting being processed
-        kind:
-          $ref: '#/components/schemas/JobKind'
-          description: Pipeline stage
-        status:
-          $ref: '#/components/schemas/JobStatus'
-          description: Job state
-        preset:
-          anyOf:
-          - $ref: '#/components/schemas/Preset'
-          - type: 'null'
-          description: Notes preset, for notes jobs
-        provider:
-          anyOf:
-          - $ref: '#/components/schemas/Provider'
-          - type: 'null'
-          description: Notes provider, for notes jobs
-        created_at:
-          type: string
-          format: date-time
-          title: Created At
-          description: When the job was queued
-      type: object
-      required:
-      - id
-      - meeting_id
-      - kind
-      - status
-      - preset
-      - provider
-      - created_at
-      title: ProcessingJobRead
     ProcessingState:
       type: string
       enum:

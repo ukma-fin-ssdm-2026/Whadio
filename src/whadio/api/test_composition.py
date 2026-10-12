@@ -1357,9 +1357,7 @@ def test_failed_upload_keeps_durable_cleanup_when_storage_is_unavailable(
     asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
 
 
-def test_http_regeneration_returns_queued_job_and_location(
-    database_settings: DatabaseSettings,
-) -> None:
+def test_http_regeneration_is_unavailable(database_settings: DatabaseSettings) -> None:
     # Arrange
     async def scenario() -> None:
         processing = ProcessingFixture()
@@ -1368,16 +1366,31 @@ def test_http_regeneration_returns_queued_job_and_location(
             client_fixture(unit, unit.member, processing) as client,
         ):
             # Act
-            response = await client.post(
-                f"/api/v1/meetings/{unit.meeting}/notes",
-                json={"preset": "detailed", "use_builtin_model": True},
-            )
+            response = await client.post(f"/api/v1/meetings/{unit.meeting}/notes")
+            error = ErrorResponse.model_validate_json(response.content).error
             # Assert
-            assert (response.status_code, response.headers.get("Location"), processing.notes) == (
-                202,
-                f"/api/v1/meetings/{unit.meeting}",
-                [(unit.meeting, unit.member, NotesTemplate.DETAILED, True)],
+            assert (response.status_code, error.code, processing.notes) == (
+                503,
+                ErrorCode.INTEGRATION_UNAVAILABLE,
+                [],
             )
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+def test_http_regeneration_hides_a_meeting_the_caller_cannot_read(
+    database_settings: DatabaseSettings,
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with (
+            unit_fixture(database_settings) as unit,
+            client_fixture(unit, unit.outsider) as client,
+        ):
+            # Act
+            response = await client.post(f"/api/v1/meetings/{unit.meeting}/notes")
+            # Assert
+            assert response.status_code == 404
 
     asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
 

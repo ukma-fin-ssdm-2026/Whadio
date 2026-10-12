@@ -667,8 +667,11 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /meetings/{meeting_id}/notes` · Regenerate the notes
 
-- **Status:** Stub · **Caller:** any member who can read it · **Success:** `202`, the queued
-  job; `Location` points to the meeting to poll
+- **Status:** Designed; outside the MVP. The server answers every request that passes the read
+  check with `503 INTEGRATION_UNAVAILABLE`, and its OpenAPI specification documents only that.
+  What follows is the planned behaviour.
+- **Caller:** any member who can read it · **Success:** `202`, the queued job; `Location`
+  points to the meeting to poll
 - **Rules:**
   - `preset` defaults to the workspace's. `use_builtin_model` bypasses a configured provider,
     for example after it failed (FR-023).
