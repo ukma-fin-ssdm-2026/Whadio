@@ -4,9 +4,63 @@ Whadio stores structured data in PostgreSQL. Audio files live in object storage;
 stores their references. This guide explains where the schema lives, how to apply it, and which
 rules PostgreSQL enforces.
 
-**Implemented:** SQLAlchemy models, Alembic migrations, the shared transaction helper, and
-database regression tests. **Still unfinished:** repositories and business services. The HTTP API
-continues to use demo fixtures; running migrations does not connect those routes to PostgreSQL.
+**Implemented:** SQLAlchemy models, Alembic migrations, shared transactions, and Access Policy,
+Meetings and Retention services. Meeting content, folders, glossary, shares, exports and MCP
+use PostgreSQL. Accounts write routes remain demos; Capture, Processing and notification delivery
+still need integration. Content routes require stored sessions or MCP
+keys; the demo sign-in does not create them.
+
+Access Policy and Meetings emit typed content audit events through `audit/contracts.py`.
+The runtime wires Audit's writer through the `content_audit` dependency using the same database
+session as the change. The writer flushes events without committing; failure rolls back the
+event and the change together.
+
+Meetings persistence implements ingest and hosted capacity eviction. Processing owns orchestration,
+processing-state decisions and regeneration limits. The runtime injects its `IMeetingProcessing`
+port for durable job reservation; the default adapter refuses requests until connected.
+Processing uses `MeetingService.processing_snapshot()` to lock and authorize before deciding,
+then `save_processing_state()` to persist its state, sanitized failure code and absolute
+regeneration count in the same transaction. Meetings does not choose transitions or enforce limits.
+`save_initial_transcript()` atomically stores the original revision, speakers and segments with
+its source job ID. Replaying that job returns the current version without overwriting edits;
+a different job cannot replace an existing transcript. `MeetingPersistence.save_generated_notes()`
+preserves earlier notes and emits the successful-regeneration audit event; Processing separately
+persists the resulting state. Notification delivery remains outside these modules' scope.
+
+Upload cleanup is reserved in a separate committed transaction before writing storage. The ingest
+transaction locks that cleanup row and removes it only alongside a successful meeting and job
+reservation. A rollback or crash leaves a durable cleanup task. `SKIP LOCKED` keeps the scheduler
+from removing an upload in progress.
+
+`IMeetingProcessing` lives in `meetings/processing.py`, so Processing can implement the port
+without importing the web runtime. `create_app(integrations=RuntimeIntegrations(...))` accepts
+session-bound factories for Processing, share-request notices and eviction notices. Each receives
+the same `AsyncSession` as the use case and Audit; it must reserve durable work without committing
+or publishing before commit. Absent adapters explicitly refuse work with
+`INTEGRATION_UNAVAILABLE`, including hosted eviction. Tests' adapters are not production delivery.
+
+Hosted ingest locks capacity before selecting old meetings, creates the triggering meeting and
+records its ID in eviction audit details. Before deletion, Access Policy snapshots the uploader
+and the old creator (only while still a member), deduplicates them and checks workspace or active
+bound-share read access. `IEvictionNotifier` reserves each `EvictionNotice` with the old name only
+for authorized recipients. The snapshot survives deletion; notice failure aborts the whole ingest.
+Successful regeneration records its actual preset in audit details, without content or names.
+
+Remaining integrations belong to their module owners:
+
+- **Processing (Denys):** durable job reservation/publication, provider selection, transitions,
+  regeneration limits, result consumption and idempotent calls to Meetings' persistence ports.
+- **Notifications (after MVP owner assignment):** transactional durable adapters for share requests,
+  eviction and retention warnings, deduplication and delivery. The scheduler accepts a session-bound
+  `IRetentionNotifier` factory; its executable still defaults to the explicitly unavailable
+  adapter. Seven-day warnings are not delivered yet.
+- **Accounts (Denys):** replace demo sign-in/workspace administration with persisted accounts,
+  sessions and membership writes. Stored-identity reads and membership/capacity interfaces are
+  implemented, but normal demo sign-in does not establish an identity for meeting routes.
+- **Capture (unassigned):** submit verified recordings through ingest and reserve Processing work.
+
+These ports complete the integration boundaries of this slice, not end-to-end MVP behavior.
+Retention deletion and recording cleanup continue independently of unavailable warning delivery.
 
 ## Where the schema lives
 
@@ -24,12 +78,12 @@ metadata, so `Base.metadata.create_all()` is not a substitute for running Alembi
 
 The [data model](data-model.md) defines the entities and integrity rules. The
 [high-level design](high-level-design.md) defines module responsibilities. This implementation
-maps their 25 entities to these owners:
+maps the domain entities and the implementation-only cleanup queue to these owners:
 
 | Module | Tables it owns |
 | --- | --- |
 | Accounts & Workspaces | user, workspace, workspace_membership, invitation, pending_registration, password_reset, session, llm_provider_config, mcp_key |
-| Meetings | folder, meeting, transcript, transcript_revision, speaker, transcript_segment, glossary_term, note, note_context_meeting |
+| Meetings | folder, meeting, transcript, transcript_revision, speaker, transcript_segment, glossary_term, note, note_context_meeting, recording_deletion |
 | Access Policy | meeting_access_grant, external_share, share_access_request |
 | Capture | capture_session, capture_chunk |
 | Processing | processing_job |
@@ -45,12 +99,30 @@ refer to table names, so one module's models do not import another module's mode
 Revision `0001` creates the complete initial schema: typed-value storage, defaults, keys,
 indexes, integrity triggers, the original-transcript seal, folder-deletion guards and audit
 privileges. Its SQL file holds the table-specific trigger functions. There is one initial
-revision and no intermediate correction or downgrade steps.
+revision and no intermediate correction steps in that baseline.
+
+Revision `0002` adds recording cleanup and warning state and case-insensitive glossary uniqueness.
+Revision `0003` adds the nonnegative regeneration request counter. Existing actor-attributed notes
+provide its initial lower bound; new requests, including ultimately failed runs, increment it in
+the same transaction as job reservation. Downgrade refuses to discard nonzero counters.
 
 The unreleased revisions were consolidated before deployment. Disposable databases created
 with the earlier revision chain must be recreated; this migration is not an upgrade path for
 that superseded development history. Future schema changes use new revisions. Review generated
 migrations manually: metadata comparison cannot verify triggers or privileges.
+
+Revision `0004` adds sanitized failure codes, original transcript job provenance and folder
+recovery snapshots. Deleting a folder remembers its identity and the meetings moved to the default
+folder; restoration recreates it and returns those surviving meetings in one audited transaction.
+Restoration refuses name conflicts and later meeting moves. Workspace deletion removes recovery
+snapshots. Downgrade refuses to discard populated recovery or processing provenance. The current
+head is `0005`. Revision `0005` changes only the branch-added `failure_reason` column from TEXT to VARCHAR(20), matching the ORM enum. Its fixed-code CHECK remains intact, including on downgrade back to TEXT. No existing integrity triggers, privileges or locking rules change.
+
+Cleanup passes use UUID keyset windows and advance after each batch, including failed or locked
+items. Each pass attempts each selected item at most once; failed items remain durable for the
+next pass. API list cursors include the resource and caller scope and the final item's sort key.
+List queries are bounded, note-context rows are fetched together, and visible folder counts are
+aggregated for the returned page without loading meeting content.
 
 ## Configure and apply the schema
 
@@ -142,27 +214,34 @@ workspace or meeting foreign keys, so deleting those targets does not delete the
 event's actor references an existing account; account deletion is outside the current requirements.
 
 These restrictions protect existing events. They do not automatically generate events or prevent
-the application from inserting incorrect ones. The Audit writer accepts a typed `MeetingMoved` event and assigns `meeting_moved` itself;
-its details contain only source and destination folder IDs. Future actions need their own typed
-events with IDs and enum values, never content or names.
+the application from inserting incorrect ones. The Audit writer accepts `MeetingMoved` and
+`ContentEvent`; actions use the schema's `AuditAction` enum, and details contain IDs only.
+Future actions must likewise use typed events without content or names.
 
 ## Rules that services must implement
 
-Database safeguards protect stored data. Services still need to implement these use cases:
+Database safeguards protect stored data. Services enforce these use cases:
 
-| Rule | Remaining service responsibility |
+| Rule | Service responsibility |
 | --- | --- |
 | Folder permissions (FR-034) | Only Moderators and Owners may create, rename, or delete folders. Members may browse and move accessible meetings. |
 | Meeting access (NFR-007, NFR-009, ADR-003) | Check permissions through Access Policy on every content path, including shares, exports, MCP, and folder context assembly. |
 | Transcript edits (FR-028) | Save edits as edited revisions and expose the original with an edited marker. The API's promise to preserve earlier edited revisions must also be implemented by services. |
-| Audit events (NFR-010, ADR-005) | Write actor-attributed events in the same transaction as the change. `FolderService.delete_folder` already writes one `meeting_moved` event per moved meeting. The database trigger only refuses invalid deletion; other actions still need service integration. |
+| Audit events (NFR-010, ADR-005) | Write actor-attributed events in the same transaction as the change. `FolderService.delete_folder` writes one `meeting_moved` event per moved meeting. The database trigger only refuses invalid deletion. |
 | Recording retention (FR-046) | Delete audio 90 days after the meeting, warn accessible members seven days beforehand, and keep transcripts and notes. |
-| Account and sharing flows | Complete registration, enforce invitation throttling, approve external shares, and send notifications. |
+| Account and sharing flows | Share approval and revocation use services. Accounts writes and notification delivery remain unfinished. |
 
 The retention interval and folder permissions above are confirmed product decisions. Storing
 `recording_delete_after` and `recording_deleted_at` does not run a retention schedule or send a
-warning. Repositories and services remain unfinished, and the current HTTP fixtures do not verify
-these use cases against the database.
+warning. Retention uses injected storage and transactional notification collaborators; its
+scheduler runs through `uv run whadio scheduler` (one instance per deployment), or
+`uv run whadio scheduler --once` for one pass. It drains recording cleanup before scanning expiry,
+continues after database failures and stops cleanly on SIGINT/SIGTERM. Configure storage with the
+`WHADIO_STORAGE__*` variables and the interval with `WHADIO_RETENTION_INTERVAL_SECONDS`, shown in
+`.env.example`. Warning delivery is deliberately unavailable until Notifications is connected;
+failed warnings are not marked sent, and expiry and cleanup continue independently. The one-pass
+command exits unsuccessfully if any work fails. Database tests exercise the service
+and content-route behavior, but do not establish that those runtime integrations are complete.
 
 ## Transactions and verification
 
@@ -216,12 +295,11 @@ moves meetings with `UPDATE ... RETURNING`, writes one
 `lock_role()` takes the workspace and membership locks needed by folder deletion. A failure
 rolls back the moves, audit events and deletion together. The database trigger refuses direct
 deletion of an occupied folder; workspace deletion still cascades. The HTTP folder endpoints
-remain designed and are wired by the API implementation.
+are implemented. Deletion also records the folder and moved meeting IDs in a recovery snapshot;
+restoration refuses to overwrite subsequent moves and restores the surviving meetings atomically.
 
 
 ## AI Usage
 
 This implementation guide was prepared and clarified with OpenAI Codex using the requirements,
 architecture, models, migrations, and tests. The author reviewed and edited the content, and the document is reviewed through a pull request before merging.
-
-These PR #63 review revisions were assisted by OpenAI Codex. Everything was reviewed by me.

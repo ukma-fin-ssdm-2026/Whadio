@@ -1,47 +1,32 @@
-import re
-import shutil
+import asyncio
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Annotated, Final
+from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile
-from sqlalchemy import select
-from starlette.concurrency import run_in_threadpool
+from fastapi import APIRouter, File, Form, Query, Response, UploadFile
+from pydantic import Field
 
+from ...accounts.enums import NotesTemplate
+from ...meetings.enums import MeetingSource
+from ...meetings.services import RecordingInput
+from ...shared.errors import Failure, UseCaseError
+from ...shared.pagination import ListCursor
 from ..accounts.auth import BrowserUser, CaptureUser
-from ..accounts.fixtures import workspace
-from ..accounts.models import WorkspaceMembership
-from ..accounts.schemas import Provider, Role, UserRead, WorkspaceId
-from ..audit.models import AuditAction, AuditEvent
-from ..core.db import Db
+from ..accounts.schemas import Preset, Provider, WorkspaceId
+from ..composition import Meetings, Persistence, Processing, Recordings, UploadGuard
 from ..core.errors import (
     DOC_INVALID,
     DOC_MALFORMED,
     DOC_UNAUTHENTICATED,
     ApiError,
     ErrorCode,
-    ErrorDetail,
     error_responses,
-    not_found,
 )
-from ..core.schemas import Page, PageQuery, paginate
+from ..core.pagination import list_page, list_window
+from ..core.schemas import Output, Page, PageQuery
 from .audio import SUPPORTED_FORMATS, is_supported_audio
-from .fixtures import (
-    RETENTION,
-    notes,
-    transcribed,
-)
-from .models import (
-    Folder,
-    Meeting,
-    Speaker,
-    Transcript,
-    TranscriptRevision,
-    TranscriptSegment,
-)
+from .pagination import meeting_filter, meeting_page
 from .schemas import (
-    AccessMode,
     JobKind,
     JobStatus,
     MeetingId,
@@ -53,26 +38,23 @@ from .schemas import (
     NoteRead,
     NotesRequest,
     ProcessingJobRead,
-    ProcessingState,
-    RecordingStatus,
-    RevisionRead,
-    RevisionType,
-    SegmentRead,
-    SourceType,
-    SpeakerRead,
     TranscriptRead,
 )
+from .upload_limits import MAX_UPLOAD_BYTES, RecordingUploadRoute
+from .views import meeting_read, meeting_summary, notes_read, transcript_read
 
-router = APIRouter()
-
-
-def get_recordings_dir() -> Path:
-    raise NotImplementedError("create_app() supplies the recordings folder")
+router = APIRouter(route_class=RecordingUploadRoute)
 
 
-RecordingsDir = Annotated[Path, Depends(get_recordings_dir)]
+async def _validate_upload(file: UploadFile) -> None:
+    size = await asyncio.to_thread(file.file.seek, 0, 2)
+    await file.seek(0)
+    if size > MAX_UPLOAD_BYTES:
+        raise ApiError(413, ErrorCode.PAYLOAD_TOO_LARGE, "The recording exceeds 500 MiB")
+    if not await asyncio.to_thread(is_supported_audio, file.file):
+        raise ApiError(415, ErrorCode.UNSUPPORTED_MEDIA_TYPE, "The file is not supported audio")
+    await file.seek(0)
 
-MAX_UPLOAD_BYTES: Final = 500 * 1024 * 1024
 
 _WORKSPACE_NOT_FOUND = "`NOT_FOUND`: no such workspace, or the caller is not a member"
 _MEETING_NOT_FOUND = (
@@ -80,22 +62,6 @@ _MEETING_NOT_FOUND = (
     "reported as missing, never as forbidden)"
 )
 _NOT_TRANSCRIBED = f"`{ErrorCode.NOT_TRANSCRIBED}`: the meeting is not processed yet"
-
-
-async def _check_can_read(db: Db, meeting_id: UUID, user: UserRead) -> None:
-    """404 unless the meeting exists and the caller is a member of its workspace.
-
-    Restricted meetings are not checked yet: that rule arrives with Access Policy.
-    """
-    readable = await db.scalar(
-        select(Meeting.meeting_id)
-        .join(Folder, Folder.folder_id == Meeting.folder_id)
-        .join(WorkspaceMembership, WorkspaceMembership.workspace_id == Folder.workspace_id)
-        .where(Meeting.meeting_id == meeting_id, WorkspaceMembership.user_id == user.id)
-    )
-    if readable is None:
-        raise not_found("Meeting")
-
 
 # --- Meetings ---
 
@@ -116,48 +82,16 @@ async def list_meetings(
     workspace_id: WorkspaceId,
     query: Annotated[MeetingListQuery, Query()],
     user: BrowserUser,
-    db: Db,
+    service: Meetings,
 ) -> Page[MeetingSummary]:
-    membership = await db.scalar(
-        select(WorkspaceMembership).where(
-            WorkspaceMembership.workspace_id == workspace_id,
-            WorkspaceMembership.user_id == user.id,
+    matching = [
+        meeting_summary(item, workspace_id)
+        for item in await service.list_meetings(
+            user.id,
+            meeting_filter(workspace_id, query),
         )
-    )
-    if membership is None:
-        raise not_found("Workspace")
-    # Every meeting is workspace-wide for now: restricted ones arrive with Access Policy.
-    statement = (
-        select(Meeting)
-        .join(Folder, Folder.folder_id == Meeting.folder_id)
-        .where(Folder.workspace_id == workspace_id)
-        .order_by(Meeting.recorded_at.desc(), Meeting.meeting_id)
-    )
-    if query.folder_id is not None:
-        statement = statement.where(Meeting.folder_id == query.folder_id)
-    if query.name is not None:
-        statement = statement.where(Meeting.name.icontains(query.name, autoescape=True))
-    if query.recorded_from is not None:
-        statement = statement.where(Meeting.recorded_at >= query.recorded_from)
-    if query.recorded_to is not None:
-        statement = statement.where(Meeting.recorded_at < query.recorded_to)
-    matching: list[MeetingSummary] = [
-        MeetingSummary(
-            id=item.meeting_id,
-            workspace_id=workspace_id,
-            folder_id=item.folder_id,
-            name=item.name,
-            name_is_generated=item.name_is_generated,
-            recorded_at=item.recorded_at,
-            processing_state=item.processing_state,
-            recording_status=item.recording_status,
-            source_type=item.source_type,
-            duration_seconds=item.duration_seconds,
-            access_mode=item.access_mode,
-        )
-        for item in await db.scalars(statement)
     ]
-    return paginate(matching, query)
+    return meeting_page(matching, query.limit)
 
 
 @router.post(
@@ -185,9 +119,11 @@ async def list_meetings(
         },
         **error_responses(
             {
+                400: "`MALFORMED_REQUEST`: invalid or repeated Content-Length header",
                 401: DOC_UNAUTHENTICATED,
                 404: _WORKSPACE_NOT_FOUND,
-                413: f"`{ErrorCode.PAYLOAD_TOO_LARGE}`: the file is larger than 500 MiB",
+                413: f"`{ErrorCode.PAYLOAD_TOO_LARGE}`: the file is larger than 500 MiB "
+                "or the multipart request exceeds 501 MiB",
                 415: f"`{ErrorCode.UNSUPPORTED_MEDIA_TYPE}`: the content is not a supported "
                 "audio format",
                 422: f"{DOC_INVALID}; `folder_id` must be a folder of this workspace",
@@ -199,108 +135,75 @@ async def upload_recording(
     workspace_id: WorkspaceId,
     file: Annotated[UploadFile, File(description=f"The recording: {SUPPORTED_FORMATS}")],
     user: CaptureUser,
-    request: Request,
+    service: Meetings,
+    persistence: Persistence,
+    processing: Processing,
+    recordings: Recordings,
+    upload_guard: UploadGuard,
     response: Response,
-    db: Db,
-    recordings_dir: RecordingsDir,
     folder_id: Annotated[
         UUID | None, Form(description="Destination folder; the default folder when omitted")
     ] = None,
     name: Annotated[MeetingName | None, Form(description="Meeting name")] = None,
 ) -> MeetingRead:
-    membership = await db.scalar(
-        select(WorkspaceMembership).where(
-            WorkspaceMembership.workspace_id == workspace_id,
-            WorkspaceMembership.user_id == user.id,
+    folders = await service.folders(user.id, workspace_id)
+    if folder_id is not None and folder_id not in {item.folder_id for item in folders}:
+        raise UseCaseError(Failure.VALIDATION_ERROR)
+    if name is not None and not name.strip():
+        raise UseCaseError(Failure.VALIDATION_ERROR)
+    try:
+        await _validate_upload(file)
+        now = datetime.now(UTC)
+        key = f"recordings/{uuid4()}"
+        await upload_guard.reserve(key)
+        await recordings.put(key, file.file)
+        meeting = await persistence.ingest(
+            user.id,
+            workspace_id,
+            RecordingInput(key, now, MeetingSource.UPLOAD, name=name, folder_id=folder_id),
+            now,
         )
-    )
-    if membership is None:
-        raise not_found("Workspace")
-    if folder_id is None:
-        folder = await db.scalar(
-            select(Folder).where(Folder.workspace_id == workspace_id, Folder.is_default)
-        )
-    else:
-        folder = await db.scalar(
-            select(Folder).where(Folder.workspace_id == workspace_id, Folder.folder_id == folder_id)
-        )
-    if folder is None:
-        raise ApiError(
-            422,
-            ErrorCode.VALIDATION_ERROR,
-            "Request contains invalid fields",
-            [
-                ErrorDetail(
-                    field="folder_id",
-                    message="is not a folder of this workspace",
-                    provided_value=str(folder_id),
-                )
-            ],
-        )
-    if file.size is not None and file.size > MAX_UPLOAD_BYTES:
-        raise ApiError(413, ErrorCode.PAYLOAD_TOO_LARGE, "The file is larger than 500 MiB")
+        await processing.queue_transcription(meeting.meeting_id)
+        response.headers["Location"] = f"/api/v1/meetings/{meeting.meeting_id}"
+        await upload_guard.release(key)
+        return meeting_read(meeting, workspace_id, is_edited=False)
+    except BaseException:
+        await asyncio.shield(recordings.rollback())
+        raise
+    finally:
+        await file.close()
 
-    is_audio = await run_in_threadpool(is_supported_audio, file.file)
-    if not is_audio:
-        raise ApiError(
-            415,
-            ErrorCode.UNSUPPORTED_MEDIA_TYPE,
-            f"The file is not a supported audio format: {SUPPORTED_FORMATS}",
-        )
 
-    await file.seek(0)
+class PlaybackLink(Output):
+    url: str = Field(description="Authorized playback link, valid for five minutes.")
+    expires_at: datetime = Field(description="When the playback link expires.")
 
-    # 1. Save the recording, 2. the meeting row, 3. the job (not yet: no queue), 4. respond.
-    meeting_id = uuid4()
-    await run_in_threadpool(recordings_dir.mkdir, parents=True, exist_ok=True)
-    storage_path = recordings_dir / str(meeting_id)
-    with storage_path.open("wb") as saved:
-        await run_in_threadpool(shutil.copyfileobj, file.file, saved)
 
-    now = datetime.now(UTC)
-    created = Meeting(
-        meeting_id=meeting_id,
-        folder_id=folder.folder_id,
-        created_by_user_id=user.id,
-        name=name or f"Meeting {now:%Y-%m-%d %H:%M} UTC",
-        name_is_generated=name is None,
-        source_type=SourceType.UPLOAD,
-        recording_status=RecordingStatus.COMPLETE,
-        processing_state=ProcessingState.QUEUED,
-        storage_path=str(storage_path),
-        duration_seconds=None,
-        recorded_at=now,
-        created_at=now,
-        consent_confirmed_at=None,
-        consent_confirmed_by_user_id=None,
-        recording_delete_after=now + RETENTION,
-        recording_deleted_at=None,
-        access_mode=AccessMode.WORKSPACE,
-    )
-    db.add(created)
-    await db.commit()
-
-    response.headers["Location"] = str(request.url_for("get_meeting", meeting_id=meeting_id))
-    return MeetingRead(
-        id=meeting_id,
-        workspace_id=workspace_id,
-        folder_id=created.folder_id,
-        name=created.name,
-        name_is_generated=created.name_is_generated,
-        recorded_at=now,
-        processing_state=created.processing_state,
-        recording_status=created.recording_status,
-        source_type=created.source_type,
-        duration_seconds=None,
-        access_mode=created.access_mode,
-        created_by_user_id=user.id,
-        created_at=now,
-        failure_reason=None,
-        is_edited=False,
-        recording_available=True,
-        recording_delete_after=created.recording_delete_after,
-        consent_confirmed_at=None,
-    )
+@router.get(
+    "/meetings/{meeting_id}/recording",
+    tags=["meetings"],
+    summary="Get a recording playback link",
+    responses=error_responses(
+        {
+            401: DOC_UNAUTHENTICATED,
+            404: _MEETING_NOT_FOUND,
+            409: "`RECORDING_NOT_READY`: recording is still being captured",
+            410: "`RECORDING_DELETED`: retention removed the recording",
+        }
+    ),
+    description=(
+        "Get a five-minute playback link after checking meeting access. Refuses "
+        "unfinished recordings and recordings removed by retention."
+    ),
+)
+async def recording_link(
+    meeting_id: MeetingId,
+    user: BrowserUser,
+    service: Meetings,
+    recordings: Recordings,
+) -> PlaybackLink:
+    link = await recordings.playback(service, user.id, meeting_id)
+    return PlaybackLink(url=link.url, expires_at=link.expires_at)
 
 
 @router.get(
@@ -313,37 +216,18 @@ async def upload_recording(
         {401: DOC_UNAUTHENTICATED, 404: _MEETING_NOT_FOUND, 422: DOC_INVALID}
     ),
 )
-async def get_meeting(meeting_id: MeetingId, user: BrowserUser, db: Db) -> MeetingRead:
-    # Meeting + its folder's workspace_id (MeetingRead needs it, the row doesn't have it)
-    row = await db.execute(
-        select(Meeting, Folder.workspace_id)
-        .join(Folder, Folder.folder_id == Meeting.folder_id)
-        .join(WorkspaceMembership, WorkspaceMembership.workspace_id == Folder.workspace_id)
-        .where(Meeting.meeting_id == meeting_id, WorkspaceMembership.user_id == user.id)
-    )
-    # None both for a missing meeting and for one the caller cannot read: same 404 either way.
-    pair = row.one_or_none()
-    if pair is None:
-        raise not_found("Meeting")
-    found, workspace_id = pair
-
-    return MeetingRead.model_validate(
-        {
-            # copy every field with the same name on both: name, folder_id, recorded_at, ...
-            **{
-                name: getattr(found, name)
-                for name in MeetingRead.model_fields
-                if hasattr(found, name)
-            },
-            # the 5 the row can't give
-            "id": found.meeting_id,
-            "workspace_id": workspace_id,
-            "failure_reason": None,  # no processing jobs table yet
-            "is_edited": False,  # no transcripts yet
-            "recording_available": found.storage_path is not None
-            and found.recording_deleted_at is None,
-        }
-    )
+async def get_meeting(meeting_id: MeetingId, user: BrowserUser, service: Meetings) -> MeetingRead:
+    target = await service.get(user.id, meeting_id)
+    workspace_id = await service.workspace_id(user.id, meeting_id)
+    try:
+        version = await service.transcript(user.id, meeting_id)
+    except UseCaseError as error:
+        if error.code != Failure.NOT_TRANSCRIBED:
+            raise
+        is_edited = False
+    else:
+        is_edited = version.is_edited
+    return meeting_read(target, workspace_id, is_edited=is_edited)
 
 
 @router.patch(
@@ -365,67 +249,12 @@ async def get_meeting(meeting_id: MeetingId, user: BrowserUser, db: Db) -> Meeti
     ),
 )
 async def update_meeting(
-    meeting_id: MeetingId, payload: MeetingUpdate, user: BrowserUser, db: Db
+    meeting_id: MeetingId, payload: MeetingUpdate, user: BrowserUser, service: Meetings
 ) -> MeetingRead:
-    row = await db.execute(
-        select(Meeting, Folder.workspace_id)
-        .join(Folder, Folder.folder_id == Meeting.folder_id)
-        .join(WorkspaceMembership, WorkspaceMembership.workspace_id == Folder.workspace_id)
-        .where(Meeting.meeting_id == meeting_id, WorkspaceMembership.user_id == user.id)
+    await service.update(
+        user.id, meeting_id, datetime.now(UTC), name=payload.name, folder_id=payload.folder_id
     )
-    found = row.one_or_none()
-    if found is None:
-        raise not_found("Meeting")
-    target, workspace_id = found
-    now = datetime.now(UTC)
-
-    if payload.folder_id is not None and payload.folder_id != target.folder_id:
-        folder = await db.scalar(
-            select(Folder).where(
-                Folder.folder_id == payload.folder_id, Folder.workspace_id == workspace_id
-            )
-        )
-        if folder is None:
-            raise ApiError(
-                422,
-                ErrorCode.VALIDATION_ERROR,
-                "Request contains invalid fields",
-                [
-                    ErrorDetail(
-                        field="folder_id",
-                        message="is not a folder of this workspace",
-                        provided_value=str(payload.folder_id),
-                    )
-                ],
-            )
-        db.add(
-            AuditEvent(
-                occurred_at=now,
-                actor_user_id=user.id,
-                action=AuditAction.MEETING_MOVED,
-                workspace_id=workspace_id,
-                meeting_id=meeting_id,
-                details={"from": str(target.folder_id), "to": str(folder.folder_id)},
-            )
-        )
-        target.folder_id = folder.folder_id
-
-    if payload.name is not None:
-        if payload.name != target.name:
-            db.add(
-                AuditEvent(
-                    occurred_at=now,
-                    actor_user_id=user.id,
-                    action=AuditAction.MEETING_RENAMED,
-                    workspace_id=workspace_id,
-                    meeting_id=meeting_id,
-                )
-            )
-        target.name = payload.name
-        target.name_is_generated = False
-
-    await db.commit()
-    return await get_meeting(meeting_id, user, db)
+    return await get_meeting(meeting_id, user, service)
 
 
 @router.delete(
@@ -446,40 +275,8 @@ async def update_meeting(
         }
     ),
 )
-async def delete_meeting(meeting_id: MeetingId, user: BrowserUser, db: Db) -> None:
-    row = await db.execute(
-        select(Meeting, Folder.workspace_id, WorkspaceMembership.role)
-        .join(Folder, Folder.folder_id == Meeting.folder_id)
-        .join(WorkspaceMembership, WorkspaceMembership.workspace_id == Folder.workspace_id)
-        .where(Meeting.meeting_id == meeting_id, WorkspaceMembership.user_id == user.id)
-    )
-    found = row.one_or_none()
-    if found is None:
-        raise not_found("Meeting")
-    target, workspace_id, role = found
-    if role is Role.MEMBER and target.created_by_user_id != user.id:
-        raise ApiError(
-            403,
-            ErrorCode.INSUFFICIENT_ROLE,
-            "Only whoever recorded the meeting, a Moderator or the Owner can delete it",
-        )
-
-    # Transcripts and notes are not stored yet; once they are, they go here too.
-    await db.delete(target)
-    # Same transaction as the deletion (ADR-005); no foreign keys, so it outlives the meeting.
-    db.add(
-        AuditEvent(
-            occurred_at=datetime.now(UTC),
-            actor_user_id=user.id,
-            action=AuditAction.MEETING_DELETED,
-            workspace_id=workspace_id,
-            meeting_id=meeting_id,
-        )
-    )
-    await db.commit()
-    # After the commit, so a failed commit never leaves a meeting without its recording.
-    if target.storage_path is not None:
-        await run_in_threadpool(Path(target.storage_path).unlink, missing_ok=True)
+async def delete_meeting(meeting_id: MeetingId, user: BrowserUser, service: Meetings) -> None:
+    await service.delete(user.id, meeting_id, datetime.now(UTC))
 
 
 @router.get(
@@ -498,65 +295,15 @@ async def delete_meeting(meeting_id: MeetingId, user: BrowserUser, db: Db) -> No
         }
     ),
 )
-async def get_transcript(meeting_id: MeetingId, user: BrowserUser, db: Db) -> TranscriptRead:
-    await _check_can_read(db, meeting_id, user)
-    found = await db.scalar(select(Transcript).where(Transcript.meeting_id == meeting_id))
-    if found is None:
-        raise ApiError(409, ErrorCode.NOT_TRANSCRIBED, "The meeting has no transcript yet")
-
-    revisions = [
-        *await db.scalars(
-            select(TranscriptRevision).where(
-                TranscriptRevision.transcript_id == found.transcript_id
-            )
-        )
-    ]
-    current = next(r for r in revisions if r.revision_id == found.current_revision_id)
-    original = next(r for r in revisions if r.revision_type is RevisionType.ORIGINAL)
-    speakers = [
-        SpeakerRead(
-            id=speaker.speaker_id,
-            display_name=speaker.display_name,
-            # Placeholders are the "Speaker 1", "Speaker 2", ... labels transcription gives.
-            is_unnamed=re.fullmatch(r"Speaker \d+", speaker.display_name) is not None,
-        )
-        for speaker in await db.scalars(
-            select(Speaker)
-            .where(Speaker.revision_id == current.revision_id)
-            .order_by(Speaker.display_name)
-        )
-    ]
-    segments = [
-        SegmentRead(
-            id=segment.segment_id,
-            speaker_id=segment.speaker_id,
-            start_seconds=segment.start_time_seconds,
-            end_seconds=segment.end_time_seconds,
-            text=segment.text,
-        )
-        for segment in await db.scalars(
-            select(TranscriptSegment)
-            .where(TranscriptSegment.revision_id == current.revision_id)
-            .order_by(TranscriptSegment.start_time_seconds)
-        )
-    ]
-    return TranscriptRead(
-        meeting_id=meeting_id,
-        language=found.language,
-        model_name=found.model_name,
-        revision=RevisionRead(
-            id=current.revision_id,
-            revision_type=current.revision_type,
-            created_at=current.created_at,
-            edited_by_user_id=current.edited_by_user_id,
-            is_current=True,
-        ),
-        original_revision_id=original.revision_id,
-        is_edited=any(r.revision_type is RevisionType.EDITED for r in revisions),
-        has_unnamed_speakers=any(speaker.is_unnamed for speaker in speakers),
-        speakers=speakers,
-        segments=segments,
-    )
+async def get_transcript(
+    meeting_id: MeetingId,
+    user: BrowserUser,
+    service: Meetings,
+    revision_id: Annotated[
+        UUID | None, Query(description="Revision to read; current when omitted")
+    ] = None,
+) -> TranscriptRead:
+    return transcript_read(await service.transcript(user.id, meeting_id, revision_id))
 
 
 # --- Notes ---
@@ -574,10 +321,18 @@ async def get_transcript(meeting_id: MeetingId, user: BrowserUser, db: Db) -> Tr
     ),
 )
 async def list_notes(
-    meeting_id: MeetingId, query: Annotated[PageQuery, Query()], user: BrowserUser, db: Db
+    meeting_id: MeetingId,
+    query: Annotated[PageQuery, Query()],
+    user: BrowserUser,
+    service: Meetings,
 ) -> Page[NoteRead]:
-    await _check_can_read(db, meeting_id, user)
-    return paginate(notes(meeting_id), query)
+    scope = f"notes:{meeting_id}:{user.id}"
+    versions = await service.notes(
+        user.id, meeting_id, list_window(query, scope, chronological=True)
+    )
+    last = versions[min(len(versions), query.limit) - 1].note if versions else None
+    cursor = None if last is None else ListCursor(last.created_at.isoformat(), last.note_id)
+    return list_page(notes_read(versions), query, scope, cursor)
 
 
 @router.post(
@@ -620,25 +375,25 @@ async def regenerate_notes(
     meeting_id: MeetingId,
     payload: NotesRequest,
     user: BrowserUser,
-    request: Request,
+    processing: Processing,
+    service: Meetings,
     response: Response,
-    db: Db,
 ) -> ProcessingJobRead:
-    await _check_can_read(db, meeting_id, user)
-    target = transcribed(meeting_id)
-    preset = payload.preset or workspace(target.workspace_id).default_preset
-    provider = (
-        Provider.WHADIO
-        if payload.use_builtin_model
-        else workspace(target.workspace_id).notes_provider
+    await service.get(user.id, meeting_id)
+    job = await processing.queue_notes(
+        meeting_id,
+        user.id,
+        None if payload.preset is None else NotesTemplate(payload.preset.value),
+        use_builtin_model=payload.use_builtin_model,
+        now=datetime.now(UTC),
     )
-    response.headers["Location"] = str(request.url_for("get_meeting", meeting_id=meeting_id))
+    response.headers["Location"] = f"/api/v1/meetings/{meeting_id}"
     return ProcessingJobRead(
-        id=uuid4(),
-        meeting_id=meeting_id,
+        id=job.job_id,
+        meeting_id=job.meeting_id,
         kind=JobKind.NOTES,
         status=JobStatus.QUEUED,
-        preset=preset,
-        provider=provider,
-        created_at=datetime.now(UTC),
+        preset=Preset(job.preset.value),
+        provider=Provider(job.provider.value.lower()),
+        created_at=job.created_at,
     )

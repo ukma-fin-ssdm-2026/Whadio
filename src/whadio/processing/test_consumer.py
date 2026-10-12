@@ -1,26 +1,47 @@
 import asyncio
-from datetime import UTC, datetime
-from typing import ClassVar
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
+from typing import BinaryIO, ClassVar
 from uuid import UUID, uuid4
 
 import pytest
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from conftest import AsyncDatabase
+
+from ..access_policy.repositories import AccessRepository
+from ..access_policy.services import AccessPolicy
+from ..accounts.repositories import MembershipRepository, WorkspaceSettingsRepository
+from ..accounts.services import WorkspaceMembershipService, WorkspaceSettingsService
+from ..audit.services import AuditWriter
 from ..contracts.common import JobKind, Transcript
 from ..contracts.notes import MeetingBrief, NotesPreset, NotesRequested
 from ..contracts.queues import PROCESSING_RESULTS, QueueSpec
 from ..contracts.results import JobStarted, ProcessingResult
 from ..contracts.transcription import AudioLink, TranscriptionRequested
+from ..meetings.contracts import EvictionNotice
+from ..meetings.enums import ProcessingState
+from ..meetings.models import Meeting
+from ..meetings.persistence import MeetingPersistence, PersistenceDependencies
+from ..meetings.repositories import MeetingRepository
+from ..meetings.services import MeetingService
 from ..shared.broker import BrokerSettings, MessagePublisher, connect, declare_queue
+from ..shared.storage import PresignedUrl
 from .consumer import (
     AmqpJobPublisher,
     ResultSource,
+    TransactionalResultHandler,
     handle_dead_letter,
     handle_delivery,
     serve_results,
 )
-from .services import JobRequest
+from .enums import JobType
+from .repositories import JobRepository
+from .services import JobRequest, ProcessingService
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 WORKER = "whadio-asr"
@@ -306,3 +327,85 @@ def test_served_result_reaches_the_handler() -> None:
     published, handled = asyncio.run(_serve_one_result(broker))
     # Assert
     assert handled == published
+
+
+# --- Transactions ---
+
+
+class SavepointTransactions:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session: AsyncSession = session
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncGenerator[AsyncSession]:
+        async with self._session.begin_nested():
+            yield self._session
+
+
+def processing_service(session: AsyncSession) -> ProcessingService:
+    memberships = WorkspaceMembershipService(MembershipRepository(session))
+    meetings = MeetingService(
+        MeetingRepository(session),
+        AccessPolicy(AccessRepository(session), memberships),
+        AuditWriter(session),
+    )
+    return ProcessingService(
+        JobRepository(session),
+        meetings,
+        MeetingPersistence(
+            PersistenceDependencies(
+                meetings,
+                MeetingRepository(session),
+                memberships,
+                AuditWriter(session),
+                AccessPolicy(AccessRepository(session), memberships),
+                UnavailableEvictions(),
+            )
+        ),
+        WorkspaceSettingsService(WorkspaceSettingsRepository(session)),
+        UnusedStorage(),
+    )
+
+
+class UnavailableEvictions:
+    async def enqueue(self, notice: EvictionNotice) -> None:
+        del notice
+        raise AssertionError
+
+
+class UnusedStorage:
+    def put(self, key: str, data: BinaryIO, *, content_type: str) -> None:
+        del key, data, content_type
+        raise AssertionError
+
+    def delete(self, key: str) -> None:
+        del key
+        raise AssertionError
+
+    def presign_get(self, key: str, *, expires_in: timedelta) -> PresignedUrl:
+        del key, expires_in
+        raise AssertionError
+
+
+@pytest.mark.slow
+def test_handled_result_changes_the_database(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> ProcessingState | None:
+        meeting_id = await AsyncDatabase.add_meeting(
+            session, await AsyncDatabase.add_workspace(session)
+        )
+        job_id = await JobRepository(session).add(meeting_id, JobType.TRANSCRIPTION)
+        handler = TransactionalResultHandler(SavepointTransactions(session), processing_service)
+        # Act
+        await handler.handle(
+            JobStarted(
+                job_id=job_id, meeting_id=meeting_id, kind=JobKind.TRANSCRIPTION, started_at=NOW
+            )
+        )
+        return await session.scalar(
+            select(Meeting.processing_state).where(Meeting.meeting_id == meeting_id)
+        )
+
+    state = async_database.run(scenario)
+    # Assert
+    assert state is ProcessingState.PROCESSING

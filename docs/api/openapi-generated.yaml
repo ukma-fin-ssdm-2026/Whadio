@@ -5,17 +5,14 @@ info:
     Whadio records Google Meet calls from the browser, transcribes them with speaker labels and
     writes notes, inside workspaces with roles, restrictions and sharing.
 
-    This server is mostly a **stub**: signing in and out use real accounts and sessions stored in
-    the database, while every other endpoint answers with fixed demo data, and its writes return the
-    result they would have but store nothing. Only part of the designed API is implemented; the
-    full design is in `docs/api/api-design.md`.
+    Sign-in, workspaces, meeting content, folders, glossary, revisions, restrictions and shares are
+    stored in PostgreSQL. Requests need a stored, unexpired session; MCP needs a stored personal key.
+    An upload is stored in object storage and queued for transcription and notes, which the workers
+    run.
 
-    ## Quick start
-    1. `POST /api/v1/sessions` with `alice@whadio.dev` and the password `whadio-demo-pass`. The browser
-       keeps the session cookie, so every later call in this page is signed in.
-    2. `GET /api/v1/workspaces`, then `GET /api/v1/workspaces/7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d/meetings`.
-    3. `GET /api/v1/meetings/5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9/transcript` is processed;
-       `0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d` is still queued and answers `409`.
+    Notes regeneration and Notifications are not built yet: regeneration and share access requests
+    return `503 INTEGRATION_UNAVAILABLE`, as does an upload on a server without a broker or object
+    storage. The API contract is in `docs/api/api-design.md`.
 
     ## Conventions
     - **Errors:** every 4xx and 5xx body is `{"error": {"code", "message", "details",
@@ -83,9 +80,9 @@ paths:
       tags:
       - accounts
       summary: Sign out
-      description: 'Ends the session presented by the cookie or the extension''s bearer
-        token and clears the cookie. Always `204`, also without a session: signing
-        out is idempotent.'
+      description: 'Ends the sessions presented by the cookie and by the extension''s
+        bearer token, and clears the cookie. Always `204`, also without a session:
+        signing out is idempotent.'
       operationId: sign_out_api_v1_sessions_current_delete
       responses:
         '204':
@@ -122,7 +119,7 @@ paths:
           anyOf:
           - type: string
             minLength: 1
-            maxLength: 512
+            maxLength: 4096
           - type: 'null'
           description: Opaque `next_cursor` from the previous page; omit for the first
             page
@@ -406,7 +403,7 @@ paths:
           anyOf:
           - type: string
             minLength: 1
-            maxLength: 512
+            maxLength: 4096
           - type: 'null'
           description: Opaque `next_cursor` from the previous page; omit for the first
             page
@@ -530,6 +527,12 @@ paths:
               schema:
                 type: string
                 format: uri
+        '400':
+          description: '`MALFORMED_REQUEST`: invalid or repeated Content-Length header'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
           content:
@@ -543,7 +546,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '413':
-          description: '`PAYLOAD_TOO_LARGE`: the file is larger than 500 MiB'
+          description: '`PAYLOAD_TOO_LARGE`: the file is larger than 500 MiB or the
+            multipart request exceeds 501 MiB'
           content:
             application/json:
               schema:
@@ -562,6 +566,66 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/meetings/{meeting_id}/recording:
+    get:
+      tags:
+      - meetings
+      summary: Get a recording playback link
+      description: Get a five-minute playback link after checking meeting access.
+        Refuses unfinished recordings and recordings removed by retention.
+      operationId: recording_link_api_v1_meetings__meeting_id__recording_get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: meeting_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
+          title: Meeting Id
+        description: Meeting identifier
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaybackLink'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`NOT_FOUND`: no such meeting, or the caller cannot read it
+            (restricted meetings are reported as missing, never as forbidden)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`RECORDING_NOT_READY`: recording is still being captured'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: '`RECORDING_DELETED`: retention removed the recording'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/meetings/{meeting_id}:
     get:
       tags:
@@ -747,6 +811,17 @@ paths:
           - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
           title: Meeting Id
         description: Meeting identifier
+      - name: revision_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          description: Revision to read; current when omitted
+          title: Revision Id
+        description: Revision to read; current when omitted
       responses:
         '200':
           description: The current revision of the transcript
@@ -821,7 +896,7 @@ paths:
           anyOf:
           - type: string
             minLength: 1
-            maxLength: 512
+            maxLength: 4096
           - type: 'null'
           description: Opaque `next_cursor` from the previous page; omit for the first
             page
@@ -932,6 +1007,1867 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/workspaces/{workspace_id}/folders:
+    get:
+      tags:
+      - meetings
+      summary: List Folders
+      description: List workspace folders with counts of meetings the caller can read.
+        Restricted meetings without access are excluded from counts.
+      operationId: list_folders_api_v1_workspaces__workspace_id__folders_get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Maximum number of items to return
+          default: 20
+          title: Limit
+        description: Maximum number of items to return
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 4096
+          - type: 'null'
+          description: Opaque `next_cursor` from the previous page; omit for the first
+            page
+          title: Cursor
+        description: Opaque `next_cursor` from the previous page; omit for the first
+          page
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_FolderRead_'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Content conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - meetings
+      summary: Create Folder
+      description: Create a folder in this workspace. Requires a Moderator or Owner;
+        names are unique ignoring case.
+      operationId: create_folder_api_v1_workspaces__workspace_id__folders_post
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FolderInput'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderRead'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Content conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/workspaces/{workspace_id}/folders/{folder_id}:
+    patch:
+      tags:
+      - meetings
+      summary: Rename Folder
+      description: Rename a workspace folder. Requires a Moderator or Owner and a
+        name unique within the workspace.
+      operationId: rename_folder_api_v1_workspaces__workspace_id__folders__folder_id__patch
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      - name: folder_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Folder identifier
+          examples:
+          - e8f7d6c5-b4a3-4291-8f7e-6d5c4b3a2918
+          title: Folder Id
+        description: Folder identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FolderInput'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderRead'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Content conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - meetings
+      summary: Delete Folder
+      description: Delete a non-default folder and move its meetings to the default
+        folder, preserving their content and access restrictions. Requires a Moderator
+        or Owner.
+      operationId: delete_folder_api_v1_workspaces__workspace_id__folders__folder_id__delete
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      - name: folder_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Folder identifier
+          examples:
+          - e8f7d6c5-b4a3-4291-8f7e-6d5c4b3a2918
+          title: Folder Id
+        description: Folder identifier
+      responses:
+        '204':
+          description: Successful Response
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Content conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/workspaces/{workspace_id}/folders/{folder_id}/restore:
+    post:
+      tags:
+      - meetings
+      summary: Restore Folder
+      description: Restore a deleted folder and its previous meeting placement. Requires
+        a Moderator or Owner; refuses to overwrite later moves.
+      operationId: restore_folder_api_v1_workspaces__workspace_id__folders__folder_id__restore_post
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      - name: folder_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Folder identifier
+          examples:
+          - e8f7d6c5-b4a3-4291-8f7e-6d5c4b3a2918
+          title: Folder Id
+        description: Folder identifier
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderRead'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Content conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/meetings/{meeting_id}/transcript/revisions:
+    get:
+      tags:
+      - meetings
+      summary: List Revisions
+      description: List transcript revisions newest first for an accessible meeting,
+        including original provenance and current revision status.
+      operationId: list_revisions_api_v1_meetings__meeting_id__transcript_revisions_get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: meeting_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
+          title: Meeting Id
+        description: Meeting identifier
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Maximum number of items to return
+          default: 20
+          title: Limit
+        description: Maximum number of items to return
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 4096
+          - type: 'null'
+          description: Opaque `next_cursor` from the previous page; omit for the first
+            page
+          title: Cursor
+        description: Opaque `next_cursor` from the previous page; omit for the first
+          page
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_RevisionRead_'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Content conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - meetings
+      summary: Edit Transcript
+      description: Create a transcript revision with text corrections or speaker renames.
+        Requires meeting access and the current base revision; preserves the original
+        transcript.
+      operationId: edit_transcript_api_v1_meetings__meeting_id__transcript_revisions_post
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: meeting_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
+          title: Meeting Id
+        description: Meeting identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevisionInput'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptRead'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Content conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/workspaces/{workspace_id}/glossary-terms:
+    get:
+      tags:
+      - meetings
+      summary: Glossary
+      description: List the workspace glossary for a signed-in workspace member.
+      operationId: glossary_api_v1_workspaces__workspace_id__glossary_terms_get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Maximum number of items to return
+          default: 20
+          title: Limit
+        description: Maximum number of items to return
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 4096
+          - type: 'null'
+          description: Opaque `next_cursor` from the previous page; omit for the first
+            page
+          title: Cursor
+        description: Opaque `next_cursor` from the previous page; omit for the first
+          page
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_TermRead_'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Content conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - meetings
+      summary: Add Term
+      description: Add a workspace glossary term as a member. Terms are unique ignoring
+        case; any source meeting must be accessible.
+      operationId: add_term_api_v1_workspaces__workspace_id__glossary_terms_post
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TermInput'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TermRead'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Content conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/workspaces/{workspace_id}/glossary-terms/{term_id}:
+    patch:
+      tags:
+      - meetings
+      summary: Update Term
+      description: Update a glossary term as its author, a Moderator or the Owner.
+        A changed term must remain unique ignoring case.
+      operationId: update_term_api_v1_workspaces__workspace_id__glossary_terms__term_id__patch
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      - name: term_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Glossary term identifier
+          title: Term Id
+        description: Glossary term identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TermPatch'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TermRead'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Content conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - meetings
+      summary: Delete Term
+      description: Remove a glossary term as its author, a Moderator or the Owner.
+      operationId: delete_term_api_v1_workspaces__workspace_id__glossary_terms__term_id__delete
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      - name: term_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Glossary term identifier
+          title: Term Id
+        description: Glossary term identifier
+      responses:
+        '204':
+          description: Successful Response
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Content conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/meetings/{meeting_id}/access:
+    get:
+      tags:
+      - access
+      summary: Read Access
+      description: Read the access mode and selected members of a meeting the caller
+        can read.
+      operationId: read_access_api_v1_meetings__meeting_id__access_get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: meeting_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
+          title: Meeting Id
+        description: Meeting identifier
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessRead'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Access or share conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Recipient access was revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Notifications integration unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags:
+      - access
+      summary: Replace Access
+      description: Replace meeting access as a Moderator or Owner who can read it.
+        Restricted access requires selected workspace members; unselected members
+        lose access immediately.
+      operationId: replace_access_api_v1_meetings__meeting_id__access_put
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: meeting_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
+          title: Meeting Id
+        description: Meeting identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessInput'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessRead'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Access or share conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Recipient access was revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Notifications integration unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/meetings/{meeting_id}/shares:
+    get:
+      tags:
+      - access
+      summary: List Shares
+      description: List shares of a meeting the caller can read, newest first.
+      operationId: list_shares_api_v1_meetings__meeting_id__shares_get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: meeting_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
+          title: Meeting Id
+        description: Meeting identifier
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Maximum number of items to return
+          default: 20
+          title: Limit
+        description: Maximum number of items to return
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 4096
+          - type: 'null'
+          description: Opaque `next_cursor` from the previous page; omit for the first
+            page
+          title: Cursor
+        description: Opaque `next_cursor` from the previous page; omit for the first
+          page
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_ShareRead_'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Access or share conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Recipient access was revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Notifications integration unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - access
+      summary: Create Share
+      description: Create a read-only share of an accessible meeting. Disclose its
+        token once in the link fragment; a share creator must approve the recipient
+        account.
+      operationId: create_share_api_v1_meetings__meeting_id__shares_post
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: meeting_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
+          title: Meeting Id
+        description: Meeting identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareInput'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareCreated'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Access or share conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Recipient access was revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Notifications integration unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/users/me/shares:
+    get:
+      tags:
+      - access
+      summary: Recipient Shares
+      description: List active shares bound to the signed-in account, newest first.
+      operationId: recipient_shares_api_v1_users_me_shares_get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Maximum number of items to return
+          default: 20
+          title: Limit
+        description: Maximum number of items to return
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 4096
+          - type: 'null'
+          description: Opaque `next_cursor` from the previous page; omit for the first
+            page
+          title: Cursor
+        description: Opaque `next_cursor` from the previous page; omit for the first
+          page
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_ShareRead_'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Access or share conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Recipient access was revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Notifications integration unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/shares/{share_id}:
+    delete:
+      tags:
+      - access
+      summary: Revoke Share
+      description: Revoke a share as its creator. Its bound recipient can no longer
+        read the meeting through it.
+      operationId: revoke_share_api_v1_shares__share_id__delete
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: share_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: External share identifier
+          title: Share Id
+        description: External share identifier
+      responses:
+        '204':
+          description: Successful Response
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Access or share conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Recipient access was revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Notifications integration unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/shares/{share_id}/access-requests:
+    post:
+      tags:
+      - access
+      summary: Request Access
+      description: Request access with a token from the share link fragment. Requires
+        an existing account and reserves the creator notification in the same transaction.
+      operationId: request_access_api_v1_shares__share_id__access_requests_post
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: share_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: External share identifier
+          title: Share Id
+        description: External share identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestInput'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestRead'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Access or share conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Recipient access was revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Notifications integration unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      tags:
+      - access
+      summary: List Requests
+      description: List access requests for a share as its creator, newest first.
+      operationId: list_requests_api_v1_shares__share_id__access_requests_get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: share_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: External share identifier
+          title: Share Id
+        description: External share identifier
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Maximum number of items to return
+          default: 20
+          title: Limit
+        description: Maximum number of items to return
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 4096
+          - type: 'null'
+          description: Opaque `next_cursor` from the previous page; omit for the first
+            page
+          title: Cursor
+        description: Opaque `next_cursor` from the previous page; omit for the first
+          page
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_RequestRead_'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Access or share conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Recipient access was revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Notifications integration unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/share-access-requests/{request_id}/approve:
+    post:
+      tags:
+      - access
+      summary: Approve Request
+      description: Approve a pending request as the share creator, binding the share
+        to that one account. Refuses revoked or already bound shares.
+      operationId: approve_request_api_v1_share_access_requests__request_id__approve_post
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Share access request identifier
+          title: Request Id
+        description: Share access request identifier
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestRead'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Access or share conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Recipient access was revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Notifications integration unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/share-access-requests/{request_id}/decline:
+    post:
+      tags:
+      - access
+      summary: Decline Request
+      description: Decline a pending access request as the share creator.
+      operationId: decline_request_api_v1_share_access_requests__request_id__decline_post
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Share access request identifier
+          title: Request Id
+        description: Share access request identifier
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestRead'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Access or share conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Recipient access was revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Notifications integration unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/shares/{share_id}/transcript:
+    get:
+      tags:
+      - access
+      summary: Shared Transcript
+      description: Read a transcript through an active share bound to the caller,
+        applying speaker-name redaction where configured. Export and onward sharing
+        are not permitted.
+      operationId: shared_transcript_api_v1_shares__share_id__transcript_get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: share_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: External share identifier
+          title: Share Id
+        description: External share identifier
+      - name: revision_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          description: Revision to read; current when omitted
+          title: Revision Id
+        description: Revision to read; current when omitted
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptRead'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Access or share conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Recipient access was revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Notifications integration unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/shares/{share_id}/notes:
+    get:
+      tags:
+      - access
+      summary: Shared Notes
+      description: List notes through an active share bound to the caller, applying
+        configured speaker-name redaction.
+      operationId: shared_notes_api_v1_shares__share_id__notes_get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: share_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: External share identifier
+          title: Share Id
+        description: External share identifier
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Maximum number of items to return
+          default: 20
+          title: Limit
+        description: Maximum number of items to return
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 4096
+          - type: 'null'
+          description: Opaque `next_cursor` from the previous page; omit for the first
+            page
+          title: Cursor
+        description: Opaque `next_cursor` from the previous page; omit for the first
+          page
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_NoteRead_'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Access or share conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Recipient access was revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Notifications integration unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/meetings/{meeting_id}/transcript/export:
+    get:
+      tags:
+      - export
+      summary: Export Transcript
+      description: Download the current transcript of an accessible meeting as Markdown
+        or WebVTT. External share access does not authorize exports.
+      operationId: export_transcript_api_v1_meetings__meeting_id__transcript_export_get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: meeting_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
+          title: Meeting Id
+        description: Meeting identifier
+      - name: format
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/TranscriptFormat'
+          description: Attachment format
+          default: markdown
+        description: Attachment format
+      - name: timestamps
+        in: query
+        required: false
+        schema:
+          type: boolean
+          description: Include timestamps in Markdown
+          default: true
+          title: Timestamps
+        description: Include timestamps in Markdown
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Content unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/meetings/{meeting_id}/notes/export:
+    get:
+      tags:
+      - export
+      summary: Export Notes
+      description: Download the current notes of an accessible meeting as Markdown.
+        Requires existing notes; external share access does not authorize exports.
+      operationId: export_notes_api_v1_meetings__meeting_id__notes_export_get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: meeting_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Meeting identifier
+          examples:
+          - 5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9
+          title: Meeting Id
+        description: Meeting identifier
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found or not visible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Content unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /health:
     get:
       tags:
@@ -948,12 +2884,46 @@ paths:
                 $ref: '#/components/schemas/Health'
 components:
   schemas:
+    AccessInput:
+      properties:
+        access_mode:
+          $ref: '#/components/schemas/AccessMode'
+          description: Workspace or selected-member access
+        member_ids:
+          items:
+            type: string
+            format: uuid
+          type: array
+          title: Member Ids
+          description: Selected workspace members
+      additionalProperties: false
+      type: object
+      required:
+      - access_mode
+      title: AccessInput
     AccessMode:
       type: string
       enum:
       - workspace
       - restricted
       title: AccessMode
+    AccessRead:
+      properties:
+        access_mode:
+          $ref: '#/components/schemas/AccessMode'
+          description: Meeting visibility
+        member_ids:
+          items:
+            type: string
+            format: uuid
+          type: array
+          title: Member Ids
+          description: Selected members
+      type: object
+      required:
+      - access_mode
+      - member_ids
+      title: AccessRead
     Body_upload_recording_api_v1_workspaces__workspace_id__meetings_post:
       properties:
         file:
@@ -1034,6 +3004,20 @@ components:
     ErrorCode:
       type: string
       enum:
+      - NO_NOTES
+      - INTEGRATION_UNAVAILABLE
+      - TRANSCRIPT_EXISTS
+      - FOLDER_RECOVERY_CONFLICT
+      - DEFAULT_FOLDER
+      - FOLDER_EXISTS
+      - TERM_EXISTS
+      - STALE_REVISION
+      - LINK_INVALID
+      - ACCESS_REQUEST_EXISTS
+      - ALREADY_HAS_ACCESS
+      - ACCESS_REQUEST_NOT_PENDING
+      - SHARE_ALREADY_BOUND
+      - SHARE_REVOKED
       - MALFORMED_REQUEST
       - VALIDATION_ERROR
       - UNAUTHENTICATED
@@ -1044,6 +3028,8 @@ components:
       - PERSONAL_WORKSPACE
       - NOT_TRANSCRIBED
       - NOTES_IN_PROGRESS
+      - RECORDING_NOT_READY
+      - RECORDING_DELETED
       - REGENERATION_LIMIT
       - PAYLOAD_TOO_LARGE
       - UNSUPPORTED_MEDIA_TYPE
@@ -1086,6 +3072,54 @@ components:
       - error
       title: ErrorResponse
       description: The single error envelope returned for every 4xx and 5xx response.
+    FolderInput:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Name
+          description: Folder name
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      title: FolderInput
+    FolderRead:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Folder identifier
+        name:
+          type: string
+          title: Name
+          description: Folder name
+        is_default:
+          type: boolean
+          title: Is Default
+          description: Whether the folder receives unfiled meetings
+        meeting_count:
+          type: integer
+          title: Meeting Count
+          description: Number of meetings the caller can read
+      type: object
+      required:
+      - id
+      - name
+      - is_default
+      - meeting_count
+      title: FolderRead
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
     Health:
       properties:
         status:
@@ -1427,6 +3461,21 @@ components:
       - next_cursor
       - has_more
       title: PageInfo
+    Page_FolderRead_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/FolderRead'
+          type: array
+          title: Items
+          description: Items of this page, in the documented order
+        pagination:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - pagination
+      title: Page[FolderRead]
     Page_MeetingSummary_:
       properties:
         items:
@@ -1457,6 +3506,66 @@ components:
       - items
       - pagination
       title: Page[NoteRead]
+    Page_RequestRead_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RequestRead'
+          type: array
+          title: Items
+          description: Items of this page, in the documented order
+        pagination:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - pagination
+      title: Page[RequestRead]
+    Page_RevisionRead_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RevisionRead'
+          type: array
+          title: Items
+          description: Items of this page, in the documented order
+        pagination:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - pagination
+      title: Page[RevisionRead]
+    Page_ShareRead_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ShareRead'
+          type: array
+          title: Items
+          description: Items of this page, in the documented order
+        pagination:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - pagination
+      title: Page[ShareRead]
+    Page_TermRead_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/TermRead'
+          type: array
+          title: Items
+          description: Items of this page, in the documented order
+        pagination:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - pagination
+      title: Page[TermRead]
     Page_WorkspaceSummary_:
       properties:
         items:
@@ -1472,6 +3581,22 @@ components:
       - items
       - pagination
       title: Page[WorkspaceSummary]
+    PlaybackLink:
+      properties:
+        url:
+          type: string
+          title: Url
+          description: Authorized playback link, valid for five minutes.
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+          description: When the playback link expires.
+      type: object
+      required:
+      - url
+      - expires_at
+      title: PlaybackLink
     Preset:
       type: string
       enum:
@@ -1545,6 +3670,75 @@ components:
       - complete
       - partial
       title: RecordingStatus
+    RequestInput:
+      properties:
+        token:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: Token
+          description: Token from the link fragment
+      additionalProperties: false
+      type: object
+      required:
+      - token
+      title: RequestInput
+    RequestRead:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Access request identifier
+        requester_user_id:
+          type: string
+          format: uuid
+          title: Requester User Id
+          description: Requesting account
+        name:
+          type: string
+          title: Name
+          description: Requester's name, shown only to them and the share creator
+        email:
+          type: string
+          title: Email
+          description: Requester's email, shown only to them and the share creator
+        status:
+          type: string
+          title: Status
+          description: pending, approved or declined
+      type: object
+      required:
+      - id
+      - requester_user_id
+      - name
+      - email
+      - status
+      title: RequestRead
+    RevisionInput:
+      properties:
+        base_revision_id:
+          type: string
+          format: uuid
+          title: Base Revision Id
+          description: Current revision the edit is based on
+        segments:
+          items:
+            $ref: '#/components/schemas/SegmentCorrection'
+          type: array
+          title: Segments
+          description: Text corrections
+        speakers:
+          items:
+            $ref: '#/components/schemas/SpeakerRename'
+          type: array
+          title: Speakers
+          description: Speaker label changes
+      additionalProperties: false
+      type: object
+      required:
+      - base_revision_id
+      title: RevisionInput
     RevisionRead:
       properties:
         id:
@@ -1593,6 +3787,23 @@ components:
       - moderator
       - owner
       title: Role
+    SegmentCorrection:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Segment of the base revision
+        text:
+          type: string
+          title: Text
+          description: Corrected text
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - text
+      title: SegmentCorrection
     SegmentRead:
       properties:
         id:
@@ -1665,6 +3876,85 @@ components:
       - expires_at
       - user
       title: SessionRead
+    ShareCreated:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Share identifier
+        redact_speaker_names:
+          type: boolean
+          title: Redact Speaker Names
+          description: Whether speaker names are hidden
+        recipient_user_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Recipient User Id
+          description: Approved recipient
+        revoked_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Revoked At
+          description: When access ended
+        link:
+          type: string
+          title: Link
+          description: Share link with one-time token disclosure in its fragment
+      type: object
+      required:
+      - id
+      - redact_speaker_names
+      - recipient_user_id
+      - revoked_at
+      - link
+      title: ShareCreated
+    ShareInput:
+      properties:
+        redact_speaker_names:
+          type: boolean
+          title: Redact Speaker Names
+          description: Replace speaker names
+          default: false
+      additionalProperties: false
+      type: object
+      title: ShareInput
+    ShareRead:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Share identifier
+        redact_speaker_names:
+          type: boolean
+          title: Redact Speaker Names
+          description: Whether speaker names are hidden
+        recipient_user_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Recipient User Id
+          description: Approved recipient
+        revoked_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Revoked At
+          description: When access ended
+      type: object
+      required:
+      - id
+      - redact_speaker_names
+      - recipient_user_id
+      - revoked_at
+      title: ShareRead
     SignIn:
       properties:
         email:
@@ -1724,6 +4014,132 @@ components:
       - display_name
       - is_unnamed
       title: SpeakerRead
+    SpeakerRename:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Speaker of the base revision
+        display_name:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Display Name
+          description: Corrected label
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - display_name
+      title: SpeakerRename
+    TermInput:
+      properties:
+        term:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Term
+          description: Glossary term
+        preferred_form:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Preferred Form
+          description: Preferred spelling
+        description:
+          type: string
+          maxLength: 2000
+          title: Description
+          description: Explanation
+          default: ''
+        source_meeting_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Source Meeting Id
+          description: Accessible meeting the term came from
+      additionalProperties: false
+      type: object
+      required:
+      - term
+      - preferred_form
+      title: TermInput
+    TermPatch:
+      properties:
+        term:
+          anyOf:
+          - type: string
+            maxLength: 200
+            minLength: 1
+          - type: 'null'
+          title: Term
+          description: New term
+        preferred_form:
+          anyOf:
+          - type: string
+            maxLength: 200
+            minLength: 1
+          - type: 'null'
+          title: Preferred Form
+          description: New spelling
+        description:
+          anyOf:
+          - type: string
+            maxLength: 2000
+          - type: 'null'
+          title: Description
+          description: New explanation
+      additionalProperties: false
+      type: object
+      title: TermPatch
+    TermRead:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Term identifier
+        term:
+          type: string
+          title: Term
+          description: Term
+        preferred_form:
+          type: string
+          title: Preferred Form
+          description: Preferred spelling
+        description:
+          type: string
+          title: Description
+          description: Explanation
+        source_meeting_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Source Meeting Id
+          description: Source meeting, if still present
+        created_by_user_id:
+          type: string
+          format: uuid
+          title: Created By User Id
+          description: Author of the term
+      type: object
+      required:
+      - id
+      - term
+      - preferred_form
+      - description
+      - source_meeting_id
+      - created_by_user_id
+      title: TermRead
+    TranscriptFormat:
+      type: string
+      enum:
+      - markdown
+      - vtt
+      title: TranscriptFormat
     TranscriptRead:
       properties:
         meeting_id:
@@ -1820,6 +4236,32 @@ components:
       - is_administrator
       - created_at
       title: UserRead
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
     WorkspaceCreate:
       properties:
         name:
@@ -1981,5 +4423,9 @@ tags:
   description: Meetings, recording upload and transcripts
 - name: notes
   description: Generated notes and their regeneration
+- name: access
+  description: Restrictions and external shares
+- name: export
+  description: Authorized transcript and notes downloads
 - name: meta
   description: Operational endpoints

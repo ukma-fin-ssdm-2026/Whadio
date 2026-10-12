@@ -144,6 +144,19 @@ The model covers the data required for these key project functions:
 - `LLM_PROVIDER_CONFIG.api_key_encrypted` is required unless `provider = Whadio`.
 - `PROCESSING_JOB.created_at` stores when the job was queued, and `attempts` stores retry count for monitoring and retry limits.
 - Segment time intervals must satisfy `start_time_seconds < end_time_seconds`.
+- Implementation-only `FOLDER_RECOVERY` and `FOLDER_RECOVERY_MEETING` retain deleted folder
+  metadata and references to meetings moved to the default folder for NFR-005. Restoration is
+  Moderator/Owner-only and atomic; name conflicts or meetings subsequently moved elsewhere cause
+  refusal without overwriting newer organization. Deleted meetings and workspaces cascade away
+  their recovery references. Recovery data grants no content access.
+- `TRANSCRIPT.source_job_id` records the initial processing job, without an upward foreign key.
+  Replaying that job preserves all revisions; a different job cannot replace the original.
+- `MEETING.failure_reason` contains only a fixed code: `transcription_failed`, `notes_failed`,
+  `provider_unavailable`, `provider_rejected` or `processing_timeout`. Processing supplies the
+  state/code decision through Meetings; leaving the failed state clears the code. Raw errors
+  and provider responses are never stored in this projection.
+- `MEETING.regeneration_count` is a persisted counter supplied by Processing; its limits,
+  reservation and increment decisions are Processing responsibilities.
 - Recording files are deleted 90 days after the meeting, at the date stored in `recording_delete_after`; accessible members are warned 7 days beforehand. Transcripts and notes remain after `recording_deleted_at` is set.
 - LLM provider API keys and MCP keys must never be stored in plaintext.
 - `AUDIT_EVENT` is append-only: the table is owned by the migration role, and the application's database role holds only `INSERT` and `SELECT` on it.

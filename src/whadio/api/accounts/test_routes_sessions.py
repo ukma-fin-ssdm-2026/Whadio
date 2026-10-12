@@ -1,109 +1,159 @@
+from uuid import uuid4
+
 import pytest
-from fastapi.testclient import TestClient
-from httpx2 import Response
+from httpx import Response
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from .auth import SESSION_COOKIE
-from .fixtures import DEMO_EMAIL, DEMO_PASSWORD, TEAM_WORKSPACE_ID
-from .schemas import SessionKind, SessionRead
+from conftest import AsyncDatabase
 
-SESSIONS = "/api/v1/sessions"
-SIGN_OUT = "/api/v1/sessions/current"
-# Any endpoint behind the browser session will do.
-WORKSPACES = "/api/v1/workspaces"
+from ..core.errors import ErrorResponse
+from .schemas import SessionRead
 
+pytestmark = pytest.mark.slow
 
-def sign_in(client: TestClient, **overrides: str) -> Response:
-    return client.post(SESSIONS, json={"email": DEMO_EMAIL, "password": DEMO_PASSWORD, **overrides})
+PASSWORD = uuid4().hex
 
 
-def test_browser_sign_in_sets_cookie_that_authenticates(client: TestClient) -> None:
-    response = sign_in(client)
+def test_browser_sign_in_sets_an_http_only_session_cookie(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, str]:
+        user = await AsyncDatabase.add_account(session, PASSWORD)
+        async with AsyncDatabase.api_client(session) as client:
+            # Act
+            response = await client.post(
+                "/api/v1/sessions", json={"email": user.email, "password": PASSWORD}
+            )
+            return response.status_code, "".join(response.headers.get_list("set-cookie"))
 
-    assert response.status_code == 201
-    body = SessionRead.model_validate_json(response.text)
-    assert body.kind is SessionKind.BROWSER
-    assert body.user.email == DEMO_EMAIL
-    assert body.token is None
-    assert client.cookies.get(SESSION_COOKIE) is not None
-    assert client.get(WORKSPACES).status_code == 200
-
-
-def test_email_is_matched_case_insensitively(client: TestClient) -> None:
-    assert sign_in(client, email=DEMO_EMAIL.upper()).status_code == 201
-
-
-@pytest.mark.parametrize(
-    "credentials",
-    [{"password": DEMO_PASSWORD + "-wrong"}, {"email": "nobody@whadio.dev"}],
-    ids=["wrong password", "unknown email"],
-)
-def test_bad_credentials_get_the_same_401(client: TestClient, credentials: dict[str, str]) -> None:
-    response = sign_in(client, **credentials)
-
-    assert response.status_code == 401
-    assert response.json()["error"]["code"] == "INVALID_CREDENTIALS"
-    assert SESSION_COOKIE not in client.cookies
+    status, cookie = async_database.run(scenario)
+    # Assert
+    assert (status, cookie.startswith("whadio_session="), "HttpOnly" in cookie) == (
+        201,
+        True,
+        True,
+    )
 
 
-def test_each_sign_in_gets_a_new_token(client: TestClient) -> None:
-    sign_in(client)
-    first = client.cookies.get(SESSION_COOKIE)
-    client.cookies.clear()
-    sign_in(client)
+def test_session_cookie_signs_the_browser_in(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> int:
+        user = await AsyncDatabase.add_account(session, PASSWORD)
+        async with AsyncDatabase.api_client(session) as client:
+            await client.post("/api/v1/sessions", json={"email": user.email, "password": PASSWORD})
+            # Act
+            response = await client.get("/api/v1/workspaces")
+            return response.status_code
 
-    assert client.cookies.get(SESSION_COOKIE) != first
-
-
-def test_no_or_unknown_cookie_is_401(client: TestClient) -> None:
-    assert client.get(WORKSPACES).status_code == 401
-
-    client.cookies.set(SESSION_COOKIE, "not-a-real-token")
-    response = client.get(WORKSPACES)
-
-    assert response.status_code == 401
-    assert response.json()["error"]["code"] == "UNAUTHENTICATED"
+    status = async_database.run(scenario)
+    # Assert
+    assert status == 200
 
 
-def test_sign_out_ends_the_session(client: TestClient) -> None:
-    sign_in(client)
-    token = client.cookies[SESSION_COOKIE]
+def test_wrong_password_is_refused(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, str]:
+        user = await AsyncDatabase.add_account(session, PASSWORD)
+        async with AsyncDatabase.api_client(session) as client:
+            # Act
+            response = await client.post(
+                "/api/v1/sessions", json={"email": user.email, "password": uuid4().hex}
+            )
+            return response.status_code, error_code(response)
 
-    assert client.delete(SIGN_OUT).status_code == 204
-
-    # Replaying the old cookie must not work: the session row is gone, not just the cookie.
-    client.cookies.set(SESSION_COOKIE, token)
-    assert client.get(WORKSPACES).status_code == 401
-
-
-def test_sign_out_without_session_is_204(client: TestClient) -> None:
-    assert client.delete(SIGN_OUT).status_code == 204
-
-
-def test_extension_sign_in_returns_token_and_no_cookie(client: TestClient) -> None:
-    response = sign_in(client, kind="extension")
-
-    assert response.status_code == 201
-    assert response.json()["token"]
-    assert SESSION_COOKIE not in client.cookies
+    found = async_database.run(scenario)
+    # Assert
+    assert found == (401, "INVALID_CREDENTIALS")
 
 
-def test_extension_token_is_not_a_browser_session(client: TestClient) -> None:
-    token = SessionRead.model_validate_json(sign_in(client, kind="extension").text).token
-    assert token is not None
+def test_extension_sign_in_returns_a_token_and_no_cookie(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[bool, bool]:
+        user = await AsyncDatabase.add_account(session, PASSWORD)
+        async with AsyncDatabase.api_client(session) as client:
+            # Act
+            response = await client.post(
+                "/api/v1/sessions",
+                json={"email": user.email, "password": PASSWORD, "kind": "extension"},
+            )
+            token = SessionRead.model_validate_json(response.content).token
+            return bool(token), "set-cookie" in response.headers
 
-    # Browser-only endpoints take the cookie; an extension token passed as one is refused.
-    client.cookies.set(SESSION_COOKIE, token)
-    assert client.get(WORKSPACES).status_code == 401
+    found = async_database.run(scenario)
+    # Assert
+    assert found == (True, False)
 
 
-def test_sign_out_with_bearer_ends_the_extension_session(client: TestClient) -> None:
-    token = SessionRead.model_validate_json(sign_in(client, kind="extension").text).token
-    assert token is not None
-    headers = {"Authorization": f"Bearer {token}"}
-    # Upload accepts the bearer token. Without a file it fails validation (422) once signed in,
-    # and authentication (401) once the session is gone.
-    upload = f"{WORKSPACES}/{TEAM_WORKSPACE_ID}/meetings"
+def test_extension_token_does_not_open_the_web_app(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> int:
+        user = await AsyncDatabase.add_account(session, PASSWORD)
+        async with AsyncDatabase.api_client(session) as client:
+            signed = await client.post(
+                "/api/v1/sessions",
+                json={"email": user.email, "password": PASSWORD, "kind": "extension"},
+            )
+            token = SessionRead.model_validate_json(signed.content).token
+            # Act
+            response = await client.get(
+                "/api/v1/workspaces", headers={"Authorization": f"Bearer {token}"}
+            )
+            return response.status_code
 
-    assert client.post(upload, headers=headers).status_code == 422
-    assert client.delete(SIGN_OUT, headers=headers).status_code == 204
-    assert client.post(upload, headers=headers).status_code == 401
+    status = async_database.run(scenario)
+    # Assert
+    assert status == 401
+
+
+def test_signed_out_cookie_no_longer_works(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> int:
+        user = await AsyncDatabase.add_account(session, PASSWORD)
+        async with AsyncDatabase.api_client(session) as client:
+            signed = await client.post(
+                "/api/v1/sessions", json={"email": user.email, "password": PASSWORD}
+            )
+            cookie = signed.cookies["whadio_session"]
+            await client.delete("/api/v1/sessions/current")
+            # Act
+            response = await client.get(
+                "/api/v1/workspaces", headers={"Cookie": f"whadio_session={cookie}"}
+            )
+            return response.status_code
+
+    status = async_database.run(scenario)
+    # Assert
+    assert status == 401
+
+
+def test_sign_out_without_a_session_succeeds(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> int:
+        async with AsyncDatabase.api_client(session) as client:
+            # Act
+            response = await client.delete("/api/v1/sessions/current")
+            return response.status_code
+
+    status = async_database.run(scenario)
+    # Assert
+    assert status == 204
+
+
+def test_sign_in_with_an_invalid_address_is_a_validation_error(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, str]:
+        async with AsyncDatabase.api_client(session) as client:
+            # Act
+            response = await client.post(
+                "/api/v1/sessions", json={"email": "not an address", "password": PASSWORD}
+            )
+            return response.status_code, error_code(response)
+
+    found = async_database.run(scenario)
+    # Assert
+    assert found == (422, "VALIDATION_ERROR")
+
+
+def error_code(response: Response) -> str:
+    return ErrorResponse.model_validate_json(response.content).error.code

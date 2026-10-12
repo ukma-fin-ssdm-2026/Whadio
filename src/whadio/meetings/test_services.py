@@ -3,6 +3,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
@@ -13,7 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from conftest import AsyncDatabase
 
 from ..access_policy.models import MeetingAccessGrant
-from ..accounts.enums import LlmProvider, NotesTemplate, WorkspaceRole
+from ..access_policy.repositories import AccessRepository
+from ..access_policy.services import AccessPolicy
+from ..accounts.enums import NotesTemplate, WorkspaceRole
 from ..accounts.models import User, Workspace, WorkspaceMembership
 from ..accounts.repositories import MembershipRepository
 from ..accounts.services import WorkspaceMembershipService
@@ -21,10 +24,11 @@ from ..audit.enums import AuditAction
 from ..audit.models import AuditEvent
 from ..audit.services import AuditWriter, MeetingMoved
 from ..shared.database import DatabaseSettings
+from .contracts import InitialSegment, InitialSpeaker, InitialTranscript, ProcessingUpdate
 from .enums import AccessMode, MeetingSource, ProcessingState, RecordingStatus
 from .models import Folder, Meeting
-from .repositories import FolderRepository, GeneratedNotes, MeetingPipelineRepository
-from .services import FolderService, MeetingPipelineService
+from .repositories import FolderRepository, MeetingRepository
+from .services import FolderService, MeetingService
 
 
 @asynccontextmanager
@@ -242,97 +246,87 @@ def test_audit_failure_rolls_back_folder_moves_and_previous_events(
     assert observed == expected
 
 
-# --- The meeting pipeline ---
+# --- For Processing ---
 
 
-def generated_notes(proposed_name: str) -> GeneratedNotes:
-    return GeneratedNotes(
-        template=NotesTemplate.SUMMARY,
-        provider=LlmProvider.WHADIO,
-        model_name="qwen",
-        content="## Summary",
-        proposed_name=proposed_name,
-        context=(),
+def pipeline_service(session: AsyncSession) -> MeetingService:
+    memberships = WorkspaceMembershipService(MembershipRepository(session))
+    return MeetingService(
+        MeetingRepository(session),
+        AccessPolicy(AccessRepository(session), memberships),
+        AuditWriter(session),
     )
 
 
-async def saved_name(session: AsyncSession, meeting_id: UUID, proposed_name: str) -> str | None:
-    pipeline = MeetingPipelineService(MeetingPipelineRepository(session))
-    meeting = await pipeline.lock(meeting_id)
-    if meeting is None:
-        return None
-    await pipeline.save_notes(meeting, generated_notes(proposed_name))
-    session.expire_all()
-    renamed = await pipeline.meeting(meeting_id)
-    return None if renamed is None else renamed.name
+async def transcribed(session: AsyncSession, meeting_id: UUID) -> None:
+    await pipeline_service(session).save_initial_transcript(
+        meeting_id,
+        InitialTranscript(
+            job_id=uuid4(),
+            language="uk",
+            model_name="parakeet",
+            speakers=(InitialSpeaker("Speaker 1", "Speaker 1"),),
+            segments=(InitialSegment("Speaker 1", Decimal(0), Decimal(1), "Привіт"),),
+        ),
+        datetime.now(UTC),
+    )
 
 
 @pytest.mark.slow
-def test_context_leaves_restricted_meetings_out(async_database: AsyncDatabase) -> None:
+def test_notes_context_holds_only_processed_open_meetings_of_the_folder(
+    async_database: AsyncDatabase,
+) -> None:
     # Arrange
     async def scenario(session: AsyncSession) -> tuple[list[UUID], UUID]:
-        place = await async_database.add_workspace(session)
-        meeting_id = await async_database.add_meeting(session, place)
-        open_one = await async_database.add_meeting(session, place, state=ProcessingState.PROCESSED)
-        await async_database.add_meeting(
+        place = await AsyncDatabase.add_workspace(session)
+        meeting = await AsyncDatabase.add_meeting(session, place, state=ProcessingState.PROCESSED)
+        context = await AsyncDatabase.add_meeting(session, place, state=ProcessingState.PROCESSED)
+        restricted = await AsyncDatabase.add_meeting(
             session, place, state=ProcessingState.PROCESSED, access_mode=AccessMode.RESTRICTED
         )
-        pipeline = MeetingPipelineService(MeetingPipelineRepository(session))
-        meeting = await pipeline.meeting(meeting_id)
-        if meeting is None:
-            return [], open_one
-        summaries = await pipeline.context_summaries(meeting, 20)
-        return [summary.meeting_id for summary in summaries], open_one
+        queued = await AsyncDatabase.add_meeting(session, place)
+        for transcribed_id in (meeting, context, restricted, queued):
+            await transcribed(session, transcribed_id)
+        service = pipeline_service(session)
+        target = await service.pipeline_meeting(meeting)
+        assert target is not None
+        # Act
+        found = await service.notes_context(target.meeting, 5)
+        return [other.meeting.meeting_id for other in found], context
 
-    # Act
-    context, open_one = async_database.run(scenario)
+    found, context = async_database.run(scenario)
     # Assert
-    assert context == [open_one]
+    assert found == [context]
 
 
 @pytest.mark.slow
-def test_context_leaves_the_meeting_itself_out(async_database: AsyncDatabase) -> None:
+def test_pipeline_meeting_of_a_deleted_meeting_is_none(async_database: AsyncDatabase) -> None:
     # Arrange
-    async def scenario(session: AsyncSession) -> list[UUID]:
-        place = await async_database.add_workspace(session)
-        meeting_id = await async_database.add_meeting(
-            session, place, state=ProcessingState.PROCESSED
+    async def scenario(session: AsyncSession) -> bool:
+        # Act
+        found = await pipeline_service(session).pipeline_meeting(uuid4())
+        return found is None
+
+    missing = async_database.run(scenario)
+    # Assert
+    assert missing
+
+
+@pytest.mark.slow
+def test_processing_update_records_the_duration(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> int | None:
+        meeting_id = await AsyncDatabase.add_meeting(
+            session, await AsyncDatabase.add_workspace(session)
         )
-        pipeline = MeetingPipelineService(MeetingPipelineRepository(session))
-        meeting = await pipeline.meeting(meeting_id)
-        if meeting is None:
-            return [meeting_id]
-        return [summary.meeting_id for summary in await pipeline.context_summaries(meeting, 20)]
+        # Act
+        await pipeline_service(session).save_processing_state(
+            meeting_id, ProcessingUpdate(ProcessingState.PROCESSING, duration_seconds=62)
+        )
+        return await session.scalar(
+            select(Meeting.duration_seconds).where(Meeting.meeting_id == meeting_id)
+        )
 
-    # Act
-    context = async_database.run(scenario)
+    duration = async_database.run(scenario)
     # Assert
-    assert context == []
-
-
-@pytest.mark.slow
-def test_notes_replace_a_generated_name(async_database: AsyncDatabase) -> None:
-    # Arrange
-    async def scenario(session: AsyncSession) -> str | None:
-        place = await async_database.add_workspace(session)
-        meeting_id = await async_database.add_meeting(session, place, name_is_generated=True)
-        return await saved_name(session, meeting_id, "Sprint planning")
-
-    # Act
-    name = async_database.run(scenario)
-    # Assert
-    assert name == "Sprint planning"
-
-
-@pytest.mark.slow
-def test_notes_keep_a_name_a_member_gave(async_database: AsyncDatabase) -> None:
-    # Arrange
-    async def scenario(session: AsyncSession) -> str | None:
-        place = await async_database.add_workspace(session)
-        meeting_id = await async_database.add_meeting(session, place, name_is_generated=False)
-        return await saved_name(session, meeting_id, "Sprint planning")
-
-    # Act
-    name = async_database.run(scenario)
-    # Assert
-    assert name == "Planning"
+    assert duration == 62

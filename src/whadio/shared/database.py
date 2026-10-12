@@ -1,7 +1,7 @@
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from enum import StrEnum
-from typing import ClassVar
+from typing import ClassVar, Protocol
 
 import psycopg
 from pydantic import Field, SecretStr
@@ -79,6 +79,10 @@ class MigrationSettings(ConnectionSettings):
             port=self.port,
             database=self.name,
         )
+
+
+class IUseCaseTransactions(Protocol):
+    def transaction(self) -> AbstractAsyncContextManager[AsyncSession]: ...
 
 
 class Database:

@@ -1,22 +1,11 @@
-import hashlib
-import hmac
-import secrets
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Response
-from sqlalchemy import delete, select
 
-from ..core.db import Db
-from ..core.errors import DOC_INVALID, DOC_MALFORMED, ApiError, ErrorCode, error_responses
-from .auth import (
-    BROWSER_SESSION_TTL,
-    EXTENSION_TOKEN_TTL,
-    SESSION_COOKIE,
-    Bearer,
-    Cookie,
-    clear_session_cookie,
-)
-from .models import User, UserSession
+from ...accounts import enums
+from ..composition import SignIns
+from ..core.errors import DOC_INVALID, DOC_MALFORMED, ErrorCode, error_responses
+from .auth import Bearer, Cookie, clear_session_cookie, set_session_cookie, user_read
 from .schemas import SessionKind, SessionRead, SignIn
 
 router = APIRouter(tags=["accounts"])
@@ -43,42 +32,19 @@ router = APIRouter(tags=["accounts"])
         }
     ),
 )
-async def sign_in(payload: SignIn, response: Response, db: Db) -> SessionRead:
-    user = await db.scalar(select(User).where(User.email == payload.email.lower()))
-    if user is None or not hmac.compare_digest(
-        user.password_hash,
-        # The lowercased email is the salt, so equal passwords still hash differently per user.
-        hashlib.sha256((payload.email.lower() + payload.password).encode()).hexdigest(),
-    ):
-        raise ApiError(401, ErrorCode.INVALID_CREDENTIALS, "Wrong email address or password")
-
-    now = datetime.now(UTC)
-    ttl = EXTENSION_TOKEN_TTL if payload.kind is SessionKind.EXTENSION else BROWSER_SESSION_TTL
-    token = secrets.token_urlsafe(32)
-    session = UserSession(
-        user_id=user.user_id,
-        kind=payload.kind,
-        token_hash=hashlib.sha256(token.encode()).hexdigest(),
-        created_at=now,
-        expires_at=now + ttl,
+async def sign_in(payload: SignIn, response: Response, sign_ins: SignIns) -> SessionRead:
+    signed = await sign_ins.sign_in(
+        payload.email, payload.password, enums.SessionKind(payload.kind.value), datetime.now(UTC)
     )
-    db.add(session)
-    await db.commit()
-
     if payload.kind is SessionKind.EXTENSION:
         return SessionRead(
-            kind=payload.kind, expires_at=session.expires_at, user=user.to_read(), token=token
+            kind=payload.kind,
+            expires_at=signed.expires_at,
+            user=user_read(signed.user),
+            token=signed.token,
         )
-    response.set_cookie(
-        SESSION_COOKIE,
-        token,
-        max_age=int(BROWSER_SESSION_TTL.total_seconds()),
-        httponly=True,
-        secure=True,
-        samesite="strict",
-        path="/",
-    )
-    return SessionRead(kind=payload.kind, expires_at=session.expires_at, user=user.to_read())
+    set_session_cookie(response, signed.token, signed.expires_at)
+    return SessionRead(kind=payload.kind, expires_at=signed.expires_at, user=user_read(signed.user))
 
 
 @router.delete(
@@ -86,15 +52,17 @@ async def sign_in(payload: SignIn, response: Response, db: Db) -> SessionRead:
     status_code=204,
     summary="Sign out",
     description=(
-        "Ends the session presented by the cookie or the extension's bearer token and clears "
-        "the cookie. Always `204`, also without a session: signing out is idempotent."
+        "Ends the sessions presented by the cookie and by the extension's bearer token, and "
+        "clears the cookie. Always `204`, also without a session: signing out is idempotent."
     ),
     response_description="Signed out",
 )
-async def sign_out(response: Response, db: Db, cookie: Cookie, bearer: Bearer) -> None:
-    token = bearer.credentials if bearer is not None else cookie
-    if token is not None:
-        token_hash = hashlib.sha256(token.encode()).hexdigest()
-        await db.execute(delete(UserSession).where(UserSession.token_hash == token_hash))
-        await db.commit()
+async def sign_out(response: Response, cookie: Cookie, bearer: Bearer, sign_ins: SignIns) -> None:
+    await sign_ins.sign_out(
+        [
+            token
+            for token in (cookie, None if bearer is None else bearer.credentials)
+            if token is not None
+        ]
+    )
     clear_session_cookie(response)

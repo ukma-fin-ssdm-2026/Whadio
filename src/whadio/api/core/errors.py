@@ -10,10 +10,26 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from ...shared.errors import Failure, UseCaseError
+
 REQUEST_ID_HEADER = "X-Request-ID"
 
 
 class ErrorCode(StrEnum):
+    NO_NOTES = "NO_NOTES"
+    INTEGRATION_UNAVAILABLE = "INTEGRATION_UNAVAILABLE"
+    TRANSCRIPT_EXISTS = "TRANSCRIPT_EXISTS"
+    FOLDER_RECOVERY_CONFLICT = "FOLDER_RECOVERY_CONFLICT"
+    DEFAULT_FOLDER = "DEFAULT_FOLDER"
+    FOLDER_EXISTS = "FOLDER_EXISTS"
+    TERM_EXISTS = "TERM_EXISTS"
+    STALE_REVISION = "STALE_REVISION"
+    LINK_INVALID = "LINK_INVALID"
+    ACCESS_REQUEST_EXISTS = "ACCESS_REQUEST_EXISTS"
+    ALREADY_HAS_ACCESS = "ALREADY_HAS_ACCESS"
+    ACCESS_REQUEST_NOT_PENDING = "ACCESS_REQUEST_NOT_PENDING"
+    SHARE_ALREADY_BOUND = "SHARE_ALREADY_BOUND"
+    SHARE_REVOKED = "SHARE_REVOKED"
     MALFORMED_REQUEST = "MALFORMED_REQUEST"
     VALIDATION_ERROR = "VALIDATION_ERROR"
     UNAUTHENTICATED = "UNAUTHENTICATED"
@@ -24,6 +40,8 @@ class ErrorCode(StrEnum):
     PERSONAL_WORKSPACE = "PERSONAL_WORKSPACE"
     NOT_TRANSCRIBED = "NOT_TRANSCRIBED"
     NOTES_IN_PROGRESS = "NOTES_IN_PROGRESS"
+    RECORDING_NOT_READY = "RECORDING_NOT_READY"
+    RECORDING_DELETED = "RECORDING_DELETED"
     REGENERATION_LIMIT = "REGENERATION_LIMIT"
     PAYLOAD_TOO_LARGE = "PAYLOAD_TOO_LARGE"
     UNSUPPORTED_MEDIA_TYPE = "UNSUPPORTED_MEDIA_TYPE"
@@ -106,11 +124,18 @@ _LOCATION = TypeAdapter(tuple[str | int, ...])
 _HTTP_STATUS_CODES: Final[Mapping[int, ErrorCode]] = {
     404: ErrorCode.NOT_FOUND,
     405: ErrorCode.METHOD_NOT_ALLOWED,
+    413: ErrorCode.PAYLOAD_TOO_LARGE,
 }
 
 
 def register_error_handlers(app: FastAPI) -> None:
-    for exception_type in (ApiError, RequestValidationError, StarletteHTTPException, Exception):
+    for exception_type in (
+        ApiError,
+        UseCaseError,
+        RequestValidationError,
+        StarletteHTTPException,
+        Exception,
+    ):
         app.add_exception_handler(exception_type, _handle)
 
 
@@ -132,6 +157,18 @@ async def _handle(_request: Request, exc: Exception) -> JSONResponse:
 
 def _describe(exc: Exception) -> tuple[int, ErrorCode, str, list[ErrorDetail]]:
     match exc:
+        case UseCaseError():
+            statuses = {
+                Failure.INVALID_CREDENTIALS: 401,
+                Failure.NOT_FOUND: 404,
+                Failure.LINK_INVALID: 404,
+                Failure.INSUFFICIENT_ROLE: 403,
+                Failure.VALIDATION_ERROR: 422,
+                Failure.INTEGRATION_UNAVAILABLE: 503,
+                Failure.RECORDING_DELETED: 410,
+            }
+            status = statuses.get(exc.code, 409)
+            return status, ErrorCode(exc.code.value), exc.code.value, []
         case ApiError():
             return exc.status_code, exc.code, exc.message, exc.details
         case RequestValidationError():

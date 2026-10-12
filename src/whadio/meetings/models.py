@@ -20,7 +20,14 @@ from sqlalchemy.orm import Mapped, MappedColumn
 
 from ..accounts.enums import LlmProvider, NotesTemplate
 from ..shared.database import Base, enum_type
-from .enums import AccessMode, MeetingSource, ProcessingState, RecordingStatus, RevisionType
+from .enums import (
+    AccessMode,
+    MeetingSource,
+    ProcessingFailure,
+    ProcessingState,
+    RecordingStatus,
+    RevisionType,
+)
 
 
 class Folder(Base):
@@ -63,6 +70,9 @@ class Meeting(Base):
     processing_state: Mapped[ProcessingState] = MappedColumn[ProcessingState](
         enum_type(ProcessingState, "processing_state"),
     )
+    failure_reason: Mapped[ProcessingFailure | None] = MappedColumn[ProcessingFailure | None](
+        enum_type(ProcessingFailure, "processing_failure"),
+    )
     storage_path: Mapped[str | None] = MappedColumn[str | None](Text)
     duration_seconds: Mapped[int | None] = MappedColumn[int | None]()
     recorded_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
@@ -79,12 +89,17 @@ class Meeting(Base):
     recording_deleted_at: Mapped[datetime | None] = MappedColumn[datetime | None](
         DateTime(timezone=True)
     )
+    recording_warning_sent_at: Mapped[datetime | None] = MappedColumn[datetime | None](
+        DateTime(timezone=True)
+    )
     access_mode: Mapped[AccessMode] = MappedColumn[AccessMode](
         enum_type(AccessMode, "access_mode"),
     )
+    regeneration_count: Mapped[int] = MappedColumn[int](server_default=text("0"))
 
     __table_args__: tuple[Constraint | Index, ...] = (
         CheckConstraint("duration_seconds IS NULL OR duration_seconds >= 0", name="duration"),
+        CheckConstraint("regeneration_count >= 0", name="regeneration_count"),
         Index("ix_meeting_folder_recorded", "folder_id", "recorded_at", "meeting_id"),
         Index("ix_meeting_created_at", "created_at", "meeting_id"),
         Index(
@@ -102,6 +117,7 @@ class Transcript(Base):
     meeting_id: Mapped[UUID] = MappedColumn[UUID](
         ForeignKey("meeting.meeting_id", ondelete="CASCADE")
     )
+    source_job_id: Mapped[UUID | None] = MappedColumn[UUID | None](unique=True)
     language: Mapped[str] = MappedColumn[str](Text)
     model_name: Mapped[str] = MappedColumn[str](Text)
     created_at: Mapped[datetime] = MappedColumn[datetime](
@@ -212,7 +228,9 @@ class GlossaryTerm(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    __table_args__: tuple[Constraint | Index, ...] = (UniqueConstraint("workspace_id", "term"),)
+    __table_args__: tuple[Constraint | Index, ...] = (
+        Index("uq_glossary_workspace_term", "workspace_id", func.lower(term), unique=True),
+    )
 
 
 class Note(Base):
@@ -255,4 +273,37 @@ class NoteContextMeeting(Base):
     __table_args__: tuple[Constraint | Index, ...] = (
         UniqueConstraint("note_id", "context_meeting_id"),
         Index("ix_note_context_meeting_context_meeting_id", "context_meeting_id"),
+    )
+
+
+class RecordingDeletion(Base):
+    __tablename__: str = "recording_deletion"
+
+    deletion_id: Mapped[UUID] = MappedColumn[UUID](primary_key=True, default=uuid4)
+    storage_key: Mapped[str] = MappedColumn[str](Text, unique=True)
+    created_at: Mapped[datetime] = MappedColumn[datetime](
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class FolderRecovery(Base):
+    __tablename__: str = "folder_recovery"
+
+    folder_id: Mapped[UUID] = MappedColumn[UUID](primary_key=True)
+    workspace_id: Mapped[UUID] = MappedColumn[UUID](
+        ForeignKey("workspace.workspace_id", ondelete="CASCADE")
+    )
+    name: Mapped[str] = MappedColumn[str](Text)
+    created_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+    deleted_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
+
+
+class FolderRecoveryMeeting(Base):
+    __tablename__: str = "folder_recovery_meeting"
+
+    folder_id: Mapped[UUID] = MappedColumn[UUID](
+        ForeignKey("folder_recovery.folder_id", ondelete="CASCADE"), primary_key=True
+    )
+    meeting_id: Mapped[UUID] = MappedColumn[UUID](
+        ForeignKey("meeting.meeting_id", ondelete="CASCADE"), primary_key=True
     )

@@ -1,13 +1,15 @@
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Collection
+from collections.abc import AsyncGenerator, Awaitable, Callable, Collection
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import ClassVar, Final, Protocol
 from uuid import UUID
 
 from aio_pika.abc import AbstractChannel, AbstractIncomingMessage
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..contracts.queues import (
     ALL_QUEUES,
@@ -20,7 +22,8 @@ from ..contracts.queues import (
 from ..contracts.results import ProcessingResult, parse_result
 from ..contracts.transcription import TranscriptionRequested
 from ..shared.broker import BrokerSettings, MessagePublisher, connect, declare_queue
-from .services import IJobPublisher, JobRequest
+from ..shared.database import IUseCaseTransactions
+from .services import IJobPublisher, JobRequest, ProcessingService
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +125,35 @@ async def handle_dead_letter(
     logger.warning("A message of job %s was dead-lettered; failing the job", job_id)
     await fail(job_id)
     await delivery.ack()
+
+
+class TransactionalResultHandler:
+    """`IResultHandler` that runs each call in a transaction of its own."""
+
+    def __init__(
+        self,
+        database: IUseCaseTransactions,
+        processing: Callable[[AsyncSession], ProcessingService],
+    ) -> None:
+        self._database: IUseCaseTransactions = database
+        self._processing: Callable[[AsyncSession], ProcessingService] = processing
+
+    async def handle(self, result: ProcessingResult) -> list[JobRequest]:
+        async with self._database.transaction() as session:
+            return await self._processing(session).handle(result)
+
+    async def dead_lettered(self, job_id: UUID) -> None:
+        async with self._database.transaction() as session:
+            await self._processing(session).dead_lettered(job_id, datetime.now(UTC))
+
+
+@asynccontextmanager
+async def job_publisher(broker: BrokerSettings) -> AsyncGenerator[AmqpJobPublisher]:
+    async with await connect(broker, name="web-publisher") as connection:
+        channel = await connection.channel()
+        for queue in ALL_QUEUES:
+            await declare_queue(channel, queue.name, queue.arguments)
+        yield AmqpJobPublisher(MessagePublisher(channel, broker.user))
 
 
 @dataclass(frozen=True, slots=True)

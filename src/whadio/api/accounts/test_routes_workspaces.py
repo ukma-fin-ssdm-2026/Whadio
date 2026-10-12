@@ -1,181 +1,238 @@
+from uuid import UUID, uuid4
+
 import pytest
-from anyio.from_thread import BlockingPortal
-from fastapi.testclient import TestClient
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from httpx import AsyncClient, Response
+from sqlalchemy import func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..audit.models import AuditAction, AuditEvent
-from ..conftest import BOB_EMAIL, BOB_PASSWORD
-from ..core.schemas import Page
-from .fixtures import (
-    ALICE,
-    DEMO_EMAIL,
-    DEMO_PASSWORD,
-    PERSONAL_WORKSPACE_ID,
-    TEAM_WORKSPACE_ID,
-)
-from .schemas import Preset, Role, WorkspaceRead, WorkspaceSummary
+from conftest import AsyncDatabase
 
-WORKSPACES = "/api/v1/workspaces"
-TEAM = f"{WORKSPACES}/{TEAM_WORKSPACE_ID}"
-PERSONAL = f"{WORKSPACES}/{PERSONAL_WORKSPACE_ID}"
+from ...accounts.enums import WorkspaceRole
+from ...accounts.models import Workspace, WorkspaceMembership
+from ...meetings.models import Folder, RecordingDeletion
+from ..core.errors import ErrorResponse
+from .schemas import WorkspaceRead
+
+pytestmark = pytest.mark.slow
+
+PASSWORD = uuid4().hex
 
 
-def sign_in_as_alice(client: TestClient) -> None:
-    client.post("/api/v1/sessions", json={"email": DEMO_EMAIL, "password": DEMO_PASSWORD})
+async def signed_in(client: AsyncClient, session: AsyncSession) -> UUID:
+    user = await AsyncDatabase.add_account(session, PASSWORD)
+    await client.post("/api/v1/sessions", json={"email": user.email, "password": PASSWORD})
+    return user.user_id
 
 
-def sign_in_as_bob(client: TestClient) -> None:
-    client.post("/api/v1/sessions", json={"email": BOB_EMAIL, "password": BOB_PASSWORD})
+async def created(client: AsyncClient, name: str = "Product team") -> WorkspaceRead:
+    response = await client.post("/api/v1/workspaces", json={"name": name})
+    return WorkspaceRead.model_validate_json(response.content)
 
 
-def test_list_shows_my_workspaces_oldest_first(client: TestClient) -> None:
-    sign_in_as_alice(client)
-
-    items = Page[WorkspaceSummary].model_validate_json(client.get(WORKSPACES).text).items
-
-    assert [item.id for item in items] == [PERSONAL_WORKSPACE_ID, TEAM_WORKSPACE_ID]
-    assert items[0].is_personal is True
-    assert items[0].my_role is Role.OWNER
+def error_code(response: Response) -> str:
+    return ErrorResponse.model_validate_json(response.content).error.code
 
 
-def test_list_needs_sign_in(client: TestClient) -> None:
-    assert client.get(WORKSPACES).status_code == 401
+def test_created_workspace_is_owned_by_its_creator(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, str, str]:
+        async with AsyncDatabase.api_client(session) as client:
+            await signed_in(client, session)
+            # Act
+            response = await client.post("/api/v1/workspaces", json={"name": "Product team"})
+            workspace = WorkspaceRead.model_validate_json(response.content)
+            return response.status_code, workspace.my_role, response.headers["Location"]
 
-
-def test_create_makes_me_owner_and_is_stored(client: TestClient) -> None:
-    sign_in_as_alice(client)
-
-    response = client.post(WORKSPACES, json={"name": "Research"})
-
-    assert response.status_code == 201
-    created = WorkspaceRead.model_validate_json(response.text)
-    assert created.name == "Research"
-    assert created.my_role is Role.OWNER
-    assert created.member_count == 1
-    assert created.is_personal is False
-    assert created.default_preset is Preset.SUMMARY
-    assert response.headers["Location"].endswith(f"{WORKSPACES}/{created.id}")
-    # Stored: it comes back from a fresh read and is last in the list, being the newest.
-    assert (
-        WorkspaceRead.model_validate_json(client.get(f"{WORKSPACES}/{created.id}").text) == created
-    )
-    assert (
-        Page[WorkspaceSummary].model_validate_json(client.get(WORKSPACES).text).items[-1].id
-        == created.id
+    status, role, location = async_database.run(scenario)
+    # Assert
+    assert (status, role, location.startswith("https://example.test/api/v1/workspaces/")) == (
+        201,
+        "owner",
+        True,
     )
 
 
-@pytest.mark.usefixtures("bob")
-def test_member_sees_their_role_and_the_member_count(client: TestClient) -> None:
-    sign_in_as_bob(client)
+def test_created_workspace_is_listed(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[UUID, str]:
+        async with AsyncDatabase.api_client(session) as client:
+            await signed_in(client, session)
+            workspace = await created(client)
+            # Act
+            response = await client.get("/api/v1/workspaces")
+            return workspace.id, response.text
 
-    team = WorkspaceRead.model_validate_json(client.get(TEAM).text)
-
-    assert team.my_role is Role.MEMBER
-    assert team.member_count == 2
-    # The team workspace is older than Bob's account, so it comes before his personal one.
-    team_item, personal = (
-        Page[WorkspaceSummary].model_validate_json(client.get(WORKSPACES).text).items
-    )
-    assert team_item.id == TEAM_WORKSPACE_ID
-    assert personal.is_personal is True
-    assert personal.my_role is Role.OWNER
-    assert personal.name == "Bob Member"
-    assert personal.member_count == 1
+    workspace_id, listed = async_database.run(scenario)
+    # Assert
+    assert str(workspace_id) in listed
 
 
-@pytest.mark.usefixtures("bob")
-def test_non_member_gets_404_not_403(client: TestClient) -> None:
-    sign_in_as_bob(client)
+def test_workspace_of_others_is_not_found(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, str]:
+        async with AsyncDatabase.api_client(session) as client:
+            await signed_in(client, session)
+            # Act
+            response = await client.get(f"/api/v1/workspaces/{uuid4()}")
+            return response.status_code, error_code(response)
 
-    for response in (
-        client.get(PERSONAL),
-        client.patch(PERSONAL, json={"name": "Mine now"}),
-        client.delete(PERSONAL),
-    ):
-        assert response.status_code == 404
-        assert response.json()["error"]["code"] == "NOT_FOUND"
-
-
-def test_unknown_workspace_is_404(client: TestClient) -> None:
-    sign_in_as_alice(client)
-
-    assert client.get(f"{WORKSPACES}/00000000-0000-4000-8000-000000000000").status_code == 404
+    found = async_database.run(scenario)
+    # Assert
+    assert found == (404, "NOT_FOUND")
 
 
-def test_owner_updates_and_the_change_is_stored(client: TestClient) -> None:
-    sign_in_as_alice(client)
+def test_owner_changes_the_default_preset(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> str:
+        async with AsyncDatabase.api_client(session) as client:
+            await signed_in(client, session)
+            workspace = await created(client)
+            # Act
+            response = await client.patch(
+                f"/api/v1/workspaces/{workspace.id}", json={"default_preset": "interview"}
+            )
+            return WorkspaceRead.model_validate_json(response.content).default_preset
 
-    response = client.patch(TEAM, json={"name": "Renamed team", "default_preset": "interview"})
-
-    assert response.status_code == 200
-    assert response.json()["name"] == "Renamed team"
-    stored = WorkspaceRead.model_validate_json(client.get(TEAM).text)
-    assert stored.name == "Renamed team"
-    assert stored.default_preset is Preset.INTERVIEW
-
-
-def test_update_with_only_one_field_keeps_the_other(client: TestClient) -> None:
-    sign_in_as_alice(client)
-    before = WorkspaceRead.model_validate_json(client.get(TEAM).text)
-
-    client.patch(TEAM, json={"default_preset": "summary"})
-
-    assert WorkspaceRead.model_validate_json(client.get(TEAM).text).name == before.name
+    preset = async_database.run(scenario)
+    # Assert
+    assert preset == "interview"
 
 
-@pytest.mark.usefixtures("bob")
-def test_member_cannot_update_or_delete(client: TestClient) -> None:
-    sign_in_as_bob(client)
+def test_member_cannot_change_settings(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, str]:
+        async with AsyncDatabase.api_client(session) as client:
+            owner, _ = await AsyncDatabase.add_workspace(session)
+            workspace_id = await session.scalar(
+                select(WorkspaceMembership.workspace_id).where(WorkspaceMembership.user_id == owner)
+            )
+            member = await signed_in(client, session)
+            session.add(
+                WorkspaceMembership(
+                    workspace_id=workspace_id, user_id=member, role=WorkspaceRole.MEMBER
+                )
+            )
+            await session.flush()
+            # Act
+            response = await client.patch(
+                f"/api/v1/workspaces/{workspace_id}", json={"name": "Mine now"}
+            )
+            return response.status_code, error_code(response)
 
-    for response in (client.patch(TEAM, json={"name": "Bob's now"}), client.delete(TEAM)):
-        assert response.status_code == 403
-        assert response.json()["error"]["code"] == "INSUFFICIENT_ROLE"
-    assert client.get(TEAM).json()["name"] == "Whadio team"
+    found = async_database.run(scenario)
+    # Assert
+    assert found == (403, "INSUFFICIENT_ROLE")
 
 
-def test_personal_workspace_cannot_be_deleted(client: TestClient) -> None:
-    sign_in_as_alice(client)
+def test_update_without_a_field_is_a_validation_error(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, str]:
+        async with AsyncDatabase.api_client(session) as client:
+            await signed_in(client, session)
+            workspace = await created(client)
+            # Act
+            response = await client.patch(f"/api/v1/workspaces/{workspace.id}", json={})
+            return response.status_code, error_code(response)
 
-    response = client.delete(PERSONAL)
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "PERSONAL_WORKSPACE"
-    assert client.get(PERSONAL).status_code == 200
+    found = async_database.run(scenario)
+    # Assert
+    assert found == (422, "VALIDATION_ERROR")
 
 
-@pytest.mark.usefixtures("bob")
-def test_owner_deletes_and_it_is_audited(
-    client: TestClient, sessionmaker: async_sessionmaker[AsyncSession], portal: BlockingPortal
+def test_deleted_workspace_is_gone(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, int]:
+        async with AsyncDatabase.api_client(session) as client:
+            await signed_in(client, session)
+            workspace = await created(client)
+            # Act
+            deleted = await client.delete(f"/api/v1/workspaces/{workspace.id}")
+            found = await client.get(f"/api/v1/workspaces/{workspace.id}")
+            return deleted.status_code, found.status_code
+
+    found = async_database.run(scenario)
+    # Assert
+    assert found == (204, 404)
+
+
+def test_personal_workspace_cannot_be_deleted(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, str]:
+        async with AsyncDatabase.api_client(session) as client:
+            await signed_in(client, session)
+            workspace = await created(client, "Alice")
+            stored = await session.get(Workspace, workspace.id)
+            assert stored is not None
+            stored.is_personal = True
+            await session.flush()
+            # Act
+            response = await client.delete(f"/api/v1/workspaces/{workspace.id}")
+            return response.status_code, error_code(response)
+
+    found = async_database.run(scenario)
+    # Assert
+    assert found == (409, "PERSONAL_WORKSPACE")
+
+
+def test_created_workspace_passes_the_database_guards(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> int | None:
+        async with AsyncDatabase.api_client(session) as client:
+            await signed_in(client, session)
+            # Act
+            workspace = await created(client)
+            # The guards (one Owner, one default folder) are deferred to a commit, which this
+            # test rolls back instead.
+            await session.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
+            return await session.scalar(
+                select(func.count())
+                .select_from(Folder)
+                .where(Folder.workspace_id == workspace.id, Folder.is_default)
+            )
+
+    folders = async_database.run(scenario)
+    # Assert
+    assert folders == 1
+
+
+def test_deleted_workspace_queues_its_recordings_for_deletion(
+    async_database: AsyncDatabase,
 ) -> None:
-    sign_in_as_alice(client)
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, bool]:
+        async with AsyncDatabase.api_client(session) as client:
+            await signed_in(client, session)
+            workspace = await created(client)
+            folder = await session.scalar(
+                select(Folder.folder_id).where(Folder.workspace_id == workspace.id)
+            )
+            assert folder is not None
+            owner = await session.scalar(
+                select(WorkspaceMembership.user_id).where(
+                    WorkspaceMembership.workspace_id == workspace.id
+                )
+            )
+            assert owner is not None
+            meeting_id = await AsyncDatabase.add_meeting(session, (owner, folder))
+            # Act
+            response = await client.delete(f"/api/v1/workspaces/{workspace.id}")
+            await session.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
+            queued = await session.scalars(select(RecordingDeletion.storage_key))
+            return response.status_code, f"meetings/{meeting_id}" in queued.all()
 
-    assert client.delete(TEAM).status_code == 204
-
-    assert client.get(TEAM).status_code == 404
-    remaining = Page[WorkspaceSummary].model_validate_json(client.get(WORKSPACES).text).items
-    assert TEAM_WORKSPACE_ID not in [workspace.id for workspace in remaining]
-
-    async def audit_events() -> list[AuditEvent]:
-        async with sessionmaker() as db:
-            return [*await db.scalars(select(AuditEvent))]
-
-    events = portal.call(audit_events)
-    assert len(events) == 1
-    assert events[0].action is AuditAction.WORKSPACE_DELETED
-    assert events[0].workspace_id == TEAM_WORKSPACE_ID
-    assert events[0].actor_user_id == ALICE.id
-    assert events[0].meeting_id is None
+    found = async_database.run(scenario)
+    # Assert
+    assert found == (204, True)
 
 
-@pytest.mark.usefixtures("bob")
-def test_deleting_removes_other_members_too(client: TestClient) -> None:
-    sign_in_as_alice(client)
-    client.delete(TEAM)
-    client.cookies.clear()
+def test_workspaces_need_a_session(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> int:
+        async with AsyncDatabase.api_client(session) as client:
+            # Act
+            response = await client.get("/api/v1/workspaces")
+            return response.status_code
 
-    sign_in_as_bob(client)
-
-    items = Page[WorkspaceSummary].model_validate_json(client.get(WORKSPACES).text).items
-    assert [item.is_personal for item in items] == [True]
+    status = async_database.run(scenario)
+    # Assert
+    assert status == 401

@@ -6,9 +6,9 @@ readme = "README.md"
 requires-python = ">=3.13,<3.15"
 dependencies = [
     "aio-pika>=10.1",
-    "aiosqlite>=0.21",
     "alembic>=1.16,<2",
     "anthropic>=1",
+    "argon2-cffi>=25.1",
     "av>=19.0",
     "fastapi[standard-no-fastapi-cloud-cli]>=0.142",
     "fastmcp>=4.0.11",
@@ -100,9 +100,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "**/test_*.py" = ["S101", "PLR2004"]
-"**/conftest.py" = ["S105"]                       # test-only account credentials
 "src/whadio/api/**/*.py" = ["PLR0913", "PLR0917"] # FastAPI injects every input as a parameter
-"src/whadio/api/accounts/fixtures.py" = ["S105"]  # public demo credentials, shown on the Swagger page
 "src/whadio/cli.py" = ["PLC0415"]                 # each command imports its own runtime
 "src/whadio/workers/asr/slot.py" = ["PLC0415"]    # model libraries load only in the slot's child
 
@@ -264,10 +262,8 @@ markers = [
 ]
 
 [tool.deptry]
-extend_exclude = ["src/.*/(test_[^/]*|conftest)\\.py"]
-
-[tool.deptry.per_rule_ignores]
-DEP002 = ["aiosqlite", "torchaudio", "torchcodec"] # aiosqlite is loaded by name from the database URL; the torch ones are declared to pin them to torch's index
+extend_exclude = ["src/.*/test_[^/]*\\.py"]
+per_rule_ignores = { DEP002 = ["torchaudio", "torchcodec"] } # declared to pin them to torch's index
 
 [tool.typos.files]
 extend-exclude = ["*.svg"] # PlantUML embeds its compressed source in every SVG

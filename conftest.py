@@ -1,11 +1,13 @@
 import asyncio
-from collections.abc import Awaitable, Callable, Generator
+from collections.abc import AsyncGenerator, Awaitable, Callable, Generator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import ClassVar
 from uuid import UUID, uuid4
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import Connection, create_engine, delete, text
@@ -15,6 +17,9 @@ from sqlalchemy.orm import Session
 
 from whadio.accounts.enums import NotesTemplate, WorkspaceRole
 from whadio.accounts.models import User, Workspace, WorkspaceMembership
+from whadio.accounts.passwords import Argon2PasswordHasher
+from whadio.api.app import create_app
+from whadio.api.composition import transaction
 from whadio.meetings.enums import (
     AccessMode,
     MeetingSource,
@@ -77,6 +82,37 @@ class AsyncDatabase:
                 await engine.dispose()
 
         return asyncio.run(run(), loop_factory=asyncio.SelectorEventLoop)
+
+    @staticmethod
+    async def add_account(session: AsyncSession, password: str, email: str = "") -> User:
+        user_id = uuid4()
+        user = User(
+            user_id=user_id,
+            # The API refuses special-use domains such as .test, so sign-in needs a real one.
+            email=email or f"{user_id}@example.com",
+            name="Alice",
+            password_hash=Argon2PasswordHasher().hash(password),
+            terms_accepted_at=datetime.now(UTC),
+        )
+        session.add(user)
+        await session.flush()
+        return user
+
+    @staticmethod
+    @asynccontextmanager
+    async def api_client(session: AsyncSession) -> AsyncGenerator[AsyncClient]:
+        """The API, with each request in a savepoint of `session`."""
+        app = create_app()
+
+        async def savepoint() -> AsyncGenerator[AsyncSession]:
+            async with session.begin_nested():
+                yield session
+
+        app.dependency_overrides[transaction] = savepoint
+        async with AsyncClient(
+            transport=ASGITransport(app), base_url="https://example.test"
+        ) as client:
+            yield client
 
     @staticmethod
     async def add_workspace(session: AsyncSession) -> tuple[UUID, UUID]:

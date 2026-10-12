@@ -45,6 +45,14 @@ class Folders(IFolderRepository):
         raise AssertionError("Refused deletion must not move meetings")
 
     @override
+    async def remember(self, folder: Folder, meeting_ids: list[UUID], now: datetime) -> None:
+        raise AssertionError("Refused deletion must not remember a folder")
+
+    @override
+    async def restore(self, workspace_id: UUID, folder_id: UUID) -> tuple[Folder, list[UUID]]:
+        raise AssertionError("Refused restoration must not change a folder")
+
+    @override
     async def remove_folder(self, folder_id: UUID) -> None:
         raise AssertionError("Refused deletion must not remove a folder")
 
