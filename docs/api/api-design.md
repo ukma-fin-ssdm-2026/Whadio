@@ -48,11 +48,12 @@ recording playback use stored authorization. Folder deletion can be undone throu
 operation. Other operations below retain their design contracts; their Status labels describe
 the original design milestone and are not an assertion that every Designed operation is absent.
 
-Accounts sign-in and workspace administration remain demos. Capture and Processing need their
-owners' implementations and runtime integration; upload and regeneration refuse with
-`503 INTEGRATION_UNAVAILABLE` until Processing can reserve durable jobs. Share access requests
-and retention warnings likewise require a Notifications adapter; delivery is outside this slice.
-MCP reads require stored personal keys. Demo credentials do not authorize meeting content.
+Sign-in, sign-out and workspace administration use stored accounts and sessions. An upload is
+stored and queued for transcription and notes, which the workers run; without a broker and
+object storage it refuses with `503 INTEGRATION_UNAVAILABLE`. Notes regeneration is outside the
+MVP and always refuses with `503 INTEGRATION_UNAVAILABLE`. Share access requests and retention
+warnings require a Notifications adapter; delivery is outside this slice. MCP reads require
+stored personal keys.
 
 List operations in this slice use bounded database queries and opaque cursors scoped to the
 resource and signed-in caller. A deleted cursor anchor does not invalidate later pages. Folder
@@ -680,6 +681,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - `409 NOT_TRANSCRIBED`: there is no transcript to write notes from.
   - `409 NOTES_IN_PROGRESS`: a run is already queued or running.
   - `409 REGENERATION_LIMIT`: the meeting used up its regenerations.
+  - `503 INTEGRATION_UNAVAILABLE`: regeneration is not available yet; it is outside the MVP.
 
 #### `GET /meetings/{meeting_id}/transcript/export` · Download the transcript
 

@@ -341,6 +341,8 @@ async def list_notes(
     tags=["notes"],
     summary="Regenerate the notes",
     description=(
+        "**Not available yet:** regenerating notes is outside the MVP, so this answers "
+        f"`503 {ErrorCode.INTEGRATION_UNAVAILABLE}`. The rest describes the planned behaviour.\n\n"
         "Any member who can read the meeting. Queues notes generation with the chosen preset "
         "and answers at once with `202`: generation runs in a worker. Poll the meeting in "
         "`Location` until `processing_state` is `processed` or `failed`.\n\n"
@@ -367,6 +369,8 @@ async def list_notes(
                 f"`{ErrorCode.REGENERATION_LIMIT}`: the meeting used up its regenerations; "
                 f"{_NOT_TRANSCRIBED}",
                 422: DOC_INVALID,
+                503: f"`{ErrorCode.INTEGRATION_UNAVAILABLE}`: regenerating notes is not "
+                "available yet",
             }
         ),
     },

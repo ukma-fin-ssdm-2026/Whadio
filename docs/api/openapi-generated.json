@@ -1378,7 +1378,7 @@
           "notes"
         ],
         "summary": "Regenerate the notes",
-        "description": "Any member who can read the meeting. Queues notes generation with the chosen preset and answers at once with `202`: generation runs in a worker. Poll the meeting in `Location` until `processing_state` is `processed` or `failed`.\n\nLimits: one run at a time, and a configured number of regenerations per meeting (3 by default); every requested run counts, failed ones included. The transcript is never regenerated, and a failed run keeps the previous notes current.",
+        "description": "**Not available yet:** regenerating notes is outside the MVP, so this answers `503 INTEGRATION_UNAVAILABLE`. The rest describes the planned behaviour.\n\nAny member who can read the meeting. Queues notes generation with the chosen preset and answers at once with `202`: generation runs in a worker. Poll the meeting in `Location` until `processing_state` is `processed` or `failed`.\n\nLimits: one run at a time, and a configured number of regenerations per meeting (3 by default); every requested run counts, failed ones included. The transcript is never regenerated, and a failed run keeps the previous notes current.",
         "operationId": "regenerate_notes_api_v1_meetings__meeting_id__notes_post",
         "security": [
           {
@@ -1474,6 +1474,16 @@
           },
           "422": {
             "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`INTEGRATION_UNAVAILABLE`: regenerating notes is not available yet",
             "content": {
               "application/json": {
                 "schema": {
