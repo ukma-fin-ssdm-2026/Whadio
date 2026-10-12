@@ -1402,16 +1402,6 @@
             "description": "Meeting identifier"
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NotesRequest"
-              }
-            }
-          }
-        },
         "responses": {
           "503": {
             "description": "`INTEGRATION_UNAVAILABLE`: regenerating notes is not available yet",
@@ -4741,24 +4731,6 @@
         ],
         "title": "Health"
       },
-      "JobKind": {
-        "type": "string",
-        "enum": [
-          "transcription",
-          "notes"
-        ],
-        "title": "JobKind"
-      },
-      "JobStatus": {
-        "type": "string",
-        "enum": [
-          "queued",
-          "running",
-          "succeeded",
-          "failed"
-        ],
-        "title": "JobStatus"
-      },
       "JsonValue": {},
       "MeetingRead": {
         "properties": {
@@ -5117,30 +5089,6 @@
         ],
         "title": "NoteRead"
       },
-      "NotesRequest": {
-        "properties": {
-          "preset": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Preset"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Notes preset; defaults to the workspace's. Prompts are fixed and never shown"
-          },
-          "use_builtin_model": {
-            "type": "boolean",
-            "title": "Use Builtin Model",
-            "description": "Generate with the built-in model even if the workspace configured a provider, e.g. after that provider failed",
-            "default": false
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "NotesRequest"
-      },
       "PageInfo": {
         "properties": {
           "limit": {
@@ -5380,69 +5328,6 @@
           "interview"
         ],
         "title": "Preset"
-      },
-      "ProcessingJobRead": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id",
-            "description": "Job identifier"
-          },
-          "meeting_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Meeting Id",
-            "description": "Meeting being processed"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/JobKind",
-            "description": "Pipeline stage"
-          },
-          "status": {
-            "$ref": "#/components/schemas/JobStatus",
-            "description": "Job state"
-          },
-          "preset": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Preset"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Notes preset, for notes jobs"
-          },
-          "provider": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Provider"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Notes provider, for notes jobs"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At",
-            "description": "When the job was queued"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "meeting_id",
-          "kind",
-          "status",
-          "preset",
-          "provider",
-          "created_at"
-        ],
-        "title": "ProcessingJobRead"
       },
       "ProcessingState": {
         "type": "string",

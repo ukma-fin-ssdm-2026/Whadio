@@ -159,6 +159,7 @@ def _describe(exc: Exception) -> tuple[int, ErrorCode, str, list[ErrorDetail]]:
     match exc:
         case UseCaseError():
             statuses = {
+                Failure.INVALID_CREDENTIALS: 401,
                 Failure.NOT_FOUND: 404,
                 Failure.LINK_INVALID: 404,
                 Failure.INSUFFICIENT_ROLE: 403,

@@ -6,13 +6,12 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile
 from pydantic import Field
 
-from ...accounts.enums import NotesTemplate
 from ...meetings.enums import MeetingSource
 from ...meetings.services import RecordingInput
 from ...shared.errors import Failure, UseCaseError
 from ...shared.pagination import ListCursor
 from ..accounts.auth import BrowserUser, CaptureUser
-from ..accounts.schemas import Preset, Provider, WorkspaceId
+from ..accounts.schemas import WorkspaceId
 from ..composition import Meetings, Persistence, Processing, Recordings, UploadGuard
 from ..core.errors import (
     DOC_INVALID,
@@ -27,8 +26,6 @@ from ..core.schemas import Output, Page, PageQuery
 from .audio import SUPPORTED_FORMATS, is_supported_audio
 from .pagination import meeting_filter, meeting_page
 from .schemas import (
-    JobKind,
-    JobStatus,
     MeetingId,
     MeetingListQuery,
     MeetingName,
@@ -36,8 +33,6 @@ from .schemas import (
     MeetingSummary,
     MeetingUpdate,
     NoteRead,
-    NotesRequest,
-    ProcessingJobRead,
     TranscriptRead,
 )
 from .upload_limits import MAX_UPLOAD_BYTES, RecordingUploadRoute
@@ -354,29 +349,6 @@ async def list_notes(
         }
     ),
 )
-async def regenerate_notes(
-    meeting_id: MeetingId,
-    payload: NotesRequest,
-    user: BrowserUser,
-    processing: Processing,
-    service: Meetings,
-    response: Response,
-) -> ProcessingJobRead:
+async def regenerate_notes(meeting_id: MeetingId, user: BrowserUser, service: Meetings) -> None:
     await service.get(user.id, meeting_id)
-    job = await processing.queue_notes(
-        meeting_id,
-        user.id,
-        None if payload.preset is None else NotesTemplate(payload.preset.value),
-        use_builtin_model=payload.use_builtin_model,
-        now=datetime.now(UTC),
-    )
-    response.headers["Location"] = f"/api/v1/meetings/{meeting_id}"
-    return ProcessingJobRead(
-        id=job.job_id,
-        meeting_id=job.meeting_id,
-        kind=JobKind.NOTES,
-        status=JobStatus.QUEUED,
-        preset=Preset(job.preset.value),
-        provider=Provider(job.provider.value.lower()),
-        created_at=job.created_at,
-    )
+    raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
