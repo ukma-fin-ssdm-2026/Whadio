@@ -100,5 +100,11 @@ All architecture documentation is maintained in the [`/docs/architecture/`](docs
 - [UML Diagrams](docs/architecture/uml/) — in `.puml` format
 - [Architecture Decision Records (ADRs)](docs/architecture/decisions/) — key architectural decisions and rationale
 
+## Code Quality Artifacts
+All code quality documentation is maintained in the [`/docs/code-quality/`](docs/code-quality/) directory.
+- [Code Review Report](docs/code-quality/review-report.md) — our review of another team's code, and the feedback on ours
+- [Static Analysis](docs/code-quality/static-analysis.md) — the tools, how they run, and the documented findings
+- [Implementation Progress](docs/code-quality/progress.md) — the MVP's scope, status and next steps
+
 ## AI usage
 The document was prepared with the help of Claude Code (Claude Opus 5 model) based on the team's decisions; the content was manually checked and edited, and the document is reviewed via a pull request before merging.

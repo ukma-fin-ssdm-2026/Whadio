@@ -51,6 +51,107 @@ Bandit found nothing in the current code, so, as the lab allows, this takes a th
   - `test_dead_letter_from_an_unexpected_publisher_fails_no_job`
 - **Accepted:** whoever holds a worker's own password can still forge that worker's kind of result. Network isolation of the broker (`R-13`) limits who can reach it at all.
 
+## Further findings
+
+### Signed recording links written to the worker logs
+
+- **What.** httpx2 logs every request URL at `INFO`, the workers' default level. The ASR worker
+  downloads each recording through a presigned link, so every link, signature included, went to
+  its log.
+- **Found by.** Reading the ASR worker's log. No static analyzer sees this: it is how a
+  third-party library behaves at runtime.
+- **Why it is a risk.** Anyone who can read the logs can download the recording until the link
+  expires. It breaks the threat model's rule that logs carry no tokens or recordings ("Design
+  Constraints Derived From This Model", and `R-03`).
+- **Fixed** in the pull request "keep signed recording links out of the logs":
+  `configure_logging` raises the `httpx2` logger to `WARNING` (`src/whadio/shared/logs.py`).
+- **Regression test.** `src/whadio/shared/test_logs.py::test_logged_requests_leave_out_signed_urls`
+  fails without the fix, because the captured log contains `X-Amz-Signature=secret`, and passes
+  with it.
+
+### Validation errors echoed the rejected password
+
+- **What.** Every validation error put the rejected input into `provided_value`
+  (`src/whadio/api/core/errors.py`). A sign-in with a password over 128 characters answered `422`
+  with the whole password in the response body.
+- **Found by.** Another team's AI-assisted review of our code (`review-report.md`, "Feedback on
+  our code"). Bandit and Ruff have no rule for it (CWE-209, CWE-532).
+- **Why it is a risk.** Browser developer tools, reverse proxies and error trackers keep response
+  bodies, so the password ends up stored outside the database.
+- **Fixed** in the pull request "stop echoing request bodies in validation errors":
+  only query and path values are echoed now. The threat model already keeps tokens out of URLs,
+  while a body, a header or a cookie can carry a password or a token. `docs/api/api-design.md`,
+  "Envelope", states the rule.
+- **Regression tests** in `src/whadio/api/core/test_errors.py`:
+  - `test_invalid_password_is_left_out_of_the_validation_error` and
+    `test_invalid_body_field_is_named_without_its_value` fail without the fix and pass with it;
+  - `test_invalid_query_parameter_is_echoed` and `test_invalid_path_parameter_is_echoed` keep the
+    echo where it is safe.
+
+### Found and fixed in the review of the backend pull request
+
+- **Hardcoded demo credentials** (ruff `S105`).
+  - The Lab 4 stub kept its demo password and tokens as literals in
+    `api/accounts/fixtures.py`, under an exception in `pyproject.toml`. That was acceptable while
+    the API stored nothing.
+  - The first version of the backend pull request seeded that account into the real database on every start, which
+    gave Owner access on any deployment. The review had the seed, the fixtures and the
+    exceptions removed.
+  - Bandit 1.9.4 never flagged these literals: `B105` checks plain assignments, not annotated ones
+    such as `DEMO_PASSWORD: Final = "..."`. Ruff's port of the rule caught them, which is why both
+    tools run.
+- **Passwords hashed with a single SHA-256** (CWE-916).
+  - The first version of the backend pull request stored `sha256(email + password)`. Bandit and Ruff report nothing
+    on it: `B324` and `S324` flag only broken hash functions, and SHA-256 is sound for other
+    purposes.
+  - It was a risk because SHA-256 is fast to brute-force on a GPU. Its salt, the e-mail address,
+    is public and the same on every deployment, and the hash broke when the address changed.
+  - Fixed in the review: argon2id behind `IPasswordHasher` (`src/whadio/accounts/passwords.py`).
+    An unknown e-mail address costs one hash, so the response time does not reveal which accounts
+    exist.
+
+## The pre-commit hook in action (bonus)
+
+Besides the `B105` stop above, we staged a file containing a fake GitHub token and ran the hook.
+It refused the commit:
+
+```text
+Detect hardcoded secrets.................................................Failed
+- hook id: gitleaks
+- exit code: 1
+
+Finding:     GITHUB_TOKEN = "REDACTED
+Secret:      REDACTED
+RuleID:      github-pat
+File:        leak_demo.py
+Line:        1
+WRN leaks found: 1
+```
+
+## Dependency audit (bonus)
+
+- **uv audit**, in CI: 0 known vulnerabilities in 215 packages.
+- **Dependabot:** its first two update pull requests, for the GitHub Actions and for `uv-build`,
+  are merged.
+- **Accepted finding.** deptry reports `torchaudio` and `torchcodec` as declared but never
+  imported (`DEP002`).
+  - We declare them only to pin them to torch's CPU index, because mismatched torch builds abort
+    the process.
+  - The exception and its reason are in `pyproject.toml`.
+
+## Conclusions
+
+- **One security tool is not enough.** Ruff's port of Bandit caught the demo credentials, which
+  Bandit itself missed.
+- **Most risks had no rule.** The forged results, the logged links, the echoed password and the
+  weak password hash were found by review and by reading the system's own output. That is why
+  the team charter makes review mandatory.
+- **Every exception carries its reason,** so a review can check whether the reason still holds
+  when the code around it changes.
+
 ## AI Usage
 
 Drafted with Claude Code (Claude Opus 5.5) from the repository's configuration, a Bandit run on `2d2c949` and the PR #68 review; checked by Denys Zabiiaka.
+
+The sections from "Further findings" on were drafted with Claude Code (Claude Opus 5.5), which
+also ran the tools; checked by Andrii Shalaiev.
