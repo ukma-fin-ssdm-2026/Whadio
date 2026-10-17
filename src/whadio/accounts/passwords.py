@@ -26,4 +26,8 @@ class Argon2PasswordHasher:
             return False
 
 def is_password_strong(password: str) -> bool:
-    return len(password) >= 12 and any(character.isdigit() for character in password)
+    return (
+        len(password) >= 12
+        and any(character.isdigit() for character in password)
+        and any(character.isupper() for character in password)  # new: at least one capital letter
+    )

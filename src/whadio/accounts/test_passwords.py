@@ -8,7 +8,7 @@ from .passwords import is_password_strong
     [
             "abc123",
             "abcdefghijklmn",
-            pytest.param("abcdefghijk1m", marks=pytest.mark.xfail(strict=True)),
+            "abcdefghijk1m",
         ],
 )
 def test_weak_password_is_not_strong(password: str) -> None:
