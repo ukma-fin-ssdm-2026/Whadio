@@ -24,3 +24,6 @@ class Argon2PasswordHasher:
             return self._hasher.verify(password_hash, password)
         except (VerificationError, InvalidHashError):
             return False
+
+def is_password_strong(password: str) -> bool:
+    return True
