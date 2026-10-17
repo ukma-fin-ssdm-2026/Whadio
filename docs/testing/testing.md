@@ -25,6 +25,32 @@ We added 85 tests in three files:
 - **Mocks (fakes):** Access Policy must not import Meetings (import-linter enforces the layering), so its tests replace the collaborators with small fakes. `FakeMeetings` returns the meeting's scope, `FakeAudit` records audit events in a list, and `FakeNotices` records the notices sent to share creators. The tests then assert on what the fakes received.
 - **Parametrised tests:** the four content paths a share recipient may not use (export, MCP, recording, write); the two invalid combinations of access mode and member list; blank names and names with a control character; a share with names hidden and with names shown; deleting and updating someone else's glossary term.
 
+### Edge cases covered
+
+Access Policy:
+
+- an access list that does not match the access mode, and a grant to someone outside the workspace;
+- a wrong token and a revoked share, both treated as an invalid link;
+- a second request for the same share, a request decided twice, approving a request to a revoked share, and deciding a request that does not exist;
+- a share already bound to one recipient, and a recipient who already has access;
+- revoking a share twice (audited once) and revoking a share that does not exist;
+- a share recipient trying each of the four paths other than reading (export, MCP, recording, write);
+- a revoked share stopping its recipient from reading;
+- the second page of every cursor-paged list, with revoked shares left out;
+- a share recipient counted as a reader before a meeting is deleted.
+
+Meetings:
+
+- an update or a transcript edit that changes nothing;
+- a recording into, or a move to, a folder that does not exist, and an edit of a segment that does not exist;
+- folder names that are blank, contain a control character, are already taken, or carry surrounding spaces (kept trimmed);
+- a glossary term that differs from another only in letter case, a term citing a meeting of another workspace, a rename to another term's spelling, and an update that changes only some fields;
+- a failed processing state without a failure reason;
+- replaying the same transcription job versus a different job;
+- a meeting with no transcript yet: no current transcript, and its revisions refused;
+- folder counts that leave out meetings the member cannot see;
+- a share that tries to open another meeting, and shared notes with speaker names hidden and shown.
+
 ### Arrange, Act, Assert
 
 Every test follows the project's AAA layout, with one logical assertion per test:
@@ -78,7 +104,7 @@ We read the missing lines from `--cov-report=term-missing` and wrote a test for 
 
 - the paging cursors in the Access Policy repository were never used, because no test asked for a second page;
 - `rename_folder`, `revisions`, `context`, `folder_count`, the whole glossary (`add_term`, `update_term`, `delete_term`) and the share views (`shared_transcript`, `shared_notes`) were never called from a test at all;
-- the edge cases that came out of this pass: a glossary term that differs only in letter case; folder names that are blank or contain a control character; revoking a share twice (audited once); a share that is already bound to one recipient; an Owner who restricts a meeting without granting themselves access and is locked out of changing it; replaying the same transcription job versus a different job.
+- the refusals and edge cases listed under "Edge cases covered" above.
 
 ### Is 100% coverage meaningful?
 
@@ -88,6 +114,15 @@ Not as a goal. 13 lines are still uncovered in the two service files. Two of the
 - **Race guards:** for example, an access request that disappears between two reads under a row lock. Testing them properly needs two concurrent transactions. A test that fakes it reaches the line but proves nothing about the race.
 
 Coverage says which code ran, not whether the test checked the right thing. A test without an assertion still raises coverage. In this pass, coverage was useful as a map of what nobody had tested. The value came from the assertions on refusals and edge cases. We'd rather keep the 88% with meaningful assertions than reach 100% with tests written to light up lines.
+
+## 3. Proposals for improving the tests
+
+- **Close the two ordinary gaps:** a successful glossary term rename, and the happy path of `processing_snapshot`.
+- **Measure branches, not only lines:** the runs above count lines. An `if` whose false side never ran still counts as covered. Adding `--cov-branch` would show those half-tested conditions.
+- **Mutation testing:** run mutmut on `access_policy/services.py`. It flips conditions and changes values, then checks whether some test fails. Coverage shows that a line ran; mutation testing shows whether an assertion would notice it going wrong.
+- **Real concurrency tests for the race guards:** two sessions against PostgreSQL, each holding its own transaction, instead of leaving those lines untested.
+- **Property-based tests for name validation:** Hypothesis can generate arbitrary Unicode for folder names and glossary terms, including whitespace and control characters, instead of the few hand-picked values used now.
+- **One shared builder:** `world()` and `team()` both create an Owner, a Member, an outsider and a meeting. Moving them into one fixture in `conftest.py` would stop the next module's tests from writing a third copy.
 
 ## AI Usage
 
