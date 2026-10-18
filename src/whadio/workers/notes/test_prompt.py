@@ -237,7 +237,62 @@ def test_glossary_term_carries_its_preferred_spelling() -> None:
     assert '<term preferred="Whisper">віспер</term>' in prompt.user
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError)
+def _prompt_chars(request: NotesRequested) -> int:
+    prompt = PromptBuilder(_GENEROUS).build(request)
+    return len(prompt.system) + len(prompt.user)
+
+
+_GLOSSARY = (GlossaryEntry(term="віспер", preferred_form="Whisper", description=""),)
+
+
+def test_prompt_that_exactly_fits_the_budget_is_accepted() -> None:
+    # Arrange
+    request = _request(_MEETING, glossary=_GLOSSARY)
+    budget = ContextBudget(max_input_tokens=_prompt_chars(request), chars_per_token=1.0)
+
+    # Act
+    prompt = PromptBuilder(budget).build(request)
+
+    # Assert
+    assert len(prompt.system) + len(prompt.user) == budget.max_input_tokens
+
+
+def test_prompt_one_token_over_the_budget_is_refused() -> None:
+    # Arrange
+    request = _request(_MEETING, glossary=_GLOSSARY)
+    budget = ContextBudget(max_input_tokens=_prompt_chars(request) - 1, chars_per_token=1.0)
+
+    # Act / Assert
+    with pytest.raises(NotesError) as raised:
+        PromptBuilder(budget).build(request)
+    assert raised.value.reason is NotesFailure.TRANSCRIPT_TOO_LONG
+
+
+def test_context_meeting_that_exactly_fills_the_budget_is_included() -> None:
+    # Arrange
+    context = _context("Weekly sync", day=1)
+    request = _request(_MEETING, context=(context,), glossary=_GLOSSARY)
+    budget = ContextBudget(max_input_tokens=_prompt_chars(request), chars_per_token=1.0)
+
+    # Act
+    prompt = PromptBuilder(budget).build(request)
+
+    # Assert
+    assert prompt.context_meeting_ids == (context.meeting_id,)
+
+
+def test_context_meeting_one_token_over_the_budget_is_left_out() -> None:
+    # Arrange
+    request = _request(_MEETING, context=(_context("Weekly sync", day=1),), glossary=_GLOSSARY)
+    budget = ContextBudget(max_input_tokens=_prompt_chars(request) - 1, chars_per_token=1.0)
+
+    # Act
+    prompt = PromptBuilder(budget).build(request)
+
+    # Assert
+    assert prompt.context_meeting_ids == ()
+
+
 @given(_REQUESTS, _BUDGETS)
 def test_built_prompt_is_refused_or_fits_the_budget(
     notes_request: NotesRequested, budget: ContextBudget

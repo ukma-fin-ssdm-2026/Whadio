@@ -13,6 +13,7 @@ from .errors import NotesError
 from .presets import FALLBACK_LANGUAGE, PRESETS, PresetSpec
 
 _LANGUAGE_NAMES: Final[Mapping[str, str]] = MappingProxyType({"uk": "Ukrainian", "en": "English"})
+_SEPARATOR: Final = "\n\n"
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,12 +58,13 @@ class PromptBuilder:
         glossary = _glossary(request.glossary)
         meeting = _meeting(request)
         task = "Write the notes for the meeting in <meeting>."
-        used = self._budget.tokens(system) + self._budget.tokens(glossary + meeting + task)
+        fixed = _SEPARATOR.join(part for part in (glossary, meeting, task) if part)
+        used = self._budget.tokens(system) + self._budget.tokens(fixed)
         if used > self._budget.max_input_tokens:
             raise NotesError(NotesFailure.TRANSCRIPT_TOO_LONG)
         context = self._fitting_context(request.context, self._budget.max_input_tokens - used)
         rendered = [_context_meeting(meeting) for meeting in context]
-        user = "\n\n".join(part for part in (glossary, *rendered, meeting, task) if part)
+        user = _SEPARATOR.join(part for part in (glossary, *rendered, meeting, task) if part)
         return Prompt(
             system=system,
             user=user,
@@ -75,7 +77,8 @@ class PromptBuilder:
     ) -> list[ContextMeeting]:
         chosen: list[ContextMeeting] = []
         for meeting in sorted(context, key=lambda m: m.recorded_at, reverse=True):
-            cost = self._budget.tokens(_context_meeting(meeting))
+            # The meeting and the task always follow, so each context meeting adds one separator.
+            cost = self._budget.tokens(_context_meeting(meeting) + _SEPARATOR)
             if cost <= tokens_left:
                 chosen.append(meeting)
                 tokens_left -= cost
