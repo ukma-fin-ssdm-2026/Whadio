@@ -8,13 +8,16 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..meetings.retention import IRetentionNotifier, NotificationUnavailableError
+from ..notifications.settings import load_notification_settings
 from ..retention.services import RetentionService
 from ..retention.storage import RecordingStorage
 from ..shared.database import Database, DatabaseSettings
 from ..shared.storage import connect_s3_storage
-from .composition import RetentionTransactions
+from .composition import RetentionTransactions, notification_drainer
 from .services import RetentionScheduler
 from .settings import SchedulerSettings
+
+logger = logging.getLogger(__name__)
 
 
 class UnavailableRetentionNotifications:
@@ -29,6 +32,7 @@ async def run(
     notifications: Callable[[AsyncSession], IRetentionNotifier] | None = None,
 ) -> int:
     settings = SchedulerSettings.model_validate({})
+    notification_settings = load_notification_settings()
     database = Database(DatabaseSettings.model_validate({}))
     try:
         retention = RetentionService(
@@ -40,7 +44,12 @@ async def run(
             ),
             RecordingStorage(connect_s3_storage(settings.storage)),
         )
-        scheduler = RetentionScheduler(retention, settings.retention_interval_seconds)
+        drainer = notification_drainer(notification_settings, database)
+        if drainer is None:
+            logger.info("No SMTP relay is configured; notifications are kept unsent")
+        scheduler = RetentionScheduler(
+            retention, settings.retention_interval_seconds, notifications=drainer
+        )
         if once:
             return await scheduler.tick()
         stop = asyncio.Event()
