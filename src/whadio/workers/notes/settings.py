@@ -40,8 +40,8 @@ class OllamaSettings(BaseModel):
     num_ctx: int = Field(
         default=32_768,
         ge=2_048,
-        description="Context window in tokens, prompt and answer together; the runtime cuts "
-        "anything longer",
+        description="Context window in tokens, prompt and answer together; a job that does not "
+        "fit fails as too long",
     )
     keep_alive: timedelta = Field(
         default=timedelta(minutes=5),
