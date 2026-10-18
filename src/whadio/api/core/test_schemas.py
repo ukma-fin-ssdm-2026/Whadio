@@ -70,6 +70,7 @@ def test_display_text_without_a_visible_character_is_rejected(value: str) -> Non
 
 
 @given(_RAW_TEXT)
+@example("\x00a")
 def test_accepted_display_text_has_no_control_character(value: str) -> None:
     # Act
     accepted = _validated(value)
