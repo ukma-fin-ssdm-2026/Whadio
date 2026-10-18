@@ -71,6 +71,45 @@ def test_notes_request_with_too_many_context_meetings_is_refused() -> None:
         _request(context_size=MAX_CONTEXT_MEETINGS + 1)
 
 
+@pytest.mark.parametrize(
+    "context_size",
+    [
+        pytest.param(MAX_CONTEXT_MEETINGS - 1, id="bva-below-max"),
+        pytest.param(MAX_CONTEXT_MEETINGS, id="bva-max"),
+    ],
+)
+def test_notes_request_with_up_to_20_context_meetings_is_accepted(context_size: int) -> None:
+    # Act
+    request = _request(context_size)
+
+    # Assert
+    assert len(request.context) == context_size
+
+
+@pytest.mark.parametrize(
+    "length",
+    [
+        pytest.param(1, id="bva-min"),
+        pytest.param(2, id="bva-above-min"),
+        pytest.param(100, id="bva-nominal"),
+        pytest.param(199, id="bva-below-max"),
+        pytest.param(200, id="bva-max"),
+    ],
+)
+def test_proposed_name_of_1_to_200_characters_is_accepted(length: int) -> None:
+    # Act
+    ready = _ready("x" * length)
+
+    # Assert
+    assert ready.proposed_name == "x" * length
+
+
+def test_empty_proposed_name_is_refused() -> None:
+    # Act / Assert
+    with pytest.raises(ValidationError, match="at least 1 character"):
+        _ready("")
+
+
 def test_proposed_name_longer_than_200_characters_is_refused() -> None:
     # Act / Assert
     with pytest.raises(ValidationError, match="at most 200 characters"):
