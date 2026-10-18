@@ -93,14 +93,18 @@ uv run task db:upgrade
 export WHADIO_TEST_DATABASE_URL=postgresql+psycopg://whadio_app:whadio-dev-app@127.0.0.1:5432/whadio
 ```
 
-Then measure:
+Then measure with the command that CI and the push hook run. `task test:cov` refuses to start without `WHADIO_TEST_DATABASE_URL`, so skipped database tests cannot quietly change the number. The second command also writes the HTML report to `htmlcov-ci/`:
 
 ```bash
-uv run --with pytest-cov pytest -m "not models" --cov=whadio --cov-report=term-missing
-uv run --with coverage coverage html --omit='*/test_*.py,*/migrations/versions/*'
+uv run task test:cov
+uv run task test:cov -- --cov-report=term-missing:skip-covered --cov-report=html
 ```
 
-The HTML report colours each line green (run) or red (not run). `htmlcov-before/` shows the state before the new tests and `htmlcov/` the state after.
+The run fails below 80% coverage of lines and branches combined: an `if` counts as covered only when both of its sides ran. The threshold is set in one place, `[tool.coverage.report]` in `pyproject.toml`, so CI and the push hook always agree. Test files, migration revisions and the shared test doubles (`fakes.py`) are left out of the numbers.
+
+Why 80: with the database, the suite reached 88% of lines. On the fast suite, counting branches as well cost about 3.5 points. 80 leaves room for the ASR code that only runs with downloaded models, which CI cannot run (about 1.2 points), and for normal churn, while still catching a real drop. The first full run with branches measured about 85%.
+
+The HTML report colours each line green (run) or red (not run). `htmlcov-before/` shows the state before the new tests and `htmlcov/` the state after; both are snapshots kept for Lab 6. CI writes a fresh report on every run and uploads it with the JUnit XML as the `test-reports` artifact, and the job summary shows the coverage table and the failed tests.
 
 ### Before and after
 
