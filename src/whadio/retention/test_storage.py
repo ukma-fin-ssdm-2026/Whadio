@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import threading
 
 import pytest
@@ -27,3 +28,15 @@ def test_recording_cleanup_translates_storage_failure_without_exposing_key() -> 
         asyncio.run(adapter.delete("private/recording"))
     # Assert
     assert str(failure.value) == "Recording cleanup failed"
+
+
+@pytest.mark.parametrize("delete_fails", [False, True], ids=["deleted", "delete-failed"])
+def test_recording_cleanup_neither_uploads_nor_signs(*, delete_fails: bool) -> None:
+    # Arrange
+    store = InMemoryObjectStorage(fail_delete=delete_fails)
+    adapter = RecordingStorage(store)
+    # Act
+    with contextlib.suppress(StorageUnavailableError):
+        asyncio.run(adapter.delete("recording/test"))
+    # Assert
+    assert (store.uploaded, store.presigned) == ([], [])
