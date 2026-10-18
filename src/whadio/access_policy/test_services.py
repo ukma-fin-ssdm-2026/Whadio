@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from conftest import AsyncDatabase
 
+from ..accounts.contracts import UserProfile
 from ..accounts.enums import WorkspaceRole
 from ..accounts.models import WorkspaceMembership
 from ..accounts.repositories import MembershipRepository
@@ -74,8 +75,12 @@ async def world(session: AsyncSession) -> World:
     )
     assert workspace is not None
     meeting = await AsyncDatabase.add_meeting(session, (owner, folder))
-    member = (await AsyncDatabase.add_account(session, PASSWORD)).user_id
-    outsider = (await AsyncDatabase.add_account(session, PASSWORD)).user_id
+    member = (
+        await AsyncDatabase.add_account(session, PASSWORD, "mark@example.com", "Mark")
+    ).user_id
+    outsider = (
+        await AsyncDatabase.add_account(session, PASSWORD, "oksana@example.com", "Oksana")
+    ).user_id
     session.add(
         WorkspaceMembership(workspace_id=workspace, user_id=member, role=WorkspaceRole.MEMBER)
     )
@@ -678,21 +683,20 @@ def test_requests_of_an_unknown_share_are_missing(async_database: AsyncDatabase)
 # --- Requester profiles ---
 
 
-def test_creator_sees_the_requester_profile(async_database: AsyncDatabase) -> None:
+def test_creator_sees_the_requesters_own_profile(async_database: AsyncDatabase) -> None:
     # Arrange
-    async def scenario(session: AsyncSession) -> str:
+    async def scenario(session: AsyncSession) -> UserProfile:
         unit = await world(session)
         created = await unit.access.create_share(unit.owner, unit.meeting, NOW, redact=False)
         request = await unit.access.request_access(
             unit.outsider, created.share.share_id, created.token, NOW
         )
-        profile = await unit.access.requester_profile(unit.owner, request.share_access_request_id)
-        return profile.name
+        return await unit.access.requester_profile(unit.owner, request.share_access_request_id)
 
     # Act
-    name = async_database.run(scenario)
+    profile = async_database.run(scenario)
     # Assert
-    assert name == "Alice"
+    assert profile == UserProfile("Oksana", "oksana@example.com")
 
 
 def test_other_member_cannot_see_the_requester_profile(async_database: AsyncDatabase) -> None:

@@ -84,13 +84,15 @@ class AsyncDatabase:
         return asyncio.run(run(), loop_factory=asyncio.SelectorEventLoop)
 
     @staticmethod
-    async def add_account(session: AsyncSession, password: str, email: str = "") -> User:
+    async def add_account(
+        session: AsyncSession, password: str, email: str = "", name: str = "Alice"
+    ) -> User:
         user_id = uuid4()
         user = User(
             user_id=user_id,
             # The API refuses special-use domains such as .test, so sign-in needs a real one.
             email=email or f"{user_id}@example.com",
-            name="Alice",
+            name=name,
             password_hash=Argon2PasswordHasher().hash(password),
             terms_accepted_at=datetime.now(UTC),
         )
