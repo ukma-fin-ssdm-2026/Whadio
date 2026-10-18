@@ -1,8 +1,7 @@
 import asyncio
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import BinaryIO
 from uuid import UUID, uuid4
 
 import pytest
@@ -39,7 +38,7 @@ from ..meetings.models import GlossaryTerm, Meeting, Speaker, TranscriptRevision
 from ..meetings.models import Transcript as StoredTranscript
 from ..meetings.persistence import GeneratedNotes
 from ..shared.errors import UseCaseError
-from ..shared.storage import PresignedUrl
+from ..shared.fakes import FixedClock, InMemoryObjectStorage
 from .enums import JobStatus, JobType
 from .repositories import Job
 from .services import (
@@ -219,19 +218,6 @@ class FakeWorkspaces:
         return NotesTemplate.DETAILED
 
 
-class FakeStorage:
-    def put(self, key: str, data: BinaryIO, *, content_type: str) -> None:
-        del key, data, content_type
-
-    def delete(self, key: str) -> None:
-        del key
-
-    def presign_get(self, key: str, *, expires_in: timedelta) -> PresignedUrl:
-        return PresignedUrl(
-            url=f"http://storage.test/recordings/{key}", expires_at=NOW + expires_in
-        )
-
-
 class FakePublisher:
     def __init__(self) -> None:
         self.requests: list[JobRequest] = []
@@ -259,7 +245,9 @@ class Pipeline:
 def make_pipeline(meeting: Meeting | None = None) -> Pipeline:
     jobs, meetings, notes = FakeJobs(), FakeMeetings(meeting or meeting_row()), FakeNotes()
     return Pipeline(
-        ProcessingService(jobs, meetings, notes, FakeWorkspaces(), FakeStorage()),
+        ProcessingService(
+            jobs, meetings, notes, FakeWorkspaces(), InMemoryObjectStorage(now=FixedClock(NOW))
+        ),
         jobs,
         meetings,
         notes,

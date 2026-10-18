@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import BinaryIO, ClassVar
+from typing import ClassVar
 from uuid import UUID, uuid4
 
 import pytest
@@ -35,7 +35,7 @@ from ..meetings.persistence import MeetingPersistence, PersistenceDependencies
 from ..meetings.repositories import MeetingRepository
 from ..meetings.services import MeetingService
 from ..shared.broker import BrokerSettings, MessagePublisher, connect, declare_queue
-from ..shared.storage import PresignedUrl
+from ..shared.fakes import FixedClock, InMemoryObjectStorage
 from .consumer import (
     AmqpJobPublisher,
     ProcessingTransactions,
@@ -394,7 +394,7 @@ def processing_service(session: AsyncSession) -> ProcessingService:
             )
         ),
         WorkspaceSettingsService(WorkspaceSettingsRepository(session)),
-        SigningStorage(),
+        InMemoryObjectStorage(now=FixedClock(NOW)),
     )
 
 
@@ -402,19 +402,6 @@ class UnavailableEvictions:
     async def enqueue(self, notice: EvictionNotice) -> None:
         del notice
         raise AssertionError
-
-
-class SigningStorage:
-    def put(self, key: str, data: BinaryIO, *, content_type: str) -> None:
-        del key, data, content_type
-        raise AssertionError
-
-    def delete(self, key: str) -> None:
-        del key
-        raise AssertionError
-
-    def presign_get(self, key: str, *, expires_in: timedelta) -> PresignedUrl:
-        return PresignedUrl(f"http://storage.test/{key}", NOW + expires_in)
 
 
 def transactions(session: AsyncSession, publisher: FakePublisher) -> ProcessingTransactions:
