@@ -70,9 +70,8 @@ def test_oversized_segment_becomes_its_own_chunk() -> None:
     assert len(chunks) == 3
 
 
-@pytest.mark.xfail(strict=True, raises=pytest.fail.Exception)
 @pytest.mark.parametrize(
-    "max_chars", [pytest.param(-1, id="bva-below-zero"), pytest.param(0, id="bva-zero")]
+    "max_chars", [pytest.param(-1, id="below-zero"), pytest.param(0, id="zero")]
 )
 def test_non_positive_limit_is_refused(max_chars: int) -> None:
     # Arrange

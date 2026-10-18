@@ -6,6 +6,8 @@ from ...contracts.common import Segment
 def chunk_segments(segments: Sequence[Segment], max_chars: int) -> list[tuple[Segment, ...]]:
     if not segments:
         return []
+    if max_chars <= 0:
+        raise ValueError("max_chars must be strictly positive, received: ", max_chars)
 
     chunks: list[tuple[Segment, ...]] = []
     current_chunk: list[Segment] = []
