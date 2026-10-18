@@ -1,10 +1,12 @@
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
+from pydantic import JsonValue, ValidationError
+
+from conftest import refused_fields
 
 from .recognition import RecognizerKind
-from .settings import load_asr_worker_settings
+from .settings import AsrSettings, load_asr_worker_settings
 
 
 @pytest.fixture(autouse=True)
@@ -84,3 +86,42 @@ def test_settings_with_an_unknown_recognizer_are_refused(monkeypatch: pytest.Mon
     # Act / Assert
     with pytest.raises(ValidationError, match="recognizer"):
         load_asr_worker_settings()
+
+
+@pytest.mark.parametrize(
+    ("data", "refused"),
+    [
+        pytest.param({"whisper": {"beam_size": 0}}, {"whisper.beam_size"}, id="beam-bva-below-min"),
+        pytest.param({"whisper": {"beam_size": 1}}, set[str](), id="beam-bva-min"),
+        pytest.param({"whisper": {"beam_size": 2}}, set[str](), id="beam-bva-above-min"),
+        pytest.param(
+            {"diarization": {"embedding_batch_size": 0}},
+            {"diarization.embedding_batch_size"},
+            id="embedding-batch-bva-below-min",
+        ),
+        pytest.param(
+            {"diarization": {"embedding_batch_size": 1}}, set[str](), id="embedding-batch-bva-min"
+        ),
+        pytest.param(
+            {"diarization": {"embedding_batch_size": 2}},
+            set[str](),
+            id="embedding-batch-bva-above-min",
+        ),
+        pytest.param({"max_audio_bytes": 0}, {"max_audio_bytes"}, id="audio-bytes-bva-below-min"),
+        pytest.param({"max_audio_bytes": 1}, set[str](), id="audio-bytes-bva-min"),
+        pytest.param({"max_audio_bytes": 2}, set[str](), id="audio-bytes-bva-above-min"),
+        pytest.param({"slots": 0}, {"slots"}, id="slots-bva-below-min"),
+        pytest.param({"slots": 1}, set[str](), id="slots-bva-min"),
+        pytest.param({"slots": 2}, set[str](), id="slots-bva-above-min"),
+        pytest.param({"languages": ["uk", "en"]}, set[str](), id="languages-bva-min"),
+        pytest.param({"languages": ["uk", "en", "pl"]}, set[str](), id="languages-bva-above-min"),
+    ],
+)
+def test_asr_limit_is_refused_only_below_its_floor(
+    data: dict[str, JsonValue], refused: set[str]
+) -> None:
+    # Act
+    found = refused_fields(AsrSettings, data)
+
+    # Assert
+    assert found == refused

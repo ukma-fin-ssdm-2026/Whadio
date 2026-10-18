@@ -3,10 +3,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import override
 from urllib.parse import parse_qs, urlsplit
+from uuid import uuid4
 
 import pytest
 import urllib3
 from pydantic import HttpUrl, SecretStr
+
+from conftest import refused_fields
 
 from .storage import (
     ObjectStorageError,
@@ -180,3 +183,27 @@ def test_delete_reports_a_refused_request_as_a_storage_error() -> None:
     # Act / Assert
     with pytest.raises(ObjectStorageError, match="Deleting an object failed"):
         storage.delete(_KEY)
+
+
+@pytest.mark.parametrize(
+    ("length", "refused"),
+    [
+        pytest.param(2, {"bucket"}, id="bva-below-min"),
+        pytest.param(3, set[str](), id="bva-min"),
+        pytest.param(4, set[str](), id="bva-above-min"),
+    ],
+)
+def test_bucket_name_needs_at_least_3_characters(length: int, refused: set[str]) -> None:
+    # Arrange
+    data = {
+        "endpoint_url": "http://seaweedfs:8333",
+        "access_key": "whadio-test",
+        "secret_key": uuid4().hex,
+        "bucket": "b" * length,
+    }
+
+    # Act
+    found = refused_fields(ObjectStorageSettings, data)
+
+    # Assert
+    assert found == refused
