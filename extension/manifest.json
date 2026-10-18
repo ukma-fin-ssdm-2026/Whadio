@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Whadio",
+  "version": "0.1.0",
+  "description": "Records the audio of a Google Meet call together with your microphone.",
+  "minimum_chrome_version": "116",
+  "permissions": ["activeTab", "downloads", "offscreen", "scripting", "tabCapture"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["recorder.js"]
+    }
+  ],
+  "commands": {
+    "toggle-recording": {
+      "suggested_key": { "default": "Alt+Shift+R" },
+      "description": "Start or stop recording the Meet call"
+    }
+  },
+  "action": {
+    "default_title": "Whadio",
+    "default_popup": "popup.html"
+  }
+}
