@@ -27,14 +27,36 @@ if (!globalThis.whadioRecorder) {
     // stopped or the page went away.
     const port = chrome.runtime.connect({ name: "recording" });
     let sent = Promise.resolve();
+
+    // Each tile's level bars move while that participant talks and rest on the quiet class otherwise;
+    // names heard during a slice go with it whenever they differ from the previous slice.
+    const heard = new Set();
+    let previous = "";
+    const listening = setInterval(() => {
+      for (const tile of document.querySelectorAll("[data-participant-id]")) {
+        const level = tile.querySelector('[jsname="QgSmzd"]');
+        const name = tile.querySelector("span.notranslate")?.textContent.trim();
+        if (level && name && !level.classList.contains("gjg47c")) {
+          heard.add(name);
+        }
+      }
+    }, 250);
+
     const recorder = new MediaRecorder(mix.stream, { mimeType: "audio/webm;codecs=opus" });
     recorder.addEventListener("dataavailable", (event) => {
-      sent = sent.then(async () => port.postMessage({ audio: base64(await event.data.arrayBuffer()) }));
+      const speakers = [...heard].sort();
+      heard.clear();
+      const changed = speakers.join("\n") !== previous;
+      previous = speakers.join("\n");
+      sent = sent.then(async () => {
+        const audio = base64(await event.data.arrayBuffer());
+        port.postMessage(changed ? { audio, speakers } : { audio });
+      });
     });
     recorder.addEventListener("stop", () => sent.then(() => port.disconnect()), { once: true });
     recorder.start(1000);
 
-    session = { recorder, context, streams: [tab, microphone], startedAt: Date.now() };
+    session = { recorder, context, listening, streams: [tab, microphone], startedAt: Date.now() };
     tab.getAudioTracks()[0].addEventListener("ended", () => {
       if (session) {
         stop();
@@ -76,8 +98,9 @@ if (!globalThis.whadioRecorder) {
   }
 
   function stop() {
-    const { recorder, context, streams } = session;
+    const { recorder, context, listening, streams } = session;
     session = null;
+    clearInterval(listening);
     // Recorded once already, so the card stays away for the rest of this call.
     dismissed = true;
     recorder.stop();
