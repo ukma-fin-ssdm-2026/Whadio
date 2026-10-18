@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -56,3 +57,31 @@ def test_naive_timestamp_is_rejected(deadline: datetime, now: datetime) -> None:
     # Assert
     with pytest.raises(ValueError, match=r"^Retention requires an aware timestamp$"):
         recording_expiry_status(deadline, now)
+
+
+@pytest.mark.parametrize(
+    ("deadline", "now", "expected"),
+    [
+        pytest.param(
+            datetime(2026, 11, 1, 0, 30, tzinfo=ZoneInfo("Europe/Kyiv")),
+            datetime(2026, 10, 25, 0, 30, tzinfo=ZoneInfo("Europe/Kyiv")),
+            RecordingExpiryStatus.AVAILABLE,
+            id="autumn-extra-hour",
+        ),
+        pytest.param(
+            datetime(2026, 3, 29, 12, 30, tzinfo=ZoneInfo("Europe/Kyiv")),
+            datetime(2026, 3, 22, 12, tzinfo=ZoneInfo("Europe/Kyiv")),
+            RecordingExpiryStatus.EXPIRING_SOON,
+            id="spring-missing-hour",
+        ),
+    ],
+)
+def test_warning_window_uses_elapsed_time_across_daylight_saving(
+    deadline: datetime, now: datetime, expected: RecordingExpiryStatus
+) -> None:
+    # Arrange
+    # Act
+    result = recording_expiry_status(deadline, now)
+
+    # Assert
+    assert result == expected
