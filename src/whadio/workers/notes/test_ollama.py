@@ -29,7 +29,6 @@ def _chat(
     content: str = "# Sync\n## Summary\nShort.",
     *,
     model: str = "gemma3:12b",
-    prompt_eval_count: int = 120,
 ) -> dict[str, JsonValue]:
     return {
         "model": model,
@@ -37,7 +36,7 @@ def _chat(
         "message": {"role": "assistant", "content": content},
         "done": True,
         "done_reason": "stop",
-        "prompt_eval_count": prompt_eval_count,
+        "prompt_eval_count": 120,
         "eval_count": 40,
     }
 
@@ -131,6 +130,8 @@ def test_ollama_request_asks_for_one_unthinking_answer_within_the_window() -> No
             "stream": False,
             "think": False,
             "keep_alive": 300,
+            "truncate": False,
+            "shift": False,
             "options": {"num_ctx": 8192, "num_predict": 2048},
         },
     )
@@ -194,8 +195,12 @@ def test_ollama_answer_without_text_is_invalid_output(content: str) -> None:
 
 @pytest.mark.parametrize(
     "body",
-    [_chat() | {"done_reason": "length", "eval_count": _NUM_PREDICT}, _chat() | {"done": False}],
-    ids=["cut-off", "unfinished"],
+    [
+        _chat() | {"done_reason": "length", "eval_count": _NUM_PREDICT},
+        _chat() | {"done_reason": "length", "eval_count": None},
+        _chat() | {"done": False},
+    ],
+    ids=["cut-off", "cut-off-uncounted", "unfinished"],
 )
 def test_ollama_answer_that_did_not_finish_is_invalid_output(body: dict[str, JsonValue]) -> None:
     # Arrange
@@ -219,10 +224,21 @@ def test_ollama_answer_of_an_unexpected_shape_is_invalid_output() -> None:
     assert reason is NotesFailure.INVALID_OUTPUT
 
 
-@pytest.mark.parametrize("prompt_eval_count", [_NUM_CTX, _NUM_CTX + 1], ids=["at", "above"])
-def test_ollama_prompt_filling_the_window_is_reported_as_too_long(prompt_eval_count: int) -> None:
+@pytest.mark.parametrize(
+    "message",
+    [
+        (
+            "the prompt is longer than the context length currently available to the model; "
+            "shorten the prompt, adjust the context length in settings, or use a model with a "
+            "longer context length"
+        ),
+        "request (9000 tokens) exceeds the available context size (8192 tokens), try increasing it",
+    ],
+    ids=["ollama", "llama-server"],
+)
+def test_ollama_prompt_over_the_window_is_reported_as_too_long(message: str) -> None:
     # Arrange
-    handler = _answering(200, _chat(prompt_eval_count=prompt_eval_count))
+    handler = _answering(400, {"error": message})
 
     # Act
     reason = _failure_of(handler)
@@ -231,28 +247,15 @@ def test_ollama_prompt_filling_the_window_is_reported_as_too_long(prompt_eval_co
     assert reason is NotesFailure.TRANSCRIPT_TOO_LONG
 
 
-def test_ollama_prompt_just_inside_the_window_is_answered() -> None:
+def test_ollama_answer_that_runs_out_of_the_window_is_reported_as_too_long() -> None:
     # Arrange
-    handler = _answering(200, _chat("# Sync", prompt_eval_count=_NUM_CTX - 1))
+    handler = _answering(200, _chat() | {"done_reason": "length", "eval_count": _NUM_PREDICT - 1})
 
     # Act
-    completion = _complete(handler)
+    reason = _failure_of(handler)
 
     # Assert
-    assert completion.text == "# Sync"
-
-
-def test_ollama_answer_without_a_prompt_count_is_answered() -> None:
-    # Arrange
-    body = _chat("# Sync")
-    del body["prompt_eval_count"]
-    handler = _answering(200, body)
-
-    # Act
-    completion = _complete(handler)
-
-    # Assert
-    assert completion.text == "# Sync"
+    assert reason is NotesFailure.TRANSCRIPT_TOO_LONG
 
 
 # --- Against a real Ollama ---
@@ -355,6 +358,21 @@ def test_real_ollama_prompt_longer_than_the_window_is_reported_as_too_long(
     # Act
     with pytest.raises(NotesError) as raised:
         live_ollama.complete(prompt, num_ctx=512)
+
+    # Assert
+    assert raised.value.reason is NotesFailure.TRANSCRIPT_TOO_LONG
+
+
+@pytest.mark.slow
+def test_real_ollama_answer_that_runs_out_of_the_window_is_reported_as_too_long(
+    live_ollama: LiveOllama,
+) -> None:
+    # Arrange
+    prompt = _LONG_ANSWER
+
+    # Act
+    with pytest.raises(NotesError) as raised:
+        live_ollama.complete(prompt, num_ctx=512, num_predict=2048)
 
     # Assert
     assert raised.value.reason is NotesFailure.TRANSCRIPT_TOO_LONG
