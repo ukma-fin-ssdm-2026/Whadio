@@ -40,3 +40,4 @@ class ProcessingFailure(StrEnum):
 class RecordingExpiryStatus(StrEnum):
     AVAILABLE = "available"
     EXPIRING_SOON = "expiring_soon"
+    EXPIRED = "expired"
