@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from .settings import SmtpSettings, load_notification_settings
+from .settings import OutboxSettings, SmtpSettings, load_notification_settings
 
 
 @pytest.fixture(autouse=True)
@@ -153,3 +153,53 @@ def test_credentials_without_starttls_are_refused() -> None:
             password=SecretStr("relay-secret"),
             from_address="noreply@example.com",
         )
+
+
+def test_settings_read_the_nested_outbox_variables(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    monkeypatch.setenv("WHADIO_OUTBOX__BATCH_SIZE", "10")
+    monkeypatch.setenv("WHADIO_OUTBOX__RETENTION", "P1D")
+    # Act
+    outbox = load_notification_settings().outbox
+    # Assert
+    assert (outbox.batch_size, outbox.retention) == (10, timedelta(days=1))
+
+
+def test_outbox_defaults_retry_for_about_two_days_and_keep_sent_notices_a_week() -> None:
+    # Act
+    outbox = OutboxSettings()
+    # Assert
+    assert (
+        outbox.retry_backoff,
+        outbox.max_retry_backoff,
+        outbox.max_attempts,
+        outbox.retention,
+    ) == (timedelta(minutes=1), timedelta(hours=6), 16, timedelta(days=7))
+
+
+def test_backoff_cap_shorter_than_the_first_backoff_is_refused() -> None:
+    # Act / Assert
+    with pytest.raises(ValidationError, match="max_retry_backoff"):
+        OutboxSettings(retry_backoff=timedelta(minutes=10), max_retry_backoff=timedelta(minutes=5))
+
+
+def test_backoff_cap_equal_to_the_first_backoff_is_accepted() -> None:
+    # Act
+    outbox = OutboxSettings(
+        retry_backoff=timedelta(minutes=5), max_retry_backoff=timedelta(minutes=5)
+    )
+    # Assert
+    assert outbox.max_retry_backoff == timedelta(minutes=5)
+
+
+@pytest.mark.parametrize("batch_size", [0, 1001], ids=["below-range", "above-range"])
+def test_batch_size_outside_its_range_is_refused(batch_size: int) -> None:
+    # Act / Assert
+    with pytest.raises(ValidationError, match="batch_size"):
+        OutboxSettings(batch_size=batch_size)
+
+
+def test_zero_retention_is_refused() -> None:
+    # Act / Assert
+    with pytest.raises(ValidationError, match="retention"):
+        OutboxSettings(retention=timedelta(0))
