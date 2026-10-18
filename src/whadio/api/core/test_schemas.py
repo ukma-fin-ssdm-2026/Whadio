@@ -17,6 +17,9 @@ _PADDING: Final = st.text(
 _RAW_TEXT: Final = st.tuples(
     _PADDING, st.text(), st.characters(categories=["L", "N", "P", "S"]), st.text(), _PADDING
 ).map("".join)
+_VISIBLE: Final = st.characters(categories=["L", "N", "P", "S"], exclude_characters=_BLANK_GRAPHICS)
+_NO_CONTROL: Final = st.text(st.characters(exclude_categories=["Cc", "Cs"]))
+_VALID_TEXT: Final = st.tuples(_PADDING, _NO_CONTROL, _VISIBLE, _NO_CONTROL, _PADDING).map("".join)
 # Hypothesis merges a one_of of character strategies into one code-point range, where the five
 # blank graphics would almost never be drawn; a one_of of whole texts keeps them in play.
 _INVISIBLE_TEXT: Final = st.one_of(
@@ -43,6 +46,15 @@ def test_accepted_display_text_is_stripped(value: str) -> None:
 
     # Assert
     assert accepted is None or accepted == accepted.strip()
+
+
+@given(_VALID_TEXT)
+def test_display_text_with_a_visible_character_is_accepted_stripped(value: str) -> None:
+    # Act
+    accepted = _validated(value)
+
+    # Assert
+    assert accepted == value.strip()
 
 
 @given(_INVISIBLE_TEXT)
@@ -75,13 +87,13 @@ def test_accepted_display_text_has_a_visible_character(value: str) -> None:
     assert accepted is None or any(_is_visible(char) for char in accepted)
 
 
-@given(_RAW_TEXT)
+@given(_VALID_TEXT)
 def test_validating_accepted_display_text_again_returns_it_unchanged(value: str) -> None:
     # Arrange
-    accepted = _validated(value)
+    accepted = _DISPLAY_TEXT.validate_python(value)
 
     # Act
-    again = None if accepted is None else _validated(accepted)
+    again = _DISPLAY_TEXT.validate_python(accepted)
 
     # Assert
     assert again == accepted
