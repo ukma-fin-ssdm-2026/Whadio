@@ -115,7 +115,7 @@ services:
     environment:
       WHADIO_BROKER__URL: amqp://whadio-notes:${RABBITMQ_NOTES_PASSWORD:-}@rabbitmq:5672/whadio
       # `:-`, not `:?`: Compose reads the whole file, so `:?` would break every command.
-      WHADIO_NOTES__API_KEY: ${WHADIO_NOTES__API_KEY:-}
+      WHADIO_NOTES__LLM__API_KEY: ${WHADIO_NOTES__LLM__API_KEY:-}
 
   asr-worker:
     <<: *worker
