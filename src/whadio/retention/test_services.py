@@ -8,7 +8,10 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy.exc import OperationalError
 
+from conftest import NOW
+
 from ..meetings.retention import (
+    BATCH_SIZE,
     ExpiringRecording,
     IRetentionMeetings,
     NotificationUnavailableError,
@@ -176,3 +179,110 @@ def test_storage_delete_can_be_repeated_after_database_commit_failure() -> None:
     result = asyncio.run(scenario())
     # Assert
     assert (result, storage.deleted) == (([meeting_id], [meeting_id]), ["test", "test"])
+
+
+class PagedMeetings:
+    def __init__(self, count: int) -> None:
+        self.ids: list[UUID] = sorted(uuid4() for _ in range(count))
+        self.due_queries: int = 0
+        self.pending_queries: int = 0
+        self.completed: list[UUID] = []
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncGenerator[IRetentionMeetings]:
+        yield self
+
+    def _page_after(self, after: UUID | None) -> list[UUID]:
+        return [i for i in self.ids if after is None or i > after][:BATCH_SIZE]
+
+    async def due(self, _now: datetime, after: UUID | None = None) -> list[UUID]:
+        self.due_queries += 1
+        return self._page_after(after)
+
+    async def pending_deletions(self, after: UUID | None = None) -> list[UUID]:
+        self.pending_queries += 1
+        return self._page_after(after)
+
+    async def claim_deletion(self, deletion_id: UUID) -> str | None:
+        return str(deletion_id)
+
+    async def complete_deletion(self, deletion_id: UUID) -> None:
+        self.completed.append(deletion_id)
+
+    async def claim(self, meeting_id: UUID) -> ExpiringRecording | None:
+        return ExpiringRecording(meeting_id, str(meeting_id), NOW, None, [])
+
+    async def mark_warned(self, _meeting_id: UUID, _now: datetime) -> None:
+        pass
+
+    async def mark_deleted(self, _meeting_id: UUID, _now: datetime) -> None:
+        pass
+
+    async def notify(self, recording: ExpiringRecording) -> None:
+        del recording
+
+
+_DUE_COUNTS = [
+    pytest.param(BATCH_SIZE - 1, id="bva-below-batch-size"),
+    pytest.param(BATCH_SIZE, id="bva-on-batch-size"),
+    pytest.param(BATCH_SIZE + 1, id="bva-above-batch-size"),
+]
+_PAGE_QUERIES = [
+    pytest.param(BATCH_SIZE - 1, 1, id="bva-below-batch-size"),
+    pytest.param(BATCH_SIZE, 2, id="bva-on-batch-size"),
+    pytest.param(BATCH_SIZE + 1, 2, id="bva-above-batch-size"),
+]
+
+
+@pytest.mark.parametrize("count", _DUE_COUNTS)
+def test_retention_pass_deletes_every_due_recording_once_across_pages(count: int) -> None:
+    # Arrange
+    meetings = PagedMeetings(count)
+    service = RetentionService(meetings, RecordingStore())
+
+    # Act
+    result = asyncio.run(service.run(NOW))
+
+    # Assert
+    assert result.deleted == meetings.ids
+
+
+@pytest.mark.parametrize(("count", "queries"), _PAGE_QUERIES)
+def test_retention_pass_asks_for_another_page_only_after_a_full_one(
+    count: int, queries: int
+) -> None:
+    # Arrange
+    meetings = PagedMeetings(count)
+    service = RetentionService(meetings, RecordingStore())
+
+    # Act
+    asyncio.run(service.run(NOW))
+
+    # Assert
+    assert meetings.due_queries == queries
+
+
+@pytest.mark.parametrize("count", _DUE_COUNTS)
+def test_cleanup_removes_every_pending_recording_once_across_pages(count: int) -> None:
+    # Arrange
+    meetings = PagedMeetings(count)
+    service = RetentionService(meetings, RecordingStore())
+
+    # Act
+    asyncio.run(service.remove_deleted_meeting_recordings())
+
+    # Assert
+    assert meetings.completed == meetings.ids
+
+
+@pytest.mark.parametrize(("count", "queries"), _PAGE_QUERIES)
+def test_cleanup_asks_for_another_page_only_after_a_full_one(count: int, queries: int) -> None:
+    # Arrange
+    meetings = PagedMeetings(count)
+    service = RetentionService(meetings, RecordingStore())
+
+    # Act
+    asyncio.run(service.remove_deleted_meeting_recordings())
+
+    # Assert
+    assert meetings.pending_queries == queries
