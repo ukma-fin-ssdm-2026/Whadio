@@ -28,6 +28,16 @@ tasks:
     cmds:
       - uv run --frozen pytest {{.CLI_ARGS}}
 
+  test:cov:
+    desc: Run the suite CI runs, with the line and branch coverage gate from pyproject.toml
+    preconditions:
+      - sh: test -n "$WHADIO_TEST_DATABASE_URL"
+        msg: >-
+          Set WHADIO_TEST_DATABASE_URL to the test database (start it with `task infra:up`); see
+          docs/testing/testing.md
+    cmds:
+      - uv run --frozen pytest -m "not models" --cov {{.CLI_ARGS}}
+
   audit:
     desc: Look for vulnerable dependencies and for secrets anywhere in the git history
     cmds:

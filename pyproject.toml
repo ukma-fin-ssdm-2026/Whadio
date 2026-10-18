@@ -262,6 +262,21 @@ markers = [
     "models: needs downloaded ML models; CI leaves it out (mark such tests slow as well)",
 ]
 
+# Turned on by `task test:cov`, not addopts: the commit hook's fast suite stays below fail_under.
+[tool.coverage.run]
+source_pkgs = ["whadio"]
+branch = true
+omit = ["*/test_*.py", "*/migrations/versions/*", "*/fakes.py"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", '^\s*\.\.\.$', "@overload"]
+
+[tool.coverage.html]
+directory = "htmlcov-ci"
+
 [tool.deptry]
 extend_exclude = ["src/.*/test_[^/]*\\.py"]
 per_rule_ignores = { DEP002 = ["torchaudio", "torchcodec"] } # declared to pin them to torch's index

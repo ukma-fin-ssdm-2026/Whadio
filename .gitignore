@@ -6,3 +6,6 @@ dist/
 *.db
 recordings/
 node_modules/
+.coverage*
+reports/
+htmlcov-ci/
