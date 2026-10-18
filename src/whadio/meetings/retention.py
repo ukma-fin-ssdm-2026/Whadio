@@ -18,10 +18,10 @@ BATCH_SIZE = 100
 
 def recording_expiry_status(deadline: datetime, now: datetime) -> RecordingExpiryStatus:
     if deadline.utcoffset() is None or now.utcoffset() is None:
-        raise ValueError("Recording expiry requires timezone-aware timestamps")
+        raise ValueError("Retention requires an aware timestamp")
     remaining = deadline - now
 
-    if remaining.total_seconds() <= 0:
+    if remaining <= timedelta(0):
         return RecordingExpiryStatus.EXPIRED
     if remaining <= WARNING_PERIOD:
         return RecordingExpiryStatus.EXPIRING_SOON
