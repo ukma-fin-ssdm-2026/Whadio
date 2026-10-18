@@ -95,3 +95,20 @@ def test_small_positive_limit_is_accepted() -> None:
 
     # Act / Assert
     chunk_segments(segments, max_chars)  # no error is expected
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError)
+def test_chunk_after_an_overflow_counts_its_first_segment() -> None:
+    # Arrange
+    max_chars = 10
+    segments = [
+        Segment(start_seconds=0.0, end_seconds=1.0, speaker="speaker_0", text="aaaaaa"),
+        Segment(start_seconds=1.0, end_seconds=2.0, speaker="speaker_1", text="bbbbbb"),
+        Segment(start_seconds=2.0, end_seconds=3.0, speaker="speaker_0", text="cccccc"),
+    ]
+
+    # Act
+    chunks = chunk_segments(segments, max_chars)
+
+    # Assert
+    assert chunks == [(segments[0],), (segments[1],), (segments[2],)]
