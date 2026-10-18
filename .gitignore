@@ -6,3 +6,4 @@ dist/
 *.db
 recordings/
 node_modules/
+.hypothesis/

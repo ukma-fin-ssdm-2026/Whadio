@@ -55,6 +55,7 @@ dev = [
     "check-jsonschema>=0.38.2",
     "deptry>=0.25.1",
     "go-task-bin>=3.54.0",
+    "hypothesis>=6.170.1",
     "import-linter>=2.15",
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
