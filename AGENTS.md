@@ -119,7 +119,7 @@ the first failure: branch name, file hygiene, gitleaks, `uv lock --check`, `ruff
 `ruff format` on the whole project, the suppression ban, typos, schema and workflow checks,
 import-linter, ty, basedpyright, Bandit, deptry, the OpenAPI drift check and the fast tests. The
 commit message is checked last. `git push` runs `uv run task test:cov`: the whole test suite but
-the `models` tests, failing below 80% line and branch coverage. It needs the services running and
+the `models` tests, failing below 85% line and branch coverage. It needs the services running and
 `WHADIO_TEST_DATABASE_URL` exported (`docs/testing/testing.md`). CI repeats all of this but the
 branch name, and adds `uv run task audit`: uv audit and a gitleaks scan of the whole history.
 On a pull request, CI checks the title and every commit message against the commit format.
