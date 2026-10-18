@@ -1,10 +1,22 @@
+import math
 from datetime import timedelta
 from pathlib import Path
+from typing import Final
 
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from .settings import AnthropicSettings, OllamaSettings, load_notes_worker_settings
+from conftest import refused_fields
+
+from .settings import (
+    AnthropicSettings,
+    NotesSettings,
+    OllamaSettings,
+    load_notes_worker_settings,
+)
+
+_EPSILON: Final = math.ulp(0.0)
+_MICROSECOND: Final = 1e-6
 
 
 @pytest.fixture(autouse=True)
@@ -181,3 +193,53 @@ def test_ollama_prompt_budget_keeps_a_smaller_input_budget(
 
     # Assert
     assert settings.notes.max_prompt_tokens == 8_000
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "refused"),
+    [
+        pytest.param("max_output_tokens", 1_023, True, id="max-output-bva-below-min"),
+        pytest.param("max_output_tokens", 1_024, False, id="max-output-bva-min"),
+        pytest.param("max_output_tokens", 1_025, False, id="max-output-bva-above-min"),
+        pytest.param("max_input_tokens", 999, True, id="max-input-bva-below-min"),
+        pytest.param("max_input_tokens", 1_000, False, id="max-input-bva-min"),
+        pytest.param("max_input_tokens", 1_001, False, id="max-input-bva-above-min"),
+        pytest.param("concurrency", 0, True, id="concurrency-bva-below-min"),
+        pytest.param("concurrency", 1, False, id="concurrency-bva-min"),
+        pytest.param("concurrency", 2, False, id="concurrency-bva-above-min"),
+        pytest.param("chars_per_token", -_EPSILON, True, id="chars-per-token-bva-below-bound"),
+        pytest.param("chars_per_token", 0.0, True, id="chars-per-token-bva-on-bound"),
+        pytest.param("chars_per_token", _EPSILON, False, id="chars-per-token-bva-above-bound"),
+    ],
+)
+def test_notes_limit_is_refused_only_below_its_floor(
+    field: str, value: float, *, refused: bool
+) -> None:
+    # Act
+    found = refused_fields(NotesSettings, {"llm": {"api_key": "sk-ant-test"}, field: value})
+
+    # Assert
+    assert found == ({field} if refused else set[str]())
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "refused"),
+    [
+        pytest.param("num_ctx", 2_047, True, id="num-ctx-bva-below-min"),
+        pytest.param("num_ctx", 2_048, False, id="num-ctx-bva-min"),
+        pytest.param("num_ctx", 2_049, False, id="num-ctx-bva-above-min"),
+        pytest.param("keep_alive", -_MICROSECOND, True, id="keep-alive-bva-below-min"),
+        pytest.param("keep_alive", 0.0, False, id="keep-alive-bva-min"),
+        pytest.param("keep_alive", _MICROSECOND, False, id="keep-alive-bva-above-min"),
+    ],
+)
+def test_ollama_limit_is_refused_only_below_its_floor(
+    field: str, value: float, *, refused: bool
+) -> None:
+    # Act
+    found = refused_fields(
+        OllamaSettings, {"provider": "ollama", "model": "gemma3:12b", field: value}
+    )
+
+    # Assert
+    assert found == ({field} if refused else set[str]())

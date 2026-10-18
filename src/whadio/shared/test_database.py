@@ -9,7 +9,9 @@ from pydantic import SecretStr
 from sqlalchemy import Connection, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
-from .database import Database, DatabaseSettings, MigrationSettings
+from conftest import refused_fields
+
+from .database import ConnectionSettings, Database, DatabaseSettings, MigrationSettings
 
 
 def test_initial_migration_uses_canonical_audit_action_constraint_name() -> None:
@@ -48,6 +50,26 @@ def test_migrations_use_owner_role() -> None:
     username = settings.migration_url().username
     # Assert
     assert username == "whadio_owner"
+
+
+@pytest.mark.parametrize(
+    ("port", "refused"),
+    [
+        pytest.param(0, {"port"}, id="bva-below-min"),
+        pytest.param(1, set[str](), id="bva-min"),
+        pytest.param(2, set[str](), id="bva-above-min"),
+        pytest.param(5432, set[str](), id="bva-nominal"),
+        pytest.param(65534, set[str](), id="bva-below-max"),
+        pytest.param(65535, set[str](), id="bva-max"),
+        pytest.param(65536, {"port"}, id="bva-above-max"),
+    ],
+)
+def test_database_port_is_accepted_only_from_1_to_65535(port: int, refused: set[str]) -> None:
+    # Act
+    found = refused_fields(ConnectionSettings, {"port": port})
+
+    # Assert
+    assert found == refused
 
 
 @pytest.mark.slow
