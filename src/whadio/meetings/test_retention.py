@@ -1,5 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from .enums import RecordingExpiryStatus
 from .retention import recording_expiry_status
 
@@ -26,3 +28,16 @@ def test_recording_at_warning_boundary_is_expiring_soon() -> None:
 
     # Assert
     assert result == RecordingExpiryStatus.EXPIRING_SOON
+
+
+@pytest.mark.parametrize("elapsed", [timedelta(0), timedelta(microseconds=1)])
+def test_recording_at_or_after_deadline_is_expired(elapsed: timedelta) -> None:
+    # Arrange
+    deadline = datetime(2026, 11, 1, 12, tzinfo=UTC)
+    now = deadline + elapsed
+
+    # Act
+    result = recording_expiry_status(deadline, now)
+
+    # Assert
+    assert result == "expired"
