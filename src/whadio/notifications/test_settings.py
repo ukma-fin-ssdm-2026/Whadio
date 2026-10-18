@@ -51,6 +51,16 @@ def test_settings_read_the_dotenv_file_of_the_working_directory(tmp_path: Path) 
     assert settings.smtp is not None
 
 
+def test_smtp_section_without_a_host_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    monkeypatch.setenv("WHADIO_SMTP__PORT", "1025")
+    monkeypatch.setenv("WHADIO_SMTP__FROM_ADDRESS", "whadio@localhost")
+
+    # Act / Assert
+    with pytest.raises(ValidationError, match=r"smtp\.host"):
+        load_notification_settings()
+
+
 def test_settings_without_a_public_url_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
     monkeypatch.delenv("WHADIO_PUBLIC_URL")
