@@ -16,6 +16,7 @@ from ..accounts.repositories import MembershipRepository
 from ..accounts.services import WorkspaceMembershipService
 from ..audit.contracts import ContentEvent
 from ..audit.enums import AuditAction
+from ..audit.fakes import RecordingAuditWriter
 from ..shared.errors import Failure, UseCaseError
 from .contracts import MeetingScope
 from .repositories import AccessRepository
@@ -39,14 +40,6 @@ class FakeMeetings:
         self.scopes[meeting_id] = replace(self.scopes[meeting_id], restricted=restricted)
 
 
-class FakeAudit:
-    def __init__(self) -> None:
-        self.events: list[ContentEvent] = []
-
-    async def write(self, event: ContentEvent) -> None:
-        self.events.append(event)
-
-
 class FakeNotices:
     def __init__(self) -> None:
         self.sent: list[tuple[UUID, UUID, UUID]] = []
@@ -59,7 +52,7 @@ class FakeNotices:
 class World:
     access: AccessService
     meetings: FakeMeetings
-    audit: FakeAudit
+    audit: RecordingAuditWriter
     notices: FakeNotices
     owner: UUID
     member: UUID
@@ -85,7 +78,7 @@ async def world(session: AsyncSession) -> World:
         WorkspaceMembership(workspace_id=workspace, user_id=member, role=WorkspaceRole.MEMBER)
     )
     await session.flush()
-    meetings, audit, notices = FakeMeetings(), FakeAudit(), FakeNotices()
+    meetings, audit, notices = FakeMeetings(), RecordingAuditWriter(), FakeNotices()
     meetings.scopes[meeting] = MeetingScope(meeting, workspace, owner, restricted=False)
     access = AccessService(
         AccessCollaborators(

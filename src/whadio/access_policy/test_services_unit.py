@@ -10,12 +10,13 @@ from sqlalchemy import Select
 from ..accounts.contracts import UserProfile
 from ..accounts.enums import WorkspaceRole
 from ..audit.enums import AuditAction
+from ..audit.fakes import RecordingAuditWriter
 from ..shared.errors import Failure, UseCaseError
 from ..shared.pagination import ListWindow
 from .contracts import MeetingScope
 from .models import ExternalShare, MeetingAccessGrant, ShareAccessRequest
 from .services import AccessCollaborators, AccessService, ContentPath
-from .test_services import FakeAudit, FakeMeetings, FakeNotices
+from .test_services import FakeMeetings, FakeNotices
 
 NOW = datetime(2026, 10, 13, 9, 0, tzinfo=UTC)
 
@@ -98,7 +99,7 @@ class World:
     access: AccessService
     repository: FakeAccessRepository
     directory: FakeDirectory
-    audit: FakeAudit
+    audit: RecordingAuditWriter
     notices: FakeNotices
     owner: UUID
     member: UUID
@@ -109,7 +110,7 @@ class World:
 def world() -> World:
     owner, member, outsider, workspace, meeting = uuid4(), uuid4(), uuid4(), uuid4(), uuid4()
     repository, directory = FakeAccessRepository(), FakeDirectory()
-    meetings, audit, notices = FakeMeetings(), FakeAudit(), FakeNotices()
+    meetings, audit, notices = FakeMeetings(), RecordingAuditWriter(), FakeNotices()
     directory.roles[workspace, owner] = WorkspaceRole.OWNER
     directory.roles[workspace, member] = WorkspaceRole.MEMBER
     directory.profiles[owner] = UserProfile("Olena", "olena@example.test")

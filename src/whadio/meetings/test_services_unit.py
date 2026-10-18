@@ -10,8 +10,8 @@ from ..access_policy.contracts import MeetingScope
 from ..access_policy.models import MeetingAccessGrant
 from ..access_policy.services import ContentPath, Permission
 from ..accounts.enums import WorkspaceRole
-from ..audit.contracts import ContentEvent
 from ..audit.enums import AuditAction
+from ..audit.fakes import RecordingAuditWriter
 from ..shared.errors import Failure, UseCaseError
 from ..shared.pagination import ListWindow
 from .contracts import ContextReference, MeetingFilter, NoteVersion, TranscriptVersion
@@ -164,19 +164,11 @@ class FakePolicy:
         raise NotImplementedError(share_id, user_id, path)
 
 
-class FakeAudit:
-    def __init__(self) -> None:
-        self.events: list[ContentEvent] = []
-
-    async def write(self, event: ContentEvent) -> None:
-        self.events.append(event)
-
-
 @dataclass(frozen=True)
 class Team:
     meetings: MeetingService
     repository: FakeMeetingRepository
-    audit: FakeAudit
+    audit: RecordingAuditWriter
     owner: UUID
     member: UUID
     workspace: UUID
@@ -186,7 +178,7 @@ class Team:
 
 def team() -> Team:
     owner, member, workspace = uuid4(), uuid4(), uuid4()
-    repository, policy, audit = FakeMeetingRepository(), FakePolicy(), FakeAudit()
+    repository, policy, audit = FakeMeetingRepository(), FakePolicy(), RecordingAuditWriter()
     policy.roles[workspace, owner] = WorkspaceRole.OWNER
     policy.roles[workspace, member] = WorkspaceRole.MEMBER
     folder = Folder(
