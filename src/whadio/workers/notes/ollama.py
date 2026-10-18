@@ -12,6 +12,7 @@ from .prompt import Prompt
 _CHAT_PATH: Final = "/api/chat"
 _NOT_FOUND: Final = 404
 _FIRST_SERVER_ERROR: Final = 500
+_CUT_OFF: Final = "length"
 
 
 class _Message(BaseModel):
@@ -21,6 +22,10 @@ class _Message(BaseModel):
 class _ChatResponse(BaseModel):
     model: str = Field(min_length=1, description="Model that served the request")
     message: _Message = Field(description="The assistant's answer")
+    done: bool = Field(description="Whether the runtime finished the answer")
+    done_reason: str | None = Field(
+        default=None, description="Why generation stopped: stop at the end, length when cut off"
+    )
     prompt_eval_count: int | None = Field(
         default=None, description="Tokens of the prompt the runtime evaluated"
     )
@@ -62,6 +67,9 @@ class OllamaChatModel:
         # part of the transcript.
         if answer.prompt_eval_count is not None and answer.prompt_eval_count >= self._num_ctx:
             raise NotesError(NotesFailure.TRANSCRIPT_TOO_LONG)
+        # A cut-off answer can already hold every heading, so parse_notes would accept it.
+        if not answer.done or answer.done_reason == _CUT_OFF:
+            raise NotesError(NotesFailure.INVALID_OUTPUT)
         if not answer.message.content.strip():
             raise NotesError(NotesFailure.INVALID_OUTPUT)
         return Completion(text=answer.message.content, model_name=answer.model)
