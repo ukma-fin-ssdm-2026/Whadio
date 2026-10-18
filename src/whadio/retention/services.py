@@ -5,11 +5,12 @@ from uuid import UUID
 
 from sqlalchemy.exc import SQLAlchemyError
 
+from ..meetings.enums import RecordingExpiryStatus
 from ..meetings.retention import (
     BATCH_SIZE,
-    WARNING_PERIOD,
     IRetentionTransactions,
     NotificationUnavailableError,
+    recording_expiry_status,
 )
 
 
@@ -36,6 +37,7 @@ class RetentionService:
         self._storage: IRecordingStorage = storage
 
     async def run(self, now: datetime) -> RetentionResult:
+        # Reject naive input even when no recordings are due.
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("Retention requires an aware timestamp")
         warned: list[UUID] = []
@@ -65,11 +67,12 @@ class RetentionService:
             recording = await meetings.claim(meeting_id)
             if recording is None:
                 return "unchanged"
-            if recording.deadline <= now:
+            status = recording_expiry_status(recording.deadline, now)
+            if status == RecordingExpiryStatus.EXPIRED:
                 await self._storage.delete(recording.storage_key)
                 await meetings.mark_deleted(meeting_id, now)
                 outcome = "deleted"
-            elif recording.warned_at is None and recording.deadline - WARNING_PERIOD <= now:
+            elif status == RecordingExpiryStatus.EXPIRING_SOON and recording.warned_at is None:
                 await meetings.notify(recording)
                 await meetings.mark_warned(meeting_id, now)
                 outcome = "warned"
