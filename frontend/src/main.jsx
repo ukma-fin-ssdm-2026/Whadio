@@ -205,7 +205,8 @@ const theme = createTheme({
   },
   shape: { borderRadius: 8 },
   typography: {
-    fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    fontFamily:
+      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     h1: { fontWeight: 700, letterSpacing: 0, lineHeight: 1 },
     h2: { fontWeight: 700, letterSpacing: 0 },
     button: { fontWeight: 650, textTransform: "none" },
@@ -267,17 +268,17 @@ function App() {
     const nextWorkspaces = workspacePage.items.map((item, index) =>
       mapWorkspace(item, workspaceDetails[index]),
     );
-    const meetingPages = await Promise.all(
-      nextWorkspaces.map((item) => api.listMeetings(item.id)),
-    );
+    const meetingPages = await Promise.all(nextWorkspaces.map((item) => api.listMeetings(item.id)));
     setWorkspaces(nextWorkspaces);
     const nextMeetings = meetingPages.flatMap((page) => page.items.map(mapMeeting));
-    setMeetings((current) => nextMeetings.map((meeting) => {
-      const previous = current.find((item) => item.id === meeting.id);
-      return previous?.recordingAvailable
-        ? { ...meeting, recordingAvailable: true, failureReason: previous.failureReason }
-        : meeting;
-    }));
+    setMeetings((current) =>
+      nextMeetings.map((meeting) => {
+        const previous = current.find((item) => item.id === meeting.id);
+        return previous?.recordingAvailable
+          ? { ...meeting, recordingAvailable: true, failureReason: previous.failureReason }
+          : meeting;
+      }),
+    );
     setWorkspaceId((current) => current || nextWorkspaces[0]?.id || "");
     setAuthStatus("signedIn");
   }, []);
@@ -294,8 +295,11 @@ function App() {
   }, [loadData]);
 
   useEffect(() => {
-    if (authStatus !== "signedIn" || !meetings.some((item) =>
-      ["recording", "queued", "processing"].includes(item.state))) return undefined;
+    if (
+      authStatus !== "signedIn" ||
+      !meetings.some((item) => ["recording", "queued", "processing"].includes(item.state))
+    )
+      return undefined;
     const timer = window.setInterval(() => {
       loadData().catch((caught) => setError(caught.message));
     }, 10000);
@@ -306,14 +310,16 @@ function App() {
   const selectedMeeting = meetings.find((item) => item.id === meetingId);
 
   const visibleMeetings = useMemo(() => {
-    const source = view === "meetings"
-      ? meetings
-      : meetings.filter((item) => item.workspaceId === workspaceId);
+    const source =
+      view === "meetings" ? meetings : meetings.filter((item) => item.workspaceId === workspaceId);
 
     return source
       .filter((item) => item.title.toLowerCase().includes(query.toLowerCase()))
-      .filter((item) => stateFilter === "all"
-        || (stateFilter === "queued" ? isProcessing(item) : item.state === stateFilter))
+      .filter(
+        (item) =>
+          stateFilter === "all" ||
+          (stateFilter === "queued" ? isProcessing(item) : item.state === stateFilter),
+      )
       .sort((left, right) => new Date(right.date) - new Date(left.date));
   }, [meetings, query, stateFilter, view, workspaceId]);
 
@@ -327,7 +333,7 @@ function App() {
       const detail = await api.getMeeting(id);
       if (requestedMeetingId.current !== id) return;
       const mapped = mapMeeting(detail);
-      setMeetings((items) => items.map((item) => item.id === id ? mapped : item));
+      setMeetings((items) => items.map((item) => (item.id === id ? mapped : item)));
       if (detail.processing_state === "processed") {
         const [notesPage, transcriptResult] = await Promise.all([
           api.listNotes(id),
@@ -395,13 +401,14 @@ function App() {
     );
   };
 
-  const title = view === "home"
-    ? "Workspaces"
-    : view === "meetings"
-      ? "Meetings"
-      : view === "meeting"
-        ? selectedMeeting?.title ?? "Meeting"
-        : workspace?.name ?? "Workspace";
+  const title =
+    view === "home"
+      ? "Workspaces"
+      : view === "meetings"
+        ? "Meetings"
+        : view === "meeting"
+          ? (selectedMeeting?.title ?? "Meeting")
+          : (workspace?.name ?? "Workspace");
 
   const handleSignIn = async (email, password) => {
     setError("");
@@ -442,9 +449,13 @@ function App() {
     return (
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        {authStatus === "loading"
-          ? <Box className="auth-screen"><CircularProgress /></Box>
-          : <SignIn onSubmit={handleSignIn} externalError={error} />}
+        {authStatus === "loading" ? (
+          <Box className="auth-screen">
+            <CircularProgress />
+          </Box>
+        ) : (
+          <SignIn onSubmit={handleSignIn} externalError={error} />
+        )}
       </ThemeProvider>
     );
   }
@@ -474,13 +485,29 @@ function App() {
         />
 
         <Box component="main" className="main">
-          <Breadcrumbs view={view} workspace={workspace} meeting={selectedMeeting} onHome={() => setView("home")} onWorkspace={openWorkspace} />
+          <Breadcrumbs
+            view={view}
+            workspace={workspace}
+            meeting={selectedMeeting}
+            onHome={() => setView("home")}
+            onWorkspace={openWorkspace}
+          />
 
           {view !== "meeting" && (
-            <Stack direction="row" justifyContent="space-between" alignItems="flex-end" gap={2} className="page-header">
+            <Stack
+              direction="row"
+              justifyContent="space-between"
+              alignItems="flex-end"
+              gap={2}
+              className="page-header"
+            >
               <Box>
-                {view === "workspace" && <Typography className="eyebrow">{workspace.role} workspace</Typography>}
-                <Typography variant="h1" fontSize={{ xs: 36, md: 52 }}>{title}</Typography>
+                {view === "workspace" && (
+                  <Typography className="eyebrow">{workspace.role} workspace</Typography>
+                )}
+                <Typography variant="h1" fontSize={{ xs: 36, md: 52 }}>
+                  {title}
+                </Typography>
               </Box>
               {view === "workspace" && (
                 <Tooltip title="Workspace settings" arrow>
@@ -496,8 +523,14 @@ function App() {
             </Stack>
           )}
 
-          {error && <Box className="error-banner" role="alert">{error}</Box>}
-          {view === "home" && <HomeView workspaces={workspaces} meetings={meetings} onWorkspace={openWorkspace} />}
+          {error && (
+            <Box className="error-banner" role="alert">
+              {error}
+            </Box>
+          )}
+          {view === "home" && (
+            <HomeView workspaces={workspaces} meetings={meetings} onWorkspace={openWorkspace} />
+          )}
           {view === "workspace" && settingsOpen && <WorkspaceSettings workspace={workspace} />}
           {view === "workspace" && !settingsOpen && (
             <>
@@ -537,7 +570,7 @@ function App() {
               tab={meetingTab}
               transcriptQuery={transcriptQuery}
               onTranscriptQuery={setTranscriptQuery}
-              onTab={(value) => value === "recording" ? showRecording() : setMeetingTab(value)}
+              onTab={(value) => (value === "recording" ? showRecording() : setMeetingTab(value))}
               notes={notes}
               transcript={transcript}
               recordingUrl={recordingUrl}
@@ -576,12 +609,34 @@ function SignIn({ onSubmit, externalError }) {
       <Card component="form" className="auth-card" onSubmit={submit}>
         <Typography className="brand">Whadio</Typography>
         <Box>
-          <Typography variant="h1" fontSize={32}>Sign in</Typography>
-          <Typography color="text.secondary">Open your meetings, notes, and transcripts.</Typography>
+          <Typography variant="h1" fontSize={32}>
+            Sign in
+          </Typography>
+          <Typography color="text.secondary">
+            Open your meetings, notes, and transcripts.
+          </Typography>
         </Box>
-        <TextField label="Email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
-        <TextField label="Password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
-        {(error || externalError) && <Typography color="error" role="alert">{error || externalError}</Typography>}
+        <TextField
+          label="Email"
+          type="email"
+          autoComplete="email"
+          required
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+        />
+        <TextField
+          label="Password"
+          type="password"
+          autoComplete="current-password"
+          required
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+        {(error || externalError) && (
+          <Typography color="error" role="alert">
+            {error || externalError}
+          </Typography>
+        )}
         <Button type="submit" variant="contained" disabled={submitting}>
           {submitting ? "Signing in..." : "Sign in"}
         </Button>
@@ -619,8 +674,12 @@ function Sidebar({
       <Card className="profile-card">
         <Box className="avatar">{initials}</Box>
         <Box minWidth={0}>
-          <Typography fontWeight={650} noWrap>{user?.name ?? "Signed in"}</Typography>
-          <Typography color="text.secondary" noWrap>{user?.email}</Typography>
+          <Typography fontWeight={650} noWrap>
+            {user?.name ?? "Signed in"}
+          </Typography>
+          <Typography color="text.secondary" noWrap>
+            {user?.email}
+          </Typography>
         </Box>
         <Tooltip title="Sign out" arrow>
           <IconButton size="small" aria-label="Sign out" onClick={onSignOut} sx={{ ml: "auto" }}>
@@ -630,19 +689,33 @@ function Sidebar({
       </Card>
 
       <Stack component="nav" gap={0.5}>
-        <NavButton active={activeView === "home"} icon={<HomeOutlinedIcon />} onClick={onHome}>Home</NavButton>
-        <NavButton active={activeView === "meetings"} icon={<NotesOutlinedIcon />} onClick={onMeetings}>Meetings</NavButton>
-        <NavButton active={open} icon={<WorkspacesOutlinedIcon />} onClick={onToggleWorkspaces}>Workspaces</NavButton>
+        <NavButton active={activeView === "home"} icon={<HomeOutlinedIcon />} onClick={onHome}>
+          Home
+        </NavButton>
+        <NavButton
+          active={activeView === "meetings"}
+          icon={<NotesOutlinedIcon />}
+          onClick={onMeetings}
+        >
+          Meetings
+        </NavButton>
+        <NavButton active={open} icon={<WorkspacesOutlinedIcon />} onClick={onToggleWorkspaces}>
+          Workspaces
+        </NavButton>
 
         {open && (
           <Stack gap={0.5} className="workspace-tree">
             {workspaces.map((workspace) => {
-              const workspaceMeetings = meetings.filter((item) => item.workspaceId === workspace.id);
+              const workspaceMeetings = meetings.filter(
+                (item) => item.workspaceId === workspace.id,
+              );
               return (
                 <Box key={workspace.id}>
                   <Button
                     fullWidth
-                    className={workspace.id === workspaceId ? "workspace-node active" : "workspace-node"}
+                    className={
+                      workspace.id === workspaceId ? "workspace-node active" : "workspace-node"
+                    }
                     onClick={() => onWorkspace(workspace.id)}
                     endIcon={<span className="workspace-count">{workspaceMeetings.length}</span>}
                   >
@@ -652,13 +725,23 @@ function Sidebar({
                     {workspaceMeetings.map((meeting) => (
                       <button
                         key={meeting.id}
-                        className={meeting.id === selectedMeetingId ? "transcript-link active" : "transcript-link"}
+                        className={
+                          meeting.id === selectedMeetingId
+                            ? "transcript-link active"
+                            : "transcript-link"
+                        }
                         type="button"
                         onClick={() => onMeeting(meeting.id)}
                       >
                         <span>{meeting.title}</span>
                         {["recording", "queued", "processing"].includes(meeting.state) && (
-                          <small className={pausedMeetingIds.includes(meeting.id) ? "nav-processing paused" : "nav-processing"}>
+                          <small
+                            className={
+                              pausedMeetingIds.includes(meeting.id)
+                                ? "nav-processing paused"
+                                : "nav-processing"
+                            }
+                          >
                             {pausedMeetingIds.includes(meeting.id) ? (
                               <>
                                 <StopCircleOutlinedIcon sx={{ fontSize: 14 }} />
@@ -702,12 +785,16 @@ function Breadcrumbs({ view, workspace, meeting, onHome, onWorkspace }) {
   if (view === "home") return <Box className="breadcrumbs" />;
   return (
     <Stack direction="row" alignItems="center" gap={1} className="breadcrumbs">
-      <button type="button" onClick={onHome}>Home</button>
+      <button type="button" onClick={onHome}>
+        Home
+      </button>
       <span>/</span>
       {view === "meetings" ? (
         <span>Meetings</span>
       ) : (
-        <button type="button" onClick={() => onWorkspace(workspace.id)}>{workspace.name}</button>
+        <button type="button" onClick={() => onWorkspace(workspace.id)}>
+          {workspace.name}
+        </button>
       )}
       {view === "meeting" && meeting && (
         <>
@@ -723,8 +810,12 @@ function HomeView({ workspaces, meetings, onWorkspace }) {
   return (
     <Stack gap={2}>
       <Card className="quiet-panel">
-        <Typography variant="h2" fontSize={24}>Choose a workspace</Typography>
-        <Typography color="text.secondary">Upload recordings and review processed meetings.</Typography>
+        <Typography variant="h2" fontSize={24}>
+          Choose a workspace
+        </Typography>
+        <Typography color="text.secondary">
+          Upload recordings and review processed meetings.
+        </Typography>
       </Card>
       <Stack gap={1.5}>
         {workspaces.map((workspace) => {
@@ -736,9 +827,13 @@ function HomeView({ workspaces, meetings, onWorkspace }) {
                 <Box className="workspace-icon">{workspace.name.charAt(0)}</Box>
                 <Box minWidth={0}>
                   <Typography fontWeight={650}>{workspace.name}</Typography>
-                  <Typography color="text.secondary">{workspace.role} · {workspace.members} members</Typography>
+                  <Typography color="text.secondary">
+                    {workspace.role} · {workspace.members} members
+                  </Typography>
                 </Box>
-                <Typography color="text.secondary" fontWeight={650}>{workspaceMeetings.length} meetings, {active} active</Typography>
+                <Typography color="text.secondary" fontWeight={650}>
+                  {workspaceMeetings.length} meetings, {active} active
+                </Typography>
               </CardActionArea>
             </Card>
           );
@@ -776,12 +871,25 @@ function UploadPanel({ workspace, onUpload }) {
 
   return (
     <Card className="upload-panel">
-      <Stack direction={{ xs: "column", sm: "row" }} gap={1.5} justifyContent="space-between" alignItems={{ xs: "stretch", sm: "center" }}>
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        gap={1.5}
+        justifyContent="space-between"
+        alignItems={{ xs: "stretch", sm: "center" }}
+      >
         <Box>
-          <Typography variant="h2" fontSize={18} fontWeight={650}>Upload recording</Typography>
-          <Typography color="text.secondary" fontSize={14}>Queue audio or video for processing.</Typography>
+          <Typography variant="h2" fontSize={18} fontWeight={650}>
+            Upload recording
+          </Typography>
+          <Typography color="text.secondary" fontSize={14}>
+            Queue audio or video for processing.
+          </Typography>
         </Box>
-        <Button variant="contained" startIcon={<CloudUploadOutlinedIcon />} onClick={() => setOpen(true)}>
+        <Button
+          variant="contained"
+          startIcon={<CloudUploadOutlinedIcon />}
+          onClick={() => setOpen(true)}
+        >
           Upload
         </Button>
       </Stack>
@@ -790,18 +898,40 @@ function UploadPanel({ workspace, onUpload }) {
         <DialogTitle>Upload recording</DialogTitle>
         <DialogContent>
           <Stack gap={2} pt={0.5}>
-            <TextField label="Meeting name" placeholder="Lab 3 architecture planning" value={name} onChange={(event) => setName(event.target.value)} fullWidth />
+            <TextField
+              label="Meeting name"
+              placeholder="Lab 3 architecture planning"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              fullWidth
+            />
             <FormControl fullWidth>
               <InputLabel>Note preset</InputLabel>
               <Select label="Note preset" value={workspace.preset} disabled>
-                <MenuItem value={workspace.preset}>{titleCase(workspace.preset)} (workspace default)</MenuItem>
+                <MenuItem value={workspace.preset}>
+                  {titleCase(workspace.preset)} (workspace default)
+                </MenuItem>
               </Select>
             </FormControl>
-            <Button className="file-picker-button" component="label" variant="outlined" startIcon={<CloudUploadOutlinedIcon />}>
+            <Button
+              className="file-picker-button"
+              component="label"
+              variant="outlined"
+              startIcon={<CloudUploadOutlinedIcon />}
+            >
               {file?.name ?? "Select file"}
-              <input hidden type="file" accept="audio/*,video/*" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+              <input
+                hidden
+                type="file"
+                accept="audio/*,video/*"
+                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              />
             </Button>
-            {error && <Typography color="error" role="alert">{error}</Typography>}
+            {error && (
+              <Typography color="error" role="alert">
+                {error}
+              </Typography>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -838,42 +968,56 @@ function WorkspaceSettings({ workspace }) {
         </button>
       </Box>
 
-      {section === "workspace" ? <Stack className="settings-options" gap={1.25}>
-        <Box>
-          <Typography variant="h2" fontSize={24}>Workspace settings</Typography>
-          <Typography color="text.secondary">Configure processing defaults for {workspace.name}.</Typography>
-        </Box>
+      {section === "workspace" ? (
+        <Stack className="settings-options" gap={1.25}>
+          <Box>
+            <Typography variant="h2" fontSize={24}>
+              Workspace settings
+            </Typography>
+            <Typography color="text.secondary">
+              Configure processing defaults for {workspace.name}.
+            </Typography>
+          </Box>
 
-        <Card className="settings-option-card">
-          <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={2}>
-            <Box>
-              <Typography fontWeight={650}>Notes provider</Typography>
-              <Typography color="text.secondary">Whadio gemma-3-12b-it is used for generated notes.</Typography>
-            </Box>
-            <Chip label={workspace.provider} variant="outlined" />
-          </Stack>
-        </Card>
+          <Card className="settings-option-card">
+            <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={2}>
+              <Box>
+                <Typography fontWeight={650}>Notes provider</Typography>
+                <Typography color="text.secondary">
+                  Whadio gemma-3-12b-it is used for generated notes.
+                </Typography>
+              </Box>
+              <Chip label={workspace.provider} variant="outlined" />
+            </Stack>
+          </Card>
 
-        <Card className="settings-option-card">
-          <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={2}>
-            <Box>
-              <Typography fontWeight={650}>Workspace access</Typography>
-              <Typography color="text.secondary">Members of this workspace can open processed meetings.</Typography>
-            </Box>
-            <Switch defaultChecked color="primary" />
-          </Stack>
-        </Card>
+          <Card className="settings-option-card">
+            <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={2}>
+              <Box>
+                <Typography fontWeight={650}>Workspace access</Typography>
+                <Typography color="text.secondary">
+                  Members of this workspace can open processed meetings.
+                </Typography>
+              </Box>
+              <Switch defaultChecked color="primary" />
+            </Stack>
+          </Card>
 
-        <Card className="settings-option-card">
-          <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={2}>
-            <Box>
-              <Typography fontWeight={650}>Default notes preset</Typography>
-              <Typography color="text.secondary">New uploads use the workspace notes preset.</Typography>
-            </Box>
-            <Chip label={titleCase(workspace.preset)} variant="outlined" />
-          </Stack>
-        </Card>
-      </Stack> : <McpKeySettings />}
+          <Card className="settings-option-card">
+            <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={2}>
+              <Box>
+                <Typography fontWeight={650}>Default notes preset</Typography>
+                <Typography color="text.secondary">
+                  New uploads use the workspace notes preset.
+                </Typography>
+              </Box>
+              <Chip label={titleCase(workspace.preset)} variant="outlined" />
+            </Stack>
+          </Card>
+        </Stack>
+      ) : (
+        <McpKeySettings />
+      )}
     </Card>
   );
 }
@@ -931,7 +1075,9 @@ function McpKeySettings() {
   return (
     <Stack className="settings-options" gap={1.25}>
       <Box>
-        <Typography variant="h2" fontSize={24}>AI assistant access</Typography>
+        <Typography variant="h2" fontSize={24}>
+          AI assistant access
+        </Typography>
         <Typography color="text.secondary">
           Use a personal key to connect an assistant to meetings you can access.
         </Typography>
@@ -963,8 +1109,14 @@ function McpKeySettings() {
         </Stack>
       </Card>
 
-      {error && <Typography color="error" role="alert">{error}</Typography>}
-      {loading ? <CircularProgress size={24} /> : (
+      {error && (
+        <Typography color="error" role="alert">
+          {error}
+        </Typography>
+      )}
+      {loading ? (
+        <CircularProgress size={24} />
+      ) : (
         <Stack gap={1}>
           {keys.length === 0 && (
             <Typography color="text.secondary">No assistant keys yet.</Typography>
@@ -975,9 +1127,8 @@ function McpKeySettings() {
               <Box minWidth={0}>
                 <Typography fontWeight={600}>Key {key.id.slice(0, 8)}</Typography>
                 <Typography color="text.secondary" fontSize={14}>
-                  Created {formatDate(key.created_at)} · {key.expires_at
-                    ? `Expires ${formatDate(key.expires_at)}`
-                    : "Never expires"}
+                  Created {formatDate(key.created_at)} ·{" "}
+                  {key.expires_at ? `Expires ${formatDate(key.expires_at)}` : "Never expires"}
                 </Typography>
               </Box>
               <Chip
@@ -1024,7 +1175,9 @@ function McpKeySettings() {
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button variant="contained" onClick={() => setSecret("")}>Done</Button>
+          <Button variant="contained" onClick={() => setSecret("")}>
+            Done
+          </Button>
         </DialogActions>
       </Dialog>
     </Stack>
@@ -1045,8 +1198,15 @@ function MeetingLibrary({
 }) {
   return (
     <Stack gap={1.5}>
-      <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", md: "center" }} gap={1.5}>
-        <Typography variant="h2" fontSize={22}>{title}</Typography>
+      <Stack
+        direction={{ xs: "column", md: "row" }}
+        justifyContent="space-between"
+        alignItems={{ xs: "stretch", md: "center" }}
+        gap={1.5}
+      >
+        <Typography variant="h2" fontSize={22}>
+          {title}
+        </Typography>
         <Stack direction="row" gap={1}>
           <TextField
             size="small"
@@ -1057,7 +1217,11 @@ function MeetingLibrary({
           />
           <FormControl size="small" sx={{ minWidth: 140 }}>
             <InputLabel>State</InputLabel>
-            <Select label="State" value={stateFilter} onChange={(event) => onStateFilter(event.target.value)}>
+            <Select
+              label="State"
+              value={stateFilter}
+              onChange={(event) => onStateFilter(event.target.value)}
+            >
               <MenuItem value="all">All states</MenuItem>
               <MenuItem value="processed">Processed</MenuItem>
               <MenuItem value="queued">Processing</MenuItem>
@@ -1071,7 +1235,10 @@ function MeetingLibrary({
 
       <Stack gap={1}>
         {meetings.map((meeting) => (
-          <Card key={meeting.id} className={meeting.id === selectedMeetingId ? "meeting-row active" : "meeting-row"}>
+          <Card
+            key={meeting.id}
+            className={meeting.id === selectedMeetingId ? "meeting-row active" : "meeting-row"}
+          >
             <CardActionArea className="meeting-row-content" onClick={() => onMeeting(meeting.id)}>
               {isProcessing(meeting) ? (
                 <ProcessingToggle
@@ -1086,7 +1253,9 @@ function MeetingLibrary({
                 <Box className="state-dot" />
               )}
               <Box minWidth={0}>
-                <Typography fontWeight={650} noWrap>{meeting.title}</Typography>
+                <Typography fontWeight={650} noWrap>
+                  {meeting.title}
+                </Typography>
                 <Typography color="text.secondary" noWrap>
                   {formatDate(meeting.date)} · {meeting.source}
                   {!isProcessing(meeting) && ` · ${meeting.duration}`}
@@ -1102,7 +1271,9 @@ function MeetingLibrary({
                     }}
                     size={14}
                   />
-                  <span>{pausedMeetingIds.includes(meeting.id) ? "Paused" : meeting.processingEta}</span>
+                  <span>
+                    {pausedMeetingIds.includes(meeting.id) ? "Paused" : meeting.processingEta}
+                  </span>
                 </Box>
               )}
             </CardActionArea>
@@ -1111,7 +1282,9 @@ function MeetingLibrary({
         {meetings.length === 0 && (
           <Card className="empty-state">
             <Typography fontWeight={650}>No meetings found</Typography>
-            <Typography color="text.secondary">Try another filter or upload a recording.</Typography>
+            <Typography color="text.secondary">
+              Try another filter or upload a recording.
+            </Typography>
           </Card>
         )}
       </Stack>
@@ -1139,11 +1312,17 @@ function ProcessingToggle({ paused, onToggle, size = 16 }) {
         style={{ "--spinner-size": `${size}px` }}
       >
         {paused ? (
-          <PlayArrowRoundedIcon className="processing-toggle-icon resume-icon" sx={{ fontSize: size + 4 }} />
+          <PlayArrowRoundedIcon
+            className="processing-toggle-icon resume-icon"
+            sx={{ fontSize: size + 4 }}
+          />
         ) : (
           <>
             <CircularProgress className="processing-spinner" size={size} thickness={5} />
-            <PauseRoundedIcon className="processing-toggle-icon pause-icon" sx={{ fontSize: size + 4 }} />
+            <PauseRoundedIcon
+              className="processing-toggle-icon pause-icon"
+              sx={{ fontSize: size + 4 }}
+            />
           </>
         )}
       </Box>
@@ -1164,15 +1343,18 @@ function MeetingDetail({
   paused,
   onToggleProcessing,
 }) {
-  const speakers = new Map((transcript?.speakers ?? []).map((item) => [item.id, item.display_name]));
+  const speakers = new Map(
+    (transcript?.speakers ?? []).map((item) => [item.id, item.display_name]),
+  );
   const segments = (transcript?.segments ?? [])
     .map((item) => ({
       ...item,
       speaker: speakers.get(item.speaker_id) ?? "Unknown speaker",
     }))
-    .filter((item) =>
-      item.text.toLowerCase().includes(transcriptQuery.toLowerCase())
-      || item.speaker.toLowerCase().includes(transcriptQuery.toLowerCase()),
+    .filter(
+      (item) =>
+        item.text.toLowerCase().includes(transcriptQuery.toLowerCase()) ||
+        item.speaker.toLowerCase().includes(transcriptQuery.toLowerCase()),
     );
 
   return (
@@ -1186,14 +1368,20 @@ function MeetingDetail({
         <Card className="notes-panel">
           <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={2}>
             <Box>
-              <Typography variant="h1" fontSize={{ xs: 34, md: 48 }}>{meeting.title}</Typography>
-              <Typography className="meeting-date" color="text.secondary">{formatDate(meeting.date)}</Typography>
+              <Typography variant="h1" fontSize={{ xs: 34, md: 48 }}>
+                {meeting.title}
+              </Typography>
+              <Typography className="meeting-date" color="text.secondary">
+                {formatDate(meeting.date)}
+              </Typography>
             </Box>
             <Stack className="meeting-meta-actions" direction="row" gap={0.75} alignItems="center">
               <MetaIcon title={`Source: ${meeting.source}`}>
-                {meeting.source === "Google Meet"
-                  ? <VideoCameraFrontOutlinedIcon fontSize="small" />
-                  : <CloudUploadOutlinedIcon fontSize="small" />}
+                {meeting.source === "Google Meet" ? (
+                  <VideoCameraFrontOutlinedIcon fontSize="small" />
+                ) : (
+                  <CloudUploadOutlinedIcon fontSize="small" />
+                )}
               </MetaIcon>
               <MetaIcon title="Workspace access">
                 <GroupsOutlinedIcon fontSize="small" />
@@ -1205,7 +1393,9 @@ function MeetingDetail({
             <Stack className="processing-panel" direction="row" gap={1.5} alignItems="center">
               <ProcessingToggle paused={paused} onToggle={onToggleProcessing} size={22} />
               <Box>
-                <Typography fontWeight={650}>{paused ? "Processing paused" : "Processing recording"}</Typography>
+                <Typography fontWeight={650}>
+                  {paused ? "Processing paused" : "Processing recording"}
+                </Typography>
                 <Typography color="text.secondary">
                   {paused
                     ? "Resume when you are ready to continue transcript and notes generation."
@@ -1218,9 +1408,13 @@ function MeetingDetail({
               {meeting.failureReason ?? "Processing failed. Please try another recording."}
             </Box>
           ) : loading ? (
-            <Box className="content-loading"><CircularProgress size={24} /></Box>
+            <Box className="content-loading">
+              <CircularProgress size={24} />
+            </Box>
           ) : notes ? (
-            <Typography component="div" className="notes-text notes-markdown">{notes.content}</Typography>
+            <Typography component="div" className="notes-text notes-markdown">
+              {notes.content}
+            </Typography>
           ) : (
             <Typography color="text.secondary">No generated notes are available yet.</Typography>
           )}
@@ -1234,16 +1428,24 @@ function MeetingDetail({
               </Box>
             ) : (
               <Box className="player">
-                <Box className="play-circle"><PlayArrowRoundedIcon fontSize="large" /></Box>
+                <Box className="play-circle">
+                  <PlayArrowRoundedIcon fontSize="large" />
+                </Box>
                 <Typography fontWeight={650}>{meeting.title}</Typography>
-                <Typography>{meeting.recordingAvailable ? "Loading recording..." : "Recording is not available"}</Typography>
+                <Typography>
+                  {meeting.recordingAvailable
+                    ? "Loading recording..."
+                    : "Recording is not available"}
+                </Typography>
               </Box>
             )}
           </Card>
           <Card className="transcript-panel">
             <Stack gap={1.5}>
               <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Typography variant="h2" fontSize={22}>Transcript</Typography>
+                <Typography variant="h2" fontSize={22}>
+                  Transcript
+                </Typography>
                 <Chip label={transcript?.segments.length ?? 0} size="small" />
               </Stack>
               <TextField
@@ -1265,7 +1467,9 @@ function MeetingDetail({
                 ))}
                 {!loading && segments.length === 0 && (
                   <Typography color="text.secondary">
-                    {transcript ? "No transcript matches your search." : "Transcript is not available yet."}
+                    {transcript
+                      ? "No transcript matches your search."
+                      : "Transcript is not available yet."}
                   </Typography>
                 )}
               </Stack>

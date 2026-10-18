@@ -4,9 +4,7 @@
 
 body {
   min-width: 320px;
-  background:
-    linear-gradient(135deg, rgb(15 118 110 / 7%), transparent 34rem),
-    #f6f4ef;
+  background: linear-gradient(135deg, rgb(15 118 110 / 7%), transparent 34rem), #f6f4ef;
 }
 
 button {
