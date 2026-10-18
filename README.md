@@ -53,9 +53,13 @@ take jobs from RabbitMQ and publish their results to `processing.results`.
 
 - `uv run task workers:up` builds the image and starts both workers in Compose; `task workers:logs`
   follows them and `task workers:down` stops them.
-- In `.env`, the notes worker needs `WHADIO_NOTES__API_KEY` (Anthropic). The ASR worker needs
+- In `.env`, the notes worker needs `WHADIO_NOTES__LLM__API_KEY` (Anthropic). The ASR worker needs
   `WHADIO_ASR__DIARIZATION__HF_TOKEN` from a Hugging Face account that accepted the conditions of
   `pyannote/speaker-diarization-community-1`.
+- To write notes with a self-hosted model instead, run `uv run whadio notes-worker` with
+  `WHADIO_NOTES__LLM__PROVIDER=ollama`, `WHADIO_NOTES__LLM__MODEL` set to a model pulled on an
+  Ollama server and, unless it is `http://localhost:11434`, `WHADIO_NOTES__LLM__BASE_URL`. The
+  worker in Compose passes on only the Anthropic key for now.
 - The ASR worker's first start downloads its models into the `asr-models` volume, which takes a
   few minutes.
 - The ASR worker downloads recordings through presigned links signed for
