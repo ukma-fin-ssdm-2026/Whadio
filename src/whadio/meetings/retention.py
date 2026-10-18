@@ -18,7 +18,7 @@ BATCH_SIZE = 100
 
 def recording_expiry_status(deadline: datetime, now: datetime) -> RecordingExpiryStatus:
     remaining = deadline - now
-    if remaining <= timedelta(days=7):
+    if remaining <= WARNING_PERIOD:
         return RecordingExpiryStatus.EXPIRING_SOON
     return RecordingExpiryStatus.AVAILABLE
 
