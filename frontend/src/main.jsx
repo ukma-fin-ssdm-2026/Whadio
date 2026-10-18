@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Box,
@@ -39,6 +39,8 @@ import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import StopCircleOutlinedIcon from "@mui/icons-material/StopCircleOutlined";
 import VideoCameraFrontOutlinedIcon from "@mui/icons-material/VideoCameraFrontOutlined";
 import WorkspacesOutlinedIcon from "@mui/icons-material/WorkspacesOutlined";
+import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
+import { ApiError, api } from "./api";
 import "./styles.css";
 
 const data = {
@@ -140,6 +142,55 @@ const data = {
   ],
 };
 
+const USER_STORAGE_KEY = "whadio-user";
+
+function titleCase(value) {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
+}
+
+function formatDuration(seconds) {
+  if (seconds == null) return "Duration pending";
+  const minutes = Math.floor(seconds / 60);
+  const remaining = seconds % 60;
+  return `${minutes}m ${remaining}s`;
+}
+
+function formatTimestamp(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  const remaining = Math.floor(seconds % 60);
+  return `${String(minutes).padStart(2, "0")}:${String(remaining).padStart(2, "0")}`;
+}
+
+function mapWorkspace(item, details = {}) {
+  return {
+    id: item.id,
+    name: item.name,
+    role: titleCase(item.my_role),
+    members: item.member_count,
+    provider: titleCase(item.notes_provider),
+    preset: details.default_preset ?? item.default_preset ?? "summary",
+  };
+}
+
+function mapMeeting(item) {
+  return {
+    id: item.id,
+    workspaceId: item.workspace_id,
+    title: item.name,
+    date: item.recorded_at,
+    state: item.processing_state,
+    duration: formatDuration(item.duration_seconds),
+    processingEta: item.processing_state === "recording" ? "Recording" : "Processing",
+    source: item.source_type === "extension" ? "Google Meet" : "Upload",
+    recordingAvailable: item.recording_available ?? false,
+    failureReason: item.failure_reason,
+  };
+}
+
+function isProcessing(meeting) {
+  return ["recording", "queued", "processing"].includes(meeting.state);
+}
+
 const theme = createTheme({
   palette: {
     background: { default: "#F6F4EF", paper: "#FFFFFF" },
@@ -178,8 +229,23 @@ function formatDate(value) {
 }
 
 function App() {
+  const [authStatus, setAuthStatus] = useState("loading");
+  const [user, setUser] = useState(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem(USER_STORAGE_KEY));
+    } catch {
+      return null;
+    }
+  });
+  const [workspaces, setWorkspaces] = useState([]);
+  const [meetings, setMeetings] = useState([]);
+  const [error, setError] = useState("");
+  const [contentLoading, setContentLoading] = useState(false);
+  const [notes, setNotes] = useState(null);
+  const [transcript, setTranscript] = useState(null);
+  const [recordingUrl, setRecordingUrl] = useState("");
   const [view, setView] = useState("home");
-  const [workspaceId, setWorkspaceId] = useState(data.workspaces[0].id);
+  const [workspaceId, setWorkspaceId] = useState("");
   const [meetingId, setMeetingId] = useState("");
   const [workspacesOpen, setWorkspacesOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -188,22 +254,95 @@ function App() {
   const [transcriptQuery, setTranscriptQuery] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pausedMeetingIds, setPausedMeetingIds] = useState([]);
+  const requestedMeetingId = useRef("");
 
-  const workspace = data.workspaces.find((item) => item.id === workspaceId) ?? data.workspaces[0];
-  const selectedMeeting = data.meetings.find((item) => item.id === meetingId);
+  const loadData = useCallback(async () => {
+    const workspacePage = await api.listWorkspaces();
+    const workspaceDetails = await Promise.all(
+      workspacePage.items.map((item) => api.getWorkspace(item.id)),
+    );
+    const nextWorkspaces = workspacePage.items.map((item, index) =>
+      mapWorkspace(item, workspaceDetails[index]),
+    );
+    const meetingPages = await Promise.all(
+      nextWorkspaces.map((item) => api.listMeetings(item.id)),
+    );
+    setWorkspaces(nextWorkspaces);
+    const nextMeetings = meetingPages.flatMap((page) => page.items.map(mapMeeting));
+    setMeetings((current) => nextMeetings.map((meeting) => {
+      const previous = current.find((item) => item.id === meeting.id);
+      return previous?.recordingAvailable
+        ? { ...meeting, recordingAvailable: true, failureReason: previous.failureReason }
+        : meeting;
+    }));
+    setWorkspaceId((current) => current || nextWorkspaces[0]?.id || "");
+    setAuthStatus("signedIn");
+  }, []);
+
+  useEffect(() => {
+    loadData().catch((caught) => {
+      if (caught instanceof ApiError && caught.status === 401) {
+        setAuthStatus("signedOut");
+        return;
+      }
+      setError(caught.message);
+      setAuthStatus("signedOut");
+    });
+  }, [loadData]);
+
+  useEffect(() => {
+    if (authStatus !== "signedIn" || !meetings.some((item) =>
+      ["recording", "queued", "processing"].includes(item.state))) return undefined;
+    const timer = window.setInterval(() => {
+      loadData().catch((caught) => setError(caught.message));
+    }, 10000);
+    return () => window.clearInterval(timer);
+  }, [authStatus, loadData, meetings]);
+
+  const workspace = workspaces.find((item) => item.id === workspaceId) ?? workspaces[0];
+  const selectedMeeting = meetings.find((item) => item.id === meetingId);
 
   const visibleMeetings = useMemo(() => {
     const source = view === "meetings"
-      ? data.meetings
-      : data.meetings.filter((item) => item.workspaceId === workspaceId);
+      ? meetings
+      : meetings.filter((item) => item.workspaceId === workspaceId);
 
     return source
       .filter((item) => item.title.toLowerCase().includes(query.toLowerCase()))
-      .filter((item) => stateFilter === "all" || item.state === stateFilter)
+      .filter((item) => stateFilter === "all"
+        || (stateFilter === "queued" ? isProcessing(item) : item.state === stateFilter))
       .sort((left, right) => new Date(right.date) - new Date(left.date));
-  }, [query, stateFilter, view, workspaceId]);
+  }, [meetings, query, stateFilter, view, workspaceId]);
+
+  const loadMeetingContent = useCallback(async (id) => {
+    requestedMeetingId.current = id;
+    setContentLoading(true);
+    setNotes(null);
+    setTranscript(null);
+    setRecordingUrl("");
+    try {
+      const detail = await api.getMeeting(id);
+      if (requestedMeetingId.current !== id) return;
+      const mapped = mapMeeting(detail);
+      setMeetings((items) => items.map((item) => item.id === id ? mapped : item));
+      if (detail.processing_state === "processed") {
+        const [notesPage, transcriptResult] = await Promise.all([
+          api.listNotes(id),
+          api.getTranscript(id),
+        ]);
+        if (requestedMeetingId.current !== id) return;
+        setNotes(notesPage.items[0] ?? null);
+        setTranscript(transcriptResult);
+      }
+    } catch (caught) {
+      if (requestedMeetingId.current === id) setError(caught.message);
+    } finally {
+      if (requestedMeetingId.current === id) setContentLoading(false);
+    }
+  }, []);
 
   const openWorkspace = (id) => {
+    requestedMeetingId.current = "";
     setWorkspaceId(id);
     setMeetingId("");
     setQuery("");
@@ -214,7 +353,7 @@ function App() {
   };
 
   const openMeeting = (id) => {
-    const meeting = data.meetings.find((item) => item.id === id);
+    const meeting = meetings.find((item) => item.id === id);
     if (!meeting) return;
     setWorkspaceId(meeting.workspaceId);
     setMeetingId(id);
@@ -223,9 +362,23 @@ function App() {
     setWorkspacesOpen(true);
     setSettingsOpen(false);
     setView("meeting");
+    loadMeetingContent(id);
+  };
+
+  const showRecording = async () => {
+    setMeetingTab("recording");
+    if (!recordingUrl && selectedMeeting?.recordingAvailable) {
+      try {
+        const playback = await api.getRecording(selectedMeeting.id);
+        setRecordingUrl(playback.url);
+      } catch (caught) {
+        setError(caught.message);
+      }
+    }
   };
 
   const showMeetings = () => {
+    requestedMeetingId.current = "";
     setView("meetings");
     setMeetingId("");
     setQuery("");
@@ -245,13 +398,62 @@ function App() {
       ? "Meetings"
       : view === "meeting"
         ? selectedMeeting?.title ?? "Meeting"
-        : workspace.name;
+        : workspace?.name ?? "Workspace";
+
+  const handleSignIn = async (email, password) => {
+    setError("");
+    const session = await api.signIn(email, password);
+    setUser(session.user);
+    sessionStorage.setItem(USER_STORAGE_KEY, JSON.stringify(session.user));
+    setAuthStatus("loading");
+    await loadData();
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await api.signOut();
+    } finally {
+      requestedMeetingId.current = "";
+      sessionStorage.removeItem(USER_STORAGE_KEY);
+      setUser(null);
+      setWorkspaces([]);
+      setMeetings([]);
+      setAuthStatus("signedOut");
+    }
+  };
+
+  const handleUpload = async (payload) => {
+    const created = await api.uploadMeeting(workspaceId, payload);
+    const mapped = mapMeeting(created);
+    setMeetings((items) => [mapped, ...items]);
+    setMeetingId(mapped.id);
+    setMeetingTab("notes");
+    setTranscriptQuery("");
+    setWorkspacesOpen(true);
+    setSettingsOpen(false);
+    setView("meeting");
+    loadMeetingContent(mapped.id);
+  };
+
+  if (authStatus !== "signedIn") {
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        {authStatus === "loading"
+          ? <Box className="auth-screen"><CircularProgress /></Box>
+          : <SignIn onSubmit={handleSignIn} externalError={error} />}
+      </ThemeProvider>
+    );
+  }
 
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Box className="app-shell">
         <Sidebar
+          user={user}
+          workspaces={workspaces}
+          meetings={meetings}
           activeView={view}
           open={workspacesOpen}
           onToggleWorkspaces={() => setWorkspacesOpen((value) => !value)}
@@ -265,6 +467,7 @@ function App() {
           selectedMeetingId={meetingId}
           workspaceId={workspaceId}
           pausedMeetingIds={pausedMeetingIds}
+          onSignOut={handleSignOut}
         />
 
         <Box component="main" className="main">
@@ -290,11 +493,12 @@ function App() {
             </Stack>
           )}
 
-          {view === "home" && <HomeView onWorkspace={openWorkspace} />}
+          {error && <Box className="error-banner" role="alert">{error}</Box>}
+          {view === "home" && <HomeView workspaces={workspaces} meetings={meetings} onWorkspace={openWorkspace} />}
           {view === "workspace" && settingsOpen && <WorkspaceSettings workspace={workspace} />}
           {view === "workspace" && !settingsOpen && (
             <>
-              <UploadPanel />
+              <UploadPanel workspace={workspace} onUpload={handleUpload} />
               <MeetingLibrary
                 title="Workspace library"
                 meetings={visibleMeetings}
@@ -329,8 +533,12 @@ function App() {
               workspace={workspace}
               tab={meetingTab}
               transcriptQuery={transcriptQuery}
-              onTab={setMeetingTab}
               onTranscriptQuery={setTranscriptQuery}
+              onTab={(value) => value === "recording" ? showRecording() : setMeetingTab(value)}
+              notes={notes}
+              transcript={transcript}
+              recordingUrl={recordingUrl}
+              loading={contentLoading}
               paused={pausedMeetingIds.includes(selectedMeeting.id)}
               onToggleProcessing={() => toggleProcessing(selectedMeeting.id)}
             />
@@ -341,7 +549,48 @@ function App() {
   );
 }
 
+function SignIn({ onSubmit, externalError }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError("");
+    try {
+      await onSubmit(email, password);
+    } catch (caught) {
+      setError(caught.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Box className="auth-screen">
+      <Card component="form" className="auth-card" onSubmit={submit}>
+        <Typography className="brand">Whadio</Typography>
+        <Box>
+          <Typography variant="h1" fontSize={32}>Sign in</Typography>
+          <Typography color="text.secondary">Open your meetings, notes, and transcripts.</Typography>
+        </Box>
+        <TextField label="Email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
+        <TextField label="Password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
+        {(error || externalError) && <Typography color="error" role="alert">{error || externalError}</Typography>}
+        <Button type="submit" variant="contained" disabled={submitting}>
+          {submitting ? "Signing in..." : "Sign in"}
+        </Button>
+      </Card>
+    </Box>
+  );
+}
+
 function Sidebar({
+  user,
+  workspaces,
+  meetings,
   activeView,
   open,
   onToggleWorkspaces,
@@ -352,17 +601,29 @@ function Sidebar({
   selectedMeetingId,
   workspaceId,
   pausedMeetingIds,
+  onSignOut,
 }) {
+  const initials = (user?.name ?? "User")
+    .split(" ")
+    .map((part) => part.charAt(0))
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
   return (
     <Box component="aside" className="sidebar">
       <Typography className="brand">Whadio</Typography>
 
       <Card className="profile-card">
-        <Box className="avatar">MH</Box>
+        <Box className="avatar">{initials}</Box>
         <Box minWidth={0}>
-          <Typography fontWeight={650} noWrap>{data.user.name}</Typography>
-          <Typography color="text.secondary" noWrap>{data.user.email}</Typography>
+          <Typography fontWeight={650} noWrap>{user?.name ?? "Signed in"}</Typography>
+          <Typography color="text.secondary" noWrap>{user?.email}</Typography>
         </Box>
+        <Tooltip title="Sign out" arrow>
+          <IconButton size="small" aria-label="Sign out" onClick={onSignOut} sx={{ ml: "auto" }}>
+            <LogoutOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
       </Card>
 
       <Stack component="nav" gap={0.5}>
@@ -372,20 +633,20 @@ function Sidebar({
 
         {open && (
           <Stack gap={0.5} className="workspace-tree">
-            {data.workspaces.map((workspace) => {
-              const meetings = data.meetings.filter((item) => item.workspaceId === workspace.id);
+            {workspaces.map((workspace) => {
+              const workspaceMeetings = meetings.filter((item) => item.workspaceId === workspace.id);
               return (
                 <Box key={workspace.id}>
                   <Button
                     fullWidth
                     className={workspace.id === workspaceId ? "workspace-node active" : "workspace-node"}
                     onClick={() => onWorkspace(workspace.id)}
-                    endIcon={<span className="workspace-count">{meetings.length}</span>}
+                    endIcon={<span className="workspace-count">{workspaceMeetings.length}</span>}
                   >
                     {workspace.name}
                   </Button>
                   <Stack className="transcript-links">
-                    {meetings.map((meeting) => (
+                    {workspaceMeetings.map((meeting) => (
                       <button
                         key={meeting.id}
                         className={meeting.id === selectedMeetingId ? "transcript-link active" : "transcript-link"}
@@ -393,7 +654,7 @@ function Sidebar({
                         onClick={() => onMeeting(meeting.id)}
                       >
                         <span>{meeting.title}</span>
-                        {meeting.state === "queued" && (
+                        {["recording", "queued", "processing"].includes(meeting.state) && (
                           <small className={pausedMeetingIds.includes(meeting.id) ? "nav-processing paused" : "nav-processing"}>
                             {pausedMeetingIds.includes(meeting.id) ? (
                               <>
@@ -455,7 +716,7 @@ function Breadcrumbs({ view, workspace, meeting, onHome, onWorkspace }) {
   );
 }
 
-function HomeView({ onWorkspace }) {
+function HomeView({ workspaces, meetings, onWorkspace }) {
   return (
     <Stack gap={2}>
       <Card className="quiet-panel">
@@ -463,9 +724,9 @@ function HomeView({ onWorkspace }) {
         <Typography color="text.secondary">Upload recordings and review processed meetings.</Typography>
       </Card>
       <Stack gap={1.5}>
-        {data.workspaces.map((workspace) => {
-          const meetings = data.meetings.filter((item) => item.workspaceId === workspace.id);
-          const active = meetings.filter((item) => item.state !== "processed").length;
+        {workspaces.map((workspace) => {
+          const workspaceMeetings = meetings.filter((item) => item.workspaceId === workspace.id);
+          const active = workspaceMeetings.filter((item) => item.state !== "processed").length;
           return (
             <Card key={workspace.id}>
               <CardActionArea className="workspace-card" onClick={() => onWorkspace(workspace.id)}>
@@ -474,7 +735,7 @@ function HomeView({ onWorkspace }) {
                   <Typography fontWeight={650}>{workspace.name}</Typography>
                   <Typography color="text.secondary">{workspace.role} · {workspace.members} members</Typography>
                 </Box>
-                <Typography color="text.secondary" fontWeight={650}>{meetings.length} meetings, {active} active</Typography>
+                <Typography color="text.secondary" fontWeight={650}>{workspaceMeetings.length} meetings, {active} active</Typography>
               </CardActionArea>
             </Card>
           );
@@ -484,8 +745,31 @@ function HomeView({ onWorkspace }) {
   );
 }
 
-function UploadPanel() {
+function UploadPanel({ workspace, onUpload }) {
   const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [file, setFile] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    if (!file) {
+      setError("Select an audio or video file.");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      await onUpload({ file, name });
+      setOpen(false);
+      setName("");
+      setFile(null);
+    } catch (caught) {
+      setError(caught.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <Card className="upload-panel">
@@ -503,24 +787,25 @@ function UploadPanel() {
         <DialogTitle>Upload recording</DialogTitle>
         <DialogContent>
           <Stack gap={2} pt={0.5}>
-            <TextField label="Meeting name" placeholder="Lab 3 architecture planning" fullWidth />
+            <TextField label="Meeting name" placeholder="Lab 3 architecture planning" value={name} onChange={(event) => setName(event.target.value)} fullWidth />
             <FormControl fullWidth>
               <InputLabel>Note preset</InputLabel>
-              <Select label="Note preset" defaultValue="detailed">
-                <MenuItem value="summary">Summary</MenuItem>
-                <MenuItem value="detailed">Detailed</MenuItem>
-                <MenuItem value="interview">Interview</MenuItem>
+              <Select label="Note preset" value={workspace.preset} disabled>
+                <MenuItem value={workspace.preset}>{titleCase(workspace.preset)} (workspace default)</MenuItem>
               </Select>
             </FormControl>
             <Button className="file-picker-button" component="label" variant="outlined" startIcon={<CloudUploadOutlinedIcon />}>
-              Select file
-              <input hidden type="file" accept="audio/*,video/*" />
+              {file?.name ?? "Select file"}
+              <input hidden type="file" accept="audio/*,video/*" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
             </Button>
+            {error && <Typography color="error" role="alert">{error}</Typography>}
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={() => setOpen(false)}>Queue processing</Button>
+          <Button variant="contained" disabled={submitting} onClick={submit}>
+            {submitting ? "Uploading..." : "Queue processing"}
+          </Button>
         </DialogActions>
       </Dialog>
     </Card>
@@ -567,9 +852,9 @@ function WorkspaceSettings({ workspace }) {
           <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={2}>
             <Box>
               <Typography fontWeight={650}>Default notes preset</Typography>
-              <Typography color="text.secondary">New uploads start with detailed meeting notes.</Typography>
+              <Typography color="text.secondary">New uploads use the workspace notes preset.</Typography>
             </Box>
-            <Chip label="Detailed" variant="outlined" />
+            <Chip label={titleCase(workspace.preset)} variant="outlined" />
           </Stack>
         </Card>
       </Stack>
@@ -607,6 +892,8 @@ function MeetingLibrary({
               <MenuItem value="all">All states</MenuItem>
               <MenuItem value="processed">Processed</MenuItem>
               <MenuItem value="queued">Processing</MenuItem>
+              <MenuItem value="processing">Transcribing</MenuItem>
+              <MenuItem value="recording">Recording</MenuItem>
               <MenuItem value="failed">Failed</MenuItem>
             </Select>
           </FormControl>
@@ -617,7 +904,7 @@ function MeetingLibrary({
         {meetings.map((meeting) => (
           <Card key={meeting.id} className={meeting.id === selectedMeetingId ? "meeting-row active" : "meeting-row"}>
             <CardActionArea className="meeting-row-content" onClick={() => onMeeting(meeting.id)}>
-              {meeting.state === "queued" ? (
+              {isProcessing(meeting) ? (
                 <ProcessingToggle
                   paused={pausedMeetingIds.includes(meeting.id)}
                   onToggle={(event) => {
@@ -633,10 +920,10 @@ function MeetingLibrary({
                 <Typography fontWeight={650} noWrap>{meeting.title}</Typography>
                 <Typography color="text.secondary" noWrap>
                   {formatDate(meeting.date)} · {meeting.source}
-                  {meeting.state !== "queued" && ` · ${meeting.duration}`}
+                  {!isProcessing(meeting) && ` · ${meeting.duration}`}
                 </Typography>
               </Box>
-              {meeting.state === "queued" && (
+              {isProcessing(meeting) && (
                 <Box className="processing-status">
                   <ProcessingToggle
                     paused={pausedMeetingIds.includes(meeting.id)}
@@ -652,6 +939,12 @@ function MeetingLibrary({
             </CardActionArea>
           </Card>
         ))}
+        {meetings.length === 0 && (
+          <Card className="empty-state">
+            <Typography fontWeight={650}>No meetings found</Typography>
+            <Typography color="text.secondary">Try another filter or upload a recording.</Typography>
+          </Card>
+        )}
       </Stack>
     </Stack>
   );
@@ -689,11 +982,29 @@ function ProcessingToggle({ paused, onToggle, size = 16 }) {
   );
 }
 
-function MeetingDetail({ meeting, workspace, tab, transcriptQuery, onTab, onTranscriptQuery, paused, onToggleProcessing }) {
-  const transcript = data.transcript.filter((item) =>
-    item.text.toLowerCase().includes(transcriptQuery.toLowerCase())
-    || item.speaker.toLowerCase().includes(transcriptQuery.toLowerCase()),
-  );
+function MeetingDetail({
+  meeting,
+  tab,
+  transcriptQuery,
+  onTab,
+  onTranscriptQuery,
+  notes,
+  transcript,
+  recordingUrl,
+  loading,
+  paused,
+  onToggleProcessing,
+}) {
+  const speakers = new Map((transcript?.speakers ?? []).map((item) => [item.id, item.display_name]));
+  const segments = (transcript?.segments ?? [])
+    .map((item) => ({
+      ...item,
+      speaker: speakers.get(item.speaker_id) ?? "Unknown speaker",
+    }))
+    .filter((item) =>
+      item.text.toLowerCase().includes(transcriptQuery.toLowerCase())
+      || item.speaker.toLowerCase().includes(transcriptQuery.toLowerCase()),
+    );
 
   return (
     <Stack gap={1.5}>
@@ -721,7 +1032,7 @@ function MeetingDetail({ meeting, workspace, tab, transcriptQuery, onTab, onTran
             </Stack>
           </Stack>
           <Divider sx={{ my: 2.5 }} />
-          {meeting.state === "queued" ? (
+          {isProcessing(meeting) ? (
             <Stack className="processing-panel" direction="row" gap={1.5} alignItems="center">
               <ProcessingToggle paused={paused} onToggle={onToggleProcessing} size={22} />
               <Box>
@@ -733,31 +1044,38 @@ function MeetingDetail({ meeting, workspace, tab, transcriptQuery, onTab, onTran
                 </Typography>
               </Box>
             </Stack>
+          ) : meeting.state === "failed" ? (
+            <Box className="error-banner" role="alert">
+              {meeting.failureReason ?? "Processing failed. Please try another recording."}
+            </Box>
+          ) : loading ? (
+            <Box className="content-loading"><CircularProgress size={24} /></Box>
+          ) : notes ? (
+            <Typography component="div" className="notes-text notes-markdown">{notes.content}</Typography>
           ) : (
-            <Stack gap={2}>
-              <Typography variant="h2" fontSize={22}>Overview</Typography>
-              <Typography className="notes-text">{data.notes.summary}</Typography>
-              <Typography variant="h2" fontSize={22}>Action items</Typography>
-              <Stack component="ol" className="action-list">
-                {data.notes.actions.map((item) => <li key={item}>{item}</li>)}
-              </Stack>
-            </Stack>
+            <Typography color="text.secondary">No generated notes are available yet.</Typography>
           )}
         </Card>
       ) : (
         <Box className="recording-grid">
           <Card className="notes-panel">
-            <Box className="player">
-              <Box className="play-circle"><PlayArrowRoundedIcon fontSize="large" /></Box>
-              <Typography fontWeight={650}>{meeting.title}</Typography>
-              <Typography>{meeting.duration} recording preview</Typography>
-            </Box>
+            {recordingUrl ? (
+              <Box className="player player-ready">
+                <video controls src={recordingUrl} aria-label={`${meeting.title} recording`} />
+              </Box>
+            ) : (
+              <Box className="player">
+                <Box className="play-circle"><PlayArrowRoundedIcon fontSize="large" /></Box>
+                <Typography fontWeight={650}>{meeting.title}</Typography>
+                <Typography>{meeting.recordingAvailable ? "Loading recording..." : "Recording is not available"}</Typography>
+              </Box>
+            )}
           </Card>
           <Card className="transcript-panel">
             <Stack gap={1.5}>
               <Stack direction="row" justifyContent="space-between" alignItems="center">
                 <Typography variant="h2" fontSize={22}>Transcript</Typography>
-                <Chip label={data.transcript.length} size="small" />
+                <Chip label={transcript?.segments.length ?? 0} size="small" />
               </Stack>
               <TextField
                 size="small"
@@ -766,16 +1084,21 @@ function MeetingDetail({ meeting, workspace, tab, transcriptQuery, onTab, onTran
                 onChange={(event) => onTranscriptQuery(event.target.value)}
               />
               <Stack gap={1.5}>
-                {transcript.map((item) => (
-                  <Box key={`${item.speaker}-${item.time}`} className="transcript-item">
+                {segments.map((item) => (
+                  <Box key={item.id} className="transcript-item">
                     <Stack direction="row" gap={1} alignItems="center">
                       <Box className="speaker-avatar">{item.speaker.slice(-2)}</Box>
                       <Typography fontWeight={650}>{item.speaker}</Typography>
-                      <Typography color="primary">{item.time}</Typography>
+                      <Typography color="primary">{formatTimestamp(item.start_seconds)}</Typography>
                     </Stack>
                     <Typography color="text.secondary">{item.text}</Typography>
                   </Box>
                 ))}
+                {!loading && segments.length === 0 && (
+                  <Typography color="text.secondary">
+                    {transcript ? "No transcript matches your search." : "Transcript is not available yet."}
+                  </Typography>
+                )}
               </Stack>
             </Stack>
           </Card>
