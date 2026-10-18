@@ -79,10 +79,14 @@ take jobs from RabbitMQ and publish their results to `processing.results`.
 - In `.env`, the notes worker needs `WHADIO_NOTES__LLM__API_KEY` (Anthropic). The ASR worker needs
   `WHADIO_ASR__DIARIZATION__HF_TOKEN` from a Hugging Face account that accepted the conditions of
   `pyannote/speaker-diarization-community-1`.
-- To write notes with a self-hosted model instead, run `uv run whadio notes-worker` with
-  `WHADIO_NOTES__LLM__PROVIDER=ollama`, `WHADIO_NOTES__LLM__MODEL` set to a model pulled on an
-  Ollama server and, unless it is `http://localhost:11434`, `WHADIO_NOTES__LLM__BASE_URL`. The
-  worker in Compose passes on only the Anthropic key for now.
+- To write notes with a self-hosted model instead, set `WHADIO_NOTES__LLM__PROVIDER=ollama` and
+  `WHADIO_NOTES__LLM__MODEL` (for example `gemma4:12b-it-qat`) in `.env`, then run
+  `uv run task llm:up` before `task workers:up`. It starts Ollama in Compose on an NVIDIA GPU
+  (the NVIDIA Container Toolkit is required) at `127.0.0.1:11434` and pulls the model into the
+  `llm-models` volume; `task llm:logs` follows it. The notes worker in Compose reaches it as
+  `http://llm-runtime:11434`; a worker run with `uv run whadio notes-worker` uses
+  `WHADIO_NOTES__LLM__BASE_URL`, `http://localhost:11434` by default. See
+  [ADR-007](docs/architecture/decisions/ADR-007.md).
 - The ASR worker's first start downloads its models into the `asr-models` volume, which takes a
   few minutes.
 - The ASR worker downloads recordings through presigned links signed for
