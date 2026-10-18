@@ -205,6 +205,77 @@ class SessionRepository:
         )
 
 
+# --- MCP keys ---
+
+
+@dataclass(frozen=True, slots=True)
+class PersonalMcpKey:
+    key_id: UUID
+    created_at: datetime
+    expires_at: datetime | None
+    revoked_at: datetime | None
+
+
+class IMcpKeyRepository(Protocol):
+    async def of_user(self, user_id: UUID, /) -> list[PersonalMcpKey]: ...
+
+    async def add(
+        self, user_id: UUID, key_hash: str, expires_at: datetime | None, now: datetime, /
+    ) -> PersonalMcpKey: ...
+
+    async def revoke(self, user_id: UUID, key_id: UUID, now: datetime, /) -> bool | None: ...
+
+
+class McpKeyRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session: AsyncSession = session
+
+    async def of_user(self, user_id: UUID) -> list[PersonalMcpKey]:
+        keys = await self._session.scalars(
+            select(McpKey)
+            .where(McpKey.user_id == user_id)
+            .order_by(McpKey.created_at.desc(), McpKey.mcp_key_id.desc())
+        )
+        return [self._read(key) for key in keys]
+
+    async def add(
+        self, user_id: UUID, key_hash: str, expires_at: datetime | None, now: datetime
+    ) -> PersonalMcpKey:
+        key = McpKey(
+            user_id=user_id,
+            key_hash=key_hash,
+            created_at=now,
+            expires_at=expires_at,
+            revoked_at=None,
+        )
+        self._session.add(key)
+        await self._session.flush()
+        return self._read(key)
+
+    async def revoke(self, user_id: UUID, key_id: UUID, now: datetime) -> bool | None:
+        key = await self._session.scalar(
+            select(McpKey)
+            .where(McpKey.mcp_key_id == key_id, McpKey.user_id == user_id)
+            .with_for_update()
+        )
+        if key is None:
+            return None
+        if key.revoked_at is not None:
+            return False
+        key.revoked_at = now
+        await self._session.flush()
+        return True
+
+    @staticmethod
+    def _read(key: McpKey) -> PersonalMcpKey:
+        return PersonalMcpKey(
+            key_id=key.mcp_key_id,
+            created_at=key.created_at,
+            expires_at=key.expires_at,
+            revoked_at=key.revoked_at,
+        )
+
+
 # --- Workspaces ---
 
 

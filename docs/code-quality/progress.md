@@ -24,7 +24,6 @@ Left for later labs:
 - e-mail notifications, since SMTP is a paid service;
 - administrator monitoring, planned for the observability lab;
 - a self-hosted LLM, which needs a shared GPU host;
-- issuing personal MCP keys; the read-only MCP server already checks them.
 
 ## Status
 

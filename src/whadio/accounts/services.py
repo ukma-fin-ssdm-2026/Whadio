@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import secrets
 from collections.abc import Collection
 from dataclasses import dataclass
@@ -6,7 +7,13 @@ from datetime import datetime, timedelta
 from typing import Final, Protocol
 from uuid import UUID
 
-from ..audit.services import IWorkspaceAuditWriter, WorkspaceDeleted
+from ..audit.enums import AuditAction
+from ..audit.services import (
+    IAccountAuditWriter,
+    IWorkspaceAuditWriter,
+    McpKeyChanged,
+    WorkspaceDeleted,
+)
 from ..shared.errors import Failure, UseCaseError
 from .contracts import UserProfile
 from .enums import NotesTemplate, SessionKind, WorkspaceRole
@@ -14,11 +21,13 @@ from .models import User
 from .passwords import IPasswordHasher
 from .repositories import (
     IIdentityRepository,
+    IMcpKeyRepository,
     IMembershipRepository,
     ISessionRepository,
     IWorkspaceRepository,
     IWorkspaceSettingsRepository,
     MemberWorkspace,
+    PersonalMcpKey,
 )
 
 SESSION_LIFETIMES: Final = {
@@ -127,6 +136,49 @@ class SignInService:
 
     async def sign_out(self, tokens: Collection[str]) -> None:
         await self._sessions.end_sessions(tokens)
+
+
+# --- MCP keys ---
+
+
+@dataclass(frozen=True, slots=True)
+class CreatedMcpKey:
+    key: PersonalMcpKey
+    secret: str
+
+
+class McpKeyService:
+    def __init__(self, keys: IMcpKeyRepository, audit: IAccountAuditWriter) -> None:
+        self._keys: IMcpKeyRepository = keys
+        self._audit: IAccountAuditWriter = audit
+
+    async def list(self, user_id: UUID) -> list[PersonalMcpKey]:
+        return await self._keys.of_user(user_id)
+
+    async def create(
+        self, user_id: UUID, expires_in_days: int | None, now: datetime
+    ) -> CreatedMcpKey:
+        secret = f"whadio_mcp_{secrets.token_urlsafe(32)}"
+        expires_at = None if expires_in_days is None else now + timedelta(days=expires_in_days)
+        key = await self._keys.add(
+            user_id,
+            hashlib.sha256(secret.encode()).hexdigest(),
+            expires_at,
+            now,
+        )
+        await self._audit.write(
+            McpKeyChanged(user_id, key.key_id, AuditAction.MCP_KEY_CREATED, now)
+        )
+        return CreatedMcpKey(key, secret)
+
+    async def revoke(self, user_id: UUID, key_id: UUID, now: datetime) -> None:
+        revoked = await self._keys.revoke(user_id, key_id, now)
+        if revoked is None:
+            raise UseCaseError(Failure.NOT_FOUND)
+        if revoked:
+            await self._audit.write(
+                McpKeyChanged(user_id, key_id, AuditAction.MCP_KEY_REVOKED, now)
+            )
 
 
 # --- Workspaces ---
