@@ -89,7 +89,7 @@ Source: [uml/component-diagram.puml](uml/component-diagram.puml)
 | Accounts & Workspaces | Registration in the instance's registration mode, invitation links and their cancellation, password reset, links issued by the operator, sign-in and sessions, workspaces, membership and roles, LLM provider configuration, MCP keys. Checks workspace-administration permissions against the member's role. | FR-001–FR-003, FR-005–FR-008, FR-021, FR-043, FR-047–FR-049, NFR-018 |
 | Access Policy | Decides who may read which meeting: workspace role, per-meeting restriction, share grants and redaction. A share grants reading only to the account its creator approved; opening its link otherwise records an access request for the creator. | FR-004, FR-037–FR-039, FR-044, NFR-007–NFR-009 |
 | Meetings | Meetings, folders, transcript and notes versions, speaker labels, naming, glossary, playback. The single read path for meeting content. Enforces the meeting cap: when a meeting is queued, counts the queued and later meetings across the workspaces of its workspace's Owner, and evicts the earliest-created one if the cap is exceeded. | FR-017, FR-027–FR-036, NFR-003 |
-| Processing | The pipeline's orchestrator: publishes jobs, consumes results, tracks processing state, assembles the context set, limits regeneration. | FR-012, FR-014, FR-015, FR-018–FR-020, FR-022, FR-023, FR-025, FR-026 |
+| Processing | The pipeline's orchestrator: publishes jobs, consumes results, tracks processing state, names diarized speakers from the Meet timeline that Capture stored, assembles the context set, limits regeneration. | FR-012, FR-014–FR-016, FR-018–FR-020, FR-022, FR-023, FR-025, FR-026 |
 | Export | Markdown and VTT export with the consent notice and attribution. | FR-040–FR-042 |
 | Notifications | Email to members when processing finishes or fails, before recordings expire, and when the meeting cap evicts a meeting; to a share's creator when an account requests access; registration, invitation and password-reset links to the address they are for. | FR-001, FR-006, FR-024, FR-038, FR-046, FR-048, NFR-003 |
 | Retention | Deletes recordings 90 days after the meeting and triggers the warning 7 days before deletion. | FR-046 |
@@ -115,7 +115,7 @@ configuring the provider, is checked by Accounts & Workspaces against the member
 
 | Component | Responsibility | Requirements |
 |---|---|---|
-| Transcription pipeline | Audio normalisation, speech recognition with glossary biasing (Parakeet or Whisper), diarization (pyannote), naming speakers from the Meet timeline. | FR-015, FR-016, FR-029 |
+| Transcription pipeline | Audio normalisation, speech recognition with glossary biasing (Parakeet or Whisper), diarization (pyannote) into numbered speakers. | FR-015, FR-029 |
 | Notes pipeline | Builds the prompt from the preset, transcript and context set; calls the built-in model or the configured provider; proposes the meeting name. | FR-018, FR-021–FR-023, FR-033 |
 
 ### Infrastructure
@@ -189,7 +189,8 @@ Source: [uml/sequence-meeting-pipeline.puml](uml/sequence-meeting-pipeline.puml)
    acknowledged stay stored. Once the capture has been idle past a timeout, the scheduler assembles
    what was received into a partial recording and queues it like any other.
 3. **Transcription.** The ASR worker takes the job, reports that it started, fetches the audio,
-   and returns the transcript with named speakers. The backend saves it, and the member can read it
+   and returns the transcript with numbered speakers. The backend names them from the speaker
+   events the extension sent where the match is unambiguous, saves it, and the member can read it
    while the notes are still being generated.
 4. **Notes.** The backend assembles the preset, the provider and the context set, excluding
    restricted meetings, and queues the notes job. The notes worker returns the notes, the proposed

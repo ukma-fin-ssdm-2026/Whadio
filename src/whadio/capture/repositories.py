@@ -19,6 +19,8 @@ class ICaptureRepository(Protocol):
 
     async def chunk(self, capture_id: UUID, seq: int, /) -> CaptureChunk | None: ...
 
+    async def meeting_chunks(self, meeting_id: UUID, /) -> list[CaptureChunk]: ...
+
     async def add_chunk(
         self,
         capture_id: UUID,
@@ -69,6 +71,15 @@ class CaptureRepository:
                 CaptureChunk.capture_session_id == capture_id, CaptureChunk.seq == seq
             )
         )
+
+    async def meeting_chunks(self, meeting_id: UUID) -> list[CaptureChunk]:
+        found = await self._session.scalars(
+            select(CaptureChunk)
+            .join(CaptureSession)
+            .where(CaptureSession.meeting_id == meeting_id)
+            .order_by(CaptureChunk.seq)
+        )
+        return list(found)
 
     async def add_chunk(
         self,

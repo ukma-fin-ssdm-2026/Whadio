@@ -7,11 +7,14 @@ from datetime import datetime
 from typing import TYPE_CHECKING, BinaryIO, Final, Protocol
 from uuid import UUID, uuid4
 
+from pydantic import BaseModel, Field, TypeAdapter
+
 from ..accounts.repositories import MemberWorkspace
 from ..meetings.enums import MeetingSource, RecordingStatus
 from ..meetings.models import Folder, Meeting
 from ..meetings.persistence import AssembledRecording
 from ..meetings.services import RecordingInput
+from ..processing.speakers import SpeakerEvent
 from ..shared.errors import Failure, UseCaseError
 from ..shared.storage import ObjectStorageError
 from .enums import CaptureStatus
@@ -90,16 +93,33 @@ class CaptureView:
 
 
 @dataclass(frozen=True)
-class SpeakerEvent:
-    at_seconds: float
-    speakers: tuple[str, ...]
-
-
-@dataclass(frozen=True)
 class ChunkUpload:
     seq: int
     audio: bytes
     speaker_events: tuple[SpeakerEvent, ...]
+
+
+class _StoredSpeakerEvent(BaseModel):
+    at_seconds: float = Field(description="Seconds from the start of the recording")
+    speakers: tuple[str, ...] = Field(description="Participants speaking from that moment on")
+
+
+_STORED_EVENTS: Final = TypeAdapter(list[_StoredSpeakerEvent])
+
+
+class CaptureSpeakerTimeline:
+    """Processing's `ISpeakerTimeline`: what the extension saw on the Meet page, in recording
+    order; none for a meeting that was not captured."""
+
+    def __init__(self, repository: ICaptureRepository) -> None:
+        self._repository: ICaptureRepository = repository
+
+    async def speaker_events(self, meeting_id: UUID) -> tuple[SpeakerEvent, ...]:
+        return tuple(
+            SpeakerEvent(event.at_seconds, event.speakers)
+            for chunk in await self._repository.meeting_chunks(meeting_id)
+            for event in _STORED_EVENTS.validate_python(chunk.speaker_events or [])
+        )
 
 
 class MissingChunksError(UseCaseError):

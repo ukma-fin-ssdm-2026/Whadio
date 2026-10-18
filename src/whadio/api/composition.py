@@ -37,7 +37,12 @@ from ..accounts.services import (
 from ..audit.contracts import IContentAuditWriter
 from ..audit.services import AuditWriter
 from ..capture.repositories import CaptureRepository
-from ..capture.services import CaptureCollaborators, CaptureService, IChunkStorage
+from ..capture.services import (
+    CaptureCollaborators,
+    CaptureService,
+    CaptureSpeakerTimeline,
+    IChunkStorage,
+)
 from ..meetings.contracts import EvictionNotice, IEvictionNotifier, QueuedNotes
 from ..meetings.persistence import MeetingPersistence, PersistenceDependencies
 from ..meetings.processing import IMeetingProcessing
@@ -54,7 +59,7 @@ from ..processing.consumer import (
     serve_results,
 )
 from ..processing.repositories import JobRepository
-from ..processing.services import ProcessingService
+from ..processing.services import ProcessingCollaborators, ProcessingService
 from ..shared.database import Database, DatabaseSettings, IUseCaseTransactions
 from ..shared.errors import Failure, UseCaseError
 from ..shared.storage import IObjectStorage, connect_s3_storage
@@ -96,20 +101,23 @@ class CompositionRoot:
         meetings = meeting_service(session, AuditWriter(session))
         memberships = WorkspaceMembershipService(MembershipRepository(session))
         return ProcessingService(
-            JobRepository(session),
-            meetings,
-            MeetingPersistence(
-                PersistenceDependencies(
-                    meetings,
-                    MeetingRepository(session),
-                    memberships,
-                    AuditWriter(session),
-                    AccessPolicy(AccessRepository(session), memberships),
-                    UnavailableEvictionNotifications(),
-                )
-            ),
-            WorkspaceSettingsService(WorkspaceSettingsRepository(session)),
-            self._storage,
+            ProcessingCollaborators(
+                JobRepository(session),
+                meetings,
+                MeetingPersistence(
+                    PersistenceDependencies(
+                        meetings,
+                        MeetingRepository(session),
+                        memberships,
+                        AuditWriter(session),
+                        AccessPolicy(AccessRepository(session), memberships),
+                        UnavailableEvictionNotifications(),
+                    )
+                ),
+                WorkspaceSettingsService(WorkspaceSettingsRepository(session)),
+                self._storage,
+                CaptureSpeakerTimeline(CaptureRepository(session)),
+            )
         )
 
     @asynccontextmanager

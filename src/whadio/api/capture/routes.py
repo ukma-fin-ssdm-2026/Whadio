@@ -9,8 +9,8 @@ from ...capture.services import (
     CaptureView,
     ChunkUpload,
     MissingChunksError,
-    SpeakerEvent,
 )
+from ...processing.speakers import SpeakerEvent
 from ...shared.errors import Failure, UseCaseError
 from ..accounts.auth import CaptureUser
 from ..composition import Captures

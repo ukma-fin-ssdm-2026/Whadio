@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Final, Protocol
@@ -43,6 +44,7 @@ from ..shared.errors import Failure, UseCaseError
 from ..shared.storage import IObjectStorage
 from .enums import JobStatus, JobType
 from .repositories import IJobRepository, Job
+from .speakers import ISpeakerTimeline, resolve_speaker_names
 
 # Matches the delivery limit of the job queues: past it the broker dead-letters the message.
 MAX_ATTEMPTS: Final = 5
@@ -111,6 +113,16 @@ class IGeneratedNotes(Protocol):
     ) -> None: ...
 
 
+@dataclass(frozen=True)
+class ProcessingCollaborators:
+    jobs: IJobRepository
+    meetings: IPipelineMeetings
+    notes: IGeneratedNotes
+    workspaces: IWorkspaceSettings
+    storage: IObjectStorage
+    speaker_timeline: ISpeakerTimeline
+
+
 class ProcessingService:
     """Runs inside the caller's transaction. Queueing only records a job; `publish_next` sends
     it, in a later transaction, so a job is never published before its row is committed and
@@ -119,19 +131,13 @@ class ProcessingService:
     It is also Meetings' `IMeetingProcessing`.
     """
 
-    def __init__(
-        self,
-        jobs: IJobRepository,
-        meetings: IPipelineMeetings,
-        notes: IGeneratedNotes,
-        workspaces: IWorkspaceSettings,
-        storage: IObjectStorage,
-    ) -> None:
-        self._jobs: IJobRepository = jobs
-        self._meetings: IPipelineMeetings = meetings
-        self._notes: IGeneratedNotes = notes
-        self._workspaces: IWorkspaceSettings = workspaces
-        self._storage: IObjectStorage = storage
+    def __init__(self, collaborators: ProcessingCollaborators) -> None:
+        self._jobs: IJobRepository = collaborators.jobs
+        self._meetings: IPipelineMeetings = collaborators.meetings
+        self._notes: IGeneratedNotes = collaborators.notes
+        self._workspaces: IWorkspaceSettings = collaborators.workspaces
+        self._storage: IObjectStorage = collaborators.storage
+        self._speaker_timeline: ISpeakerTimeline = collaborators.speaker_timeline
 
     async def queue_transcription(self, meeting_id: UUID) -> None:
         # The lock serializes two submissions of the same meeting, so only one finds no job.
@@ -226,6 +232,12 @@ class ProcessingService:
             )
             return
         await self._jobs.finish(job.job_id, JobStatus.SUCCEEDED, result.finished_at, None)
+        # The label stays the key the segments refer to; only what members see is the name.
+        names = resolve_speaker_names(
+            await self._speaker_timeline.speaker_events(job.meeting_id),
+            result.transcript.segments,
+            result.duration_seconds,
+        )
         await self._meetings.save_initial_transcript(
             job.meeting_id,
             InitialTranscript(
@@ -233,7 +245,7 @@ class ProcessingService:
                 language=result.transcript.language,
                 model_name=result.model_name,
                 speakers=tuple(
-                    InitialSpeaker(key=label, display_name=label)
+                    InitialSpeaker(key=label, display_name=names.get(label, label))
                     for label in result.transcript.speakers
                 ),
                 segments=tuple(

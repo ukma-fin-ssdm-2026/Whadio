@@ -12,6 +12,7 @@ from ..accounts.repositories import MemberWorkspace
 from ..meetings.models import Folder, Meeting
 from ..meetings.persistence import AssembledRecording
 from ..meetings.services import RecordingInput
+from ..processing.speakers import SpeakerEvent
 from ..shared.errors import Failure, UseCaseError
 from ..shared.storage import ObjectStorageError
 from .enums import CaptureStatus
@@ -19,10 +20,10 @@ from .models import CaptureChunk, CaptureSession
 from .services import (
     CaptureCollaborators,
     CaptureService,
+    CaptureSpeakerTimeline,
     CaptureView,
     ChunkUpload,
     MissingChunksError,
-    SpeakerEvent,
 )
 
 NOW = datetime(2026, 10, 18, 18, 0, tzinfo=UTC)
@@ -65,6 +66,16 @@ class FakeRepository:
                 if chunk.capture_session_id == capture_id and chunk.seq == seq
             ),
             None,
+        )
+
+    async def meeting_chunks(self, meeting_id: UUID, /) -> list[CaptureChunk]:
+        return sorted(
+            (
+                chunk
+                for chunk in self.stored
+                if self.captures[chunk.capture_session_id].meeting_id == meeting_id
+            ),
+            key=lambda chunk: chunk.seq,
         )
 
     async def add_chunk(
@@ -622,3 +633,36 @@ def test_failed_queueing_leaves_no_assembled_recording() -> None:
 
     # Assert
     assert list(setup.storage.objects) == [f"captures/{capture_id}/0"]
+
+
+# --- Speaker timeline ---
+
+
+def test_timeline_joins_the_events_of_every_chunk_in_recording_order() -> None:
+    # Arrange
+    setup = fixture()
+    view = started(setup)
+    for seq, event in ((1, SpeakerEvent(4.0, ("Bob",))), (0, SpeakerEvent(0.5, ("Alice",)))):
+        asyncio.run(
+            setup.service.put_chunk(
+                USER, view.capture_id, ChunkUpload(seq, f"{seq}".encode(), (event,)), NOW
+            )
+        )
+
+    # Act
+    events = asyncio.run(CaptureSpeakerTimeline(setup.repository).speaker_events(view.meeting_id))
+
+    # Assert
+    assert events == (SpeakerEvent(0.5, ("Alice",)), SpeakerEvent(4.0, ("Bob",)))
+
+
+def test_meeting_that_was_not_captured_has_no_timeline() -> None:
+    # Arrange
+    setup = fixture()
+    upload(setup, started(setup).capture_id, 0, b"head")
+
+    # Act
+    events = asyncio.run(CaptureSpeakerTimeline(setup.repository).speaker_events(uuid4()))
+
+    # Assert
+    assert events == ()
