@@ -91,7 +91,7 @@ end note
 
 mq ->> notes ++ : NotesRequested
 notes -> notes : Build the prompt from the preset,\ntranscript and context set
-notes -> llm ++ : POST /v1/chat/completions
+notes -> llm ++ : POST /api/chat
 llm --> notes -- : Completion
 notes ->> mq -- : NotesReady {notes, proposed name, context meetings}
 mq ->> web ++ : NotesReady

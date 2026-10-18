@@ -28,7 +28,7 @@ node "Main host\n<<Linux VM, CPU only>>" as main {
 node "GPU host\n<<Linux, NVIDIA GPU>>" as gpu {
   node "Docker Compose — profile: gpu" as composeGpu {
     component "asr-worker\n<<container>>" as asrWorker
-    component "llm-runtime\n<<container: OpenAI-compatible server>>" as llm
+    component "llm-runtime\n<<container: Ollama>>" as llm
   }
 }
 
@@ -55,7 +55,7 @@ notesWorker --> mq : AMQP\n[TB-5]
 gpu == main : <<private network>>
 asrWorker --> mq : AMQP\n[TB-6]
 asrWorker --> store : HTTPS GET, presigned URL\n[TB-6]
-notesWorker --> llm : HTTP /v1/chat/completions\n[TB-6]
+notesWorker --> llm : HTTP /api/chat\n[TB-6]
 
 ' --- Egress to third parties ---
 notesWorker --> provider : HTTPS\nonly when the Owner configured a key\n[TB-7]
