@@ -19,6 +19,7 @@ _PROMPT = Prompt(
     system="Write notes.", user="<meeting>...</meeting>", headings=(), context_meeting_ids=()
 )
 _NUM_CTX = 8192
+_NUM_PREDICT = 2048
 _BODY = TypeAdapter(dict[str, JsonValue])
 
 type _Handler = Callable[[httpx2.Request], httpx2.Response]
@@ -53,7 +54,7 @@ def _model(client: httpx2.AsyncClient, *, num_ctx: int = _NUM_CTX) -> OllamaChat
         client,
         model="gemma3:12b",
         num_ctx=num_ctx,
-        num_predict=2048,
+        num_predict=_NUM_PREDICT,
         keep_alive=timedelta(minutes=5),
     )
 
@@ -191,6 +192,22 @@ def test_ollama_answer_without_text_is_invalid_output(content: str) -> None:
     assert reason is NotesFailure.INVALID_OUTPUT
 
 
+@pytest.mark.parametrize(
+    "body",
+    [_chat() | {"done_reason": "length", "eval_count": _NUM_PREDICT}, _chat() | {"done": False}],
+    ids=["cut-off", "unfinished"],
+)
+def test_ollama_answer_that_did_not_finish_is_invalid_output(body: dict[str, JsonValue]) -> None:
+    # Arrange
+    handler = _answering(200, body)
+
+    # Act
+    reason = _failure_of(handler)
+
+    # Assert
+    assert reason is NotesFailure.INVALID_OUTPUT
+
+
 def test_ollama_answer_of_an_unexpected_shape_is_invalid_output() -> None:
     # Arrange
     handler = _answering(200, {"model": "gemma3:12b", "done": True})
@@ -252,19 +269,27 @@ class OllamaTestSettings(BaseSettings):
     )
 
 
+_LONG_ANSWER = Prompt(
+    system="Follow the instruction exactly.",
+    user="Count from 1 to 1000, one number per line, with nothing else.",
+    headings=(),
+    context_meeting_ids=(),
+)
+
+
 @dataclass(frozen=True, slots=True)
 class LiveOllama:
     url: HttpUrl
     model: str
 
-    def complete(self, prompt: Prompt, *, num_ctx: int) -> Completion:
+    def complete(self, prompt: Prompt, *, num_ctx: int, num_predict: int = 256) -> Completion:
         async def complete() -> Completion:
             async with httpx2.AsyncClient(base_url=str(self.url), timeout=300) as client:
                 model = OllamaChatModel(
                     client,
                     model=self.model,
                     num_ctx=num_ctx,
-                    num_predict=256,
+                    num_predict=num_predict,
                     keep_alive=timedelta(minutes=1),
                 )
                 return await model.complete(prompt)
@@ -298,6 +323,21 @@ def test_real_ollama_answers_a_short_prompt(live_ollama: LiveOllama) -> None:
 
     # Assert
     assert completion.text.strip()
+
+
+@pytest.mark.slow
+def test_real_ollama_answer_cut_off_by_the_answer_limit_is_invalid_output(
+    live_ollama: LiveOllama,
+) -> None:
+    # Arrange
+    prompt = _LONG_ANSWER
+
+    # Act
+    with pytest.raises(NotesError) as raised:
+        live_ollama.complete(prompt, num_ctx=4096, num_predict=8)
+
+    # Assert
+    assert raised.value.reason is NotesFailure.INVALID_OUTPUT
 
 
 @pytest.mark.slow
