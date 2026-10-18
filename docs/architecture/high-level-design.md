@@ -64,7 +64,7 @@ Rules 1 and 6 are checked on every commit and in CI by the import-linter contrac
 | A single-process monolith, with models loaded in the web process | A GPU out-of-memory error or a model crash would take the web application down (NFR-015), and the web host would need a GPU. |
 | Choreography: the transcript event consumed by both the backend and the notes worker | Notes need the context set, the preset and the provider configuration, which only the backend can assemble under the access rules (FR-019, FR-037). Notes could also arrive before the transcript is saved, and regeneration (FR-025) starts from the backend anyway. |
 | A database table as the job queue | With several workers, a shared table needs claiming and skipping logic that a broker provides natively. A queue also gives backpressure: the GPU takes one job at a time while peaks wait in the queue. |
-| Splitting the ASR worker into a thin worker on the main host and a model server on the GPU host, as is done for notes | The notes split relies on an off-the-shelf server with a standard API, an interchangeable external provider (BYOK) and a secret to keep on the main host. None applies to transcription: no standard API covers recognition with glossary biasing and diarization, audio may not leave Whadio's servers, and the job carries no secret. A job of several minutes would also need an asynchronous API on the model server, duplicating the broker. The choice is internal to the Transcription pipeline and can be revisited without changing the messages. |
+| Splitting the ASR worker into a thin worker on the main host and a model server on the GPU host, as is done for notes | The notes split relies on an off-the-shelf model server, an interchangeable external provider (BYOK) and a secret to keep on the main host. None applies to transcription: no standard API covers recognition with glossary biasing and diarization, audio may not leave Whadio's servers, and the job carries no secret. A job of several minutes would also need an asynchronous API on the model server, duplicating the broker. The choice is internal to the Transcription pipeline and can be revisited without changing the messages. |
 
 ## 3. Components
 
@@ -125,7 +125,7 @@ configuring the provider, is checked by Accounts & Workspaces against the member
 | PostgreSQL | The backend's data; each module owns its tables. |
 | Object storage (S3-compatible) | Audio chunks and recordings. Any server that implements the S3 API with presigned URLs fits; the product is a deployment choice (for example SeaweedFS or Garage). |
 | Message broker (RabbitMQ) | Job and result queues between the backend and the workers. |
-| LLM runtime | An off-the-shelf server exposing an OpenAI-compatible chat completions API for the built-in model (for example llama.cpp server or vLLM). |
+| LLM runtime | Ollama, serving the built-in model through its native chat API ([ADR-007](decisions/ADR-007.md)). |
 | LLM provider | An external API used only when the workspace Owner configured a key. |
 | SMTP relay | Delivers notification email and the registration, invitation and password-reset links. Optional in `invite-only` mode; without it, no email is sent, so the instance sends no notifications (FR-047). |
 
@@ -139,7 +139,7 @@ The deployable processes, all but the off-the-shelf services built from the same
 | `scheduler` | Retention, capture finalisation, re-publishing jobs stuck in `queued`, deleting expired registration and password-reset links, invitations and sessions | Main host | Exactly 1 |
 | `notes-worker` | Notes pipeline | Main host (CPU only) | 1 or more, competing consumers |
 | `asr-worker` | Transcription pipeline | GPU host | 1 per GPU |
-| `llm-runtime` | The built-in language model, on an off-the-shelf server | GPU host | 1 |
+| `llm-runtime` | The built-in language model, on Ollama | GPU host | 1 |
 | `nginx`, `postgres`, `rabbitmq`, `object-storage` | Off-the-shelf services | Main host | 1 each |
 
 The notes worker needs no GPU: the model runs in `llm-runtime`, and the worker only builds the
@@ -170,8 +170,8 @@ worker needs, so workers never read the database; audio is fetched through a tim
 URL, and a workspace's own provider key travels only to the notes worker on the main host.
 
 **Infrastructure.** The backend uses PostgreSQL over SQL and object storage over the S3 API, and
-sends email to the SMTP relay over SMTP with STARTTLS. The notes worker calls `llm-runtime` over an
-OpenAI-compatible HTTP API, and the configured provider over HTTPS.
+sends email to the SMTP relay over SMTP with STARTTLS. The notes worker calls `llm-runtime` over
+Ollama's native HTTP chat API, and the configured provider over HTTPS.
 
 ## 6. Main flow
 

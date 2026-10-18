@@ -41,7 +41,7 @@ package "Whadio workers  (entry points: asr-worker, notes-worker)" as workers {
 
 database "PostgreSQL" as db
 database "Object storage\n<<S3-compatible>>" as store
-component "LLM runtime\n<<OpenAI-compatible>>" as llm
+component "LLM runtime\n<<Ollama>>" as llm
 cloud "LLM provider\n<<BYOK>>" as provider
 cloud "SMTP relay" as smtp
 
