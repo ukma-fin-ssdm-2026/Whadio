@@ -46,6 +46,29 @@ including what each error means, is in [`docs/api/api-design.md`](docs/api/api-d
 - Starting the server writes the OpenAPI specification to `docs/api/openapi-generated.yaml`
   and `.json`; to regenerate it without a server, run `uv run whadio openapi`.
 
+## Running the web app
+
+The React app lives in [`frontend/`](frontend/). Start the API on port 3000 first, then run:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open <http://localhost:5173>. Vite proxies `/api` requests to the local API, so browser sessions
+and uploads use the backend without a separate CORS setup. Set `VITE_API_BASE_URL` only when the
+API is hosted at a different origin.
+
+Create or reset a local login after applying the database migrations:
+
+```bash
+uv run whadio dev-user --email margaret@whadio.dev
+```
+
+The command asks for a password without storing it in the repository and also creates the
+account's personal workspace and default meeting folder.
+
 ## Running the workers
 
 The transcription and notes workers live in [`src/whadio/workers/`](src/whadio/workers/). They
@@ -65,8 +88,9 @@ take jobs from RabbitMQ and publish their results to `processing.results`.
 
 The server also exposes a read-only MCP endpoint at `http://localhost:3000/mcp/` with four tools:
 `list_meetings`, `search_meetings`, `get_transcript` and `get_notes`. They read the meetings the
-key's owner can access, and every call needs a personal MCP key as a Bearer token. Issuing keys
-through the API is not implemented yet.
+key's owner can access, and every call needs a personal MCP key as a Bearer token. A signed-in
+user creates, lists and revokes keys through `/api/v1/users/me/mcp-keys`; each secret is shown
+only in the creation response and is stored only as a SHA-256 hash.
 
 - MCP Inspector: `npx @modelcontextprotocol/inspector`, choose the *Streamable HTTP* transport
   the URL `http://localhost:3000/mcp/`, and the header `Authorization: Bearer <key>`.
@@ -105,6 +129,12 @@ All code quality documentation is maintained in the [`/docs/code-quality/`](docs
 - [Code Review Report](docs/code-quality/review-report.md) — our review of another team's code, and the feedback on ours
 - [Static Analysis](docs/code-quality/static-analysis.md) — the tools, how they run, and the documented findings
 - [Implementation Progress](docs/code-quality/progress.md) — the MVP's scope, status and next steps
+
+## Testing Artifacts
+Testing policy and evidence are maintained in [`/docs/testing/`](docs/testing/).
+- [Testing Strategy](docs/testing/testing-strategy.md) — scope, quality goals, metrics and merge gates
+- [Unit Testing and Coverage](docs/testing/testing.md) — implemented tests, edge cases and coverage results
+- [Coverage Report](htmlcov/index.html) — browsable line coverage for the current baseline
 
 ## AI usage
 The document was prepared with the help of Claude Code (Claude Opus 5 model) based on the team's decisions; the content was manually checked and edited, and the document is reviewed via a pull request before merging.

@@ -90,6 +90,147 @@ paths:
       security:
       - sessionCookie: []
       - extensionToken: []
+  /api/v1/users/me/mcp-keys:
+    get:
+      tags:
+      - accounts
+      summary: List my MCP keys
+      description: Lists the caller's keys newest first, including revoked and expired
+        keys. Secrets are never returned.
+      operationId: list_mcp_keys_api_v1_users_me_mcp_keys_get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Maximum number of items to return
+          default: 20
+          title: Limit
+        description: Maximum number of items to return
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 4096
+          - type: 'null'
+          description: Opaque `next_cursor` from the previous page; omit for the first
+            page
+          title: Cursor
+        description: Opaque `next_cursor` from the previous page; omit for the first
+          page
+      responses:
+        '200':
+          description: A page of personal MCP keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_McpKeyRead_'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - accounts
+      summary: Create an MCP key
+      description: Creates a personal key for AI assistants. The secret is shown once
+        and only its SHA-256 hash is stored.
+      operationId: create_mcp_key_api_v1_users_me_mcp_keys_post
+      security:
+      - sessionCookie: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/McpKeyCreate'
+              - type: 'null'
+              title: Payload
+      responses:
+        '201':
+          description: The new key and its one-time secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpKeyCreated'
+        '400':
+          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
+            valid JSON'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/users/me/mcp-keys/{key_id}:
+    delete:
+      tags:
+      - accounts
+      summary: Revoke an MCP key
+      description: Revokes one of the caller's keys. Revoking an already revoked key
+        is harmless.
+      operationId: revoke_mcp_key_api_v1_users_me_mcp_keys__key_id__delete
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: key_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: MCP key identifier
+          title: Key Id
+        description: MCP key identifier
+      responses:
+        '204':
+          description: Key revoked
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`NOT_FOUND`: no such key among the caller''s own'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/workspaces:
     get:
       tags:
@@ -3107,6 +3248,100 @@ components:
       - status
       title: Health
     JsonValue: {}
+    McpKeyCreate:
+      properties:
+        expires_in_days:
+          anyOf:
+          - type: integer
+            maximum: 365.0
+            minimum: 1.0
+          - type: 'null'
+          title: Expires In Days
+          description: Days until expiry; omit for a key that does not expire
+      additionalProperties: false
+      type: object
+      title: McpKeyCreate
+    McpKeyCreated:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: MCP key identifier
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: When the key was created
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
+          description: When the key expires, or null
+        revoked_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Revoked At
+          description: When the key was revoked, or null
+        is_active:
+          type: boolean
+          title: Is Active
+          description: Whether the key can authenticate now
+        secret:
+          type: string
+          title: Secret
+          description: Bearer token shown only in this response; store it before closing
+      type: object
+      required:
+      - id
+      - created_at
+      - expires_at
+      - revoked_at
+      - is_active
+      - secret
+      title: McpKeyCreated
+    McpKeyRead:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: MCP key identifier
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: When the key was created
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
+          description: When the key expires, or null
+        revoked_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Revoked At
+          description: When the key was revoked, or null
+        is_active:
+          type: boolean
+          title: Is Active
+          description: Whether the key can authenticate now
+      type: object
+      required:
+      - id
+      - created_at
+      - expires_at
+      - revoked_at
+      - is_active
+      title: McpKeyRead
     MeetingRead:
       properties:
         id:
@@ -3419,6 +3654,21 @@ components:
       - items
       - pagination
       title: Page[FolderRead]
+    Page_McpKeyRead_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/McpKeyRead'
+          type: array
+          title: Items
+          description: Items of this page, in the documented order
+        pagination:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - pagination
+      title: Page[McpKeyRead]
     Page_MeetingSummary_:
       properties:
         items:
