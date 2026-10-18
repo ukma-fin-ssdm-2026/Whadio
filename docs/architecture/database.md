@@ -87,6 +87,7 @@ maps the domain entities and the implementation-only cleanup queue to these owne
 | Access Policy | meeting_access_grant, external_share, share_access_request |
 | Capture | capture_session, capture_chunk |
 | Processing | processing_job |
+| Notifications | notification_outbox |
 | Audit | audit_event |
 
 A module needs `models.py` when it owns tables. Retention owns no table in this schema: it will
@@ -115,14 +116,52 @@ Revision `0004` adds sanitized failure codes, original transcript job provenance
 recovery snapshots. Deleting a folder remembers its identity and the meetings moved to the default
 folder; restoration recreates it and returns those surviving meetings in one audited transaction.
 Restoration refuses name conflicts and later meeting moves. Workspace deletion removes recovery
-snapshots. Downgrade refuses to discard populated recovery or processing provenance. The current
-head is `0005`. Revision `0005` changes only the branch-added `failure_reason` column from TEXT to VARCHAR(20), matching the ORM enum. Its fixed-code CHECK remains intact, including on downgrade back to TEXT. No existing integrity triggers, privileges or locking rules change.
+snapshots. Downgrade refuses to discard populated recovery or processing provenance. Revision `0005` changes only the branch-added `failure_reason` column from TEXT to VARCHAR(20), matching the ORM enum. Its fixed-code CHECK remains intact, including on downgrade back to TEXT. No existing integrity triggers, privileges or locking rules change.
+
+Revision `0006` records when a processing job was published and the context meetings a notes job
+was sent with, so a job lost after its commit is published again.
+
+Revision `0007` queues a capture chunk's audio in `recording_deletion` when its row is deleted, so
+the chunks of an unfinished capture deleted with their meeting do not stay in storage.
+
+Revision `0008` adds `notification_outbox`, owned by Notifications. Each row is one reserved
+mail: its `kind`, the recipient's `recipient_user_id` (deleted with the account), a unique
+`dedupe_key`, a JSONB `payload` object, and the delivery state `attempts`, `next_attempt_at`,
+`sent_at` and a sanitised `last_error` of at most 200 characters. The partial index
+`ix_notification_outbox_unsent` on `next_attempt_at WHERE sent_at IS NULL` serves the scheduler's
+claim. `whadio_app` holds `SELECT`, `INSERT`, `UPDATE` and `DELETE` on it. Downgrade refuses to
+discard unsent notices. The current head is `0008`.
 
 Cleanup passes use UUID keyset windows and advance after each batch, including failed or locked
 items. Each pass attempts each selected item at most once; failed items remain durable for the
 next pass. API list cursors include the resource and caller scope and the final item's sort key.
 List queries are bounded, note-context rows are fetched together, and visible folder counts are
 aggregated for the returned page without loading meeting content.
+
+## Notification outbox
+
+`notifications.repositories.NotificationOutboxRepository` implements both sides of the outbox.
+`INotificationOutbox.reserve()` inserts a notice in the caller's session with
+`ON CONFLICT (dedupe_key) DO NOTHING`, so it commits or rolls back with the change it reports and a
+repeated reservation is dropped. The payload is a pydantic notice from `notifications/templates.py`,
+validated per `kind` again when it is read.
+
+The scheduler sends what was reserved. Each pass, `NotificationDrainer` handles one due notice at
+a time in three transactions. The first only claims it with `FOR UPDATE SKIP LOCKED`, counts the
+attempt, moves `next_attempt_at` forward by a doubling, capped backoff and commits. The second
+looks up the recipient's address through the `IRecipientDirectory` port, which the scheduler's
+composition root answers from Accounts, and the template is rendered. The mail then goes to the
+SMTP relay in a worker thread, with no transaction open. The third transaction marks the notice
+sent, or stores a sanitised error. The lock keeps a concurrent scheduler off the notice while it
+is claimed; after the commit, the future `next_attempt_at` does. An unexpected error while the
+mail is composed or sent stops the pass, but the notice is already rescheduled, so the next pass
+sends the others and retries it after its backoff. Delivery is at least once: a mail is sent
+again when its outcome cannot be recorded, or when its send outlasts
+`WHADIO_OUTBOX__RETRY_BACKOFF`. After `WHADIO_OUTBOX__MAX_ATTEMPTS` attempts a notice is given up. Each pass also deletes notices sent
+longer ago than `WHADIO_OUTBOX__RETENTION`, and given-up ones reserved longer ago than it. Without
+`WHADIO_SMTP__*` the scheduler sends nothing and deletes nothing, reservations still succeed, and
+`WHADIO_PUBLIC_URL` is not needed. The batch size, backoff, attempts and retention are shown in
+`.env.example`.
 
 ## Configure and apply the schema
 
