@@ -84,10 +84,10 @@ repos:
         require_serial: true
 
       - id: no-suppressions
-        name: no inline suppression comments (configure exceptions in pyproject.toml)
+        name: no inline suppression comments (configure exceptions in pyproject.toml or biome.jsonc)
         language: pygrep
-        entry: '#\s*(?:type:\s*ignore|pyright:\s*(?:ignore|basic)|ty:\s*ignore|noqa|nosec|ruff:\s*(?:noqa|ignore))'
-        types_or: [python, pyi]
+        entry: '#\s*(?:type:\s*ignore|pyright:\s*(?:ignore|basic)|ty:\s*ignore|noqa|nosec|ruff:\s*(?:noqa|ignore))|biome-ignore'
+        types_or: [python, pyi, javascript, jsx, css]
 
       - id: typos
         name: typos
