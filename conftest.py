@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import ClassVar
 from uuid import UUID, uuid4
 
+import hypothesis
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import Field, SecretStr
@@ -36,6 +37,18 @@ from whadio.meetings.models import (
     TranscriptSegment,
 )
 from whadio.shared.database import DatabaseSettings
+
+
+class ContinuousIntegrationSettings(BaseSettings):
+    ci: bool = Field(
+        default=False,
+        description="Set by GitHub Actions and most CI services; selects reproducible examples.",
+    )
+
+
+hypothesis.settings.register_profile("ci", derandomize=True, deadline=None)
+hypothesis.settings.register_profile("dev", deadline=None)
+hypothesis.settings.load_profile("ci" if ContinuousIntegrationSettings().ci else "dev")
 
 
 class DatabaseTestSettings(BaseSettings):
