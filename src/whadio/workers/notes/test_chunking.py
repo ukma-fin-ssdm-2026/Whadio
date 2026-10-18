@@ -1,3 +1,5 @@
+import pytest
+
 from ...contracts.common import Segment
 from .chunking import chunk_segments
 
@@ -26,3 +28,26 @@ def test_segments_within_the_limit_form_one_chunk() -> None:
 
     # Assert
     assert len(chunks) == 1
+
+
+@pytest.mark.parametrize(
+    ("texts", "max_chars", "length"),
+    [
+        pytest.param(["111", "22"], 5, 1, id="no-overflow-on-the-edge"),
+        pytest.param(["111", "222"], 5, 2, marks=pytest.mark.xfail, id="overflow"),
+    ],
+)
+def test_segment_that_overflows_starts_a_new_chunk(
+    texts: list[str], max_chars: int, length: int
+) -> None:
+    # Arrange
+    segments = [
+        Segment(start_seconds=i, end_seconds=i + 1, speaker=f"speaker_{i}", text=t)
+        for i, t in enumerate(texts)
+    ]
+
+    # Act
+    chunks = chunk_segments(segments, max_chars)
+
+    # Assert
+    assert len(chunks) == length
