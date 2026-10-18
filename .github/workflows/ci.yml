@@ -67,9 +67,11 @@ jobs:
           {
             echo "### Coverage (line and branch)"
             echo
-            uv run --frozen coverage report --format=markdown --fail-under=0
+            uv run --frozen coverage report --format=markdown --fail-under=0 ||
+              echo "Coverage report unavailable."
             echo
-            uv run --frozen python -I .github/scripts/junit_failures.py reports/junit.xml
+            uv run --frozen python -I .github/scripts/junit_failures.py reports/junit.xml ||
+              printf '### Failed tests\n\nTest report unavailable.\n'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the test and coverage reports
