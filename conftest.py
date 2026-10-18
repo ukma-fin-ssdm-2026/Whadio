@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncGenerator, Awaitable, Callable, Generator
+from collections.abc import AsyncGenerator, Awaitable, Callable, Generator, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 import hypothesis
 import pytest
 from httpx import ASGITransport, AsyncClient
-from pydantic import Field, SecretStr
+from pydantic import BaseModel, Field, JsonValue, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import Connection, create_engine, delete, text
 from sqlalchemy.engine import make_url
@@ -407,3 +407,12 @@ def rabbitmq_settings() -> BrokerSettings:
 
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
+
+
+def refused_fields(model: type[BaseModel], data: Mapping[str, JsonValue]) -> set[str]:
+    """Dotted paths of the fields `model` refuses in `data`; empty when it accepts them."""
+    try:
+        model.model_validate(data)
+    except ValidationError as error:
+        return {".".join(str(part) for part in detail["loc"]) for detail in error.errors()}
+    return set()
