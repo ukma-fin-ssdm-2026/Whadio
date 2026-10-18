@@ -1,0 +1,143 @@
+# Unit Testing and Coverage
+
+Starting point: `main` at `ff3f913`, with 485 passing tests.
+
+## 1. Unit tests
+
+### Modules
+
+We chose the two backend modules with the weakest coverage:
+
+- **Access Policy** (`src/whadio/access_policy/`): who may open a meeting, restricted meetings, share links and access requests. Before this work it had no tests of its own for its services or repository. API tests reached it only indirectly.
+- **Meetings** (`src/whadio/meetings/services.py`): the meeting use cases, such as upload, folders, transcripts and their edits, notes, the glossary, and the views behind a share link. It had the most untested lines of any file (99).
+
+We added 116 tests in five files. The two `test_services_unit.py` files are unit tests: they replace every collaborator with an in-memory fake, need no running services and run in the commit hook. The other three are integration tests against PostgreSQL, marked `slow`.
+
+| File | Tests | What they cover |
+|---|---|---|
+| `access_policy/test_services_unit.py` (new, unit) | 16 | reading and restricting a meeting; creating, requesting, approving and revoking share links; what a share recipient may do; requester profiles |
+| `meetings/test_services_unit.py` (new, unit) | 12 | creating a meeting, consent and the default folder; renaming and deleting; folders; the glossary |
+| `access_policy/test_services.py` (new) | 42 | restricting a meeting and choosing its members; creating, requesting, approving, declining and revoking share links; requester profiles; who gets notified before a meeting is deleted |
+| `access_policy/test_repositories.py` (new) | 7 | paging through shares, a recipient's shares and access requests with a cursor, including records created at the same moment; revoked shares are left out |
+| `meetings/test_services.py` (extended) | 39 | refusals for create, update and delete; folders; folder counts; transcript edits and revisions; replaying a transcription job; shared transcripts and notes with and without speaker names hidden; the glossary; processing state |
+
+### Fixtures, mocks and parametrised tests
+
+- **Fixtures:** `async_database` (in the root `conftest.py`) runs each test in a PostgreSQL transaction that is rolled back afterwards, so tests never see each other's data. Two builders set up the people each test needs: `world()` in Access Policy and `team()` in Meetings. Each creates a workspace Owner, a Member, an outsider and a meeting.
+- **Mocks (fakes):** Access Policy must not import Meetings (import-linter enforces the layering), so its tests replace the collaborators with small fakes. `FakeMeetings` returns the meeting's scope, `FakeAudit` records audit events in a list, and `FakeNotices` records the notices sent to share creators. The tests then assert on what the fakes received. The unit tests go further: `FakeAccessRepository` and `FakeDirectory` stand in for the Access Policy database and the workspace memberships, and `FakeMeetingRepository` and `FakePolicy` do the same for Meetings.
+- **Parametrised tests:** the four content paths a share recipient may not use (export, MCP, recording, write); the two invalid combinations of access mode and member list; blank names and names with a control character; a share with names hidden and with names shown; deleting and updating someone else's glossary term.
+
+### Edge cases covered
+
+Access Policy:
+
+- an access list that does not match the access mode, and a grant to someone outside the workspace;
+- a wrong token and a revoked share, both treated as an invalid link;
+- a second request for the same share, a request decided twice, approving a request to a revoked share, and deciding a request that does not exist;
+- a share already bound to one recipient, and a recipient who already has access;
+- revoking a share twice (audited once) and revoking a share that does not exist;
+- a share recipient trying each of the four paths other than reading (export, MCP, recording, write);
+- a revoked share stopping its recipient from reading;
+- the second page of every cursor-paged list, with revoked shares left out;
+- records created at the same moment, paged one at a time with no record missing or repeated;
+- a share recipient counted as a reader before a meeting is deleted.
+
+Meetings:
+
+- an update or a transcript edit that changes nothing;
+- a recording into, or a move to, a folder that does not exist, and an edit of a segment that does not exist;
+- folder names that are blank, contain a control character, are already taken, or carry surrounding spaces (kept trimmed);
+- a glossary term that differs from another only in letter case, a term citing a meeting of another workspace, a rename to another term's spelling, and an update that changes only some fields;
+- a failed processing state without a failure reason;
+- replaying the same transcription job versus a different job;
+- a meeting with no transcript yet: no current transcript, and its revisions refused;
+- folder counts that leave out meetings the member cannot see;
+- a share that tries to open another meeting, and shared notes with speaker names hidden and shown.
+
+### Arrange, Act, Assert
+
+Every test follows the project's AAA layout, with one logical assertion per test:
+
+```python
+@pytest.mark.parametrize(
+    "path", [ContentPath.EXPORT, ContentPath.MCP, ContentPath.RECORDING, ContentPath.WRITE]
+)
+def test_share_recipient_may_only_read(async_database: AsyncDatabase, path: ContentPath) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> Failure | None:
+        unit = await world(session)
+        created = await unit.access.create_share(unit.owner, unit.meeting, NOW, redact=False)
+        share_id = created.share.share_id
+        request = await unit.access.request_access(unit.outsider, share_id, created.token, NOW)
+        await unit.access.decide(unit.owner, request.share_access_request_id, NOW, approve=True)
+        return await refusal(unit.access.policy.authorize_share(share_id, unit.outsider, path))
+
+    # Act
+    failure = async_database.run(scenario)
+    # Assert
+    assert failure is Failure.INSUFFICIENT_ROLE
+```
+
+## 2. Coverage and iteration
+
+### Tool
+
+We used coverage.py through pytest-cov. Tests and migration files are left out of the numbers. The 4 tests that need downloaded ML models were not run.
+
+The integration tests need a migrated PostgreSQL database. Without `WHADIO_TEST_DATABASE_URL` they are skipped, and the report still comes out, only with different numbers. The setting is read from the environment only, not from `.env`, so export it in the shell that runs the tests ([database tests](../architecture/database.md) has the details):
+
+```bash
+cp .env.example .env
+uv run task infra:up
+uv run task db:upgrade
+export WHADIO_TEST_DATABASE_URL=postgresql+psycopg://whadio_app:whadio-dev-app@127.0.0.1:5432/whadio
+```
+
+Then measure:
+
+```bash
+uv run --with pytest-cov pytest -m "not models" --cov=whadio --cov-report=term-missing
+uv run --with coverage coverage html --omit='*/test_*.py,*/migrations/versions/*'
+```
+
+The HTML report colours each line green (run) or red (not run). `htmlcov-before/` shows the state before the new tests and `htmlcov/` the state after.
+
+### Before and after
+
+| File | Before | After |
+|---|---|---|
+| `access_policy/repositories.py` | 77% | 100% |
+| `access_policy/services.py` | 86% | 98% |
+| `meetings/services.py` | 72% | 97% |
+| `meetings/repositories.py` | 82% | 87% |
+| Whole application | 85% | 88% |
+
+### How the uncovered lines turned into tests
+
+We read the missing lines from `--cov-report=term-missing` and wrote a test for each behaviour behind them. Most of them were refusals and edge cases that the API tests never reached:
+
+- the paging cursors in the Access Policy repository were never used, because no test asked for a second page;
+- `rename_folder`, `revisions`, `context`, `folder_count`, the whole glossary (`add_term`, `update_term`, `delete_term`) and the share views (`shared_transcript`, `shared_notes`) were never called from a test at all;
+- the refusals and edge cases listed under "Edge cases covered" above.
+
+### Is 100% coverage meaningful?
+
+Not as a goal. 13 lines are still uncovered in the two service files. Two of them are ordinary gaps that a test could still close: renaming a glossary term successfully, and the happy path of `processing_snapshot`. The rest fall into two kinds:
+
+- **Defensive re-raises:** for example, `except UseCaseError: if error.code == NOT_FOUND: ...; raise`. Reaching the bare `raise` needs a fake repository that throws an error the real one never throws. Such a test would check the fake, not Whadio.
+- **Race guards:** for example, an access request that disappears between two reads under a row lock. Testing them properly needs two concurrent transactions. A test that fakes it reaches the line but proves nothing about the race.
+
+Coverage says which code ran, not whether the test checked the right thing. A test without an assertion still raises coverage. In this pass, coverage was useful as a map of what nobody had tested. The value came from the assertions on refusals and edge cases. We'd rather keep the 88% with meaningful assertions than reach 100% with tests written to light up lines.
+
+## 3. Proposals for improving the tests
+
+- **Close the two ordinary gaps:** a successful glossary term rename, and the happy path of `processing_snapshot`.
+- **Measure branches, not only lines:** the runs above count lines. An `if` whose false side never ran still counts as covered. Adding `--cov-branch` would show those half-tested conditions.
+- **Mutation testing:** run mutmut on `access_policy/services.py`. It flips conditions and changes values, then checks whether some test fails. Coverage shows that a line ran; mutation testing shows whether an assertion would notice it going wrong.
+- **Real concurrency tests for the race guards:** two sessions against PostgreSQL, each holding its own transaction, instead of leaving those lines untested.
+- **Property-based tests for name validation:** Hypothesis can generate arbitrary Unicode for folder names and glossary terms, including whitespace and control characters, instead of the few hand-picked values used now.
+- **One shared builder:** `world()` and `team()` both create an Owner, a Member, an outsider and a meeting. Moving them into one fixture in `conftest.py` would stop the next module's tests from writing a third copy.
+
+## AI Usage
+
+The tests, the coverage runs and this document were made with Claude Code (Claude Opus 5.5); checked by Denys Zabiiaka.
