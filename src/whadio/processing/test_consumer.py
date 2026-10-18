@@ -2,12 +2,9 @@ import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import ClassVar
 from uuid import UUID, uuid4
 
 import pytest
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -103,14 +100,6 @@ class RecordingHandler:
 
     async def dead_lettered(self, job_id: UUID) -> None:
         await self.handled.put(job_id)
-
-
-class _StackSettings(BaseSettings):
-    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
-        env_prefix="WHADIO_", env_nested_delimiter="__", env_file=".env", extra="ignore"
-    )
-
-    broker: BrokerSettings = Field(description="Connection to the Compose stack's RabbitMQ")
 
 
 def started_body(kind: JobKind = JobKind.TRANSCRIPTION) -> bytes:
@@ -351,11 +340,9 @@ def test_notes_request_goes_to_the_notes_queue() -> None:
 
 
 @pytest.mark.slow
-def test_served_result_reaches_the_handler() -> None:
-    # Arrange
-    broker = _StackSettings.model_validate({}).broker
+def test_served_result_reaches_the_handler(rabbitmq_settings: BrokerSettings) -> None:
     # Act
-    published, handled = asyncio.run(_serve_one_result(broker))
+    published, handled = asyncio.run(_serve_one_result(rabbitmq_settings))
     # Assert
     assert handled == published
 
