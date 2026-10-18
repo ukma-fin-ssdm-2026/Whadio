@@ -83,3 +83,15 @@ def test_non_positive_limit_is_refused(max_chars: int) -> None:
     # Act / Assert
     with pytest.raises(ValueError, match="max_chars"):
         chunk_segments(segments, max_chars)
+
+
+def test_small_positive_limit_is_accepted() -> None:
+    # Arrange
+    segments = [
+        Segment(start_seconds=0.0, end_seconds=1.0, speaker="speaker_0", text="Under"),
+        Segment(start_seconds=1.0, end_seconds=2.0, speaker="speaker_1", text="Ten"),
+    ]
+    max_chars = 1
+
+    # Act / Assert
+    chunk_segments(segments, max_chars)  # no error is expected
