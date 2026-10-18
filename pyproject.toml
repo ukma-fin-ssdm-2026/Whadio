@@ -267,6 +267,9 @@ markers = [
 [tool.coverage.run]
 source_pkgs = ["whadio"]
 branch = true
+# SQLAlchemy's async layer runs database calls in greenlets; without this, code after an awaited
+# call counts as not run. Setting `concurrency` replaces the default, so `thread` is listed again.
+concurrency = ["greenlet", "thread"]
 omit = ["*/test_*.py", "*/migrations/versions/*", "*/fakes.py"]
 
 [tool.coverage.report]
