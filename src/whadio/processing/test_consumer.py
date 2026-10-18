@@ -1,14 +1,14 @@
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from conftest import AsyncDatabase
+from conftest import NOW, AsyncDatabase
 
 from ..access_policy.repositories import AccessRepository
 from ..access_policy.services import AccessPolicy
@@ -47,7 +47,6 @@ from .enums import JobType
 from .repositories import JobRepository
 from .services import JobRequest, ProcessingService
 
-NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 WORKER = "whadio-asr"
 WORKERS = WorkerUsers(transcription=WORKER, notes="whadio-notes")
 
