@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta, timezone
 from io import BytesIO
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -27,6 +28,15 @@ def test_fixed_clock_refuses_a_time_that_is_not_utc(at: datetime) -> None:
     # Act / Assert
     with pytest.raises(ValueError, match="aware UTC"):
         FixedClock(at)
+
+
+def test_fixed_clock_advances_in_utc_across_a_daylight_saving_change() -> None:
+    # Arrange
+    clock = FixedClock(datetime(2026, 3, 29, 0, 30, tzinfo=ZoneInfo("Europe/London")))
+    # Act
+    clock.advance(timedelta(hours=2))
+    # Assert
+    assert clock() == datetime(2026, 3, 29, 2, 30, tzinfo=UTC)
 
 
 def test_deleted_object_is_no_longer_stored() -> None:
