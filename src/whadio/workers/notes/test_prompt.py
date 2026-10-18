@@ -1,7 +1,10 @@
 from datetime import UTC, datetime
+from typing import Final
 from uuid import uuid4
 
 import pytest
+from hypothesis import given, target
+from hypothesis import strategies as st
 
 from ...contracts.common import GlossaryEntry, Segment, Transcript
 from ...contracts.notes import (
@@ -57,6 +60,44 @@ def _request(
 
 
 _MEETING = _transcript((0, "Speaker 1", "Добрий день."), (2, "Speaker 2", "Почнімо."))
+
+_TEXT: Final = st.text(st.characters(exclude_categories=["Cc", "Cs"]), min_size=1, max_size=40)
+_TRANSCRIPTS: Final = st.lists(
+    st.tuples(
+        st.floats(min_value=0, max_value=36_000),
+        st.sampled_from(("Speaker 1", "Speaker 2", None)),
+        _TEXT,
+    ),
+    max_size=4,
+).map(lambda lines: _transcript(*lines))
+_REQUESTS: Final = st.builds(
+    _request,
+    _TRANSCRIPTS,
+    context=st.lists(
+        st.builds(_context, _TEXT, st.integers(min_value=1, max_value=31), _TEXT), max_size=4
+    ).map(tuple),
+    glossary=st.lists(
+        st.builds(
+            GlossaryEntry, term=_TEXT, preferred_form=_TEXT, description=st.text(max_size=20)
+        ),
+        max_size=3,
+    ).map(tuple),
+    preset=st.sampled_from(NotesPreset),
+)
+
+
+def _budget(max_input_chars: int, chars_per_token: float) -> ContextBudget:
+    return ContextBudget(int(max_input_chars / chars_per_token), chars_per_token)
+
+
+# Generated prompts take 2,100 to 2,700 characters, mostly the system prompt, so these budgets
+# refuse some requests and accept others with only part of their context. The divisors keep the
+# quotients of small character counts exact, so the estimate's rounding is the only one tested.
+_BUDGETS: Final = st.builds(
+    _budget,
+    st.integers(min_value=2_200, max_value=2_700),
+    st.sampled_from((1.0, 2.5, 3.0, 4.0)),
+)
 
 
 def test_rendered_transcript_merges_consecutive_segments_of_one_speaker() -> None:
@@ -194,3 +235,24 @@ def test_glossary_term_carries_its_preferred_spelling() -> None:
 
     # Assert
     assert '<term preferred="Whisper">віспер</term>' in prompt.user
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError)
+@given(_REQUESTS, _BUDGETS)
+def test_built_prompt_is_refused_or_fits_the_budget(
+    notes_request: NotesRequested, budget: ContextBudget
+) -> None:
+    # Act
+    try:
+        prompt = PromptBuilder(budget).build(notes_request)
+    except NotesError as error:
+        refused_as_too_long = error.reason is NotesFailure.TRANSCRIPT_TOO_LONG
+        fits = False
+    else:
+        used = budget.tokens(prompt.system) + budget.tokens(prompt.user)
+        target(used - budget.max_input_tokens, label="tokens over the budget")
+        refused_as_too_long = False
+        fits = used <= budget.max_input_tokens
+
+    # Assert
+    assert refused_as_too_long or fits
