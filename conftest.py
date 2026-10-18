@@ -35,6 +35,7 @@ from whadio.meetings.models import (
     TranscriptRevision,
     TranscriptSegment,
 )
+from whadio.shared.broker import BrokerSettings
 from whadio.shared.database import DatabaseSettings
 
 
@@ -369,3 +370,21 @@ def committed_revision_id(
             database_connection.execute(
                 text('DELETE FROM "user" WHERE user_id = :id'), {"id": owner_id}
             )
+
+
+class BrokerTestSettings(BaseSettings):
+    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
+        env_prefix="WHADIO_", env_nested_delimiter="__", env_file=".env", extra="ignore"
+    )
+
+    broker: BrokerSettings | None = Field(
+        default=None, description="Connection to the Compose stack's RabbitMQ"
+    )
+
+
+@pytest.fixture
+def rabbitmq_settings() -> BrokerSettings:
+    settings = BrokerTestSettings()
+    if settings.broker is None:
+        pytest.skip("Set WHADIO_BROKER__URL to run RabbitMQ integration tests")
+    return settings.broker
