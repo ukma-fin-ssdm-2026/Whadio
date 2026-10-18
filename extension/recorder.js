@@ -10,7 +10,16 @@ if (!globalThis.whadioRecorder) {
   // --- Recording ---
 
   async function start(tab, playBack) {
-    const microphone = await navigator.mediaDevices.getUserMedia({ audio: true });
+    let microphone;
+    try {
+      microphone = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (failure) {
+      // A tab captured through tabCapture stays silenced until its tracks stop.
+      for (const track of tab.getTracks()) {
+        track.stop();
+      }
+      throw failure;
+    }
 
     const context = new AudioContext();
     const mix = context.createMediaStreamDestination();
