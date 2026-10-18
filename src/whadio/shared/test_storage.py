@@ -101,6 +101,37 @@ def test_presigned_url_reports_when_it_expires() -> None:
     assert presigned.expires_at == _NOW + timedelta(hours=2)
 
 
+@pytest.mark.parametrize(
+    ("lifetime", "expires"),
+    [
+        pytest.param(timedelta(seconds=1), "1", id="bva-min"),
+        pytest.param(timedelta(seconds=2), "2", id="bva-above-min"),
+        pytest.param(timedelta(days=7, seconds=-1), "604799", id="bva-below-max"),
+        pytest.param(timedelta(days=7), "604800", id="bva-max"),
+    ],
+)
+def test_presigned_url_lives_from_one_second_to_seven_days(
+    lifetime: timedelta, expires: str
+) -> None:
+    # Arrange
+    storage = connect_s3_storage(_SETTINGS)
+
+    # Act
+    presigned = storage.presign_get(_KEY, expires_in=lifetime)
+
+    # Assert
+    assert parse_qs(urlsplit(presigned.url).query)["X-Amz-Expires"] == [expires]
+
+
+def test_presigning_refuses_a_lifetime_under_one_second() -> None:
+    # Arrange
+    storage = connect_s3_storage(_SETTINGS)
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="1 second"):
+        storage.presign_get(_KEY, expires_in=timedelta(milliseconds=999))
+
+
 @pytest.mark.parametrize("lifetime", [timedelta(0), timedelta(days=7, seconds=1)])
 def test_presigning_refuses_a_lifetime_outside_what_sigv4_allows(lifetime: timedelta) -> None:
     # Arrange
