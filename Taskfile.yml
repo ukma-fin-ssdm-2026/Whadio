@@ -36,7 +36,8 @@ tasks:
           Set WHADIO_TEST_DATABASE_URL to the test database (start it with `task infra:up`); see
           docs/testing/testing.md
     cmds:
-      - uv run --frozen pytest -m "not models" --cov {{.CLI_ARGS}}
+      # `--cov` takes an optional source, so it goes last or it swallows a forwarded test path.
+      - uv run --frozen pytest -m "not models" {{.CLI_ARGS}} --cov
 
   audit:
     desc: Look for vulnerable dependencies and for secrets anywhere in the git history
