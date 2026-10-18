@@ -27,6 +27,24 @@ class WorkspaceDeleted:
     occurred_at: datetime
 
 
+@dataclass(frozen=True)
+class McpKeyCreated:
+    actor_id: UUID
+    key_id: UUID
+    occurred_at: datetime
+
+
+@dataclass(frozen=True)
+class McpKeyRevoked:
+    actor_id: UUID
+    key_id: UUID
+    occurred_at: datetime
+
+
+class IAccountAuditWriter(Protocol):
+    async def write(self, event: McpKeyCreated | McpKeyRevoked) -> None: ...
+
+
 class IAuditWriter(Protocol):
     async def write(self, event: MeetingMoved) -> None: ...
 
@@ -39,7 +57,24 @@ class AuditWriter:
     def __init__(self, session: AsyncSession) -> None:
         self._session: AsyncSession = session
 
-    async def write(self, event: MeetingMoved | WorkspaceDeleted | ContentEvent) -> None:
+    async def write(
+        self, event: MeetingMoved | WorkspaceDeleted | McpKeyCreated | McpKeyRevoked | ContentEvent
+    ) -> None:
+        if isinstance(event, (McpKeyCreated, McpKeyRevoked)):
+            self._session.add(
+                AuditEvent(
+                    occurred_at=event.occurred_at,
+                    actor_user_id=event.actor_id,
+                    action=(
+                        AuditAction.MCP_KEY_CREATED
+                        if isinstance(event, McpKeyCreated)
+                        else AuditAction.MCP_KEY_REVOKED
+                    ),
+                    subject_id=event.key_id,
+                )
+            )
+            await self._session.flush()
+            return
         if isinstance(event, WorkspaceDeleted):
             self._session.add(
                 AuditEvent(

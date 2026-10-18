@@ -88,8 +88,9 @@ take jobs from RabbitMQ and publish their results to `processing.results`.
 
 The server also exposes a read-only MCP endpoint at `http://localhost:3000/mcp/` with four tools:
 `list_meetings`, `search_meetings`, `get_transcript` and `get_notes`. They read the meetings the
-key's owner can access, and every call needs a personal MCP key as a Bearer token. Issuing keys
-through the API is not implemented yet.
+key's owner can access, and every call needs a personal MCP key as a Bearer token. A signed-in
+user creates, lists and revokes keys through `/api/v1/users/me/mcp-keys`; each secret is shown
+only in the creation response and is stored only as a SHA-256 hash.
 
 - MCP Inspector: `npx @modelcontextprotocol/inspector`, choose the *Streamable HTTP* transport
   the URL `http://localhost:3000/mcp/`, and the header `Authorization: Bearer <key>`.
