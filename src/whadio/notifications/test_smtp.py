@@ -3,12 +3,13 @@ import ssl
 import time
 import traceback
 from email.message import EmailMessage
-from typing import override
+from typing import ClassVar, override
 from uuid import uuid4
 
 import httpx
 import pytest
 from pydantic import BaseModel, Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .settings import SmtpSettings
 from .smtp import ISmtpConnector, ISmtpSession, MailDeliveryError, OutgoingMail, SmtpMailSender
@@ -254,9 +255,20 @@ class _MailpitMessages(BaseModel):
     messages: list[_MailpitMessage] = Field(description="Most recent messages first")
 
 
-def _wait_for_mailpit_message(subject: str) -> _MailpitMessage | None:
+class _MailpitPorts(BaseSettings):
+    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    mailpit_smtp_port: int = Field(
+        default=1025, ge=1, le=65535, description="Host port Compose publishes Mailpit's SMTP on"
+    )
+    mailpit_ui_port: int = Field(
+        default=8025, ge=1, le=65535, description="Host port Compose publishes Mailpit's API on"
+    )
+
+
+def _wait_for_mailpit_message(subject: str, ui_port: int) -> _MailpitMessage | None:
     deadline = time.monotonic() + 5
-    with httpx.Client(base_url="http://127.0.0.1:8025", timeout=2) as client:
+    with httpx.Client(base_url=f"http://127.0.0.1:{ui_port}", timeout=2) as client:
         while time.monotonic() < deadline:
             response = client.get("/api/v1/messages")
             response.raise_for_status()
@@ -273,14 +285,18 @@ def test_mail_sent_through_the_relay_reaches_mailpit() -> None:
     # Arrange
     subject = f"Whadio test {uuid4()}"
     recipient = f"{uuid4()}@example.com"
+    ports = _MailpitPorts()
     settings = SmtpSettings(
-        host="127.0.0.1", port=1025, starttls=False, from_address="whadio@localhost"
+        host="127.0.0.1",
+        port=ports.mailpit_smtp_port,
+        starttls=False,
+        from_address="whadio@localhost",
     )
 
     # Act
     SmtpMailSender(settings).send(OutgoingMail(recipient=recipient, subject=subject, body="Hi.\n"))
 
     # Assert
-    received = _wait_for_mailpit_message(subject)
+    received = _wait_for_mailpit_message(subject, ports.mailpit_ui_port)
     assert received is not None
     assert [to.address for to in received.to] == [recipient]
