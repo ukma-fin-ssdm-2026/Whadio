@@ -46,8 +46,11 @@ class ContinuousIntegrationSettings(BaseSettings):
     )
 
 
-hypothesis.settings.register_profile("ci", derandomize=True, deadline=None)
-hypothesis.settings.register_profile("dev", deadline=None)
+# Hypothesis loads its own "ci" profile whenever CI is set, even to "false", and a profile without
+# a parent inherits whatever is loaded; root "dev" in the default profile so it stays random.
+hypothesis.settings.register_profile(
+    "dev", parent=hypothesis.settings.get_profile("default"), deadline=None
+)
 hypothesis.settings.load_profile("ci" if ContinuousIntegrationSettings().ci else "dev")
 
 
