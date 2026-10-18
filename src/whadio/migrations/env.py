@@ -5,6 +5,7 @@ from whadio.accounts import models as account_models
 from whadio.audit import models as audit_models
 from whadio.capture import models as capture_models
 from whadio.meetings import models as meeting_models
+from whadio.notifications import models as notification_models
 from whadio.processing import models as processing_models
 from whadio.shared.database import Base, MigrationSettings, create_migration_engine
 
@@ -15,6 +16,7 @@ model_modules = (
     audit_models,
     capture_models,
     meeting_models,
+    notification_models,
     processing_models,
 )
 
