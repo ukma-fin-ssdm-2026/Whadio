@@ -273,8 +273,8 @@ concurrency = ["greenlet", "thread"]
 omit = ["*/test_*.py", "*/migrations/versions/*", "*/fakes.py"]
 
 [tool.coverage.report]
-fail_under = 80
-# fail_under is compared with the total rounded to `precision`; at 0, 79.6% passes an 80% gate.
+fail_under = 85
+# fail_under is compared with the total rounded to `precision`; at 0, 84.6% passes an 85% gate.
 precision = 2
 show_missing = true
 skip_covered = true
