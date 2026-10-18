@@ -388,3 +388,6 @@ def rabbitmq_settings() -> BrokerSettings:
     if settings.broker is None:
         pytest.skip("Set WHADIO_BROKER__URL to run RabbitMQ integration tests")
     return settings.broker
+
+
+NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)

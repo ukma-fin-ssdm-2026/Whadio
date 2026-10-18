@@ -1,10 +1,12 @@
 import asyncio
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
+
+from conftest import NOW
 
 from ..accounts.enums import LlmProvider, NotesTemplate
 from ..contracts.common import JobKind, Segment, Transcript
@@ -49,8 +51,6 @@ from .services import (
     JobRequest,
     ProcessingService,
 )
-
-NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 
 
 def stored_version(*speaker_names: str) -> TranscriptVersion:
