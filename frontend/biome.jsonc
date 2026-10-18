@@ -57,6 +57,17 @@
           }
         }
       }
+    },
+    {
+      "includes": ["src/main.jsx"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            // Recordings have no caption file; the timestamped transcript beside the player stands in.
+            "useMediaCaption": "off"
+          }
+        }
+      }
     }
   ]
 }
