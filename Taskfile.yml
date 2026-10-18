@@ -5,7 +5,13 @@ tasks:
     desc: Install the dependencies and the git hooks
     cmds:
       - uv sync --locked --extra asr --extra cpu
+      - task: frontend:install
       - uv run --frozen pre-commit install --install-hooks
+
+  frontend:install:
+    desc: Install the frontend's dependencies from its lockfile
+    cmds:
+      - npm ci --prefix frontend
 
   dev:
     desc: Run the API with auto-reload on http://localhost:3000
@@ -13,10 +19,11 @@ tasks:
       - uv run --frozen fastapi dev --entrypoint whadio.api.main:app --port 3000
 
   fix:
-    desc: Apply ruff's fixes and formatting to the whole project
+    desc: Apply ruff's and Biome's fixes and formatting to the whole project
     cmds:
       - uv run --frozen ruff check --fix
       - uv run --frozen ruff format
+      - npm --prefix frontend run check:fix
 
   check:
     desc: Run every commit-hook check on all files, as CI does
