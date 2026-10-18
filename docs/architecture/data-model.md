@@ -54,6 +54,7 @@ The model covers the data required for these key project functions:
 | `LLM_PROVIDER_CONFIG` | `provider_config_id` | Workspace notes-provider configuration, either built-in `Whadio` or an external BYOK provider. | `api_key_encrypted` is secret credential material when an external provider is used. |
 | `MCP_KEY` | `mcp_key_id` | Personal access key for MCP clients. | `key_hash` is sensitive authentication material. |
 | `PROCESSING_JOB` | `processing_job_id` | Tracks transcription and notes jobs for monitoring. Diarization is part of the transcription job. | Failure reasons can include sensitive operational or content-derived details. |
+| `NOTIFICATION_OUTBOX` | `notice_id` | A notification mail reserved in the transaction of the change it reports, waiting for the scheduler to send it. | `recipient_user_id` is personal data. `payload` holds metadata only: meeting and share IDs, meeting names, and for a share access request the requester's name and email, which are personal. `last_error` is sanitised and names no address. |
 | `AUDIT_EVENT` | `audit_event_id` | Append-only record of who changed a meeting's content or access (`NFR-010`), kept after the meeting or workspace it refers to is deleted. | `actor_user_id` links a person to their actions. `subject_id` and `details` hold user IDs for membership, access-grant and share-request events. No content or names. |
 
 ## Relationships and Cardinality
@@ -88,6 +89,7 @@ The model covers the data required for these key project functions:
 - One `USER` can create many `MCP_KEY` rows.
 - One `MEETING` can have many `PROCESSING_JOB` rows.
 - One `USER` performs many `AUDIT_EVENT` rows; each event has exactly one actor.
+- One `USER` receives many `NOTIFICATION_OUTBOX` rows; deleting the account deletes them.
 
 ## Integrity Rules
 
@@ -159,6 +161,10 @@ The model covers the data required for these key project functions:
   reservation and increment decisions are Processing responsibilities.
 - Recording files are deleted 90 days after the meeting, at the date stored in `recording_delete_after`; accessible members are warned 7 days beforehand. Transcripts and notes remain after `recording_deleted_at` is set.
 - LLM provider API keys and MCP keys must never be stored in plaintext.
+- `NOTIFICATION_OUTBOX.dedupe_key` is unique: reserving a notice whose key is already reserved changes nothing, so a retried use case mails once. Callers build the key from what makes the notice unique, such as the meeting and the recipient.
+- `NOTIFICATION_OUTBOX.payload` is a JSON object validated per `kind`; it holds metadata for the mail template, never transcript, note or recording content, and links are built when the mail is sent.
+- The scheduler sends a notice when `sent_at` is null, `next_attempt_at` has passed and `attempts` is below the configured maximum. Each attempt increments `attempts` and moves `next_attempt_at` by a backoff that doubles up to a cap before the mail is sent; a failed delivery stores a sanitised `last_error` of at most 200 characters, and after the last attempt the notice is given up. Without an SMTP relay, notices are reserved and never sent.
+- The scheduler deletes notices sent longer ago than the outbox retention (7 days by default), and given-up notices reserved longer ago than it.
 - `AUDIT_EVENT` is append-only: the table is owned by the migration role, and the application's database role holds only `INSERT` and `SELECT` on it.
 - An `AUDIT_EVENT` is written in the same transaction as the change it records, by the module that performs the change.
 - `AUDIT_EVENT.workspace_id` and `AUDIT_EVENT.meeting_id` carry no foreign key: a cascading key would delete the events together with the workspace or meeting, and a restricting one would block the deletion.
@@ -217,6 +223,7 @@ The highest-risk data stores are:
 - Addresses in `PENDING_REGISTRATION.email` and `INVITATION.invited_email`, kept only until the link expires; those in pending registrations belong to people who may never complete registration.
 - Share recipients and requesters in `EXTERNAL_SHARE.recipient_user_id` and `SHARE_ACCESS_REQUEST.requester_user_id`, which reveal who outside the workspace read or tried to open a meeting.
 - Audit actors and subjects in `AUDIT_EVENT.actor_user_id`, `subject_id` and `details`, which reveal who did what to which meeting, and outlive the meeting itself.
+- Pending and recently sent notifications in `NOTIFICATION_OUTBOX.payload`, which hold meeting names and, for share access requests, the requester's name and email.
 
 These fields should drive the next threat-analysis step, especially for access control, logging, export handling, retention, encryption, and external provider use.
 

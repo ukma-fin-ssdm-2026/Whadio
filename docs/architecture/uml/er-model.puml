@@ -264,6 +264,20 @@ entity "PROCESSING_JOB" as ProcessingJob {
   finished_at : datetime <<nullable>>
 }
 
+entity "NOTIFICATION_OUTBOX" as NotificationOutbox {
+  * notice_id : UUID <<PK>>
+  --
+  * kind : enum (NoticeKind)
+  * recipient_user_id : UUID <<FK, P>>
+  * dedupe_key : string
+  * payload : json <<P/S>>
+  * created_at : datetime
+  * next_attempt_at : datetime
+  * attempts : integer
+  sent_at : datetime <<nullable>>
+  last_error : string <<nullable>>
+}
+
 entity "AUDIT_EVENT" as AuditEvent {
   * audit_event_id : UUID <<PK>>
   --
@@ -323,6 +337,7 @@ Workspace ||--o| LLMConfig : configures
 User ||--o{ MCPKey : creates
 Meeting ||--o{ ProcessingJob : processed by
 User ||--o{ AuditEvent : performs
+User ||--o{ NotificationOutbox : is notified
 
 note right of WorkspaceMember
   role is one of:
@@ -422,6 +437,16 @@ note bottom of AuditEvent
   values only, never content or names.
   The action values are listed in
   data-model.md.
+end note
+
+note bottom of NotificationOutbox
+  Unique: dedupe_key. A notice is reserved
+  in the transaction of the change it
+  reports and sent by the scheduler.
+  payload holds metadata only, never
+  content; last_error names no address.
+  Sent notices are deleted after a
+  short retention.
 end note
 
 legend right
