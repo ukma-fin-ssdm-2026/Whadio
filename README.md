@@ -139,6 +139,7 @@ Testing policy and evidence are maintained in [`/docs/testing/`](docs/testing/).
 - [Testing Strategy](docs/testing/testing-strategy.md) — scope, quality goals, metrics and merge gates
 - [Unit Testing and Coverage](docs/testing/testing.md) — implemented tests, edge cases and coverage results
 - [Debugging Log](docs/testing/debugging-log.md) — retry-limit fault, regression tests and lessons
+- [Boundary Cases](docs/testing/boundary-cases.md) — boundary value tests of the numeric and length limits
 - [Coverage Report](htmlcov/index.html) — browsable line coverage for the current baseline
 
 ## AI usage
