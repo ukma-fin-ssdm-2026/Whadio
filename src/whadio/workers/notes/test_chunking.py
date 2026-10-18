@@ -1,5 +1,3 @@
-import pytest
-
 from ...contracts.common import Segment
 from .chunking import chunk_segments
 
@@ -15,7 +13,6 @@ def test_no_segments_give_no_chunks() -> None:
     assert len(chunks) == 0
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError)
 def test_segments_within_the_limit_form_one_chunk() -> None:
     # Arrange
     max_chars = 10
