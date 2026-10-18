@@ -1,6 +1,6 @@
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from uuid import UUID
 
@@ -19,7 +19,7 @@ BATCH_SIZE = 100
 def recording_expiry_status(deadline: datetime, now: datetime) -> RecordingExpiryStatus:
     if deadline.utcoffset() is None or now.utcoffset() is None:
         raise ValueError("Retention requires an aware timestamp")
-    remaining = deadline - now
+    remaining = deadline.astimezone(UTC) - now.astimezone(UTC)
 
     if remaining <= timedelta(0):
         return RecordingExpiryStatus.EXPIRED
