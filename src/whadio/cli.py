@@ -17,16 +17,12 @@ def web(
     port: Annotated[int, typer.Option(help="Port to listen on")] = 3000,
 ) -> None:
     import asyncio
-    import sys
 
     import uvicorn
 
     config = uvicorn.Config("whadio.api.main:app", host=host, port=port)
     server = uvicorn.Server(config)
-    if sys.platform == "win32":
-        asyncio.run(server.serve(), loop_factory=asyncio.SelectorEventLoop)
-    else:
-        server.run()
+    asyncio.run(server.serve(), loop_factory=asyncio.SelectorEventLoop)
 
 
 @app.command(help="Transcribe the recordings of the jobs of the transcription queue.")

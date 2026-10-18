@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Box,
@@ -254,6 +254,7 @@ function App() {
   const [transcriptQuery, setTranscriptQuery] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pausedMeetingIds, setPausedMeetingIds] = useState([]);
+  const requestedMeetingId = useRef("");
 
   const loadData = useCallback(async () => {
     const workspacePage = await api.listWorkspaces();
@@ -314,12 +315,14 @@ function App() {
   }, [meetings, query, stateFilter, view, workspaceId]);
 
   const loadMeetingContent = useCallback(async (id) => {
+    requestedMeetingId.current = id;
     setContentLoading(true);
     setNotes(null);
     setTranscript(null);
     setRecordingUrl("");
     try {
       const detail = await api.getMeeting(id);
+      if (requestedMeetingId.current !== id) return;
       const mapped = mapMeeting(detail);
       setMeetings((items) => items.map((item) => item.id === id ? mapped : item));
       if (detail.processing_state === "processed") {
@@ -327,17 +330,19 @@ function App() {
           api.listNotes(id),
           api.getTranscript(id),
         ]);
+        if (requestedMeetingId.current !== id) return;
         setNotes(notesPage.items[0] ?? null);
         setTranscript(transcriptResult);
       }
     } catch (caught) {
-      setError(caught.message);
+      if (requestedMeetingId.current === id) setError(caught.message);
     } finally {
-      setContentLoading(false);
+      if (requestedMeetingId.current === id) setContentLoading(false);
     }
   }, []);
 
   const openWorkspace = (id) => {
+    requestedMeetingId.current = "";
     setWorkspaceId(id);
     setMeetingId("");
     setQuery("");
@@ -373,6 +378,7 @@ function App() {
   };
 
   const showMeetings = () => {
+    requestedMeetingId.current = "";
     setView("meetings");
     setMeetingId("");
     setQuery("");
@@ -407,6 +413,7 @@ function App() {
     try {
       await api.signOut();
     } finally {
+      requestedMeetingId.current = "";
       sessionStorage.removeItem(USER_STORAGE_KEY);
       setUser(null);
       setWorkspaces([]);

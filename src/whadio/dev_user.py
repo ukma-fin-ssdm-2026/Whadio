@@ -1,17 +1,17 @@
 import asyncio
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .accounts.enums import NotesTemplate, WorkspaceRole
-from .accounts.models import User, Workspace, WorkspaceMembership
+from .accounts.models import Session, User, Workspace, WorkspaceMembership
 from .accounts.passwords import Argon2PasswordHasher
 from .meetings.models import Folder
 
 
 async def ensure_dev_user(session: AsyncSession, *, email: str, name: str, password: str) -> bool:
-    """Create a local account and its personal workspace, or refresh its password."""
+    """Create a local account and workspace, or reset its credentials safely."""
     user = await session.scalar(select(User).where(func.lower(User.email) == email.lower()))
     password_hash = await asyncio.to_thread(Argon2PasswordHasher().hash, password)
     created = user is None
@@ -28,6 +28,7 @@ async def ensure_dev_user(session: AsyncSession, *, email: str, name: str, passw
     else:
         user.name = name
         user.password_hash = password_hash
+        await session.execute(delete(Session).where(Session.user_id == user.user_id))
 
     personal = await session.scalar(
         select(Workspace)
