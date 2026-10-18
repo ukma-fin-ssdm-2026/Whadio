@@ -34,7 +34,7 @@ def test_segments_within_the_limit_form_one_chunk() -> None:
     ("texts", "max_chars", "length"),
     [
         pytest.param(["111", "22"], 5, 1, id="no-overflow-on-the-edge"),
-        pytest.param(["111", "222"], 5, 2, marks=pytest.mark.xfail, id="overflow"),
+        pytest.param(["111", "222"], 5, 2, id="overflow"),
     ],
 )
 def test_segment_that_overflows_starts_a_new_chunk(
