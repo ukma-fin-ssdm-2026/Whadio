@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Box,
@@ -45,105 +45,6 @@ import WorkspacesOutlinedIcon from "@mui/icons-material/WorkspacesOutlined";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import { ApiError, api } from "./api";
 import "./styles.css";
-
-const data = {
-  user: {
-    name: "Margaret Hamilton",
-    email: "margaret@whadio.dev",
-  },
-  workspaces: [
-    {
-      id: "team",
-      name: "Whadio team",
-      role: "Owner",
-      members: 3,
-      provider: "Whadio",
-    },
-    {
-      id: "personal",
-      name: "Margaret Hamilton",
-      role: "Owner",
-      members: 1,
-      provider: "Whadio",
-    },
-  ],
-  meetings: [
-    {
-      id: "lab3-follow-up",
-      workspaceId: "team",
-      title: "Lab 3 architecture follow-up",
-      date: "2026-09-27T13:30:00",
-      state: "queued",
-      duration: "Duration pending",
-      processingEta: "about 2 min",
-      source: "Upload",
-    },
-    {
-      id: "lab3-planning",
-      workspaceId: "team",
-      title: "Lab 3 architecture planning",
-      date: "2026-09-24T19:02:00",
-      state: "processed",
-      duration: "27m 12s",
-      source: "Upload",
-    },
-    {
-      id: "lab2-review",
-      workspaceId: "team",
-      title: "Lab 2 requirements review",
-      date: "2026-09-19T18:40:00",
-      state: "processed",
-      duration: "40m 10s",
-      source: "Upload",
-    },
-    {
-      id: "thesis-consultation",
-      workspaceId: "personal",
-      title: "Thesis consultation",
-      date: "2026-09-25T16:30:00",
-      state: "processed",
-      duration: "45m 30s",
-      source: "Upload",
-    },
-  ],
-  notes: {
-    summary:
-      "Команда погодила напрям для Lab 3: модульний моноліт із кількома entry points, message broker та окремими ML workers для транскрипції й генерації нотаток. Мікросервіси визнали надмірними для масштабу лабораторної.",
-    actions: [
-      "Зафіксувати архітектурний стиль як modular monolith з окремими workers.",
-      "Підготувати component, deployment та sequence diagrams.",
-      "Визначити модель даних: ER або domain model.",
-      "Зустрітися в суботу о 13:30 для уточнення ролей і деталей.",
-    ],
-  },
-  transcript: [
-    {
-      speaker: "Speaker 02",
-      time: "02:13",
-      text: "Треба обрати архітектурний стиль, створити діаграму компонентів, описати інтерфейси між компонентами і додати діаграму розгортання.",
-    },
-    {
-      speaker: "Speaker 02",
-      time: "03:24",
-      text: "Мікросервіси виглядають трохи overkill для нашого проєкту. Можливо, треба щось простіше.",
-    },
-    {
-      speaker: "Speaker 02",
-      time: "06:29",
-      text: "Це може бути модульний моноліт. Для GPU-частини можна мати окремі ML workers для транскрипції і генерації нотаток.",
-    },
-    {
-      speaker: "Speaker 00",
-      time: "10:43",
-      text: "Це як моноліт, але різні компоненти. Треба мати загальну ідею, а імплементацію можна уточнювати пізніше.",
-    },
-    {
-      speaker: "Speaker 04",
-      time: "26:10",
-      text: "Пропоную зустрітися в суботу о 13:30 і уточнити розподіл ролей.",
-    },
-  ],
-};
 
 const USER_STORAGE_KEY = "whadio-user";
 
