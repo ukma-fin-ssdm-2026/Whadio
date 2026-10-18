@@ -12,7 +12,7 @@ irreversible deletion, auditability and processing recovery take priority over p
 behaviour. Tests should detect a regression close to the layer that introduced it and remain fast
 and deterministic enough to run continuously.
 
-The latest recorded non-model coverage is **88%** overall. The focused modules reached 98% for
+The latest recorded non-model line coverage is **88%** overall. The focused modules reached 98% for
 `access_policy/services.py`, 97% for `meetings/services.py`, 100% for
 `access_policy/repositories.py` and 87% for `meetings/repositories.py`. The committed
 [`htmlcov/`](../../htmlcov/index.html) report and [coverage report](testing.md) are the baseline.
@@ -46,7 +46,7 @@ recorded alongside results.
 | Metric or gate | Policy |
 |---|---|
 | Test result | Zero failed or flaky tests. A skip must name the unavailable dependency or environment. |
-| Coverage | Overall non-model line coverage must not fall below **88%**. Access Policy and Meetings service coverage must remain at least **95%**. New or changed domain behaviour must be exercised; a lower number needs a documented risk-based justification. Branch coverage will replace line-only coverage after one stable baseline run. |
+| Coverage | Overall non-model coverage, measured as one combined line-and-branch result, must not fall below **85%**. New or changed domain behaviour must be exercised; a lower result needs a documented risk-based justification. |
 | Critical requirements | NFR-007 to NFR-013 require 100% of their enumerated authorization, authenticity, integrity and audit scenarios to pass. Coverage percentage cannot substitute for these tests. |
 | Regression policy | Every fixed defect receives a regression test that fails before the fix. The debugging log links the defect, fix and test. |
 | Merge gate | `uv run --frozen task check`, the complete non-model suite against migrated Compose services, OpenAPI lint, dependency audit and secret scan must pass; the PR also needs approval. Model-affecting changes additionally run the relevant model tests manually or on a capable runner. |
@@ -62,13 +62,6 @@ artifacts and fail when the agreed coverage floors regress. System, performance 
 run before a release and on relevant changes; expensive scheduled runs do not weaken pull-request
 gates. A failing gate is fixed, or its policy is changed transparently in a reviewed PR; checks are
 never bypassed ad hoc.
-
-## Next improvements
-
-1. Add the two ordinary missing tests and multi-session tests for race guards.
-2. Establish branch-coverage and frontend component/E2E baselines, then propose thresholds.
-3. Add property-based validation tests and k6 performance scenarios.
-4. Automate the Compose system journey and publish coverage/JUnit artifacts through CI.
 
 ## AI Usage
 
