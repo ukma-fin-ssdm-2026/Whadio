@@ -75,7 +75,10 @@ signInForm.addEventListener("submit", async (event) => {
   }
   try {
     await signIn(server, document.getElementById("email").value, document.getElementById("password").value);
-    await showAccount();
+    // Every section is hidden only on a Meet call that is not recording, which signing in makes ready.
+    if ((await showAccount()) && sections.every((section) => section.hidden)) {
+      show("idle");
+    }
   } catch (failure) {
     showError(failure.message);
   }
