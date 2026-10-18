@@ -46,6 +46,29 @@ including what each error means, is in [`docs/api/api-design.md`](docs/api/api-d
 - Starting the server writes the OpenAPI specification to `docs/api/openapi-generated.yaml`
   and `.json`; to regenerate it without a server, run `uv run whadio openapi`.
 
+## Running the web app
+
+The React app lives in [`frontend/`](frontend/). Start the API on port 3000 first, then run:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open <http://localhost:5173>. Vite proxies `/api` requests to the local API, so browser sessions
+and uploads use the backend without a separate CORS setup. Set `VITE_API_BASE_URL` only when the
+API is hosted at a different origin.
+
+Create or reset a local login after applying the database migrations:
+
+```bash
+uv run whadio dev-user --email margaret@whadio.dev
+```
+
+The command asks for a password without storing it in the repository and also creates the
+account's personal workspace and default meeting folder.
+
 ## Running the workers
 
 The transcription and notes workers live in [`src/whadio/workers/`](src/whadio/workers/). They
