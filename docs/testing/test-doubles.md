@@ -34,6 +34,8 @@ fake when a test checks only the result, and a mock when the test asserts on the
   `fail_put` or `fail_delete` to make the call raise `ObjectStorageError`. Like the real storage,
   `presign_get` refuses a lifetime outside zero to seven days.
 - `FixedClock(at)` refuses a time that is not aware UTC, so a test cannot mix naive and aware times.
+  It keeps the time in UTC, so `advance()` across a daylight saving change moves it by the full
+  interval.
 - `rabbitmq_settings` reads `WHADIO_BROKER__URL` from the environment or `.env`, and skips the test
   when it is unset, as `database_settings` does for `WHADIO_TEST_DATABASE_URL`.
 - A shared double subclasses the Protocol it stands in for and marks its methods `@override`, so the

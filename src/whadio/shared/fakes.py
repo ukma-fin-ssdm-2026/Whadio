@@ -10,7 +10,7 @@ class FixedClock:
     def __init__(self, at: datetime) -> None:
         if at.utcoffset() != timedelta(0):
             raise ValueError("a fixed clock needs an aware UTC time")
-        self._at: datetime = at
+        self._at: datetime = at.astimezone(UTC)
 
     def __call__(self) -> datetime:
         return self._at
