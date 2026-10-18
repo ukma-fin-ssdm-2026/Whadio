@@ -1,11 +1,14 @@
 import unicodedata
 from typing import Final
 
+import pytest
 from hypothesis import example, given
 from hypothesis import strategies as st
 from pydantic import TypeAdapter, ValidationError
 
-from .schemas import DisplayText
+from conftest import refused_fields
+
+from .schemas import DisplayText, PageQuery
 
 _DISPLAY_TEXT: Final = TypeAdapter[str](DisplayText)
 _BLANK_GRAPHICS: Final = frozenset("ᅟᅠㅤﾠ⠀")
@@ -98,3 +101,43 @@ def test_validating_accepted_display_text_again_returns_it_unchanged(value: str)
 
     # Assert
     assert again == accepted
+
+
+@pytest.mark.parametrize(
+    ("limit", "refused"),
+    [
+        pytest.param(0, {"limit"}, id="bva-below-min"),
+        pytest.param(1, set[str](), id="bva-min"),
+        pytest.param(2, set[str](), id="bva-above-min"),
+        pytest.param(50, set[str](), id="bva-nominal"),
+        pytest.param(99, set[str](), id="bva-below-max"),
+        pytest.param(100, set[str](), id="bva-max"),
+        pytest.param(101, {"limit"}, id="bva-above-max"),
+    ],
+)
+def test_page_size_is_accepted_only_from_1_to_100(limit: int, refused: set[str]) -> None:
+    # Act
+    found = refused_fields(PageQuery, {"limit": limit})
+
+    # Assert
+    assert found == refused
+
+
+@pytest.mark.parametrize(
+    ("length", "refused"),
+    [
+        pytest.param(0, {"cursor"}, id="bva-below-min"),
+        pytest.param(1, set[str](), id="bva-min"),
+        pytest.param(2, set[str](), id="bva-above-min"),
+        pytest.param(64, set[str](), id="bva-nominal"),
+        pytest.param(4095, set[str](), id="bva-below-max"),
+        pytest.param(4096, set[str](), id="bva-max"),
+        pytest.param(4097, {"cursor"}, id="bva-above-max"),
+    ],
+)
+def test_cursor_is_accepted_only_from_1_to_4096_characters(length: int, refused: set[str]) -> None:
+    # Act
+    found = refused_fields(PageQuery, {"cursor": "c" * length})
+
+    # Assert
+    assert found == refused
