@@ -18,11 +18,11 @@ Whadio is an open-source meeting recording and transcription service focused on 
 
 [AGENTS.md](AGENTS.md) covers everything a contributor or their AI agent needs: the code layout,
 the architecture rules, the coding standards and the checks every change must pass. In short, with
-[uv](https://docs.astral.sh/uv/) and Docker installed:
+[uv](https://docs.astral.sh/uv/), Node 24 and Docker installed:
 
 ```bash
 uv sync --extra asr --extra cpu  # Python 3.13, the dependencies and the dev tools, in .venv
-uv run task setup                # also installs the git hooks
+uv run task setup                # also installs the frontend's dependencies and the git hooks
 cp .env.example .env             # local credentials for the Compose stack
 uv run task infra:up             # PostgreSQL, RabbitMQ, SeaweedFS and Mailpit
 uv run task dev                  # the API on http://localhost:3000, with auto-reload
@@ -48,13 +48,17 @@ including what each error means, is in [`docs/api/api-design.md`](docs/api/api-d
 
 ## Running the web app
 
-The React app lives in [`frontend/`](frontend/). Start the API on port 3000 first, then run:
+The React app lives in [`frontend/`](frontend/). `uv run task setup` installs its dependencies;
+`uv run task frontend:install` reinstalls them from the lockfile. Start the API on port 3000 first,
+then run:
 
 ```bash
 cd frontend
-npm install
 npm run dev
 ```
+
+Biome formats and lints the frontend: `npm run check` reports problems and `npm run check:fix`
+fixes what it can. The commit hook runs `check:fix` whenever a commit touches `frontend/`.
 
 Open <http://localhost:5173>. Vite proxies `/api` requests to the local API, so browser sessions
 and uploads use the backend without a separate CORS setup. Set `VITE_API_BASE_URL` only when the
