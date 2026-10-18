@@ -302,21 +302,21 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /users/me/mcp-keys` · List my MCP keys
 
-- **Status:** Designed · **Caller:** any user · **Success:** `200`, a page of keys, newest
+- **Status:** Implemented · **Caller:** any user · **Success:** `200`, a page of keys, newest
   first
 - **Rules:** revoked keys are included. A key's secret is never shown again after creation.
 - **Errors:** common only.
 
 #### `POST /users/me/mcp-keys` · Create an MCP key
 
-- **Status:** Designed · **Caller:** any user · **Success:** `201`, the key with its secret
+- **Status:** Implemented · **Caller:** any user · **Success:** `201`, the key with its secret
 - **Rules:** the secret is shown once and only its hash is stored (FR-043).
   `expires_in_days` is between 1 and 365; without it, the key does not expire.
 - **Errors:** common only.
 
 #### `DELETE /users/me/mcp-keys/{key_id}` · Revoke an MCP key
 
-- **Status:** Designed · **Caller:** the key's owner · **Success:** `204`
+- **Status:** Implemented · **Caller:** the key's owner · **Success:** `204`
 - **Rules:** revoking twice is harmless.
 - **Errors:**
   - `404 NOT_FOUND`: no such key among the caller's own.
@@ -1215,9 +1215,10 @@ Transcription and notes run in workers, not in the request:
 The MCP server at `/mcp/` exposes four read-only tools: `list_meetings`, `search_meetings`,
 `get_transcript` and `get_notes`.
 
-In the design, the tools act as the owner of the presented MCP key and read through Access
-Policy, so a restricted meeting stays invisible to an assistant (FR-044). The stub reads the
-same demo data as the REST stubs and does not check keys yet.
+The tools act as the owner of the presented MCP key and read through Access Policy, so a
+restricted meeting stays invisible to an assistant (FR-044). Keys are issued and revoked through
+the browser-authenticated REST API, stored only as SHA-256 hashes, and checked on every MCP call.
+Revoked and expired keys are refused.
 
 Generating the server from the OpenAPI specification (`FastMCP.from_fastapi`) was rejected for
 two reasons:

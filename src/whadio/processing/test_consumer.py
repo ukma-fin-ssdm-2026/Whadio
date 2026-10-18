@@ -1,17 +1,14 @@
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
-from typing import BinaryIO, ClassVar
+from datetime import timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from conftest import AsyncDatabase
+from conftest import NOW, AsyncDatabase
 
 from ..access_policy.repositories import AccessRepository
 from ..access_policy.services import AccessPolicy
@@ -35,7 +32,7 @@ from ..meetings.persistence import MeetingPersistence, PersistenceDependencies
 from ..meetings.repositories import MeetingRepository
 from ..meetings.services import MeetingService
 from ..shared.broker import BrokerSettings, MessagePublisher, connect, declare_queue
-from ..shared.storage import PresignedUrl
+from ..shared.fakes import FixedClock, InMemoryObjectStorage
 from .consumer import (
     AmqpJobPublisher,
     ProcessingTransactions,
@@ -50,7 +47,6 @@ from .enums import JobType
 from .repositories import JobRepository
 from .services import JobRequest, ProcessingService
 
-NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 WORKER = "whadio-asr"
 WORKERS = WorkerUsers(transcription=WORKER, notes="whadio-notes")
 
@@ -103,14 +99,6 @@ class RecordingHandler:
 
     async def dead_lettered(self, job_id: UUID) -> None:
         await self.handled.put(job_id)
-
-
-class _StackSettings(BaseSettings):
-    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
-        env_prefix="WHADIO_", env_nested_delimiter="__", env_file=".env", extra="ignore"
-    )
-
-    broker: BrokerSettings = Field(description="Connection to the Compose stack's RabbitMQ")
 
 
 def started_body(kind: JobKind = JobKind.TRANSCRIPTION) -> bytes:
@@ -351,11 +339,9 @@ def test_notes_request_goes_to_the_notes_queue() -> None:
 
 
 @pytest.mark.slow
-def test_served_result_reaches_the_handler() -> None:
-    # Arrange
-    broker = _StackSettings.model_validate({}).broker
+def test_served_result_reaches_the_handler(rabbitmq_settings: BrokerSettings) -> None:
     # Act
-    published, handled = asyncio.run(_serve_one_result(broker))
+    published, handled = asyncio.run(_serve_one_result(rabbitmq_settings))
     # Assert
     assert handled == published
 
@@ -394,7 +380,7 @@ def processing_service(session: AsyncSession) -> ProcessingService:
             )
         ),
         WorkspaceSettingsService(WorkspaceSettingsRepository(session)),
-        SigningStorage(),
+        InMemoryObjectStorage(now=FixedClock(NOW)),
     )
 
 
@@ -402,19 +388,6 @@ class UnavailableEvictions:
     async def enqueue(self, notice: EvictionNotice) -> None:
         del notice
         raise AssertionError
-
-
-class SigningStorage:
-    def put(self, key: str, data: BinaryIO, *, content_type: str) -> None:
-        del key, data, content_type
-        raise AssertionError
-
-    def delete(self, key: str) -> None:
-        del key
-        raise AssertionError
-
-    def presign_get(self, key: str, *, expires_in: timedelta) -> PresignedUrl:
-        return PresignedUrl(f"http://storage.test/{key}", NOW + expires_in)
 
 
 def transactions(session: AsyncSession, publisher: FakePublisher) -> ProcessingTransactions:

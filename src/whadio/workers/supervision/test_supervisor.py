@@ -1,13 +1,11 @@
 import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from typing import ClassVar
 from uuid import uuid4
 
 import pytest
 from aio_pika.abc import AbstractChannel, AbstractIncomingMessage, AbstractQueue
-from pydantic import Field, HttpUrl
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import HttpUrl
 
 from ...contracts.common import JobKind, Transcript
 from ...contracts.queues import PROCESSING_RESULTS, TRANSCRIPTION_REQUESTS, QueueSpec
@@ -61,14 +59,6 @@ _SPEC = WorkerSpec(
 _OPTIONS = ConsumerOptions(
     concurrency=1, consumer_timeout=timedelta(minutes=1), shutdown_grace=timedelta(seconds=1)
 )
-
-
-class _StackSettings(BaseSettings):
-    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
-        env_prefix="WHADIO_", env_nested_delimiter="__", env_file=".env", extra="ignore"
-    )
-
-    broker: BrokerSettings = Field(description="Connection to the Compose stack's RabbitMQ")
 
 
 class _Journal:
@@ -257,49 +247,47 @@ def test_job_interrupted_by_a_shutdown_goes_back_to_the_queue() -> None:
 
 
 @pytest.mark.slow
-def test_worker_stops_with_an_error_when_handling_a_job_fails() -> None:
-    # Arrange
-    broker = _StackSettings.model_validate({}).broker
-
+def test_worker_stops_with_an_error_when_handling_a_job_fails(
+    rabbitmq_settings: BrokerSettings,
+) -> None:
     # Act
-    error, _ = asyncio.run(_serve_a_job_that_fails(broker))
+    error, _ = asyncio.run(_serve_a_job_that_fails(rabbitmq_settings))
 
     # Assert
     assert isinstance(error, WorkerFailedError)
 
 
 @pytest.mark.slow
-def test_job_whose_handling_failed_goes_back_to_the_queue() -> None:
-    # Arrange
-    broker = _StackSettings.model_validate({}).broker
-
+def test_job_whose_handling_failed_goes_back_to_the_queue(
+    rabbitmq_settings: BrokerSettings,
+) -> None:
     # Act
-    _, redelivered = asyncio.run(_serve_a_job_that_fails(broker))
+    _, redelivered = asyncio.run(_serve_a_job_that_fails(rabbitmq_settings))
 
     # Assert
     assert redelivered
 
 
 @pytest.mark.slow
-def test_worker_stops_with_an_error_when_the_broker_cancels_its_consumer() -> None:
-    # Arrange
-    broker = _StackSettings.model_validate({}).broker
-
+def test_worker_stops_with_an_error_when_the_broker_cancels_its_consumer(
+    rabbitmq_settings: BrokerSettings,
+) -> None:
     # Act
-    error = asyncio.run(_serve_until_the_job_queue_is_deleted(broker))
+    error = asyncio.run(_serve_until_the_job_queue_is_deleted(rabbitmq_settings))
 
     # Assert
     assert isinstance(error, WorkerFailedError)
 
 
 @pytest.mark.slow
-def test_worker_stops_its_runner_when_the_runner_fails_to_start() -> None:
+def test_worker_stops_its_runner_when_the_runner_fails_to_start(
+    rabbitmq_settings: BrokerSettings,
+) -> None:
     # Arrange
-    broker = _StackSettings.model_validate({}).broker
     runner = _Runner(fails_to_start=True)
 
     # Act
-    asyncio.run(_serve_until_the_runner_fails_to_start(broker, runner))
+    asyncio.run(_serve_until_the_runner_fails_to_start(rabbitmq_settings, runner))
 
     # Assert
     assert runner.stopped

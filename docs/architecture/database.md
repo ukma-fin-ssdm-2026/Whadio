@@ -6,9 +6,9 @@ rules PostgreSQL enforces.
 
 **Implemented:** SQLAlchemy models, Alembic migrations, shared transactions, and Access Policy,
 Meetings and Retention services. Meeting content, folders, glossary, shares, exports and MCP
-use PostgreSQL. Accounts write routes remain demos; Capture, Processing and notification delivery
-still need integration. Content routes require stored sessions or MCP
-keys; the demo sign-in does not create them.
+use PostgreSQL. Accounts routes persist sessions, workspaces and personal MCP keys; Capture and
+notification delivery still need integration. Content routes require stored browser sessions or
+personal MCP keys, and the development-user command creates a local account for the SPA.
 
 Access Policy and Meetings emit typed content audit events through `audit/contracts.py`.
 The runtime wires Audit's writer through the `content_audit` dependency using the same database

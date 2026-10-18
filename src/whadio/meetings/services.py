@@ -13,6 +13,7 @@ from ..audit.enums import AuditAction
 from ..audit.services import IAuditWriter, MeetingMoved
 from ..shared.errors import Failure, UseCaseError
 from ..shared.pagination import ListWindow
+from ..shared.text import display_text
 from .contracts import (
     ContextTranscript,
     InitialTranscript,
@@ -665,10 +666,10 @@ class MeetingService:
 
     @staticmethod
     def _name(value: str) -> str:
-        value = value.strip()
-        if not value or any(not char.isprintable() for char in value):
-            raise UseCaseError(Failure.VALIDATION_ERROR)
-        return value
+        try:
+            return display_text(value)
+        except ValueError:
+            raise UseCaseError(Failure.VALIDATION_ERROR) from None
 
     @staticmethod
     def _anonymous_names(version: TranscriptVersion) -> dict[UUID, str]:

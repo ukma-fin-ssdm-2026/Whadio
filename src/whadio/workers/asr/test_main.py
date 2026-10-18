@@ -25,7 +25,6 @@ from .language import TranscriptLanguage
 from .main import ASR_WORKER
 from .pipeline import TranscriptionPipeline, TranscriptionResult
 from .recognition import RecognitionHints, RecognizedSegment
-from .settings import load_asr_worker_settings
 
 _CLIP = Path(__file__).parent / "testdata" / "en-2277-149896-0032.flac"
 
@@ -113,9 +112,10 @@ async def _run_one_job(broker: BrokerSettings, job: TranscriptionRequested) -> l
 
 
 @pytest.mark.slow
-def test_asr_worker_transcribes_a_recording_from_its_presigned_url() -> None:
+def test_asr_worker_transcribes_a_recording_from_its_presigned_url(
+    rabbitmq_settings: BrokerSettings,
+) -> None:
     # Arrange
-    broker = load_asr_worker_settings().broker
     stack = _StackSettings.model_validate({})
     storage = connect_s3_storage(
         ObjectStorageSettings(
@@ -137,7 +137,7 @@ def test_asr_worker_transcribes_a_recording_from_its_presigned_url() -> None:
 
     # Act
     try:
-        types = asyncio.run(_run_one_job(broker, job))
+        types = asyncio.run(_run_one_job(rabbitmq_settings, job))
     finally:
         storage.delete(key)
 

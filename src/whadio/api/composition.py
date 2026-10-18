@@ -21,12 +21,14 @@ from ..access_policy.services import (
 from ..accounts.enums import NotesTemplate
 from ..accounts.passwords import Argon2PasswordHasher
 from ..accounts.repositories import (
+    McpKeyRepository,
     MembershipRepository,
     SessionRepository,
     WorkspaceRepository,
     WorkspaceSettingsRepository,
 )
 from ..accounts.services import (
+    McpKeyService,
     SignInService,
     WorkspaceMembershipService,
     WorkspaceService,
@@ -336,6 +338,13 @@ def sign_in_service(session: Session) -> SignInService:
 
 
 SignIns = Annotated[SignInService, Depends(sign_in_service)]
+
+
+def mcp_key_service(session: Session) -> McpKeyService:
+    return McpKeyService(McpKeyRepository(session), AuditWriter(session))
+
+
+McpKeys = Annotated[McpKeyService, Depends(mcp_key_service)]
 
 
 def workspace_service(session: Session) -> WorkspaceService:

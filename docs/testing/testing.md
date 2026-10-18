@@ -93,14 +93,20 @@ uv run task db:upgrade
 export WHADIO_TEST_DATABASE_URL=postgresql+psycopg://whadio_app:whadio-dev-app@127.0.0.1:5432/whadio
 ```
 
-Then measure:
+Then measure with the command that CI and the push hook run. `task test:cov` refuses to start without `WHADIO_TEST_DATABASE_URL`, so skipped database tests cannot quietly change the number. The second command also writes the HTML report to `htmlcov-ci/`:
 
 ```bash
-uv run --with pytest-cov pytest -m "not models" --cov=whadio --cov-report=term-missing
-uv run --with coverage coverage html --omit='*/test_*.py,*/migrations/versions/*'
+uv run task test:cov
+uv run task test:cov -- --cov-report=term-missing:skip-covered --cov-report=html
 ```
 
-The HTML report colours each line green (run) or red (not run). `htmlcov-before/` shows the state before the new tests and `htmlcov/` the state after.
+The run fails below 85% coverage of lines and branches combined: an `if` counts as covered only when both of its sides ran. The threshold is set in one place, `[tool.coverage.report]` in `pyproject.toml`, so CI and the push hook always agree. Test files, migration revisions and the shared test doubles (`fakes.py`) are left out of the numbers.
+
+Coverage also follows greenlets (`concurrency = ["greenlet", "thread"]`). SQLAlchemy's async layer runs every database call in a greenlet, and without this setting coverage.py does not see the code that runs after an awaited call return, so it reports that code as never run. Turning it on raised the first full run from 84.7% to 85.6%. Nearly all of the gain is in database-backed code: the session and workspace routes went from 67% and 91% to 100%, the MCP server from 72% to 91%, and the meeting routes from 73% to 83%.
+
+Why 85: the full run measures 87.5% of lines and branches combined. The testing strategy and this gate settled on 85 together, as a compromise: it sits close to the measured figure, so a real drop fails the run, while it leaves room for the ASR code that only runs with downloaded models, which CI cannot run (about 1.2 points), and for normal churn.
+
+The HTML report colours each line green (run) or red (not run). `htmlcov-before/` shows the state before the new tests and `htmlcov/` the state after; both are snapshots kept for Lab 6. They, and the before-and-after figures below, were measured before coverage followed greenlets, so they undercount the database-backed modules. CI writes a fresh report on every run and uploads it with the JUnit XML as the `test-reports` artifact, and the job summary shows the coverage table and the failed tests.
 
 ### Before and after
 

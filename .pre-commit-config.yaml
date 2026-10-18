@@ -146,8 +146,8 @@ repos:
         <<: *whole-project
 
       - id: pytest-full
-        name: pytest (full)
-        entry: uv run --frozen pytest -q
+        name: pytest (full, with the coverage gate)
+        entry: uv run --frozen task test:cov
         stages: [pre-push, manual]
         <<: *whole-project
 

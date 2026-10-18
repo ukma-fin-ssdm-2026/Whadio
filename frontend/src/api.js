@@ -89,4 +89,20 @@ export const api = {
       body,
     });
   },
+
+  listMcpKeys() {
+    return request("/users/me/mcp-keys?limit=100");
+  },
+
+  createMcpKey(expiresInDays) {
+    return request("/users/me/mcp-keys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expires_in_days: expiresInDays }),
+    });
+  },
+
+  revokeMcpKey(keyId) {
+    return request(`/users/me/mcp-keys/${keyId}`, { method: "DELETE" });
+  },
 };

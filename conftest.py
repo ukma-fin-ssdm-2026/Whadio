@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import ClassVar
 from uuid import UUID, uuid4
 
+import hypothesis
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import Field, SecretStr
@@ -35,7 +36,23 @@ from whadio.meetings.models import (
     TranscriptRevision,
     TranscriptSegment,
 )
+from whadio.shared.broker import BrokerSettings
 from whadio.shared.database import DatabaseSettings
+
+
+class ContinuousIntegrationSettings(BaseSettings):
+    ci: bool = Field(
+        default=False,
+        description="Set by GitHub Actions and most CI services; selects reproducible examples.",
+    )
+
+
+# Hypothesis loads its own "ci" profile whenever CI is set, even to "false", and a profile without
+# a parent inherits whatever is loaded; root "dev" in the default profile so it stays random.
+hypothesis.settings.register_profile(
+    "dev", parent=hypothesis.settings.get_profile("default"), deadline=None
+)
+hypothesis.settings.load_profile("ci" if ContinuousIntegrationSettings().ci else "dev")
 
 
 class DatabaseTestSettings(BaseSettings):
@@ -369,3 +386,24 @@ def committed_revision_id(
             database_connection.execute(
                 text('DELETE FROM "user" WHERE user_id = :id'), {"id": owner_id}
             )
+
+
+class BrokerTestSettings(BaseSettings):
+    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
+        env_prefix="WHADIO_", env_nested_delimiter="__", env_file=".env", extra="ignore"
+    )
+
+    broker: BrokerSettings | None = Field(
+        default=None, description="Connection to the Compose stack's RabbitMQ"
+    )
+
+
+@pytest.fixture
+def rabbitmq_settings() -> BrokerSettings:
+    settings = BrokerTestSettings()
+    if settings.broker is None:
+        pytest.skip("Set WHADIO_BROKER__URL to run RabbitMQ integration tests")
+    return settings.broker
+
+
+NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)

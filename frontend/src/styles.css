@@ -4,9 +4,7 @@
 
 body {
   min-width: 320px;
-  background:
-    linear-gradient(135deg, rgb(15 118 110 / 7%), transparent 34rem),
-    #f6f4ef;
+  background: linear-gradient(135deg, rgb(15 118 110 / 7%), transparent 34rem), #f6f4ef;
 }
 
 button {
@@ -324,6 +322,17 @@ button {
   background: #fbfcfb !important;
 }
 
+.mcp-key-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 0.85rem;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  border: 1px solid #dde2dc;
+  border-radius: 0.5rem;
+  background: #fbfcfb;
+}
+
 @keyframes settings-slide {
   from {
     opacity: 0;
@@ -547,5 +556,14 @@ button {
     padding-bottom: 0.75rem;
     border-right: 0;
     border-bottom: 1px solid #dde2dc;
+  }
+
+  .mcp-key-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .mcp-key-row .MuiChip-root {
+    grid-column: 2;
+    justify-self: start;
   }
 }

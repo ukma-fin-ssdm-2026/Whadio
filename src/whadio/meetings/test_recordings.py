@@ -1,33 +1,15 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
-from typing import BinaryIO
 from uuid import UUID, uuid4
 
 import pytest
 
 from ..shared.errors import Failure, UseCaseError
-from ..shared.storage import PresignedUrl
+from ..shared.fakes import InMemoryObjectStorage
 from .enums import ProcessingState
 from .models import Meeting
 from .recordings import RecordingObjects
-
-
-class ObjectStore:
-    def __init__(self) -> None:
-        self.keys: list[str] = []
-        self.signed: list[tuple[str, timedelta]] = []
-
-    def put(self, key: str, data: BinaryIO, *, content_type: str) -> None:
-        del data, content_type
-        self.keys.append(key)
-
-    def delete(self, key: str) -> None:
-        self.keys.remove(key)
-
-    def presign_get(self, key: str, *, expires_in: timedelta) -> PresignedUrl:
-        self.signed.append((key, expires_in))
-        return PresignedUrl("https://storage.test/playback", datetime.now(UTC) + expires_in)
 
 
 class RecordingAccess:
@@ -57,7 +39,7 @@ def test_unavailable_recording_produces_no_signed_link(
     *, deleted: bool, deny: bool, expected: Failure
 ) -> None:
     # Arrange
-    storage = ObjectStore()
+    storage = InMemoryObjectStorage()
     # Act
     with pytest.raises(UseCaseError) as failure:
         asyncio.run(
@@ -66,21 +48,21 @@ def test_unavailable_recording_produces_no_signed_link(
             )
         )
     # Assert
-    assert (failure.value.code, storage.signed) == (expected, [])
+    assert (failure.value.code, storage.presigned) == (expected, [])
 
 
 def test_playback_link_expires_after_five_minutes() -> None:
     # Arrange
-    storage = ObjectStore()
+    storage = InMemoryObjectStorage()
     # Act
     asyncio.run(RecordingObjects(storage).playback(RecordingAccess(), uuid4(), uuid4()))
     # Assert
-    assert storage.signed == [("recording/test", timedelta(minutes=5))]
+    assert storage.presigned == [("recording/test", timedelta(minutes=5))]
 
 
 def test_failed_ingest_compensates_uploaded_object() -> None:
     # Arrange
-    storage = ObjectStore()
+    storage = InMemoryObjectStorage()
     recordings = RecordingObjects(storage)
 
     async def scenario() -> None:
@@ -90,4 +72,4 @@ def test_failed_ingest_compensates_uploaded_object() -> None:
 
     asyncio.run(scenario())
     # Assert
-    assert storage.keys == []
+    assert storage.objects == {}

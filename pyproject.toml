@@ -12,6 +12,7 @@ dependencies = [
     "av>=19.0",
     "fastapi[standard-no-fastapi-cloud-cli]>=0.142",
     "fastmcp>=4.0.11",
+    "httpx2>=2.13",
     "mcp>=2.3",
     "minio>=7.2.20",
     "psycopg[binary]>=3.2,<4",
@@ -55,9 +56,11 @@ dev = [
     "check-jsonschema>=0.38.2",
     "deptry>=0.25.1",
     "go-task-bin>=3.54.0",
+    "hypothesis>=6.170.1",
     "import-linter>=2.15",
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
     "ruff>=0.16.10",
     "ty>=0.0.85",
     "types-pyyaml>=6.0.12.20260906",
@@ -103,6 +106,7 @@ ignore = [
 "src/whadio/api/**/*.py" = ["PLR0913", "PLR0917"] # FastAPI injects every input as a parameter
 "src/whadio/cli.py" = ["PLC0415"]                 # each command imports its own runtime
 "src/whadio/workers/asr/slot.py" = ["PLC0415"]    # model libraries load only in the slot's child
+".github/scripts/*.py" = ["INP001", "S314"]      # standalone CI scripts reading our own pytest XML
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "typing.Any".msg = "Any is banned: type the value, or validate it at the boundary"
@@ -260,6 +264,26 @@ markers = [
     "slow: needs models or running services; left out of the commit hook",
     "models: needs downloaded ML models; CI leaves it out (mark such tests slow as well)",
 ]
+
+# Turned on by `task test:cov`, not addopts: the commit hook's fast suite stays below fail_under.
+[tool.coverage.run]
+source_pkgs = ["whadio"]
+branch = true
+# SQLAlchemy's async layer runs database calls in greenlets; without this, code after an awaited
+# call counts as not run. Setting `concurrency` replaces the default, so `thread` is listed again.
+concurrency = ["greenlet", "thread"]
+omit = ["*/test_*.py", "*/migrations/versions/*", "*/fakes.py"]
+
+[tool.coverage.report]
+fail_under = 85
+# fail_under is compared with the total rounded to `precision`; at 0, 84.6% passes an 85% gate.
+precision = 2
+show_missing = true
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", '^\s*\.\.\.$', "@overload"]
+
+[tool.coverage.html]
+directory = "htmlcov-ci"
 
 [tool.deptry]
 extend_exclude = ["src/.*/test_[^/]*\\.py"]
