@@ -68,3 +68,19 @@ def test_oversized_segment_becomes_its_own_chunk() -> None:
 
     # Assert
     assert len(chunks) == 3
+
+
+@pytest.mark.xfail(strict=True, raises=pytest.fail.Exception)
+@pytest.mark.parametrize(
+    "max_chars", [pytest.param(-1, id="bva-below-zero"), pytest.param(0, id="bva-zero")]
+)
+def test_non_positive_limit_is_refused(max_chars: int) -> None:
+    # Arrange
+    segments = [
+        Segment(start_seconds=0.0, end_seconds=1.0, speaker="speaker_0", text="Under"),
+        Segment(start_seconds=1.0, end_seconds=2.0, speaker="speaker_1", text="Ten"),
+    ]
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="max_chars"):
+        chunk_segments(segments, max_chars)
