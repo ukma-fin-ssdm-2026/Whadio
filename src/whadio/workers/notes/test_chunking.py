@@ -51,3 +51,21 @@ def test_segment_that_overflows_starts_a_new_chunk(
 
     # Assert
     assert len(chunks) == length
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError)
+def test_oversized_segment_becomes_its_own_chunk() -> None:
+    # Arrange
+    max_chars = 5
+    segments = [
+        Segment(start_seconds=0.0, end_seconds=1.0, speaker="speaker_0", text="111"),
+        Segment(start_seconds=1.0, end_seconds=2.0, speaker="speaker_1", text="2"),
+        Segment(start_seconds=1.0, end_seconds=2.0, speaker="speaker_1", text="333333"),
+        Segment(start_seconds=1.0, end_seconds=2.0, speaker="speaker_1", text="2"),
+    ]
+
+    # Act
+    chunks = chunk_segments(segments, max_chars)
+
+    # Assert
+    assert len(chunks) == 3
