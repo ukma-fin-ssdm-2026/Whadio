@@ -43,3 +43,24 @@ def test_recording_at_or_after_deadline_is_expired(deadline: datetime, elapsed: 
 
     # Assert
     assert result == RecordingExpiryStatus.EXPIRED
+
+
+def test_naive_deadline_is_rejected(deadline: datetime) -> None:
+    # Arrange
+    now = deadline - timedelta(days=1)
+    naive_deadline = deadline.replace(tzinfo=None)
+
+    # Act
+    # Assert
+    with pytest.raises(ValueError, match="timezone-aware"):
+        recording_expiry_status(naive_deadline, now)
+
+
+def test_naive_now_is_rejected(deadline: datetime) -> None:
+    # Arrange
+    naive_now = (deadline - timedelta(days=1)).replace(tzinfo=None)
+
+    # Act
+    # Assert
+    with pytest.raises(ValueError, match="timezone-aware"):
+        recording_expiry_status(deadline, naive_now)
