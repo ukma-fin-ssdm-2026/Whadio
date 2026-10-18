@@ -11,18 +11,20 @@ We chose the two backend modules with the weakest coverage:
 - **Access Policy** (`src/whadio/access_policy/`): who may open a meeting, restricted meetings, share links and access requests. Before this work it had no tests of its own for its services or repository. API tests reached it only indirectly.
 - **Meetings** (`src/whadio/meetings/services.py`): the meeting use cases, such as upload, folders, transcripts and their edits, notes, the glossary, and the views behind a share link. It had the most untested lines of any file (99).
 
-We added 85 tests in three files:
+We added 116 tests in five files. The two `test_services_unit.py` files are unit tests: they replace every collaborator with an in-memory fake, need no running services and run in the commit hook. The other three are integration tests against PostgreSQL, marked `slow`.
 
 | File | Tests | What they cover |
 |---|---|---|
+| `access_policy/test_services_unit.py` (new, unit) | 16 | reading and restricting a meeting; creating, requesting, approving and revoking share links; what a share recipient may do; requester profiles |
+| `meetings/test_services_unit.py` (new, unit) | 12 | creating a meeting, consent and the default folder; renaming and deleting; folders; the glossary |
 | `access_policy/test_services.py` (new) | 42 | restricting a meeting and choosing its members; creating, requesting, approving, declining and revoking share links; requester profiles; who gets notified before a meeting is deleted |
-| `access_policy/test_repositories.py` (new) | 4 | paging through shares, a recipient's shares and access requests with a cursor; revoked shares are left out |
+| `access_policy/test_repositories.py` (new) | 7 | paging through shares, a recipient's shares and access requests with a cursor, including records created at the same moment; revoked shares are left out |
 | `meetings/test_services.py` (extended) | 39 | refusals for create, update and delete; folders; folder counts; transcript edits and revisions; replaying a transcription job; shared transcripts and notes with and without speaker names hidden; the glossary; processing state |
 
 ### Fixtures, mocks and parametrised tests
 
 - **Fixtures:** `async_database` (in the root `conftest.py`) runs each test in a PostgreSQL transaction that is rolled back afterwards, so tests never see each other's data. Two builders set up the people each test needs: `world()` in Access Policy and `team()` in Meetings. Each creates a workspace Owner, a Member, an outsider and a meeting.
-- **Mocks (fakes):** Access Policy must not import Meetings (import-linter enforces the layering), so its tests replace the collaborators with small fakes. `FakeMeetings` returns the meeting's scope, `FakeAudit` records audit events in a list, and `FakeNotices` records the notices sent to share creators. The tests then assert on what the fakes received.
+- **Mocks (fakes):** Access Policy must not import Meetings (import-linter enforces the layering), so its tests replace the collaborators with small fakes. `FakeMeetings` returns the meeting's scope, `FakeAudit` records audit events in a list, and `FakeNotices` records the notices sent to share creators. The tests then assert on what the fakes received. The unit tests go further: `FakeAccessRepository` and `FakeDirectory` stand in for the Access Policy database and the workspace memberships, and `FakeMeetingRepository` and `FakePolicy` do the same for Meetings.
 - **Parametrised tests:** the four content paths a share recipient may not use (export, MCP, recording, write); the two invalid combinations of access mode and member list; blank names and names with a control character; a share with names hidden and with names shown; deleting and updating someone else's glossary term.
 
 ### Edge cases covered
@@ -37,6 +39,7 @@ Access Policy:
 - a share recipient trying each of the four paths other than reading (export, MCP, recording, write);
 - a revoked share stopping its recipient from reading;
 - the second page of every cursor-paged list, with revoked shares left out;
+- records created at the same moment, paged one at a time with no record missing or repeated;
 - a share recipient counted as a reader before a meeting is deleted.
 
 Meetings:
@@ -80,6 +83,17 @@ def test_share_recipient_may_only_read(async_database: AsyncDatabase, path: Cont
 ### Tool
 
 We used coverage.py through pytest-cov. Tests and migration files are left out of the numbers. The 4 tests that need downloaded ML models were not run.
+
+The integration tests need a migrated PostgreSQL database. Without `WHADIO_TEST_DATABASE_URL` they are skipped, and the report still comes out, only with different numbers. The setting is read from the environment only, not from `.env`, so export it in the shell that runs the tests ([database tests](../architecture/database.md) has the details):
+
+```bash
+cp .env.example .env
+uv run task infra:up
+uv run task db:upgrade
+export WHADIO_TEST_DATABASE_URL=postgresql+psycopg://whadio_app:whadio-dev-app@127.0.0.1:5432/whadio
+```
+
+Then measure:
 
 ```bash
 uv run --with pytest-cov pytest -m "not models" --cov=whadio --cov-report=term-missing
