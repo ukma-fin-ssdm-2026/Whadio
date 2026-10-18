@@ -8,6 +8,21 @@
   <body>
     <h1>Whadio</h1>
 
+    <form id="sign-in" hidden>
+      <p>Sign in to your Whadio server so recordings go to your workspace.</p>
+      <label class="field">Server <input id="server" type="url" required value="http://localhost:3000" /></label>
+      <label class="field">Email <input id="email" type="email" required autocomplete="username" /></label>
+      <label class="field">
+        Password <input id="password" type="password" required autocomplete="current-password" />
+      </label>
+      <button type="submit">Sign in</button>
+    </form>
+
+    <section id="account" hidden>
+      <p class="account">Signed in as <span id="name"></span> <button id="sign-out" class="link">Sign out</button></p>
+      <label class="field">Save recordings to <select id="destination"></select></label>
+    </section>
+
     <section id="not-meet" hidden>
       <p>Open a Google Meet call in this tab to record it.</p>
     </section>
@@ -23,7 +38,7 @@
 
     <section id="recording" hidden>
       <p class="live">Recording <span id="elapsed">0:00</span></p>
-      <button id="stop">Stop and save</button>
+      <button id="stop">Stop and upload</button>
     </section>
 
     <p id="error" role="alert" hidden></p>

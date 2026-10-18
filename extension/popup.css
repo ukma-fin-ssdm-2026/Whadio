@@ -28,6 +28,35 @@ button:disabled {
   cursor: default;
 }
 
+label.field {
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 8px;
+}
+
+label.field input,
+label.field select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px;
+  font: inherit;
+}
+
+.account {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+button.link {
+  width: auto;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #1a73e8;
+}
+
 .live::before {
   content: "";
   display: inline-block;

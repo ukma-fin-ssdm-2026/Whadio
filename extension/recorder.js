@@ -23,12 +23,13 @@ if (!globalThis.whadioRecorder) {
     context.createMediaStreamSource(microphone).connect(mix);
 
     // The audio goes to the background as it is recorded, so closing the tab cannot lose it; the background
-    // saves the file when this port disconnects, whether the recording stopped or the page went away.
+    // uploads it as it arrives and completes the recording when this port disconnects, whether the recording
+    // stopped or the page went away.
     const port = chrome.runtime.connect({ name: "recording" });
     let sent = Promise.resolve();
     const recorder = new MediaRecorder(mix.stream, { mimeType: "audio/webm;codecs=opus" });
     recorder.addEventListener("dataavailable", (event) => {
-      sent = sent.then(async () => port.postMessage(base64(await event.data.arrayBuffer())));
+      sent = sent.then(async () => port.postMessage({ audio: base64(await event.data.arrayBuffer()) }));
     });
     recorder.addEventListener("stop", () => sent.then(() => port.disconnect()), { once: true });
     recorder.start(1000);
@@ -77,6 +78,8 @@ if (!globalThis.whadioRecorder) {
   function stop() {
     const { recorder, context, streams } = session;
     session = null;
+    // Recorded once already, so the card stays away for the rest of this call.
+    dismissed = true;
     recorder.stop();
     for (const stream of streams) {
       for (const track of stream.getTracks()) {
@@ -87,7 +90,7 @@ if (!globalThis.whadioRecorder) {
     return Promise.resolve({});
   }
 
-  // --- Banner offering to record ---
+  // --- Banner offering to record, or to sign in first ---
 
   // Built with DOM calls rather than innerHTML, which Meet's Trusted Types policy refuses.
   function element(tag, properties, children = []) {
@@ -103,6 +106,29 @@ if (!globalThis.whadioRecorder) {
     const startButton = element("button", { textContent: "Start recording", className: "primary", disabled: true });
     const later = element("button", { textContent: "Not now" });
     const error = element("p", { className: "error", hidden: true });
+    // The server is chosen in the toolbar popup; the card signs in to the last one used.
+    let server = "http://localhost:3000";
+    const email = element("input", { type: "email", required: true, autocomplete: "username" });
+    const password = element("input", { type: "password", required: true, autocomplete: "current-password" });
+    const signInButton = element("button", { type: "submit", textContent: "Sign in", className: "primary" });
+    const close = element("button", { type: "button", textContent: "Close" });
+    const neverAgain = element("button", { type: "button", textContent: "Don't show again" });
+    const signInPanel = element("form", {}, [
+      element("h2", { textContent: "Sign in to Whadio" }),
+      element("p", { textContent: "Sign in to record this call into your workspace." }),
+      element("label", { className: "field" }, ["Email", email]),
+      element("label", { className: "field" }, ["Password", password]),
+      element("div", { className: "actions" }, [signInButton, close, neverAgain]),
+    ]);
+    const recordPanel = element("div", {}, [
+      element("h2", { textContent: "Record this call with Whadio?" }),
+      element("p", { textContent: "Tell everyone you are recording, and record only once they agree." }),
+      element("label", {}, [consent, "Everyone in the call agreed to be recorded"]),
+      element("div", { className: "actions" }, [startButton, later]),
+      element("p", { className: "hint", textContent: "Or tick the box and press Alt+Shift+R." }),
+    ]);
+    let signedIn = false;
+    let promptSignIn = true;
 
     root.append(
       element("style", {
@@ -119,28 +145,74 @@ if (!globalThis.whadioRecorder) {
           button.primary { border-color: #1a73e8; background: #1a73e8; color: #fff; }
           button:disabled { opacity: 0.5; cursor: default; }
           .hint { margin: 8px 0 0; color: #5f6368; font-size: 12px; }
-          .error { color: #d93025; }
+          .error { margin: 8px 0 0; color: #d93025; }
+          label.field { flex-direction: column; gap: 4px; margin: 0 0 8px; }
+          label.field input { box-sizing: border-box; width: 100%; padding: 6px; border: 1px solid #dadce0;
+            border-radius: 6px; font: inherit; }
         `,
       }),
-      element("div", { className: "card" }, [
-        element("h2", { textContent: "Record this call with Whadio?" }),
-        element("p", { textContent: "Tell everyone you are recording, and record only once they agree." }),
-        element("label", {}, [consent, "Everyone in the call agreed to be recorded"]),
-        element("div", { className: "actions" }, [startButton, later]),
-        error,
-        element("p", { className: "hint", textContent: "Or tick the box and press Alt+Shift+R." }),
-      ]),
+      element("div", { className: "card" }, [signInPanel, recordPanel, error]),
     );
 
+    // Recording is offered only once signed in; signing in elsewhere switches the card at once.
+    async function refresh() {
+      const stored = await chrome.storage.local.get(["token", "expiresAt", "signInPrompt", "server"]);
+      const { token, expiresAt, signInPrompt } = stored;
+      server = stored.server ?? server;
+      signedIn = Boolean(token) && Date.parse(expiresAt) > Date.now();
+      promptSignIn = signInPrompt !== false;
+      signInPanel.hidden = signedIn;
+      recordPanel.hidden = !signedIn;
+      error.hidden = true;
+      if (!signedIn && !promptSignIn) {
+        host.remove();
+      }
+    }
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === "local" && ("token" in changes || "signInPrompt" in changes)) {
+        refresh();
+      }
+    });
+
+    // Meet handles keys on the whole page; typing in the form must not reach it.
+    root.addEventListener("keydown", (event) => event.stopPropagation());
+    signInPanel.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      signInButton.disabled = true;
+      error.hidden = true;
+      const reply = await chrome.runtime.sendMessage({
+        type: "sign-in",
+        server,
+        email: email.value,
+        password: password.value,
+      });
+      signInButton.disabled = false;
+      if (reply.error) {
+        showError(reply.error);
+        return;
+      }
+      password.value = "";
+    });
+    for (const button of [close, later]) {
+      button.addEventListener("click", () => {
+        dismissed = true;
+        host.remove();
+      });
+    }
+    neverAgain.addEventListener("click", async () => {
+      await chrome.storage.local.set({ signInPrompt: false });
+      host.remove();
+    });
     consent.addEventListener("change", () => {
       startButton.disabled = !consent.checked;
     });
-    later.addEventListener("click", () => {
-      dismissed = true;
-      host.remove();
-    });
     startButton.addEventListener("click", async () => {
       startButton.disabled = true;
+      // The sign-in may have ended since the card appeared.
+      await refresh();
+      if (!signedIn) {
+        return;
+      }
       try {
         await start(await captureWithPicker(), false);
       } catch (failure) {
@@ -154,7 +226,7 @@ if (!globalThis.whadioRecorder) {
       error.hidden = false;
     }
 
-    return { host, consent, showError };
+    return { host, consent, showError, refresh, wanted: () => signedIn || promptSignIn };
   }
 
   const banner = buildBanner();
@@ -163,12 +235,16 @@ if (!globalThis.whadioRecorder) {
     return [...document.querySelectorAll("button")].some((button) => button.textContent.includes("call_end"));
   }
 
-  setInterval(() => {
+  setInterval(async () => {
     if (!inCall()) {
       dismissed = false;
       banner.host.remove();
     } else if (!session && !dismissed && !banner.host.isConnected) {
-      document.body.append(banner.host);
+      // A token can expire while the card is away, so it checks again each time it would appear.
+      await banner.refresh();
+      if (banner.wanted() && !session && !dismissed) {
+        document.body.append(banner.host);
+      }
     }
   }, 1000);
 
@@ -195,6 +271,18 @@ if (!globalThis.whadioRecorder) {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === "status") {
       sendResponse({ startedAt: session?.startedAt ?? null, consented: banner.consent.checked });
+      return false;
+    }
+    if (message.type === "hide-card") {
+      // The toolbar popup took over, so the card stays away for the rest of this call.
+      dismissed = true;
+      banner.host.remove();
+      return false;
+    }
+    if (message.type === "ask-sign-in") {
+      // Asked for with the shortcut, so the sign-in card shows even after "Don't show again".
+      dismissed = false;
+      banner.refresh().then(() => document.body.append(banner.host));
       return false;
     }
     if (message.type === "ask-consent") {
