@@ -50,6 +50,7 @@ tasks:
     desc: Look for vulnerable dependencies and for secrets anywhere in the git history
     cmds:
       - uv run --frozen pre-commit run uv-audit --hook-stage manual --all-files
+      - npm audit --prefix frontend --audit-level=high
       - uv run --frozen pre-commit run gitleaks-history --hook-stage manual --all-files
 
   openapi:
