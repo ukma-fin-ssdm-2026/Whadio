@@ -1,5 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
+import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
+import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
+import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
+import KeyOutlinedIcon from "@mui/icons-material/KeyOutlined";
+import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
+import NotesOutlinedIcon from "@mui/icons-material/NotesOutlined";
+import PauseRoundedIcon from "@mui/icons-material/PauseRounded";
+import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
+import StopCircleOutlinedIcon from "@mui/icons-material/StopCircleOutlined";
+import VideoCameraFrontOutlinedIcon from "@mui/icons-material/VideoCameraFrontOutlined";
+import WorkspacesOutlinedIcon from "@mui/icons-material/WorkspacesOutlined";
 import {
   Box,
   Button,
@@ -8,6 +21,7 @@ import {
   Chip,
   CircularProgress,
   CssBaseline,
+  createTheme,
   Dialog,
   DialogActions,
   DialogContent,
@@ -26,23 +40,9 @@ import {
   ThemeProvider,
   Tooltip,
   Typography,
-  createTheme,
 } from "@mui/material";
-import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
-import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
-import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
-import KeyOutlinedIcon from "@mui/icons-material/KeyOutlined";
-import NotesOutlinedIcon from "@mui/icons-material/NotesOutlined";
-import PauseRoundedIcon from "@mui/icons-material/PauseRounded";
-import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
-import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
-import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
-import StopCircleOutlinedIcon from "@mui/icons-material/StopCircleOutlined";
-import VideoCameraFrontOutlinedIcon from "@mui/icons-material/VideoCameraFrontOutlined";
-import WorkspacesOutlinedIcon from "@mui/icons-material/WorkspacesOutlined";
-import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createRoot } from "react-dom/client";
 import { ApiError, api } from "./api";
 import "./styles.css";
 
