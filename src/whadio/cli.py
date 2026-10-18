@@ -1,8 +1,9 @@
-from typing import Annotated
+from typing import Annotated, Final
 
 import typer
 
 app = typer.Typer(no_args_is_help=True, help="Whadio runtime entry points.")
+MIN_PASSWORD_LENGTH: Final = 12
 
 # Each command imports its runtime inside the function, so `whadio web` never loads the ML stack
 # and the workers never load FastAPI.
@@ -15,9 +16,17 @@ def web(
     ] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="Port to listen on")] = 3000,
 ) -> None:
+    import asyncio
+    import sys
+
     import uvicorn
 
-    uvicorn.run("whadio.api.main:app", host=host, port=port)
+    config = uvicorn.Config("whadio.api.main:app", host=host, port=port)
+    server = uvicorn.Server(config)
+    if sys.platform == "win32":
+        asyncio.run(server.serve(), loop_factory=asyncio.SelectorEventLoop)
+    else:
+        server.run()
 
 
 @app.command(help="Transcribe the recordings of the jobs of the transcription queue.")
@@ -66,3 +75,48 @@ def db_upgrade(
     configuration = Config(config)
     configuration.set_main_option("script_location", "whadio:migrations")
     command.upgrade(configuration, "head")
+
+
+@app.command(help="Create or update a local development user and personal workspace.")
+def dev_user(
+    password: Annotated[
+        str,
+        typer.Option(
+            prompt=True,
+            hide_input=True,
+            confirmation_prompt=True,
+            help="Development account password (at least 12 characters).",
+        ),
+    ],
+    email: Annotated[str, typer.Option(help="Development account email.")] = "margaret@whadio.dev",
+    name: Annotated[
+        str, typer.Option(help="Development account display name.")
+    ] = "Margaret Hamilton",
+) -> None:
+    import asyncio
+
+    from .dev_user import ensure_dev_user
+    from .shared.database import Database, DatabaseSettings
+
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise typer.BadParameter(
+            f"must contain at least {MIN_PASSWORD_LENGTH} characters",
+            param_hint="--password",
+        )
+
+    async def create() -> bool:
+        database = Database(DatabaseSettings.model_validate({}))
+        try:
+            async with database.transaction() as session:
+                return await ensure_dev_user(
+                    session,
+                    email=email,
+                    name=name,
+                    password=password,
+                )
+        finally:
+            await database.close()
+
+    created = asyncio.run(create(), loop_factory=asyncio.SelectorEventLoop)
+    action = "Created" if created else "Updated"
+    typer.echo(f"{action} development user {email}")
