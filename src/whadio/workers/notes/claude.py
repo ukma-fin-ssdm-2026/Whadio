@@ -62,5 +62,10 @@ class ClaudeChatModel:
             raise NotesError(reason) from error
         if response.stop_reason == "refusal":
             raise NotesError(NotesFailure.PROVIDER_REFUSED)
+        # A cut-off answer can already hold every heading, so parse_notes would accept it.
+        if response.stop_reason == "max_tokens":
+            raise NotesError(NotesFailure.INVALID_OUTPUT)
+        if response.stop_reason == "model_context_window_exceeded":
+            raise NotesError(NotesFailure.TRANSCRIPT_TOO_LONG)
         text = "".join(block.text for block in response.content if isinstance(block, BetaTextBlock))
         return Completion(text=text, model_name=response.model)
