@@ -2,6 +2,7 @@ import hashlib
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from typing import Protocol
 from uuid import UUID
 
@@ -9,6 +10,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from ..shared.pagination import ListWindow
 from .contracts import UserProfile
 from .enums import NotesTemplate, SessionKind, WorkspaceRole
 from .models import McpKey, Session, User, Workspace, WorkspaceMembership
@@ -215,26 +217,44 @@ class PersonalMcpKey:
     expires_at: datetime | None
     revoked_at: datetime | None
 
+    def is_active(self, now: datetime) -> bool:
+        return self.revoked_at is None and (self.expires_at is None or self.expires_at > now)
+
+
+class McpKeyRevokeResult(StrEnum):
+    NOT_FOUND = "not_found"
+    ALREADY_REVOKED = "already_revoked"
+    REVOKED = "revoked"
+
 
 class IMcpKeyRepository(Protocol):
-    async def of_user(self, user_id: UUID, /) -> list[PersonalMcpKey]: ...
+    async def of_user(
+        self, user_id: UUID, page: ListWindow | None = None, /
+    ) -> list[PersonalMcpKey]: ...
 
     async def add(
         self, user_id: UUID, key_hash: str, expires_at: datetime | None, now: datetime, /
     ) -> PersonalMcpKey: ...
 
-    async def revoke(self, user_id: UUID, key_id: UUID, now: datetime, /) -> bool | None: ...
+    async def revoke(self, user_id: UUID, key_id: UUID, now: datetime, /) -> McpKeyRevokeResult: ...
 
 
 class McpKeyRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session: AsyncSession = session
 
-    async def of_user(self, user_id: UUID) -> list[PersonalMcpKey]:
+    async def of_user(self, user_id: UUID, page: ListWindow | None = None) -> list[PersonalMcpKey]:
+        statement = select(McpKey).where(McpKey.user_id == user_id)
+        if page is not None:
+            if page.after is not None:
+                created_at = datetime.fromisoformat(page.after.key)
+                statement = statement.where(
+                    (McpKey.created_at < created_at)
+                    | ((McpKey.created_at == created_at) & (McpKey.mcp_key_id < page.after.item_id))
+                )
+            statement = statement.limit(page.limit)
         keys = await self._session.scalars(
-            select(McpKey)
-            .where(McpKey.user_id == user_id)
-            .order_by(McpKey.created_at.desc(), McpKey.mcp_key_id.desc())
+            statement.order_by(McpKey.created_at.desc(), McpKey.mcp_key_id.desc())
         )
         return [self._read(key) for key in keys]
 
@@ -252,19 +272,19 @@ class McpKeyRepository:
         await self._session.flush()
         return self._read(key)
 
-    async def revoke(self, user_id: UUID, key_id: UUID, now: datetime) -> bool | None:
+    async def revoke(self, user_id: UUID, key_id: UUID, now: datetime) -> McpKeyRevokeResult:
         key = await self._session.scalar(
             select(McpKey)
             .where(McpKey.mcp_key_id == key_id, McpKey.user_id == user_id)
             .with_for_update()
         )
         if key is None:
-            return None
+            return McpKeyRevokeResult.NOT_FOUND
         if key.revoked_at is not None:
-            return False
+            return McpKeyRevokeResult.ALREADY_REVOKED
         key.revoked_at = now
         await self._session.flush()
-        return True
+        return McpKeyRevokeResult.REVOKED
 
     @staticmethod
     def _read(key: McpKey) -> PersonalMcpKey:

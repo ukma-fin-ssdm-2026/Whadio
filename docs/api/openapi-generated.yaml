@@ -156,11 +156,13 @@ paths:
       security:
       - sessionCookie: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/McpKeyCreate'
+              anyOf:
+              - $ref: '#/components/schemas/McpKeyCreate'
+              - type: 'null'
+              title: Payload
       responses:
         '201':
           description: The new key and its one-time secret

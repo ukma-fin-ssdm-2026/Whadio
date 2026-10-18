@@ -2,12 +2,14 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Path, Query
+from fastapi import APIRouter, Body, Path, Query
 
 from ...accounts.repositories import PersonalMcpKey
+from ...shared.pagination import ListCursor
 from ..composition import McpKeys
 from ..core.errors import DOC_INVALID, DOC_MALFORMED, DOC_UNAUTHENTICATED, error_responses
-from ..core.schemas import Page, PageQuery, paginate
+from ..core.pagination import list_page, list_window
+from ..core.schemas import Page, PageQuery
 from .auth import BrowserUser
 from .schemas import McpKeyCreate, McpKeyCreated, McpKeyRead
 
@@ -20,7 +22,7 @@ def _read(key: PersonalMcpKey, now: datetime) -> McpKeyRead:
         created_at=key.created_at,
         expires_at=key.expires_at,
         revoked_at=key.revoked_at,
-        is_active=key.revoked_at is None and (key.expires_at is None or key.expires_at > now),
+        is_active=key.is_active(now),
     )
 
 
@@ -35,8 +37,12 @@ def _read(key: PersonalMcpKey, now: datetime) -> McpKeyRead:
 async def list_mcp_keys(
     query: Annotated[PageQuery, Query()], user: BrowserUser, keys: McpKeys
 ) -> Page[McpKeyRead]:
+    scope = f"mcp-keys:{user.id}:newest"
+    found = await keys.list(user.id, list_window(query, scope, chronological=True))
+    last = found[min(len(found), query.limit) - 1] if found else None
+    cursor = None if last is None else ListCursor(last.created_at.isoformat(), last.key_id)
     now = datetime.now(UTC)
-    return paginate([_read(key, now) for key in await keys.list(user.id)], query)
+    return list_page([_read(key, now) for key in found], query, scope, cursor)
 
 
 @router.post(
@@ -48,8 +54,13 @@ async def list_mcp_keys(
     response_description="The new key and its one-time secret",
     responses=error_responses({400: DOC_MALFORMED, 401: DOC_UNAUTHENTICATED, 422: DOC_INVALID}),
 )
-async def create_mcp_key(payload: McpKeyCreate, user: BrowserUser, keys: McpKeys) -> McpKeyCreated:
+async def create_mcp_key(
+    user: BrowserUser,
+    keys: McpKeys,
+    payload: Annotated[McpKeyCreate | None, Body()] = None,
+) -> McpKeyCreated:
     now = datetime.now(UTC)
+    payload = payload or McpKeyCreate()
     created = await keys.create(user.id, payload.expires_in_days, now)
     key = _read(created.key, now)
     return McpKeyCreated(

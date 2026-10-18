@@ -24,6 +24,7 @@ Left for later labs:
 - e-mail notifications, since SMTP is a paid service;
 - administrator monitoring, planned for the observability lab;
 - a self-hosted LLM, which needs a shared GPU host;
+- rate limiting for failed MCP authentication, to be tracked in a separate security issue.
 
 ## Status
 
@@ -34,11 +35,11 @@ Left for later labs:
 | Job contracts, broker, object storage | Andrii | Done | Typed job and result messages between Processing and the workers, RabbitMQ helpers, S3 storage with presigned links |
 | Transcription worker | Andrii | Done | Whisper or Parakeet recognition, pyannote speaker diarization and language detection, on a CPU or a GPU, in parallel slots under a supervisor that stops the worker when it can no longer take jobs |
 | Notes worker | Andrii | Done | Notes written by Claude through the Anthropic API, with presets and a context budget |
-| Accounts & Workspaces | Denys | Done | Sign-in with argon2id password hashes, browser and extension sessions, workspaces and their members |
+| Accounts & Workspaces | Denys | Done | Sign-in with argon2id password hashes, browser and extension sessions, workspaces and their members, and personal MCP key creation, listing and revocation |
 | Processing, Audit | Denys | Done | Processing queues the jobs and stores the workers' results, accepting each result only from the worker that may send it; Audit records changes in the same transaction |
 | Meetings, Access Policy | Valeriia | Done | Upload, folders, transcripts, notes and their Markdown and VTT export; access checks, share links and access requests |
 | Retention | Valeriia | Done | A scheduler job that deletes recordings once they expire |
-| Web SPA | Zlata | In progress | The workspace list, meeting library, upload and settings screens, on mock data; not connected to the API yet |
+| Web SPA | Zlata | Done | Browser sign-in, workspaces, upload, meeting notes and transcripts, workspace settings, and personal MCP key management connected to the API |
 
 The backend runs the whole path: an upload is stored in SeaweedFS and queued for transcription,
 and the web app stores the workers' results as they arrive.
@@ -55,16 +56,14 @@ models or the Compose services.
 
 ## Next steps to Lab 6
 
-1. Let the first account be created: there is no registration route or command yet, so nobody
-   can sign in to a fresh deployment.
-2. Connect the web SPA to the API: sign-in, workspaces, upload, the meeting list, the transcript
-   and the notes.
-3. Run the whole path end to end in Docker Compose, from an uploaded recording to its notes in
+1. Replace the development-user command with the planned registration flow.
+2. Run the whole path end to end in Docker Compose, from an uploaded recording to its notes in
    the browser.
-4. Add a linter, a formatter and `npm audit` for the frontend.
+3. Add a linter, a formatter and `npm audit` for the frontend.
 
 ## AI Usage
 
 Drafted with Claude Code (Claude Opus 5.5) from the repository's state and the team's MVP
 decisions; checked and edited by Andrii Shalaiev, and reviewed through a pull request before
-merging.
+merging. The MCP and Web SPA status updates were prepared with OpenAI Codex and reviewed by
+Zlata.

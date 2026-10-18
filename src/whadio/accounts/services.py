@@ -7,14 +7,15 @@ from datetime import datetime, timedelta
 from typing import Final, Protocol
 from uuid import UUID
 
-from ..audit.enums import AuditAction
 from ..audit.services import (
     IAccountAuditWriter,
     IWorkspaceAuditWriter,
-    McpKeyChanged,
+    McpKeyCreated,
+    McpKeyRevoked,
     WorkspaceDeleted,
 )
 from ..shared.errors import Failure, UseCaseError
+from ..shared.pagination import ListWindow
 from .contracts import UserProfile
 from .enums import NotesTemplate, SessionKind, WorkspaceRole
 from .models import User
@@ -26,6 +27,7 @@ from .repositories import (
     ISessionRepository,
     IWorkspaceRepository,
     IWorkspaceSettingsRepository,
+    McpKeyRevokeResult,
     MemberWorkspace,
     PersonalMcpKey,
 )
@@ -152,8 +154,8 @@ class McpKeyService:
         self._keys: IMcpKeyRepository = keys
         self._audit: IAccountAuditWriter = audit
 
-    async def list(self, user_id: UUID) -> list[PersonalMcpKey]:
-        return await self._keys.of_user(user_id)
+    async def list(self, user_id: UUID, page: ListWindow | None = None) -> list[PersonalMcpKey]:
+        return await self._keys.of_user(user_id, page)
 
     async def create(
         self, user_id: UUID, expires_in_days: int | None, now: datetime
@@ -166,19 +168,15 @@ class McpKeyService:
             expires_at,
             now,
         )
-        await self._audit.write(
-            McpKeyChanged(user_id, key.key_id, AuditAction.MCP_KEY_CREATED, now)
-        )
+        await self._audit.write(McpKeyCreated(user_id, key.key_id, now))
         return CreatedMcpKey(key, secret)
 
     async def revoke(self, user_id: UUID, key_id: UUID, now: datetime) -> None:
-        revoked = await self._keys.revoke(user_id, key_id, now)
-        if revoked is None:
+        result = await self._keys.revoke(user_id, key_id, now)
+        if result is McpKeyRevokeResult.NOT_FOUND:
             raise UseCaseError(Failure.NOT_FOUND)
-        if revoked:
-            await self._audit.write(
-                McpKeyChanged(user_id, key_id, AuditAction.MCP_KEY_REVOKED, now)
-            )
+        if result is McpKeyRevokeResult.REVOKED:
+            await self._audit.write(McpKeyRevoked(user_id, key_id, now))
 
 
 # --- Workspaces ---
