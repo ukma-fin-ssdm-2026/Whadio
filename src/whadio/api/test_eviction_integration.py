@@ -14,14 +14,19 @@ from ..accounts.enums import LlmProvider, NotesTemplate
 from ..accounts.repositories import MembershipRepository
 from ..audit.models import AuditEvent
 from ..meetings.contracts import EvictionNotice, IEvictionNotifier
-from ..meetings.enums import MeetingSource
+from ..meetings.enums import MeetingSource, RecordingStatus
 from ..meetings.models import Meeting, Note, RecordingDeletion
-from ..meetings.persistence import GeneratedNotes, MeetingPersistence, PersistenceDependencies
+from ..meetings.persistence import (
+    AssembledRecording,
+    GeneratedNotes,
+    MeetingPersistence,
+    PersistenceDependencies,
+)
 from ..meetings.processing import IMeetingProcessing
 from ..meetings.repositories import MeetingRepository
 from ..meetings.services import RecordingInput
 from ..shared.database import DatabaseSettings
-from ..shared.errors import UseCaseError
+from ..shared.errors import Failure, UseCaseError
 from .app import create_app
 from .composition import (
     Processing,
@@ -219,6 +224,88 @@ def test_eviction_does_not_notify_departed_creator(database_settings: DatabaseSe
             )
             # Assert
             assert [n.recipient_id for n in notices.notices] == [unit.member]
+
+    asyncio.run(scenario())
+
+
+def test_capture_started_at_capacity_evicts_nothing(database_settings: DatabaseSettings) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            now = datetime.now(UTC)
+            # Act
+            await persistence_fixture(unit, hosted_limit=1).ingest(
+                unit.member,
+                unit.workspace,
+                RecordingInput(None, now, MeetingSource.EXTENSION, consent_confirmed_at=now),
+                now,
+            )
+            kept = await unit.session.get(Meeting, unit.meeting)
+            # Assert
+            assert kept is not None
+
+    asyncio.run(scenario())
+
+
+def test_assembled_capture_at_capacity_evicts_the_earliest_meeting(
+    database_settings: DatabaseSettings,
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            now = datetime.now(UTC)
+            persistence = persistence_fixture(unit, hosted_limit=1)
+            captured = await persistence.ingest(
+                unit.member,
+                unit.workspace,
+                RecordingInput(None, now, MeetingSource.EXTENSION, consent_confirmed_at=now),
+                now,
+            )
+            # Act
+            await persistence.attach_recording(
+                unit.member,
+                captured.meeting_id,
+                AssembledRecording("recording/captured", RecordingStatus.COMPLETE, ()),
+                now,
+            )
+            event = await unit.session.scalar(
+                select(AuditEvent)
+                .where(AuditEvent.meeting_id == unit.meeting)
+                .where(AuditEvent.action == "meeting_evicted")
+            )
+            # Assert
+            assert (None if event is None else (event.actor_user_id, event.details)) == (
+                unit.member,
+                {"meeting_id": str(captured.meeting_id)},
+            )
+
+    asyncio.run(scenario())
+
+
+def test_recording_is_not_attached_for_an_account_outside_the_workspace(
+    database_settings: DatabaseSettings,
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            now = datetime.now(UTC)
+            persistence = persistence_fixture(unit)
+            captured = await persistence.ingest(
+                unit.member,
+                unit.workspace,
+                RecordingInput(None, now, MeetingSource.EXTENSION, consent_confirmed_at=now),
+                now,
+            )
+            # Act
+            with pytest.raises(UseCaseError) as error:
+                await persistence.attach_recording(
+                    unit.outsider,
+                    captured.meeting_id,
+                    AssembledRecording("recording/captured", RecordingStatus.COMPLETE, ()),
+                    now,
+                )
+            # Assert
+            assert error.value.code == Failure.NOT_FOUND
 
     asyncio.run(scenario())
 

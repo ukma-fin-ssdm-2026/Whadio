@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 from ..accounts.repositories import MemberWorkspace
 from ..meetings.enums import MeetingSource, RecordingStatus
 from ..meetings.models import Folder, Meeting
+from ..meetings.persistence import AssembledRecording
 from ..meetings.services import RecordingInput
 from ..shared.errors import Failure, UseCaseError
 from ..shared.storage import ObjectStorageError
@@ -48,9 +49,13 @@ class IMeetingIngestion(Protocol):
     ) -> Meeting: ...
 
 
+class IMeetingAccess(Protocol):
+    async def workspace_id(self, actor_id: UUID, meeting_id: UUID, /) -> UUID: ...
+
+
 class IRecordingAttachment(Protocol):
     async def attach_recording(
-        self, meeting_id: UUID, storage_key: str, status: RecordingStatus, /
+        self, actor_id: UUID, meeting_id: UUID, recording: AssembledRecording, now: datetime, /
     ) -> None: ...
 
 
@@ -65,6 +70,7 @@ class CaptureCollaborators:
     workspaces: IWorkspaces
     folders: IFolders
     ingestion: IMeetingIngestion
+    access: IMeetingAccess
     recordings: IRecordingAttachment
     processing: ITranscriptionQueue
 
@@ -107,6 +113,7 @@ class CaptureService:
 
     Runs inside the caller's transaction. A chunk's object key is fixed by its capture and
     number, so a retried upload overwrites what an earlier, rolled-back attempt left behind.
+    Every call rechecks that the account opening the capture is still allowed the meeting.
     """
 
     def __init__(self, collaborators: CaptureCollaborators) -> None:
@@ -115,6 +122,7 @@ class CaptureService:
         self._workspaces: IWorkspaces = collaborators.workspaces
         self._folders: IFolders = collaborators.folders
         self._ingestion: IMeetingIngestion = collaborators.ingestion
+        self._access: IMeetingAccess = collaborators.access
         self._recordings: IRecordingAttachment = collaborators.recordings
         self._processing: ITranscriptionQueue = collaborators.processing
 
@@ -210,7 +218,14 @@ class CaptureService:
                 assembled.seek(0)
                 await self._put(key, assembled)
             await self._recordings.attach_recording(
-                capture.meeting_id, key, RecordingStatus.COMPLETE
+                user_id,
+                capture.meeting_id,
+                AssembledRecording(
+                    key,
+                    RecordingStatus.COMPLETE,
+                    tuple(chunks[seq].storage_key for seq in sorted(chunks)),
+                ),
+                now,
             )
             await self._processing.queue_transcription(capture.meeting_id)
             await self._repository.close(capture_id, CaptureStatus.ASSEMBLED, last_seq, now)
@@ -223,6 +238,7 @@ class CaptureService:
         capture = await self._repository.get(capture_id, lock=lock)
         if capture is None or capture.opened_by_user_id != user_id:
             raise UseCaseError(Failure.NOT_FOUND)
+        await self._access.workspace_id(user_id, capture.meeting_id)
         return capture
 
     async def _view(self, capture: CaptureSession, status: CaptureStatus) -> CaptureView:

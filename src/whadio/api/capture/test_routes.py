@@ -1,6 +1,7 @@
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import BinaryIO, ClassVar, override
 from uuid import UUID, uuid4
 
@@ -16,8 +17,9 @@ from conftest import AsyncDatabase
 from ...accounts.enums import NotesTemplate, WorkspaceRole
 from ...accounts.models import Workspace, WorkspaceMembership
 from ...meetings.enums import ProcessingState
-from ...meetings.models import Folder, Meeting
+from ...meetings.models import Folder, Meeting, RecordingDeletion
 from ...meetings.processing import IMeetingProcessing
+from ...meetings.repositories import MeetingRepository
 from ...shared.storage import ObjectStorageSettings, S3ObjectStorage, connect_s3_storage
 from ..app import create_app
 from ..composition import (
@@ -171,6 +173,37 @@ def test_extension_recording_becomes_one_stored_file(async_database: AsyncDataba
     joined = run(async_database, scenario)
     # Assert
     assert joined
+
+
+def test_assembled_capture_queues_its_chunks_for_deletion(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(ready: Recorder) -> tuple[set[str], set[str]]:
+        capture = await ready.start()
+        await ready.chunk(capture.id, 0, HEAD)
+        await ready.chunk(capture.id, 1, b"-tail")
+        # Act
+        await ready.client.post(f"/api/v1/captures/{capture.id}/complete", json={"last_seq": 1})
+        pending = set(await ready.session.scalars(select(RecordingDeletion.storage_key)))
+        return pending, {f"captures/{capture.id}/0", f"captures/{capture.id}/1"}
+
+    pending, expected = run(async_database, scenario)
+    # Assert
+    assert pending == expected
+
+
+def test_deleting_an_unfinished_capture_queues_its_chunks(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(ready: Recorder) -> tuple[list[str], list[str]]:
+        capture = await ready.start()
+        await ready.chunk(capture.id, 0, HEAD)
+        # Act
+        await MeetingRepository(ready.session).remove(capture.meeting_id, datetime.now(UTC))
+        pending = list(await ready.session.scalars(select(RecordingDeletion.storage_key)))
+        return pending, [f"captures/{capture.id}/0"]
+
+    pending, expected = run(async_database, scenario)
+    # Assert
+    assert pending == expected
 
 
 def test_capture_meeting_is_recording_in_the_personal_workspace(

@@ -619,8 +619,8 @@ class MeetingService:
     async def attach_recording(
         self, meeting_id: UUID, storage_key: str, status: RecordingStatus
     ) -> None:
-        """Give a meeting still being captured its assembled recording; Capture, which has
-        checked the caller, queues it separately."""
+        """Give a meeting still being captured its assembled recording; MeetingPersistence has
+        checked the caller and the capacity, and Capture queues it separately."""
         meeting = await self._repository.get(meeting_id, lock=True)
         if not storage_key or meeting.processing_state != ProcessingState.RECORDING:
             raise UseCaseError(Failure.VALIDATION_ERROR)

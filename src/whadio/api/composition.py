@@ -384,6 +384,7 @@ def capture_service(
             meetings,
             persistence,
             meetings,
+            persistence,
             processing,
         )
     )

@@ -9,8 +9,8 @@ from pydantic import JsonValue
 
 from ..accounts.enums import NotesTemplate, WorkspaceRole
 from ..accounts.repositories import MemberWorkspace
-from ..meetings.enums import RecordingStatus
 from ..meetings.models import Folder, Meeting
+from ..meetings.persistence import AssembledRecording
 from ..meetings.services import RecordingInput
 from ..shared.errors import Failure, UseCaseError
 from ..shared.storage import ObjectStorageError
@@ -139,7 +139,8 @@ class FakeFolders:
 @dataclass
 class FakeMeetings:
     ingested: list[tuple[UUID, RecordingInput]] = field(default_factory=list)
-    attached: list[tuple[UUID, str, RecordingStatus]] = field(default_factory=list)
+    attached: list[tuple[UUID, UUID, AssembledRecording]] = field(default_factory=list)
+    removed: set[UUID] = field(default_factory=set)
 
     async def ingest(
         self, actor_id: UUID, workspace_id: UUID, recording: RecordingInput, now: datetime, /
@@ -148,10 +149,17 @@ class FakeMeetings:
         self.ingested.append((workspace_id, recording))
         return Meeting(meeting_id=uuid4())
 
+    async def workspace_id(self, actor_id: UUID, meeting_id: UUID, /) -> UUID:
+        del meeting_id
+        if actor_id in self.removed:
+            raise UseCaseError(Failure.NOT_FOUND)
+        return TEAM
+
     async def attach_recording(
-        self, meeting_id: UUID, storage_key: str, status: RecordingStatus, /
+        self, actor_id: UUID, meeting_id: UUID, recording: AssembledRecording, now: datetime, /
     ) -> None:
-        self.attached.append((meeting_id, storage_key, status))
+        del now
+        self.attached.append((actor_id, meeting_id, recording))
 
 
 @dataclass
@@ -183,7 +191,14 @@ def fixture() -> Fixture:
     )
     service = CaptureService(
         CaptureCollaborators(
-            repository, storage, FakeWorkspaces(), FakeFolders(), meetings, meetings, queue
+            repository,
+            storage,
+            FakeWorkspaces(),
+            FakeFolders(),
+            meetings,
+            meetings,
+            meetings,
+            queue,
         )
     )
     return Fixture(service, repository, storage, meetings, queue)
@@ -363,6 +378,34 @@ def test_another_accounts_capture_is_missing() -> None:
     assert error.value.code == Failure.NOT_FOUND
 
 
+def test_chunk_from_a_removed_member_is_refused() -> None:
+    # Arrange
+    setup = fixture()
+    capture_id = started(setup).capture_id
+    setup.meetings.removed.add(USER)
+
+    # Act
+    with pytest.raises(UseCaseError) as error:
+        upload(setup, capture_id, 0, b"head")
+
+    # Assert
+    assert error.value.code == Failure.NOT_FOUND
+
+
+def test_removed_member_cannot_see_their_capture() -> None:
+    # Arrange
+    setup = fixture()
+    capture_id = started(setup).capture_id
+    setup.meetings.removed.add(USER)
+
+    # Act
+    with pytest.raises(UseCaseError) as error:
+        asyncio.run(setup.service.get(USER, capture_id))
+
+    # Assert
+    assert error.value.code == Failure.NOT_FOUND
+
+
 def test_chunk_after_completion_is_refused() -> None:
     # Arrange
     setup = fixture()
@@ -420,7 +463,67 @@ def test_completion_joins_the_chunks_in_order() -> None:
     complete(setup, capture_id, 1)
 
     # Assert
-    assert setup.storage.objects[setup.meetings.attached[0][1]] == b"head-tail"
+    assert setup.storage.objects[setup.meetings.attached[0][2].storage_key] == b"head-tail"
+
+
+def test_completion_hands_every_chunk_over_for_cleanup() -> None:
+    # Arrange
+    setup = fixture()
+    capture_id = started(setup).capture_id
+    upload(setup, capture_id, 1, b"-tail")
+    upload(setup, capture_id, 0, b"head")
+
+    # Act
+    complete(setup, capture_id, 1)
+
+    # Assert
+    assert setup.meetings.attached[0][2].sources == (
+        f"captures/{capture_id}/0",
+        f"captures/{capture_id}/1",
+    )
+
+
+def test_completion_attaches_the_recording_for_the_completing_account() -> None:
+    # Arrange
+    setup = fixture()
+    capture_id = started(setup).capture_id
+    upload(setup, capture_id, 0, b"head")
+
+    # Act
+    complete(setup, capture_id, 0)
+
+    # Assert
+    assert setup.meetings.attached[0][0] == USER
+
+
+def test_completion_by_a_removed_member_is_refused() -> None:
+    # Arrange
+    setup = fixture()
+    capture_id = started(setup).capture_id
+    upload(setup, capture_id, 0, b"head")
+    setup.meetings.removed.add(USER)
+
+    # Act
+    with pytest.raises(UseCaseError) as error:
+        complete(setup, capture_id, 0)
+
+    # Assert
+    assert error.value.code == Failure.NOT_FOUND
+
+
+def test_completion_by_a_removed_member_queues_nothing() -> None:
+    # Arrange
+    setup = fixture()
+    capture_id = started(setup).capture_id
+    upload(setup, capture_id, 0, b"head")
+    setup.meetings.removed.add(USER)
+
+    # Act
+    with pytest.raises(UseCaseError):
+        complete(setup, capture_id, 0)
+
+    # Assert
+    assert (setup.meetings.attached, setup.queue.queued) == ([], [])
 
 
 def test_completion_queues_the_meeting_for_transcription() -> None:
