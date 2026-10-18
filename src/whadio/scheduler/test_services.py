@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.exc import OperationalError
 
+from ..notifications.services import DrainResult
 from ..retention.services import RetentionResult
 from .services import RetentionScheduler
 
@@ -26,6 +27,59 @@ class RetentionJobs:
         if self.stop is not None:
             self.stop.set()
         return RetentionResult([], [], [uuid4()])
+
+
+NOTHING_DUE = DrainResult(sent=0, failed=0)
+
+
+class NotificationJobs:
+    def __init__(self, calls: list[str], result: DrainResult = NOTHING_DUE) -> None:
+        self.calls: list[str] = calls
+        self.result: DrainResult = result
+        self.fail_drain: bool = False
+
+    async def drain(self) -> DrainResult:
+        self.calls.append("drain")
+        if self.fail_drain:
+            raise OperationalError("database unavailable", None, RuntimeError())
+        return self.result
+
+    async def remove_finished(self) -> int:
+        self.calls.append("remove sent")
+        return 0
+
+
+def test_tick_delivers_notifications_after_retention() -> None:
+    # Arrange
+    jobs = RetentionJobs()
+    scheduler = RetentionScheduler(jobs, 60, notifications=NotificationJobs(jobs.calls))
+    # Act
+    asyncio.run(scheduler.tick())
+    # Assert
+    assert jobs.calls == ["cleanup", "retention", "drain", "remove sent"]
+
+
+def test_failed_deliveries_count_as_failures_of_the_tick() -> None:
+    # Arrange
+    jobs = RetentionJobs()
+    notifications = NotificationJobs(jobs.calls, DrainResult(sent=3, failed=2))
+    scheduler = RetentionScheduler(jobs, 60, notifications=notifications)
+    # Act
+    failures = asyncio.run(scheduler.tick())
+    # Assert
+    assert failures == 3
+
+
+def test_sent_notices_are_removed_when_delivery_database_access_fails() -> None:
+    # Arrange
+    jobs = RetentionJobs()
+    notifications = NotificationJobs(jobs.calls)
+    notifications.fail_drain = True
+    scheduler = RetentionScheduler(jobs, 60, notifications=notifications)
+    # Act
+    failures = asyncio.run(scheduler.tick())
+    # Assert
+    assert (jobs.calls[-2:], failures) == (["drain", "remove sent"], 2)
 
 
 def test_retention_still_runs_when_cleanup_database_access_fails() -> None:
