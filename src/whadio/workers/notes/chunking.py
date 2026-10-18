@@ -6,32 +6,32 @@ from ...contracts.common import Segment
 def chunk_segments(segments: Sequence[Segment], max_chars: int) -> list[tuple[Segment, ...]]:
     if not segments:
         return []
-    if max_chars <= 0:
-        raise ValueError("max_chars must be strictly positive, received: ", max_chars)
+    if max_chars < 1:
+        raise ValueError(f"max_chars must be at least 1, got {max_chars}")
 
     chunks: list[tuple[Segment, ...]] = []
-    current_chunk: list[Segment] = []
-    current_chunk_length = 0
-    for s in segments:
-        s_length = len(s.text)
+    current: list[Segment] = []
+    current_size = 0
+    for segment in segments:
+        size = _size(segment)
+        if size > max_chars:
+            if current:
+                chunks.append(tuple(current))
+            chunks.append((segment,))
+            current = []
+            current_size = 0
+        elif current_size + size <= max_chars:
+            current.append(segment)
+            current_size += size
+        else:
+            chunks.append(tuple(current))
+            current = [segment]
+            current_size = size
 
-        if s_length > max_chars:
-            if current_chunk:
-                chunks.append(tuple(current_chunk))
-            chunks.append((s,))
-            current_chunk = []
-            current_chunk_length = 0
-            continue
-        if s_length + current_chunk_length <= max_chars:
-            current_chunk.append(s)
-            current_chunk_length += s_length
-            continue
-
-        chunks.append(tuple(current_chunk))
-        current_chunk_length = s_length
-        current_chunk = [s]
-
-    if current_chunk:
-        chunks.append(tuple(current_chunk))
-
+    if current:
+        chunks.append(tuple(current))
     return chunks
+
+
+def _size(segment: Segment) -> int:
+    return len(segment.text)
