@@ -68,6 +68,17 @@ class S3ObjectStorage:
         except (MinioException, urllib3.exceptions.HTTPError) as error:
             raise ObjectStorageError("Storing an object failed") from error
 
+    def get(self, key: str) -> bytes:
+        try:
+            response = self._client.get_object(self._bucket, key)
+            try:
+                return response.read()
+            finally:
+                response.close()
+                response.release_conn()
+        except (MinioException, urllib3.exceptions.HTTPError) as error:
+            raise ObjectStorageError("Reading an object failed") from error
+
     def delete(self, key: str) -> None:
         try:
             self._client.remove_object(self._bucket, key)

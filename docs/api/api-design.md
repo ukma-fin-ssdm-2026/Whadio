@@ -51,7 +51,9 @@ the original design milestone and are not an assertion that every Designed opera
 Sign-in, sign-out and workspace administration use stored accounts and sessions. An upload is
 stored and queued for transcription and notes, which the workers run; without a broker and
 object storage it refuses with `503 INTEGRATION_UNAVAILABLE`. Notes regeneration is outside the
-MVP and always refuses with `503 INTEGRATION_UNAVAILABLE`. Share access requests and retention
+MVP and always refuses with `503 INTEGRATION_UNAVAILABLE`. A capture from the extension stores
+its chunks in object storage and, once completed, is queued through the same path as an upload;
+an interrupted capture is not finalised yet. Share access requests and retention
 warnings require a Notifications adapter; delivery is outside this slice. MCP reads require
 stored personal keys.
 
@@ -805,7 +807,7 @@ All capture operations accept the extension's bearer token as well as the browse
 
 #### `GET /captures/destinations` · Where a recording can go
 
-- **Status:** Designed · **Caller:** any user · **Success:** `200`, a page of workspaces,
+- **Status:** Implemented · **Caller:** any user · **Success:** `200`, a page of workspaces,
   each with its folders
 - **Rules:** the extension files a recording in a folder before it is processed, because the
   folder is the notes context (FR-012, FR-019).
@@ -813,16 +815,19 @@ All capture operations accept the extension's bearer token as well as the browse
 
 #### `POST /captures` · Start recording
 
-- **Status:** Designed · **Caller:** any member of the target workspace · **Success:** `201`,
-  the open capture
-- **Rules:** `consent_confirmed` must be `true` (FR-009), and it is stored with the meeting.
-  The meeting is created in state `recording`.
+- **Status:** Implemented · **Caller:** any member of the target workspace · **Success:**
+  `201`, the open capture
+- **Rules:**
+  - `consent_confirmed` must be `true` (FR-009), and it is stored with the meeting. The
+    meeting is created in state `recording`.
+  - Without `workspace_id` the meeting goes to the default folder of the caller's personal
+    workspace (FR-012); without `folder_id`, to the default folder of the chosen workspace.
 - **Errors:**
   - `404 NOT_FOUND`: no such workspace, or the caller is not a member.
 
 #### `GET /captures/{capture_id}` · Get a capture
 
-- **Status:** Designed · **Caller:** the account that opened it · **Success:** `200`, the
+- **Status:** Implemented · **Caller:** the account that opened it · **Success:** `200`, the
   capture with `received_seqs`
 - **Rules:** lets the extension resume after a lost connection and upload only what is
   missing.
@@ -831,7 +836,7 @@ All capture operations accept the extension's bearer token as well as the browse
 
 #### `PUT /captures/{capture_id}/chunks/{seq}` · Upload one chunk
 
-- **Status:** Designed · **Caller:** the account that opened it · **Success:** `201` when
+- **Status:** Implemented · **Caller:** the account that opened it · **Success:** `201` when
   stored; `200` when the same chunk was already stored
 - **Rules:**
   - Multipart: `audio` (`audio/*`) and `speaker_events` (the active speakers seen on the Meet
@@ -846,14 +851,15 @@ All capture operations accept the extension's bearer token as well as the browse
 
 #### `POST /captures/{capture_id}/complete` · Finish recording
 
-- **Status:** Designed · **Caller:** the account that opened it · **Success:** `200`, the
+- **Status:** Implemented · **Caller:** the account that opened it · **Success:** `200`, the
   assembled capture
 - **Rules:**
   - Assembles chunks `0..last_seq` and queues the meeting, through the same path as an upload
     (FR-012).
   - Repeating it with the same `last_seq` returns the same result.
   - If the extension never completes, the server finalises the chunks it has as a `partial`
-    recording after a timeout.
+    recording after a timeout. Not built yet: recovering an interrupted capture is outside the
+    MVP.
 - **Errors:**
   - `404 NOT_FOUND`: no such capture, or another account opened it.
   - `409 MISSING_CHUNKS`: some numbers below `last_seq` never arrived; `details` lists them.

@@ -44,7 +44,7 @@ infra/            configuration that compose.yaml mounts into the services
 | `processing` | Processing | Denys |
 | `audit` | Audit | Denys |
 | `retention` | Retention | Valeriia |
-| `capture` | Capture: the recording upload | to be assigned |
+| `capture` | Capture: the recording upload | Denys |
 | `export`, `notifications`, `admin` | Export, Notifications, Admin & Monitoring | after the MVP |
 | `contracts`, `workers` | Job contracts, Transcription and Notes pipelines | Andrii, Zlata |
 | `frontend/` | Web SPA | Zlata |

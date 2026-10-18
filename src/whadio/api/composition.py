@@ -36,6 +36,8 @@ from ..accounts.services import (
 )
 from ..audit.contracts import IContentAuditWriter
 from ..audit.services import AuditWriter
+from ..capture.repositories import CaptureRepository
+from ..capture.services import CaptureCollaborators, CaptureService, IChunkStorage
 from ..meetings.contracts import EvictionNotice, IEvictionNotifier, QueuedNotes
 from ..meetings.persistence import MeetingPersistence, PersistenceDependencies
 from ..meetings.processing import IMeetingProcessing
@@ -357,6 +359,37 @@ def workspace_service(session: Session) -> WorkspaceService:
 
 
 Workspaces = Annotated[WorkspaceService, Depends(workspace_service)]
+
+
+def capture_storage() -> IChunkStorage:
+    settings = MeetingSettings()
+    if settings.storage is None:
+        raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+    return connect_s3_storage(settings.storage)
+
+
+def capture_service(
+    session: Session,
+    storage: Annotated[IChunkStorage, Depends(capture_storage)],
+    workspaces: Workspaces,
+    meetings: Meetings,
+    persistence: Persistence,
+    processing: Processing,
+) -> CaptureService:
+    return CaptureService(
+        CaptureCollaborators(
+            CaptureRepository(session),
+            storage,
+            workspaces,
+            meetings,
+            persistence,
+            meetings,
+            processing,
+        )
+    )
+
+
+Captures = Annotated[CaptureService, Depends(capture_service)]
 
 
 @dataclass(frozen=True)
