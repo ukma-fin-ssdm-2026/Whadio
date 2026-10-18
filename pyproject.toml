@@ -104,6 +104,7 @@ ignore = [
 "src/whadio/api/**/*.py" = ["PLR0913", "PLR0917"] # FastAPI injects every input as a parameter
 "src/whadio/cli.py" = ["PLC0415"]                 # each command imports its own runtime
 "src/whadio/workers/asr/slot.py" = ["PLC0415"]    # model libraries load only in the slot's child
+".github/scripts/*.py" = ["INP001", "S314"]      # standalone CI scripts reading our own pytest XML
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "typing.Any".msg = "Any is banned: type the value, or validate it at the boundary"
