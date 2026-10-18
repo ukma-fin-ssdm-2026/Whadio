@@ -1,7 +1,9 @@
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
+from functools import partial
 from uuid import UUID, uuid4
 
 import pytest
@@ -235,6 +237,7 @@ class Pipeline:
     jobs: FakeJobs
     meetings: FakeMeetings
     notes: FakeNotes
+    storage: InMemoryObjectStorage
     publisher: FakePublisher = field(default_factory=FakePublisher)
 
     @property
@@ -244,13 +247,13 @@ class Pipeline:
 
 def make_pipeline(meeting: Meeting | None = None) -> Pipeline:
     jobs, meetings, notes = FakeJobs(), FakeMeetings(meeting or meeting_row()), FakeNotes()
+    storage = InMemoryObjectStorage(now=FixedClock(NOW))
     return Pipeline(
-        ProcessingService(
-            jobs, meetings, notes, FakeWorkspaces(), InMemoryObjectStorage(now=FixedClock(NOW))
-        ),
+        ProcessingService(jobs, meetings, notes, FakeWorkspaces(), storage),
         jobs,
         meetings,
         notes,
+        storage,
     )
 
 
@@ -895,3 +898,28 @@ def test_dead_letter_of_a_finished_job_changes_nothing() -> None:
     asyncio.run(pipeline.service.dead_lettered(job_id, NOW))
     # Assert
     assert pipeline.meetings.update.state is ProcessingState.QUEUED
+
+
+# --- Recording storage ---
+
+
+@pytest.mark.parametrize(
+    "finish",
+    [notes_ready, partial(notes_failed, reason=NotesFailure.PROVIDER_AUTH_FAILED)],
+    ids=["processed", "failed"],
+)
+def test_processing_a_meeting_neither_uploads_nor_deletes_its_recording(
+    finish: Callable[[Pipeline, UUID], ProcessingResult],
+) -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    # Act
+    queue(pipeline)
+    (transcription,) = transcription_requests(publish_all(pipeline))
+    handle(pipeline, started(pipeline, transcription.job_id))
+    handle(pipeline, transcript_ready(pipeline, transcription.job_id))
+    (notes,) = notes_requests(publish_all(pipeline))
+    handle(pipeline, started(pipeline, notes.job_id, JobKind.NOTES))
+    handle(pipeline, finish(pipeline, notes.job_id))
+    # Assert
+    assert (pipeline.storage.uploaded, pipeline.storage.deleted) == ([], [])
