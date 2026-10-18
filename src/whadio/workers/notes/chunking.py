@@ -11,7 +11,12 @@ def chunk_segments(segments: Sequence[Segment], max_chars: int) -> list[tuple[Se
     current_chunk: list[Segment] = []
     current_chunk_length = 0
     for s in segments:
-        if (s_length := len(s.text)) + current_chunk_length <= max_chars:
+        s_length = len(s.text)
+
+        if s_length > max_chars:
+            chunks.append(tuple(current_chunk))
+            current_chunk = [s]
+        elif s_length + current_chunk_length <= max_chars:
             current_chunk.append(s)
             current_chunk_length += s_length
             continue
