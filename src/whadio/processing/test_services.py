@@ -812,6 +812,19 @@ def test_redelivered_failure_of_a_requeued_job_publishes_nothing_more() -> None:
     assert len(publish_all(pipeline)) == 1
 
 
+def test_job_at_the_attempt_limit_is_not_published_again() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION, attempts=MAX_ATTEMPTS)
+    handle(
+        pipeline, transcription_failed(pipeline, job_id, TranscriptionFailure.AUDIO_LINK_EXPIRED)
+    )
+    # Act
+    requests = publish_all(pipeline)
+    # Assert
+    assert requests == []
+
+
 def test_retryable_failure_past_the_attempt_limit_fails_the_meeting() -> None:
     # Arrange
     pipeline = make_pipeline()
