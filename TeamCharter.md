@@ -93,13 +93,13 @@ Overload -> notify in the primary channel -> brief discussion and selection of a
 ## 11. Code Quality and Review Policy
 - Coding standard:
     - Python: PEP 8, enforced by `ruff format` and by `ruff check` with every rule enabled; strict types, checked by ty and basedpyright; the house rules in `AGENTS.md`, "Code standards";
-    - frontend: no linter or formatter yet, a known gap (`docs/code-quality/static-analysis.md`).
-- Mandatory tools: Ruff, ty, basedpyright, Bandit, import-linter, deptry, gitleaks, zizmor, actionlint, typos, pytest, uv audit and Dependabot; `docs/code-quality/static-analysis.md` lists what each one checks.
+    - frontend: formatted by Biome and checked by its recommended lint rules, the React and accessibility rules included; every rule exception sits in `frontend/biome.jsonc` with a reason.
+- Mandatory tools: Ruff, Biome, ty, basedpyright, Bandit, import-linter, deptry, gitleaks, zizmor, actionlint, typos, pytest, uv audit, npm audit and Dependabot; `docs/code-quality/static-analysis.md` lists what each one checks.
 - Where the checks run:
-    - every commit: the pre-commit hooks, the fast tests included;
+    - every commit: the pre-commit hooks, the fast tests included, and Biome when the commit touches the frontend;
     - every push: the whole test suite, which fails below 85% line and branch coverage, so the push needs the Compose services and `WHADIO_TEST_DATABASE_URL`;
-    - CI, on every push and pull request: the same hooks on all files, the whole test suite against the Compose services with the same coverage gate, the dependency audit, a secret scan of the whole history, and the pull request title and commit messages;
-    - checks are never bypassed (`--no-verify`, `SKIP=`), and inline suppressions are refused: a false positive gets a scoped exception in `pyproject.toml` with a one-line reason, in its own pull request.
+    - CI, on every push and pull request: the same hooks on all files, Biome included, the whole test suite against the Compose services with the same coverage gate, the dependency audit (uv audit, and npm audit for the frontend, its build tools included), a secret scan of the whole history, and the pull request title and commit messages;
+    - checks are never bypassed (`--no-verify`, `SKIP=`), and inline suppressions are refused: a false positive gets a scoped exception in `pyproject.toml` or `frontend/biome.jsonc` with a one-line reason, in its own pull request.
 - Code review rules:
     - each PR requires at least one approval, and the reviewer submits the review themselves;
     - AI-assisted review: the reviewer goes through the PR with an AI agent, discusses its findings, and posts only the comments they agree with and can justify. The agent, the depth of discussion, and how comments reach GitHub (inline, in the summary, drafted by the agent as a pending review) are the reviewer's choice. PRs that only add report links or signatures are exempt;

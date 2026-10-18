@@ -30,7 +30,7 @@ Left for later labs:
 
 | Component | Owner | Status | What exists |
 |---|---|---|---|
-| Tooling and CI | Andrii | Done | Pre-commit hooks, CI, the dependency audit and Dependabot ([static analysis](static-analysis.md)) |
+| Tooling and CI | Andrii | Done | Pre-commit hooks, CI, the dependency audit and Dependabot, for the backend and the frontend ([static analysis](static-analysis.md)) |
 | Database | Valeriia | Done | The schema split by owning module, six Alembic migrations, separate owner and application roles, and integrity guards: one Owner and one default folder per workspace, a sealed original transcript, an append-only audit log ([database](../architecture/database.md)) |
 | Job contracts, broker, object storage | Andrii | Done | Typed job and result messages between Processing and the workers, RabbitMQ helpers, S3 storage with presigned links |
 | Transcription worker | Andrii | Done | Whisper or Parakeet recognition, pyannote speaker diarization and language detection, on a CPU or a GPU, in parallel slots under a supervisor that stops the worker when it can no longer take jobs |
@@ -59,7 +59,8 @@ models or the Compose services.
 1. Replace the development-user command with the planned registration flow.
 2. Run the whole path end to end in Docker Compose, from an uploaded recording to its notes in
    the browser.
-3. Add a linter, a formatter and `npm audit` for the frontend.
+3. ~~Add a linter, a formatter and `npm audit` for the frontend.~~ Done: Biome and `npm audit`
+   run in the hooks and CI.
 
 ## AI Usage
 

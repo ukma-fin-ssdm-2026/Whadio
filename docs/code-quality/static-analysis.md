@@ -4,16 +4,18 @@ Commit analysed: `2d2c949` on `main` (PR #68 merged).
 
 ## What runs and where
 
-Every tool below runs in the pre-commit hook (`.pre-commit-config.yaml`) and again in CI (`.github/workflows/ci.yml`). `uv run task check` runs the same set locally. Inline suppressions (`# noqa`, `# nosec`, `# type: ignore`, ...) are refused by the `no-suppressions` hook, so a finding has to be fixed in the code or excepted in `pyproject.toml` with a reason.
+Every tool below runs in the pre-commit hook (`.pre-commit-config.yaml`) and again in CI (`.github/workflows/ci.yml`). `uv run task check` runs the same set locally. Inline suppressions (`# noqa`, `# nosec`, `# type: ignore`, `biome-ignore`, ...) are refused by the `no-suppressions` hook, so a finding has to be fixed in the code or excepted in `pyproject.toml` or `frontend/biome.jsonc` with a reason.
 
 | Tool | Layer | What it checks |
 |---|---|---|
 | Bandit 1.9.4 | security | Python security issues: hardcoded secrets, injection, unsafe calls |
 | ruff (`select = ["ALL"]`) | style, bugs, security | PEP 8, formatting, and the flake8-bandit `S` rules |
+| Biome 2.5.15 | frontend style, bugs | formatting, import order and the recommended lint rules, React hooks and accessibility included; warnings fail too |
 | ty, basedpyright | types | strict typing, no `Any` or `cast` escape hatches |
 | import-linter | architecture | modules call only the modules below them in the component diagram |
 | gitleaks, detect-private-key | secrets | keys and passwords in staged changes; `task audit` scans the whole history |
 | uv audit, Dependabot | dependencies | known vulnerabilities in locked packages |
+| npm audit | dependencies | known high and critical vulnerabilities in the frontend's packages, the build tools included; runs in `task audit` |
 | deptry | dependencies | unused, missing and misplaced dependencies |
 | zizmor, actionlint | CI | unsafe GitHub Actions workflows |
 
