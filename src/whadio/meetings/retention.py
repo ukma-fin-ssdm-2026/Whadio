@@ -8,11 +8,19 @@ from sqlalchemy import delete, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..access_policy.services import IRetentionAccess
+from .enums import RecordingExpiryStatus
 from .models import Meeting, RecordingDeletion
 from .repositories import MeetingRepository
 
 WARNING_PERIOD = timedelta(days=7)
 BATCH_SIZE = 100
+
+
+def recording_expiry_status(deadline: datetime, now: datetime) -> RecordingExpiryStatus:
+    remaining = deadline - now
+    if remaining <= timedelta(days=7):
+        return RecordingExpiryStatus.EXPIRING_SOON
+    return RecordingExpiryStatus.AVAILABLE
 
 
 class NotificationUnavailableError(Exception):

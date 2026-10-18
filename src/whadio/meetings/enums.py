@@ -35,3 +35,8 @@ class ProcessingFailure(StrEnum):
     PROVIDER_UNAVAILABLE = "provider_unavailable"
     PROVIDER_REJECTED = "provider_rejected"
     PROCESSING_TIMEOUT = "processing_timeout"
+
+
+class RecordingExpiryStatus(StrEnum):
+    AVAILABLE = "available"
+    EXPIRING_SOON = "expiring_soon"
