@@ -1,7 +1,7 @@
 import unicodedata
 from typing import Final
 
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
 from pydantic import TypeAdapter, ValidationError
 
@@ -17,6 +17,12 @@ _PADDING: Final = st.text(
 _RAW_TEXT: Final = st.tuples(
     _PADDING, st.text(), st.characters(categories=["L", "N", "P", "S"]), st.text(), _PADDING
 ).map("".join)
+# Hypothesis merges a one_of of character strategies into one code-point range, where the five
+# blank graphics would almost never be drawn; a one_of of whole texts keeps them in play.
+_INVISIBLE_TEXT: Final = st.one_of(
+    st.text(st.characters(exclude_categories=["L", "N", "P", "S", "Cs"])),
+    st.text(st.sampled_from(sorted(_BLANK_GRAPHICS)), min_size=1),
+)
 
 
 def _validated(value: str) -> str | None:
@@ -39,13 +45,16 @@ def test_accepted_display_text_is_stripped(value: str) -> None:
     assert accepted is None or accepted == accepted.strip()
 
 
-@given(_RAW_TEXT)
-def test_accepted_display_text_is_not_empty(value: str) -> None:
+@given(_INVISIBLE_TEXT)
+@example("")
+@example(" \t ")
+@example("\u200b")
+def test_display_text_without_a_visible_character_is_rejected(value: str) -> None:
     # Act
     accepted = _validated(value)
 
     # Assert
-    assert accepted != ""
+    assert accepted is None
 
 
 @given(_RAW_TEXT)
