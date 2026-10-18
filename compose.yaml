@@ -108,6 +108,8 @@ services:
       - 127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025
       - 127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025
 
+  # No depends_on llm-runtime: workers:up enables the gpu profile on machines without an NVIDIA
+  # runtime too, where the runtime cannot start. A runtime that is down fails a job as retryable.
   notes-worker:
     <<: *worker
     profiles: [core]
@@ -116,6 +118,13 @@ services:
       WHADIO_BROKER__URL: amqp://whadio-notes:${RABBITMQ_NOTES_PASSWORD:-}@rabbitmq:5672/whadio
       # `:-`, not `:?`: Compose reads the whole file, so `:?` would break every command.
       WHADIO_NOTES__LLM__API_KEY: ${WHADIO_NOTES__LLM__API_KEY:-}
+      # Passed only when set in .env: both providers read MODEL, so no default fits both.
+      WHADIO_NOTES__LLM__PROVIDER:
+      WHADIO_NOTES__LLM__MODEL:
+      WHADIO_NOTES__LLM__NUM_CTX:
+      WHADIO_NOTES__LLM__KEEP_ALIVE:
+      WHADIO_NOTES__CONCURRENCY:
+      WHADIO_NOTES__LLM__BASE_URL: http://llm-runtime:11434
 
   asr-worker:
     <<: *worker
@@ -128,8 +137,45 @@ services:
     volumes:
       - asr-models:/var/cache/huggingface
 
+  llm-runtime:
+    image: ollama/ollama:0.35.1
+    profiles: [gpu]
+    environment:
+      OLLAMA_NUM_PARALLEL: "1"
+      # The notes worker sends its own keep_alive with every request, which takes precedence.
+      OLLAMA_KEEP_ALIVE: 5m
+    volumes:
+      - llm-models:/root/.ollama
+    ports:
+      - 127.0.0.1:${OLLAMA_PORT:-11434}:11434
+    healthcheck:
+      <<: *healthcheck
+      test: [CMD, ollama, list]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # Runs once and pulls the model the notes worker is set to use.
+  llm-pull:
+    image: ollama/ollama:0.35.1
+    profiles: [gpu]
+    entrypoint: [sh, /pull.sh]
+    depends_on:
+      llm-runtime:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://llm-runtime:11434
+      LLM_MODEL: ${WHADIO_NOTES__LLM__MODEL:-}
+    volumes:
+      - ./infra/ollama/pull.sh:/pull.sh:ro
+
 volumes:
   postgres-data:
   rabbitmq-data:
   seaweedfs-data:
   asr-models:
+  llm-models:
