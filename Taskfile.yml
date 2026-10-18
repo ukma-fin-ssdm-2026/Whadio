@@ -96,3 +96,18 @@ tasks:
     desc: Follow the workers' logs
     cmds:
       - docker compose --profile core --profile gpu logs --follow notes-worker asr-worker
+
+  llm:up:
+    desc: Start Ollama on the GPU and pull the notes model from .env; the first pull takes a while
+    preconditions:
+      - sh: test -f .env
+        msg: Copy .env.example to .env first
+    cmds:
+      - docker compose --profile gpu up --detach --wait llm-runtime
+      # `up --wait` returns once the one-shot pull is running, not when it has finished.
+      - docker compose --profile gpu run --rm llm-pull
+
+  llm:logs:
+    desc: Follow the Ollama runtime's logs
+    cmds:
+      - docker compose --profile gpu logs --follow llm-runtime
