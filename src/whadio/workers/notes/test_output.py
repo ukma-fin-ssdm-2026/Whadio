@@ -66,6 +66,38 @@ def test_subsections_inside_a_section_are_allowed() -> None:
 
 
 @pytest.mark.parametrize(
+    "length",
+    [
+        pytest.param(1, id="bva-min"),
+        pytest.param(2, id="bva-above-min"),
+        pytest.param(100, id="bva-nominal"),
+        pytest.param(199, id="bva-below-max"),
+        pytest.param(200, id="bva-max"),
+    ],
+)
+def test_title_of_1_to_200_characters_becomes_the_name(length: int) -> None:
+    # Arrange
+    notes = _NOTES.replace("Планування MVP", "x" * length)
+
+    # Act
+    parsed = parse_notes(notes, _HEADINGS)
+
+    # Assert
+    assert parsed.proposed_name == "x" * length
+
+
+def test_title_spaces_are_collapsed_before_its_length_is_counted() -> None:
+    # Arrange
+    notes = _NOTES.replace("Планування MVP", f"{'x' * 100}   {'x' * 99}  ")
+
+    # Act
+    parsed = parse_notes(notes, _HEADINGS)
+
+    # Assert
+    assert parsed.proposed_name == f"{'x' * 100} {'x' * 99}"
+
+
+@pytest.mark.parametrize(
     "notes",
     [
         pytest.param(_NOTES.removeprefix("# Планування MVP\n"), id="no title"),
