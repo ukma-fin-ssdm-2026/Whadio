@@ -98,7 +98,6 @@ def test_chunk_after_an_overflow_counts_its_first_segment() -> None:
     assert chunks == [(segments[0],), (segments[1],), (segments[2],)]
 
 
-@pytest.mark.xfail(strict=True, raises=pytest.fail.Exception)
 def test_max_chars_check_comes_before_empty_segments_check() -> None:
     # Arrange
     segments: list[Segment] = []
