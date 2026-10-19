@@ -115,6 +115,9 @@ class FakeMeetingRepository:
     async def release_upload(self, key: str) -> None:
         raise NotImplementedError(key)
 
+    async def schedule_deletion(self, keys: list[str], now: datetime) -> None:
+        raise NotImplementedError(keys, now)
+
     async def save_initial(self, version: TranscriptVersion) -> None:
         raise NotImplementedError(version)
 

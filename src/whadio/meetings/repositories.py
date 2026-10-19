@@ -4,6 +4,7 @@ from uuid import UUID
 
 from psycopg.errors import UniqueViolation
 from sqlalchemy import Select, case, delete, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +39,8 @@ class IMeetingRepository(Protocol):
     async def lock_upload(self, key: str) -> None: ...
 
     async def release_upload(self, key: str) -> None: ...
+
+    async def schedule_deletion(self, keys: list[str], now: datetime) -> None: ...
 
     async def save_initial(self, version: TranscriptVersion) -> None: ...
 
@@ -115,6 +118,14 @@ class MeetingRepository:
         await self._session.execute(
             delete(RecordingDeletion).where(RecordingDeletion.storage_key == key)
         )
+
+    async def schedule_deletion(self, keys: list[str], now: datetime) -> None:
+        if keys:
+            await self._session.execute(
+                insert(RecordingDeletion)
+                .values([{"storage_key": key, "created_at": now} for key in keys])
+                .on_conflict_do_nothing(index_elements=[RecordingDeletion.storage_key])
+            )
 
     async def capacity_overflow(self, workspace_ids: list[UUID], limit: int) -> list[Meeting]:
         count = await self._session.scalar(

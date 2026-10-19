@@ -51,8 +51,10 @@ from .services import (
     TRANSCRIPT_EXISTS,
     UNPUBLISHABLE,
     JobRequest,
+    ProcessingCollaborators,
     ProcessingService,
 )
+from .speakers import SpeakerEvent
 
 
 def stored_version(*speaker_names: str) -> TranscriptVersion:
@@ -220,6 +222,14 @@ class FakeWorkspaces:
         return NotesTemplate.DETAILED
 
 
+@dataclass
+class FakeTimeline:
+    events: tuple[SpeakerEvent, ...] = ()
+
+    async def speaker_events(self, _meeting_id: UUID) -> tuple[SpeakerEvent, ...]:
+        return self.events
+
+
 class FakePublisher:
     def __init__(self) -> None:
         self.requests: list[JobRequest] = []
@@ -245,11 +255,17 @@ class Pipeline:
         return self.meetings.meeting.meeting_id
 
 
-def make_pipeline(meeting: Meeting | None = None) -> Pipeline:
+def make_pipeline(
+    meeting: Meeting | None = None, events: tuple[SpeakerEvent, ...] = ()
+) -> Pipeline:
     jobs, meetings, notes = FakeJobs(), FakeMeetings(meeting or meeting_row()), FakeNotes()
     storage = InMemoryObjectStorage(now=FixedClock(NOW))
     return Pipeline(
-        ProcessingService(jobs, meetings, notes, FakeWorkspaces(), storage),
+        ProcessingService(
+            ProcessingCollaborators(
+                jobs, meetings, notes, FakeWorkspaces(), storage, FakeTimeline(events)
+            )
+        ),
         jobs,
         meetings,
         notes,
@@ -544,6 +560,28 @@ def test_ready_transcript_is_saved_under_its_job() -> None:
         speakers=(InitialSpeaker("Speaker 1", "Speaker 1"),),
         segments=(InitialSegment("Speaker 1", Decimal("0.5"), Decimal("2.0"), "Привіт"),),
     )
+
+
+def test_ready_transcript_names_the_speaker_the_capture_saw() -> None:
+    # Arrange
+    pipeline = make_pipeline(events=(SpeakerEvent(0.0, ("Alice",)),))
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION)
+    # Act
+    handle(pipeline, transcript_ready(pipeline, job_id))
+    # Assert
+    assert pipeline.meetings.saved is not None
+    assert pipeline.meetings.saved.speakers == (InitialSpeaker("Speaker 1", "Alice"),)
+
+
+def test_named_speaker_keeps_the_segments_on_its_label() -> None:
+    # Arrange
+    pipeline = make_pipeline(events=(SpeakerEvent(0.0, ("Alice",)),))
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION)
+    # Act
+    handle(pipeline, transcript_ready(pipeline, job_id))
+    # Assert
+    assert pipeline.meetings.saved is not None
+    assert [segment.speaker_key for segment in pipeline.meetings.saved.segments] == ["Speaker 1"]
 
 
 def test_ready_transcript_records_the_duration() -> None:

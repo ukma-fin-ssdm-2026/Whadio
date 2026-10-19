@@ -36,6 +36,13 @@ from ..accounts.services import (
 )
 from ..audit.contracts import IContentAuditWriter
 from ..audit.services import AuditWriter
+from ..capture.repositories import CaptureRepository
+from ..capture.services import (
+    CaptureCollaborators,
+    CaptureService,
+    CaptureSpeakerTimeline,
+    IChunkStorage,
+)
 from ..meetings.contracts import EvictionNotice, IEvictionNotifier, QueuedNotes
 from ..meetings.persistence import MeetingPersistence, PersistenceDependencies
 from ..meetings.processing import IMeetingProcessing
@@ -52,7 +59,7 @@ from ..processing.consumer import (
     serve_results,
 )
 from ..processing.repositories import JobRepository
-from ..processing.services import ProcessingService
+from ..processing.services import ProcessingCollaborators, ProcessingService
 from ..shared.database import Database, DatabaseSettings, IUseCaseTransactions
 from ..shared.errors import Failure, UseCaseError
 from ..shared.storage import IObjectStorage, connect_s3_storage
@@ -94,20 +101,23 @@ class CompositionRoot:
         meetings = meeting_service(session, AuditWriter(session))
         memberships = WorkspaceMembershipService(MembershipRepository(session))
         return ProcessingService(
-            JobRepository(session),
-            meetings,
-            MeetingPersistence(
-                PersistenceDependencies(
-                    meetings,
-                    MeetingRepository(session),
-                    memberships,
-                    AuditWriter(session),
-                    AccessPolicy(AccessRepository(session), memberships),
-                    UnavailableEvictionNotifications(),
-                )
-            ),
-            WorkspaceSettingsService(WorkspaceSettingsRepository(session)),
-            self._storage,
+            ProcessingCollaborators(
+                JobRepository(session),
+                meetings,
+                MeetingPersistence(
+                    PersistenceDependencies(
+                        meetings,
+                        MeetingRepository(session),
+                        memberships,
+                        AuditWriter(session),
+                        AccessPolicy(AccessRepository(session), memberships),
+                        UnavailableEvictionNotifications(),
+                    )
+                ),
+                WorkspaceSettingsService(WorkspaceSettingsRepository(session)),
+                self._storage,
+                CaptureSpeakerTimeline(CaptureRepository(session)),
+            )
         )
 
     @asynccontextmanager
@@ -357,6 +367,38 @@ def workspace_service(session: Session) -> WorkspaceService:
 
 
 Workspaces = Annotated[WorkspaceService, Depends(workspace_service)]
+
+
+def capture_storage() -> IChunkStorage:
+    settings = MeetingSettings()
+    if settings.storage is None:
+        raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+    return connect_s3_storage(settings.storage)
+
+
+def capture_service(
+    session: Session,
+    storage: Annotated[IChunkStorage, Depends(capture_storage)],
+    workspaces: Workspaces,
+    meetings: Meetings,
+    persistence: Persistence,
+    processing: Processing,
+) -> CaptureService:
+    return CaptureService(
+        CaptureCollaborators(
+            CaptureRepository(session),
+            storage,
+            workspaces,
+            meetings,
+            persistence,
+            meetings,
+            persistence,
+            processing,
+        )
+    )
+
+
+Captures = Annotated[CaptureService, Depends(capture_service)]
 
 
 @dataclass(frozen=True)

@@ -28,6 +28,8 @@ from ..accounts.services import WorkspaceSettingsService
 from ..audit.contracts import ContentEvent
 from ..audit.models import AuditEvent
 from ..audit.services import AuditWriter
+from ..capture.repositories import CaptureRepository
+from ..capture.services import CaptureSpeakerTimeline
 from ..meetings.contracts import (
     ContextReference,
     EvictionNotice,
@@ -65,7 +67,7 @@ from ..meetings.services import MeetingService, RecordingInput, TranscriptEdit
 from ..processing.enums import JobStatus, JobType
 from ..processing.models import ProcessingJob
 from ..processing.repositories import JobRepository
-from ..processing.services import ProcessingService
+from ..processing.services import ProcessingCollaborators, ProcessingService
 from ..retention.services import RetentionService, StorageUnavailableError
 from ..shared.database import Database, DatabaseSettings
 from ..shared.errors import Failure, UseCaseError
@@ -1556,11 +1558,14 @@ def test_upload_queues_a_transcription_job_to_publish(database_settings: Databas
                     unit.database,
                     integrations=RuntimeIntegrations(
                         processing=lambda _session: ProcessingService(
-                            JobRepository(unit.session),
-                            unit.meetings,
-                            persistence_fixture(unit),
-                            WorkspaceSettingsService(WorkspaceSettingsRepository(unit.session)),
-                            storage,
+                            ProcessingCollaborators(
+                                JobRepository(unit.session),
+                                unit.meetings,
+                                persistence_fixture(unit),
+                                WorkspaceSettingsService(WorkspaceSettingsRepository(unit.session)),
+                                storage,
+                                CaptureSpeakerTimeline(CaptureRepository(unit.session)),
+                            )
                         )
                     ),
                 )

@@ -4587,6 +4587,497 @@
         }
       }
     },
+    "/api/v1/captures/destinations": {
+      "get": {
+        "tags": [
+          "capture"
+        ],
+        "summary": "Where a recording can go",
+        "description": "The caller's workspaces, oldest first, each with the folders a recording can be filed in. The folder is the notes context, so it is chosen before recording.",
+        "operationId": "list_destinations_api_v1_captures_destinations_get",
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "extensionToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of items to return",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Maximum number of items to return"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque `next_cursor` from the previous page; omit for the first page",
+              "title": "Cursor"
+            },
+            "description": "Opaque `next_cursor` from the previous page; omit for the first page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of workspaces with their folders",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_DestinationRead_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/captures": {
+      "post": {
+        "tags": [
+          "capture"
+        ],
+        "summary": "Start recording",
+        "description": "Opens a capture and creates its meeting in state `recording`. `consent_confirmed` must be `true`, and the confirmation is stored with the meeting. Without a destination the meeting goes to the default folder of the caller's personal workspace.",
+        "operationId": "start_capture_api_v1_captures_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptureCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The open capture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`NOT_FOUND`: no such workspace, or the caller is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each; `consent_confirmed` must be `true`, and `folder_id` must be a folder of the workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "extensionToken": []
+          }
+        ]
+      }
+    },
+    "/api/v1/captures/{capture_id}": {
+      "get": {
+        "tags": [
+          "capture"
+        ],
+        "summary": "Get a capture",
+        "description": "The capture with the numbers of the chunks already stored, so the extension can resume after a lost connection and upload only what is missing.",
+        "operationId": "get_capture_api_v1_captures__capture_id__get",
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "extensionToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "capture_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Capture identifier",
+              "examples": [
+                "3c2b1a09-8f7e-4d6c-b5a4-93827160f5e4"
+              ],
+              "title": "Capture Id"
+            },
+            "description": "Capture identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The capture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`NOT_FOUND`: no such capture, or another account opened it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/captures/{capture_id}/chunks/{seq}": {
+      "put": {
+        "tags": [
+          "capture"
+        ],
+        "summary": "Upload one chunk",
+        "description": "Multipart with the `audio` part (`audio/*`) and `speaker_events`, a JSON list of the participants seen speaking during the chunk. Uploading the same chunk again changes nothing.",
+        "operationId": "put_chunk_api_v1_captures__capture_id__chunks__seq__put",
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "extensionToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "capture_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Capture identifier",
+              "examples": [
+                "3c2b1a09-8f7e-4d6c-b5a4-93827160f5e4"
+              ],
+              "title": "Capture Id"
+            },
+            "description": "Capture identifier"
+          },
+          {
+            "name": "seq",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000000,
+              "minimum": 0,
+              "description": "Chunk number, from 0 in recording order",
+              "title": "Seq"
+            },
+            "description": "Chunk number, from 0 in recording order"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_put_chunk_api_v1_captures__capture_id__chunks__seq__put"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The chunk was stored",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "200": {
+            "description": "The same chunk was already stored"
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`NOT_FOUND`: no such capture, or another account opened it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`CHUNK_MISMATCH`: different audio is already stored under this number; `CAPTURE_CLOSED`: the capture was completed or finalised",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "`PAYLOAD_TOO_LARGE`: the chunk exceeds `max_chunk_bytes`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "`UNSUPPORTED_MEDIA_TYPE`: the part is not `audio/*`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each; the chunk is empty or `speaker_events` is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/captures/{capture_id}/complete": {
+      "post": {
+        "tags": [
+          "capture"
+        ],
+        "summary": "Finish recording",
+        "description": "Joins chunks `0..last_seq` into the recording and queues the meeting through the same path as an upload. Repeating it with the same `last_seq` returns the same result.",
+        "operationId": "complete_capture_api_v1_captures__capture_id__complete_post",
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "extensionToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "capture_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Capture identifier",
+              "examples": [
+                "3c2b1a09-8f7e-4d6c-b5a4-93827160f5e4"
+              ],
+              "title": "Capture Id"
+            },
+            "description": "Capture identifier"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptureComplete"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The assembled capture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`NOT_FOUND`: no such capture, or another account opened it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`MISSING_CHUNKS`: numbers below `last_seq` never arrived, listed in `details`; `EMPTY_CAPTURE`: no chunk arrived; `CAPTURE_CLOSED`: already finalised with a different `last_seq`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`INTEGRATION_UNAVAILABLE`: storage or the job queue is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -4666,6 +5157,28 @@
         ],
         "title": "AccessRead"
       },
+      "Body_put_chunk_api_v1_captures__capture_id__chunks__seq__put": {
+        "properties": {
+          "audio": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "Audio",
+            "description": "The chunk's audio, `audio/*`"
+          },
+          "speaker_events": {
+            "type": "string",
+            "maxLength": 200000,
+            "title": "Speaker Events",
+            "description": "JSON list of `{at_seconds, speakers}` seen during the chunk",
+            "default": "[]"
+          }
+        },
+        "type": "object",
+        "required": [
+          "audio"
+        ],
+        "title": "Body_put_chunk_api_v1_captures__capture_id__chunks__seq__put"
+      },
       "Body_upload_recording_api_v1_workspaces__workspace_id__meetings_post": {
         "properties": {
           "file": {
@@ -4712,6 +5225,116 @@
         ],
         "title": "Body_upload_recording_api_v1_workspaces__workspace_id__meetings_post"
       },
+      "CaptureComplete": {
+        "properties": {
+          "last_seq": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Last Seq",
+            "description": "Number of the last chunk of the recording"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "last_seq"
+        ],
+        "title": "CaptureComplete"
+      },
+      "CaptureCreate": {
+        "properties": {
+          "workspace_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Id",
+            "description": "Destination workspace; the caller's personal workspace when omitted"
+          },
+          "folder_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Id",
+            "description": "Destination folder of that workspace; its default folder when omitted"
+          },
+          "consent_confirmed": {
+            "type": "boolean",
+            "title": "Consent Confirmed",
+            "description": "The recorder confirms the participants agreed to be recorded; must be `true`"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "consent_confirmed"
+        ],
+        "title": "CaptureCreate"
+      },
+      "CaptureRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Capture identifier"
+          },
+          "meeting_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Meeting Id",
+            "description": "The meeting the recording becomes"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CaptureStatus",
+            "description": "`recording` while chunks are accepted; `assembled` once completed"
+          },
+          "received_seqs": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Received Seqs",
+            "description": "Numbers of the chunks stored so far, ascending"
+          },
+          "max_chunk_bytes": {
+            "type": "integer",
+            "title": "Max Chunk Bytes",
+            "description": "Largest chunk the server accepts, in bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "meeting_id",
+          "status",
+          "received_seqs",
+          "max_chunk_bytes"
+        ],
+        "title": "CaptureRead"
+      },
+      "CaptureStatus": {
+        "type": "string",
+        "enum": [
+          "recording",
+          "idle",
+          "assembled",
+          "abandoned"
+        ],
+        "title": "CaptureStatus"
+      },
       "ContextMeetingRead": {
         "properties": {
           "meeting_id": {
@@ -4739,6 +5362,42 @@
           "name"
         ],
         "title": "ContextMeetingRead"
+      },
+      "DestinationRead": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id",
+            "description": "Workspace identifier"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Workspace name"
+          },
+          "is_personal": {
+            "type": "boolean",
+            "title": "Is Personal",
+            "description": "The caller's personal workspace, used when no destination is chosen"
+          },
+          "folders": {
+            "items": {
+              "$ref": "#/components/schemas/FolderOption"
+            },
+            "type": "array",
+            "title": "Folders",
+            "description": "Folders a recording can be filed in"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "name",
+          "is_personal",
+          "folders"
+        ],
+        "title": "DestinationRead"
       },
       "ErrorBody": {
         "properties": {
@@ -4809,6 +5468,10 @@
           "RECORDING_NOT_READY",
           "RECORDING_DELETED",
           "REGENERATION_LIMIT",
+          "CHUNK_MISMATCH",
+          "CAPTURE_CLOSED",
+          "MISSING_CHUNKS",
+          "EMPTY_CAPTURE",
           "PAYLOAD_TOO_LARGE",
           "UNSUPPORTED_MEDIA_TYPE",
           "RATE_LIMITED",
@@ -4886,6 +5549,33 @@
           "name"
         ],
         "title": "FolderInput"
+      },
+      "FolderOption": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Folder identifier"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Folder name"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "description": "The workspace's default folder"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "is_default"
+        ],
+        "title": "FolderOption"
       },
       "FolderRead": {
         "properties": {
@@ -5488,6 +6178,27 @@
           "has_more"
         ],
         "title": "PageInfo"
+      },
+      "Page_DestinationRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DestinationRead"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Items of this page, in the documented order"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "pagination"
+        ],
+        "title": "Page[DestinationRead]"
       },
       "Page_FolderRead_": {
         "properties": {
@@ -6769,6 +7480,10 @@
     {
       "name": "export",
       "description": "Authorized transcript and notes downloads"
+    },
+    {
+      "name": "capture",
+      "description": "Recording from the Chrome extension in chunks"
     },
     {
       "name": "meta",

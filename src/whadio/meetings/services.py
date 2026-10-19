@@ -56,7 +56,8 @@ class TermUpdate:
 
 @dataclass(frozen=True)
 class RecordingInput:
-    storage_key: str
+    # None only for an extension capture, whose recording is attached once it is assembled.
+    storage_key: str | None
     recorded_at: datetime
     source: MeetingSource
     duration_seconds: int | None = None
@@ -86,7 +87,8 @@ class MeetingService:
     ) -> Meeting:
         await self._policy.workspace_role(workspace_id, actor_id)
         if (
-            not recording.storage_key
+            recording.storage_key == ""
+            or (recording.storage_key is None and recording.source != MeetingSource.EXTENSION)
             or recording.recorded_at.tzinfo is None
             or recording.recorded_at.utcoffset() is None
             or (recording.duration_seconds is not None and recording.duration_seconds <= 0)
@@ -120,7 +122,9 @@ class MeetingService:
             name_is_generated=recording.name is None,
             source_type=recording.source,
             recording_status=RecordingStatus.COMPLETE,
-            processing_state=ProcessingState.QUEUED,
+            processing_state=ProcessingState.RECORDING
+            if recording.storage_key is None
+            else ProcessingState.QUEUED,
             storage_path=recording.storage_key,
             recorded_at=recording.recorded_at,
             created_at=now,
@@ -611,6 +615,18 @@ class MeetingService:
             meeting.regeneration_count = update.regeneration_count
         if update.duration_seconds is not None:
             meeting.duration_seconds = update.duration_seconds
+        await self._repository.save(meeting)
+
+    async def attach_recording(
+        self, meeting_id: UUID, storage_key: str, status: RecordingStatus
+    ) -> None:
+        """Give a meeting still being captured its assembled recording; MeetingPersistence has
+        checked the caller and the capacity, and Capture queues it separately."""
+        meeting = await self._repository.get(meeting_id, lock=True)
+        if not storage_key or meeting.processing_state != ProcessingState.RECORDING:
+            raise UseCaseError(Failure.VALIDATION_ERROR)
+        meeting.storage_path = storage_key
+        meeting.recording_status = status
         await self._repository.save(meeting)
 
     # --- For Processing, which acts for no member, so nothing here checks access ---

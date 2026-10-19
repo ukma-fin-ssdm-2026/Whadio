@@ -9,6 +9,7 @@ from ..shared.database import Database
 from . import meta
 from .access_policy import routes as access_routes
 from .accounts import routes_mcp_keys, routes_sessions, routes_workspaces
+from .capture import routes as capture_routes
 from .composition import (
     CompositionRoot,
     RuntimeIntegrations,
@@ -55,6 +56,7 @@ TAGS = [
     {"name": "notes", "description": "Generated notes and their regeneration"},
     {"name": "access", "description": "Restrictions and external shares"},
     {"name": "export", "description": "Authorized transcript and notes downloads"},
+    {"name": "capture", "description": "Recording from the Chrome extension in chunks"},
     {"name": "meta", "description": "Operational endpoints"},
 ]
 
@@ -90,6 +92,7 @@ def create_app(
         routes_content.router,
         access_routes.router,
         export_routes.router,
+        capture_routes.router,
     ):
         v1.include_router(router)
     app.include_router(v1)
