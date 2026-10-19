@@ -18,3 +18,7 @@ test("formats a duration longer than one hour", () => {
 test("omits zero minutes from an hour duration", () => {
   assert.equal(formatDuration(3605), "1h 5s");
 });
+
+test("omits trailing zero components from an exact hour", () => {
+  assert.equal(formatDuration(3600), "1h");
+});
