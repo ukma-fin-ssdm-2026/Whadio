@@ -10,3 +10,4 @@ node_modules/
 reports/
 htmlcov-ci/
 .hypothesis/
+mutants/

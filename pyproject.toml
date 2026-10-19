@@ -58,6 +58,7 @@ dev = [
     "go-task-bin>=3.54.0",
     "hypothesis>=6.170.1",
     "import-linter>=2.15",
+    "mutmut>=3.8.0",
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
@@ -284,6 +285,14 @@ exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", '^\s*\.\.\.$',
 
 [tool.coverage.html]
 directory = "htmlcov-ci"
+
+[tool.mutmut]
+source_paths = ["src"]
+only_mutate = ["src/whadio/workers/notes/prompt.py"]
+do_not_mutate = ["src/**/test_*.py"]
+also_copy = ["conftest.py"]
+pytest_add_cli_args = ["-p", "no:cacheprovider", "-m", "not slow"]
+pytest_add_cli_args_test_selection = ["src/whadio/workers/notes/"]
 
 [tool.deptry]
 extend_exclude = ["src/.*/test_[^/]*\\.py"]

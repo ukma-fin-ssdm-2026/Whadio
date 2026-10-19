@@ -135,6 +135,10 @@ Not as a goal. 13 lines are still uncovered in the two service files. Two of the
 
 Coverage says which code ran, not whether the test checked the right thing. A test without an assertion still raises coverage. In this pass, coverage was useful as a map of what nobody had tested. The value came from the assertions on refusals and edge cases. We'd rather keep the 88% with meaningful assertions than reach 100% with tests written to light up lines.
 
+### Mutation testing
+
+`uv run task mutation` runs mutmut over the notes prompt (`src/whadio/workers/notes/prompt.py`) against the notes worker's tests (`src/whadio/workers/notes/`), then lists the mutants that no test killed. `uv run mutmut show <name>` prints one of them as a diff. The scope is set in `[tool.mutmut]` in `pyproject.toml`. The task deletes `mutants/` first, because mutmut keeps a mutant's earlier verdict when only the tests have changed. The run stays out of the hooks and CI: run it by hand after changing the module or its tests.
+
 ## 3. Proposals for improving the tests
 
 - **Close the two ordinary gaps:** a successful glossary term rename, and the happy path of `processing_snapshot`.
