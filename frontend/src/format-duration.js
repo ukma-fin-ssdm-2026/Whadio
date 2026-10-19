@@ -12,7 +12,10 @@ export function formatDuration(seconds) {
       parts.push(`${minutes}m`);
     }
 
-    parts.push(`${remainingSeconds}s`);
+    if (remainingSeconds > 0) {
+      parts.push(`${remainingSeconds}s`);
+    }
+
     return parts.join(" ");
   }
 
