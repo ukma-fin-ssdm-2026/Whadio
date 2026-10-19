@@ -52,7 +52,7 @@ from ..meetings.repositories import FolderRepository, MeetingRepository
 from ..meetings.services import FolderService, MeetingService, WorkspaceContent
 from ..meetings.settings import MeetingSettings
 from ..notifications.repositories import INotificationOutbox, NotificationOutboxRepository
-from ..notifications.templates import NoticeKind, ShareAccessRequest
+from ..notifications.templates import HostedEviction, NoticeKind, ShareAccessRequest
 from ..processing.consumer import (
     ProcessingTransactions,
     ResultSource,
@@ -114,7 +114,7 @@ class CompositionRoot:
                         memberships,
                         AuditWriter(session),
                         AccessPolicy(AccessRepository(session), memberships),
-                        UnavailableEvictionNotifications(),
+                        OutboxEvictionNotices(NotificationOutboxRepository(session)),
                     )
                 ),
                 WorkspaceSettingsService(WorkspaceSettingsRepository(session)),
@@ -231,15 +231,22 @@ def meeting_processing(session: Session) -> IMeetingProcessing:
 Processing = Annotated[IMeetingProcessing, Depends(meeting_processing)]
 
 
-class UnavailableEvictionNotifications:
+class OutboxEvictionNotices:
+    """Meetings' `IEvictionNotifier`, answered by the notification outbox."""
+
+    def __init__(self, outbox: INotificationOutbox) -> None:
+        self._outbox: INotificationOutbox = outbox
+
     async def enqueue(self, notice: EvictionNotice) -> None:
-        del notice
-        raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+        await self._outbox.reserve(
+            notice.recipient_id,
+            f"{NoticeKind.HOSTED_EVICTION}:{notice.meeting_id}:{notice.recipient_id}",
+            HostedEviction(meeting_name=notice.meeting_name),
+        )
 
 
 def eviction_notifications(session: Session) -> IEvictionNotifier:
-    del session
-    return UnavailableEvictionNotifications()
+    return OutboxEvictionNotices(NotificationOutboxRepository(session))
 
 
 def meeting_persistence(
@@ -427,7 +434,6 @@ Captures = Annotated[CaptureService, Depends(capture_service)]
 @dataclass(frozen=True)
 class RuntimeIntegrations:
     processing: Callable[[AsyncSession], IMeetingProcessing] | None = None
-    evictions: Callable[[AsyncSession], IEvictionNotifier] | None = None
 
 
 def connect_integrations(app: FastAPI, integrations: RuntimeIntegrations) -> None:
@@ -435,9 +441,4 @@ def connect_integrations(app: FastAPI, integrations: RuntimeIntegrations) -> Non
         factory = integrations.processing
         return UnavailableMeetingProcessing() if factory is None else factory(session)
 
-    def evictions(session: Session) -> IEvictionNotifier:
-        factory = integrations.evictions
-        return UnavailableEvictionNotifications() if factory is None else factory(session)
-
     app.dependency_overrides[meeting_processing] = processing
-    app.dependency_overrides[eviction_notifications] = evictions

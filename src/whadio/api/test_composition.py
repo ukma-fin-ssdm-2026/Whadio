@@ -997,7 +997,7 @@ def test_http_self_exclusion_commits_restriction(database_settings: DatabaseSett
 type ReservedNotice = tuple[UUID, str, NoticeKind, dict[str, JsonValue]]
 
 
-async def _reserved(unit: Unit, *recipients: UUID) -> list[ReservedNotice]:
+async def reserved_notices(unit: Unit, *recipients: UUID) -> list[ReservedNotice]:
     rows = await unit.session.execute(
         select(
             NotificationOutbox.recipient_user_id,
@@ -1026,7 +1026,7 @@ def test_share_access_request_reserves_a_notice_for_the_share_creator(
                 response = await client.post(
                     f"/api/v1/shares/{share_id}/access-requests", json={"token": created.token}
                 )
-                reserved = await _reserved(unit, unit.owner, unit.outsider)
+                reserved = await reserved_notices(unit, unit.owner, unit.outsider)
                 # Assert
                 assert (response.status_code, reserved) == (
                     201,
@@ -1075,7 +1075,7 @@ def test_failed_share_request_rolls_back_its_notice(database_settings: DatabaseS
 
             with pytest.raises(UseCaseError):
                 await request()
-            reserved = await _reserved(unit, unit.owner)
+            reserved = await reserved_notices(unit, unit.owner)
             # Assert
             assert reserved == []
 
@@ -1090,7 +1090,7 @@ def test_repeated_share_notice_is_reserved_once(database_settings: DatabaseSetti
             await notices.enqueue(share_id, unit.owner, unit.outsider)
             # Act
             await notices.enqueue(share_id, unit.owner, unit.outsider)
-            reserved = await _reserved(unit, unit.owner)
+            reserved = await reserved_notices(unit, unit.owner)
             # Assert
             assert len(reserved) == 1
 

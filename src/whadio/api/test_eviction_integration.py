@@ -1,18 +1,18 @@
 import asyncio
 from collections.abc import AsyncGenerator
+from dataclasses import replace
 from datetime import UTC, datetime
-from typing import Annotated
+from uuid import UUID, uuid4
 
 import pytest
-from fastapi import Depends
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..accounts.enums import LlmProvider, NotesTemplate
 from ..accounts.repositories import MembershipRepository
 from ..audit.models import AuditEvent
-from ..meetings.contracts import EvictionNotice, IEvictionNotifier
+from ..meetings.contracts import EvictionNotice
 from ..meetings.enums import MeetingSource, RecordingStatus
 from ..meetings.models import Meeting, Note, RecordingDeletion
 from ..meetings.persistence import (
@@ -24,14 +24,16 @@ from ..meetings.persistence import (
 from ..meetings.processing import IMeetingProcessing
 from ..meetings.repositories import MeetingRepository
 from ..meetings.services import RecordingInput
+from ..notifications.repositories import notice_payload
+from ..notifications.templates import HostedEviction, Notice, NoticeKind
 from ..shared.database import DatabaseSettings
 from ..shared.errors import Failure, UseCaseError
 from .app import create_app
 from .composition import (
+    OutboxEvictionNotices,
     Processing,
     RuntimeIntegrations,
     Session,
-    UnavailableEvictionNotifications,
     UnavailableMeetingProcessing,
     eviction_notifications,
     transaction,
@@ -40,6 +42,7 @@ from .test_composition import (
     EvictionNotices,
     FailingContentAuditWriter,
     persistence_fixture,
+    reserved_notices,
     unit_fixture,
 )
 
@@ -73,7 +76,7 @@ def test_eviction_title_permission_for_uploader_outside_old_workspace(
     asyncio.run(scenario())
 
 
-def test_runtime_factories_share_use_case_session_and_rollback_on_failure(
+def test_runtime_processing_factory_shares_use_case_session_and_rolls_back_on_failure(
     database_settings: DatabaseSettings,
 ) -> None:
     # Arrange
@@ -85,13 +88,9 @@ def test_runtime_factories_share_use_case_session_and_rollback_on_failure(
                 sessions.append(session)
                 return UnavailableMeetingProcessing()
 
-            def eviction_factory(session: AsyncSession) -> IEvictionNotifier:
-                sessions.append(session)
-                return UnavailableEvictionNotifications()
-
             app = create_app(
                 unit.database,
-                integrations=RuntimeIntegrations(processing_factory, eviction_factory),
+                integrations=RuntimeIntegrations(processing_factory),
             )
 
             async def session_dependency() -> AsyncGenerator[AsyncSession]:
@@ -104,9 +103,7 @@ def test_runtime_factories_share_use_case_session_and_rollback_on_failure(
             async def probe(
                 session: Session,
                 processing: Processing,
-                evictions: Annotated[IEvictionNotifier, Depends(eviction_notifications)],
             ) -> None:
-                del evictions
                 session.add(RecordingDeletion(storage_key="integration-probe"))
                 await session.flush()
                 await processing.queue_transcription(unit.meeting)
@@ -120,7 +117,7 @@ def test_runtime_factories_share_use_case_session_and_rollback_on_failure(
             # Assert
             assert (response.status_code, sessions, pending) == (
                 503,
-                [unit.session, unit.session],
+                [unit.session],
                 None,
             )
 
@@ -300,45 +297,108 @@ def test_recording_is_not_attached_for_an_account_outside_the_workspace(
     asyncio.run(scenario())
 
 
-class TransactionalEvictionNotices:
-    def __init__(self, session: AsyncSession) -> None:
-        self.session: AsyncSession = session
-
-    async def enqueue(self, notice: EvictionNotice) -> None:
-        await self.session.execute(
-            text("INSERT INTO test_eviction_outbox VALUES (:recipient, :name)"),
-            {"recipient": notice.recipient_id, "name": notice.meeting_name},
-        )
+class UnavailableOutbox:
+    async def reserve(self, recipient_id: UUID, dedupe_key: str, notice: Notice) -> None:
+        del recipient_id, dedupe_key, notice
+        raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
 
 
-@pytest.mark.parametrize("failure", ["notification", "later_job"])
-def test_failed_ingest_rolls_back_notifications_eviction_audit_and_new_meeting(
-    database_settings: DatabaseSettings, failure: str
+def test_eviction_reserves_a_notice_for_each_recipient(
+    database_settings: DatabaseSettings,
 ) -> None:
     # Arrange
     async def scenario() -> None:
         async with unit_fixture(database_settings) as unit:
-            await unit.session.execute(
-                text(
-                    "CREATE TEMP TABLE test_eviction_outbox (recipient uuid, name text) "
-                    "ON COMMIT DROP"
-                )
-            )
             now = datetime.now(UTC)
-            notifier = TransactionalEvictionNotices(unit.session)
+            await unit.access.replace_access(
+                unit.owner, unit.meeting, {unit.owner}, now, restricted=True
+            )
+            # Act
+            await persistence_fixture(
+                unit, hosted_limit=1, notifications=eviction_notifications(unit.session)
+            ).ingest(
+                unit.member,
+                unit.workspace,
+                RecordingInput("recording/new", now, MeetingSource.UPLOAD),
+                now,
+            )
+            reserved = await reserved_notices(unit, unit.owner, unit.member)
+            # Assert
+            assert sorted(reserved) == sorted(
+                (
+                    recipient,
+                    f"hosted_eviction:{unit.meeting}:{recipient}",
+                    NoticeKind.HOSTED_EVICTION,
+                    notice_payload(HostedEviction(meeting_name=name)),
+                )
+                for recipient, name in ((unit.owner, "test"), (unit.member, None))
+            )
+
+    asyncio.run(scenario())
+
+
+def test_repeated_eviction_notice_is_reserved_once(database_settings: DatabaseSettings) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            now = datetime.now(UTC)
+            notices = eviction_notifications(unit.session)
+            notice = EvictionNotice(unit.meeting, uuid4(), unit.owner, "test", now)
+            await notices.enqueue(notice)
+            # Act
+            await notices.enqueue(replace(notice, triggering_meeting_id=uuid4()))
+            reserved = await reserved_notices(unit, unit.owner)
+            # Assert
+            assert len(reserved) == 1
+
+    asyncio.run(scenario())
+
+
+def test_failed_eviction_reservation_aborts_ingest(database_settings: DatabaseSettings) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            now = datetime.now(UTC)
+            persistence = persistence_fixture(
+                unit, hosted_limit=1, notifications=OutboxEvictionNotices(UnavailableOutbox())
+            )
 
             # Act
             async def ingest() -> None:
                 async with unit.session.begin_nested():
-                    await persistence_fixture(
-                        unit,
-                        hosted_limit=1,
-                        notifications=(
-                            UnavailableEvictionNotifications()
-                            if failure == "notification"
-                            else notifier
-                        ),
-                    ).ingest(
+                    await persistence.ingest(
+                        unit.member,
+                        unit.workspace,
+                        RecordingInput("recording/new", now, MeetingSource.UPLOAD),
+                        now,
+                    )
+
+            with pytest.raises(UseCaseError):
+                await ingest()
+            meetings = list(await unit.session.scalars(select(Meeting.meeting_id)))
+            events = list(await unit.session.scalars(select(AuditEvent.action)))
+            cleanup = list(await unit.session.scalars(select(RecordingDeletion.deletion_id)))
+            # Assert
+            assert (meetings, events, cleanup) == ([unit.meeting], [], [])
+
+    asyncio.run(scenario())
+
+
+def test_failed_ingest_rolls_back_notifications_eviction_audit_and_new_meeting(
+    database_settings: DatabaseSettings,
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            now = datetime.now(UTC)
+            persistence = persistence_fixture(
+                unit, hosted_limit=1, notifications=eviction_notifications(unit.session)
+            )
+
+            # Act
+            async def ingest() -> None:
+                async with unit.session.begin_nested():
+                    await persistence.ingest(
                         unit.member,
                         unit.workspace,
                         RecordingInput("recording/new", now, MeetingSource.UPLOAD),
@@ -349,9 +409,7 @@ def test_failed_ingest_rolls_back_notifications_eviction_audit_and_new_meeting(
             with pytest.raises(UseCaseError):
                 await ingest()
             meetings = list(await unit.session.scalars(select(Meeting.meeting_id)))
-            notices = list(
-                await unit.session.scalars(text("SELECT recipient FROM test_eviction_outbox"))
-            )
+            notices = await reserved_notices(unit, unit.owner, unit.member)
             events = list(await unit.session.scalars(select(AuditEvent.action)))
             cleanup = list(await unit.session.scalars(select(RecordingDeletion.deletion_id)))
             # Assert
