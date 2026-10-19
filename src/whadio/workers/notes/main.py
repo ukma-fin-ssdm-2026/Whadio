@@ -12,6 +12,7 @@ from ...contracts.common import JobKind
 from ...contracts.notes import NotesRequested
 from ...contracts.queues import NOTES_REQUESTS
 from ...shared.logs import configure_logging
+from ...shared.telemetry import RuntimeActivity
 from ..supervision.jobs import WorkerSpec
 from ..supervision.runners import InlineRunner
 from ..supervision.supervisor import ConsumerOptions, serve_jobs
@@ -72,6 +73,15 @@ def build_runner(
     )
 
 
+def build_activity(settings: NotesSettings) -> RuntimeActivity:
+    return RuntimeActivity(
+        "notes",
+        settings.concurrency,
+        settings.llm.model,
+        provider="local" if isinstance(settings.llm, OllamaSettings) else "anthropic",
+    )
+
+
 async def serve(settings: NotesWorkerSettings) -> None:
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -82,6 +92,7 @@ async def serve(settings: NotesWorkerSettings) -> None:
         concurrency=notes.concurrency,
         consumer_timeout=notes.job_timeout + _CONSUMER_TIMEOUT_MARGIN,
         shutdown_grace=notes.shutdown_grace,
+        activity=build_activity(notes),
     )
     async with open_chat_model(notes) as model:
         await serve_jobs(NOTES_WORKER, build_runner(notes, model), settings.broker, options, stop)

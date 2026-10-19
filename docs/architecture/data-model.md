@@ -142,7 +142,11 @@ The model covers the data required for these key project functions:
 - `NOTE.created_by_user_id` is optional because first notes may be generated automatically; regenerations can store the requesting user.
 - `NOTE_CONTEXT_MEETING.context_meeting_id` is optional so the note can remain unchanged after a context meeting is deleted; `context_meeting_name_snapshot` preserves what was shown to readers.
 - `LLM_PROVIDER_CONFIG.api_key_encrypted` is required unless `provider = Whadio`.
-- `PROCESSING_JOB.created_at` stores when the job was queued, and `attempts` stores retry count for monitoring and retry limits.
+- `PROCESSING_JOB.created_at` stores original enqueue time. `attempts` counts accepted attempt
+  starts, including the first, and retains the existing retry-limit meaning in Processing.
+  `queued_at` records entry into the current queued period and resets on retry; `started_at`
+  clears on retry. Publication alone does not reset waiting time. Pre-migration retry queue
+  entry times remain null when they cannot be reconstructed accurately.
 - Segment time intervals must satisfy `start_time_seconds < end_time_seconds`.
 - Implementation-only `FOLDER_RECOVERY` and `FOLDER_RECOVERY_MEETING` retain deleted folder
   metadata and references to meetings moved to the default folder for NFR-005. Restoration is
@@ -223,3 +227,6 @@ These fields should drive the next threat-analysis step, especially for access c
 ## AI Usage
 
 This document and the accompanying data model diagram were prepared and revised with the assistance of Codex (GPT-5.5) and Claude Code (Claude Opus 5.5) and discussed in the working session of 2026-09-26. Reviewed by the author and the team before committing.
+
+
+Processing timing semantics were clarified with OpenAI Codex alongside migration 0007.

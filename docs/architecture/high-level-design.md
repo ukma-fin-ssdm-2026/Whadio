@@ -296,9 +296,30 @@ The architecture leaves room for these changes without restructuring:
   correction restricted to the built-in model. It would also keep `llm-runtime` running for every
   transcription, including in workspaces that use their own provider.
 
+### Export and operational metadata implementation
+
+Export renders the access-checked current or original transcript on demand, without storing a
+copy, and reads only the latest saved notes. Canonical original links come from configuration.
+Admin reads explicit Processing-owned job projections; Meetings supplies operational workspace
+IDs without exposing content. Admin owns a bounded observation cache; private host collectors and
+worker publishers send source-authenticated snapshots through the Web runtime. Workers share only
+framework-free telemetry types/utilities, and neither import Admin nor receive database access.
+There is one web/cache instance in this version; multiple web instances need shared observations.
+The UI is not part of this backend slice. Operational setup is in
+[the API design](../api/api-design.md).
+
+The notes worker selects deployment-configured Anthropic or self-hosted Ollama. Telemetry
+labels Anthropic as external with deployment credentials and Ollama as local without a provider
+credential. Local worker state follows observation freshness; readiness does not probe the model
+server. Workspace provider selection, Owner-managed keys and explicit local fallback remain
+unimplemented divergences from ADR-004. Provider alignment is not claimed complete here.
+
+
 ## AI Usage
 
 This document and its diagrams were prepared and revised with the assistance of Claude Code (Claude
 Opus 5.5) with the later additions from OpenAI Codex. The architecture follows the decisions of the team's working session of 2026-09-24 and
 the architecture-lead decisions that followed it. The author reviewed and edited the content, and
 the document is reviewed through a pull request before merging.
+
+Export and monitoring implementation notes were added with OpenAI Codex.

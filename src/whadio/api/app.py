@@ -9,10 +9,13 @@ from ..shared.database import Database
 from . import meta
 from .access_policy import routes as access_routes
 from .accounts import routes_mcp_keys, routes_sessions, routes_workspaces
+from .admin import observations
+from .admin import routes as admin_routes
 from .composition import (
     CompositionRoot,
     RuntimeIntegrations,
     connect_integrations,
+    observation_store,
     runtime_database,
     transaction,
 )
@@ -55,6 +58,7 @@ TAGS = [
     {"name": "notes", "description": "Generated notes and their regeneration"},
     {"name": "access", "description": "Restrictions and external shares"},
     {"name": "export", "description": "Authorized transcript and notes downloads"},
+    {"name": "admin", "description": "Operational metadata without meeting content"},
     {"name": "meta", "description": "Operational endpoints"},
 ]
 
@@ -90,12 +94,15 @@ def create_app(
         routes_content.router,
         access_routes.router,
         export_routes.router,
+        admin_routes.router,
+        observations.router,
     ):
         v1.include_router(router)
     app.include_router(v1)
     app.include_router(meta.router)
     app.mount("/mcp", mcp_app)
     register_error_handlers(app)
+    app.dependency_overrides[observation_store] = lambda: composition.observations
     app.dependency_overrides[transaction] = composition.transaction
     app.dependency_overrides[runtime_database] = composition.database
     connect_integrations(

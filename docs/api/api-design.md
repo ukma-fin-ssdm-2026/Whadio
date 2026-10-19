@@ -688,12 +688,18 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /meetings/{meeting_id}/transcript/export` · Download the transcript
 
-- **Status:** Designed · **Caller:** any member who can read it · **Success:** `200`, a
+- **Status:** Implemented · **Caller:** any member who can read it · **Success:** `200`, a
   Markdown or WebVTT attachment
 - **Rules:**
   - `format` is `markdown` (the default) or `vtt`. `timestamps=false` drops timestamps from
     Markdown; VTT always has them.
-  - The current revision, split by speaker labels (FR-040, FR-041).
+  - `version=current` (default) selects corrected content; `version=original` selects immutable
+    original text/speaker labels. The selected version is labelled truthfully (FR-028, FR-040,
+    FR-041, NFR-011). Files and Link headers carry absolute authenticated original-view/download
+    URLs from `WHADIO_EXPORT_PUBLIC_ORIGIN`, never from the request Host header.
+  - Markdown preserves speaker labels and optional timestamps; VTT is always timed.
+  - Files are UTF-8 attachments with `Cache-Control: no-store`; shares and administrator
+    status alone confer no export permission. Original retrieval still requires current access.
   - The file opens with a notice not to share it without the participants' permission and
     ends with an attribution (FR-042). An edited transcript says so.
 - **Errors:**
@@ -702,10 +708,11 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /meetings/{meeting_id}/notes/export` · Download the notes
 
-- **Status:** Designed · **Caller:** any member who can read it · **Success:** `200`, a
+- **Status:** Implemented · **Caller:** any member who can read it · **Success:** `200`, a
   Markdown attachment
 - **Rules:** the current notes, with their context meetings, the notice and the attribution
-  (FR-040, FR-042).
+  (FR-040, FR-042). Only the latest saved note is read; pending/failed regeneration does not
+  discard it. Context snapshots survive deletion of context meetings.
 - **Errors:**
   - `404 NOT_FOUND`: no such meeting, or the caller cannot read it.
   - `409 NO_NOTES`: the meeting has no notes yet.
@@ -862,14 +869,50 @@ All capture operations accept the extension's bearer token as well as the browse
 
 ### 4.8 Administration and operations
 
-#### `GET /admin/jobs`, `GET /admin/metrics` · Operational dashboard
+#### `GET /admin/jobs`, `GET /admin/metrics` · Operational metadata
 
-- **Status:** Designed · **Caller:** administrator · **Success:** `200`, a page of jobs, or
-  the current metrics
-- **Rules:** queue depth, waiting times, failures and load (FR-045). Never any recording,
-  transcript or notes content.
-- **Errors:**
-  - `403 INSUFFICIENT_ROLE`: the caller is not an administrator.
+- **Status:** Implemented backend; dashboard UI is deferred.
+- **Caller:** browser-session administrator; ordinary workspace roles confer no admin rights.
+- **Success:** `200`, a standard cursor page of jobs or the current metrics snapshot.
+- **Jobs:** workspace UUID, job type/state, started-attempt count, original/current queue/start/
+  finish times, state-specific durations and safe failure codes. Newest original enqueue time,
+  then job UUID descending; filters are workspace, type, status and inclusive creation interval.
+  Cursors are bound to their filters. No names, meeting IDs, content or raw failures are returned.
+- **Metrics:** logical-job counts plus source-scoped last-good host/runtime observations. Fresh
+  through 30 seconds, stale through 90, unavailable thereafter, evicted after five minutes.
+  Unknown measurements remain null. Anthropic notes are external with deployment credentials;
+  Ollama notes are local without provider credentials. `builtin_notes` reports the observed local
+  worker state (`ready`, `loading`, `unavailable`, `disabled`, `unknown`), `unknown` for stale
+  observations and `unavailable` after 90 seconds. Without a retained local notes observation it
+  reports `not_configured`. Worker readiness does not probe the Ollama server/model.
+- **Rules:** FR-045 metadata only, `Cache-Control: no-store`, no content drill-down or audit reader.
+  Revoking the administrator flag affects the next request without ending the browser session.
+- **Errors:** `401 UNAUTHENTICATED`, `403 INSUFFICIENT_ROLE`, `422 VALIDATION_ERROR`,
+  `503 INTEGRATION_UNAVAILABLE` if database access fails during authentication, permission checks,
+  monitoring reads or transaction cleanup. Fresh but incomplete telemetry reports `partial` with
+  `observation_incomplete`; unknown values remain null.
+- Operator setup: apply migration `0007` before starting the updated web runtime. Canonical
+  export links use `WHADIO_EXPORT_PUBLIC_ORIGIN`. Configure `WHADIO_ADMIN_SOURCES` with source
+  aliases, SHA-256 bearer-token hashes and their host/runtime scopes. Publishers use
+  `WHADIO_TELEMETRY_RECEIVER`, `WHADIO_TELEMETRY_SOURCE_ID`, `WHADIO_TELEMETRY_TOKEN` and
+  `WHADIO_TELEMETRY_INTERVAL_SECONDS`; Compose maps separate ASR/notes tokens. Host collectors
+  use `WHADIO_MONITOR_PROC` and `WHADIO_MONITOR_VOLUME` and run on the actual Linux host.
+  Keep the receiver on the private network and never publish meeting content or secrets.
+- Notes provider selection is deployment-wide: `WHADIO_NOTES__LLM__PROVIDER=anthropic|ollama`,
+  with `WHADIO_NOTES__LLM__MODEL`. Anthropic uses `WHADIO_NOTES__LLM__API_KEY`; Ollama uses a
+  private `WHADIO_NOTES__LLM__BASE_URL` and `WHADIO_NOTES__LLM__NUM_CTX`. Compose defaults the
+  local server address to `http://host.docker.internal:11434`. Restart the notes worker after
+  changing these settings. Workspace BYOK and automatic fallback are separate work.
+
+#### `POST /admin/observations/{source_id}` · Private collector ingress
+
+- **Status:** Implemented. **Caller:** a source-scoped bearer credential, not a browser session.
+- **Success:** `204`. Configured source alias/kind/runtime must match the observation.
+- **Rules:** body at most 16 KiB, two-second body timeout, no content or secrets. Samples older
+  than five minutes or more than five seconds into the future are refused; samples must advance
+  the source timestamp. Only token hashes are configured in the receiver.
+- **Errors:** `401 UNAUTHENTICATED`, `409 STALE_OBSERVATION`, `413 PAYLOAD_TOO_LARGE`,
+  `422 VALIDATION_ERROR`. Keep this route on the authenticated private network via proxy ACLs.
 
 #### `GET /health` · Liveness probe
 
@@ -1254,3 +1297,7 @@ checker and with scripted requests against every implemented operation. The auth
 and edited the content, and the document is reviewed through a pull request before merging.
 
 These PR #63 review revisions were assisted by OpenAI Codex. Everything was reviewed by me.
+
+
+Export and operational metadata contracts were implemented and documented with OpenAI Codex.
+UI work and end-to-end action-count verification remain separate.

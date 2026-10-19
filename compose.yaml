@@ -112,10 +112,20 @@ services:
     <<: *worker
     profiles: [core]
     command: [notes-worker]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       WHADIO_BROKER__URL: amqp://whadio-notes:${RABBITMQ_NOTES_PASSWORD:-}@rabbitmq:5672/whadio
       # `:-`, not `:?`: Compose reads the whole file, so `:?` would break every command.
       WHADIO_NOTES__LLM__API_KEY: ${WHADIO_NOTES__LLM__API_KEY:-}
+      WHADIO_NOTES__LLM__PROVIDER: ${WHADIO_NOTES__LLM__PROVIDER:-anthropic}
+      WHADIO_NOTES__LLM__MODEL: ${WHADIO_NOTES__LLM__MODEL:-claude-sonnet-5-5}
+      WHADIO_NOTES__LLM__BASE_URL: ${WHADIO_NOTES__LLM__BASE_URL:-http://host.docker.internal:11434}
+      WHADIO_NOTES__LLM__NUM_CTX: ${WHADIO_NOTES__LLM__NUM_CTX:-32768}
+      WHADIO_TELEMETRY_RECEIVER: ${WHADIO_TELEMETRY_RECEIVER:-}
+      WHADIO_TELEMETRY_SOURCE_ID: notes-worker
+      WHADIO_TELEMETRY_TOKEN: ${WHADIO_NOTES_TELEMETRY_TOKEN:-}
+      WHADIO_TELEMETRY_INTERVAL_SECONDS: ${WHADIO_TELEMETRY_INTERVAL_SECONDS:-10}
 
   asr-worker:
     <<: *worker
@@ -124,6 +134,10 @@ services:
     environment:
       WHADIO_BROKER__URL: amqp://whadio-asr:${RABBITMQ_ASR_PASSWORD:-}@rabbitmq:5672/whadio
       WHADIO_ASR__DIARIZATION__HF_TOKEN: ${WHADIO_ASR__DIARIZATION__HF_TOKEN:-}
+      WHADIO_TELEMETRY_RECEIVER: ${WHADIO_TELEMETRY_RECEIVER:-}
+      WHADIO_TELEMETRY_SOURCE_ID: asr-worker
+      WHADIO_TELEMETRY_TOKEN: ${WHADIO_ASR_TELEMETRY_TOKEN:-}
+      WHADIO_TELEMETRY_INTERVAL_SECONDS: ${WHADIO_TELEMETRY_INTERVAL_SECONDS:-10}
       WHADIO_ASR__RECOGNIZER: ${WHADIO_ASR__RECOGNIZER:-parakeet}
     volumes:
       - asr-models:/var/cache/huggingface

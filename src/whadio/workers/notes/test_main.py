@@ -15,7 +15,7 @@ from ..supervision.runners import InlineRunner
 from ..supervision.supervisor import ConsumerOptions, serve_jobs
 from .handler import NotesHandler
 from .llm import Completion
-from .main import NOTES_WORKER, open_chat_model
+from .main import NOTES_WORKER, build_activity, open_chat_model
 from .prompt import ContextBudget, Prompt, PromptBuilder
 from .settings import (
     AnthropicSettings,
@@ -144,3 +144,33 @@ def test_notes_worker_publishes_start_and_notes_of_a_job(monkeypatch: pytest.Mon
 
     # Assert
     assert types == ["job_started", "notes_ready"]
+
+
+@pytest.mark.parametrize(
+    ("llm", "provider", "origin", "model_name"),
+    [
+        (
+            AnthropicSettings(api_key=SecretStr("sk-ant-test")),
+            "anthropic",
+            "deployment",
+            "claude-sonnet-5-5",
+        ),
+        (OllamaSettings(provider="ollama", model="gemma3:12b"), "local", "none", "gemma3:12b"),
+    ],
+)
+def test_worker_activity_follows_the_configured_notes_provider(
+    llm: LlmSettings, provider: str, origin: str, model_name: str
+) -> None:
+    # Arrange
+    activity = build_activity(NotesSettings(llm=llm, concurrency=3))
+    activity.ready, activity.active = True, 2
+    # Act
+    observation = activity.observation()
+    # Assert
+    assert (
+        observation.provider,
+        observation.credential_origin,
+        observation.model,
+        observation.active,
+        observation.capacity,
+    ) == (provider, origin, model_name, 2, 3)

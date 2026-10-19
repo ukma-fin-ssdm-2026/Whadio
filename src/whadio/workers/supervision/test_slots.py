@@ -21,6 +21,7 @@ from ...contracts.transcription import (
     TranscriptionRequested,
     TranscriptReady,
 )
+from ...shared.telemetry import Observation, RuntimeActivity
 from .jobs import RunFailure, WorkerSpec
 from .slots import ProcessSlot, SlotPool, SlotStartupError, slot_program
 
@@ -266,3 +267,97 @@ def test_pool_that_cannot_start_every_slot_leaves_no_process_running() -> None:
 
     # Assert
     assert processes == []
+
+
+def test_slot_availability_tracks_startup_ready_and_stop() -> None:
+    # Arrange
+    async def scenario() -> list[str]:
+        slot = _slot(_transcriber)
+        states = [slot.availability]
+        # Act
+        starting = asyncio.create_task(slot.start())
+        await asyncio.sleep(0)
+        states.append(slot.availability)
+        try:
+            await starting
+            states.append(slot.availability)
+        finally:
+            await slot.stop()
+        states.append(slot.availability)
+        return states
+
+    states = asyncio.run(scenario())
+    # Assert
+    assert states == ["unavailable", "loading", "ready", "unavailable"]
+
+
+@pytest.mark.parametrize("failure", ["crash", "timeout"])
+def test_discarded_slot_makes_runtime_unavailable(failure: str) -> None:
+    # Arrange
+    async def scenario() -> Observation:
+        slot = _slot(
+            _transcriber if failure == "crash" else _hanger, timeout=timedelta(seconds=0.2)
+        )
+        pool = SlotPool([slot])
+        activity = RuntimeActivity("asr", 1, "test", availability=lambda: pool.availability)
+        await pool.start()
+        activity.ready = True
+        try:
+            # Act
+            await pool.run(_job(language="xx"))
+            return activity.observation()
+        finally:
+            await pool.stop()
+
+    observation = asyncio.run(scenario())
+    # Assert
+    assert (observation.availability, observation.active, observation.capacity) == (
+        "unavailable",
+        None,
+        1,
+    )
+
+
+def test_runtime_reports_loading_and_recovers_after_a_crashed_slot_restarts() -> None:
+    # Arrange
+    async def scenario() -> list[str]:
+        pool = SlotPool([_slot(_transcriber)])
+        activity = RuntimeActivity("asr", 1, "test", availability=lambda: pool.availability)
+        await pool.start()
+        try:
+            await pool.run(_job(language="xx"))
+            # Act
+            reloading = asyncio.create_task(pool.run(_job()))
+            await asyncio.sleep(0)
+            states = [activity.observation().availability or "unknown"]
+            await reloading
+            states.append(activity.observation().availability or "unknown")
+            return states
+        finally:
+            await pool.stop()
+
+    states = asyncio.run(scenario())
+    # Assert
+    assert states == ["loading", "ready"]
+
+
+def test_runtime_detects_an_idle_model_process_that_dies() -> None:
+    # Arrange
+    async def scenario() -> Observation:
+        pool = SlotPool([_slot(_transcriber)])
+        activity = RuntimeActivity("asr", 1, "test", availability=lambda: pool.availability)
+        await pool.start()
+        try:
+            child = next(
+                child for child in multiprocessing.active_children() if child.name == "test-slot"
+            )
+            # Act
+            child.kill()
+            await asyncio.to_thread(child.join, 5)
+            return activity.observation()
+        finally:
+            await pool.stop()
+
+    observation = asyncio.run(scenario())
+    # Assert
+    assert observation.availability == "unavailable"

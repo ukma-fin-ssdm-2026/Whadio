@@ -81,6 +81,22 @@ The most sensitive assets are password hashes, meeting recordings and capture ch
 - Single-use tokens travel only in URL fragments and request bodies, never in paths or query strings, so they stay out of nginx logs and `Referer` headers.
 - Logs, monitoring, and administrator dashboard views must avoid recordings, transcript text, notes, raw keys, raw share, registration, invitation, password-reset and session tokens, provider credentials, and raw exception messages (`FR-045`, `NFR-007`, `NFR-010`).
 
+## Private telemetry receiver constraints
+
+Collectors publish operational measurements with source-scoped bearer credentials over HTTPS or
+an encrypted private network. The receiver stores only SHA-256 token hashes in configuration,
+limits sources and payload sizes, validates metric scope/ranges/timestamps, and rejects replayed
+or out-of-order observations. Host credentials cannot publish runtime activity; a runtime
+credential is pinned to ASR or notes. Deploy a private proxy ACL for the ingress route; do not
+expose the GPU host or grant it database/storage credentials. Rotate source credentials after a
+suspected compromise. Accepted residual risk: a compromised source can falsify its own bounded
+measurements until its credential is revoked. Telemetry never controls job state or authorization.
+Last-good samples expire and unknown values are not presented as zero. Collection failure must
+not stop workers or unrelated content APIs.
+
+
 ## AI Usage
 
 This threat model was prepared with the assistance of Codex (GPT-5.5), revised with Claude Code (Claude Opus 5.5), and reviewed against the project requirements, ADRs, high-level design, deployment diagram, and current data model.
+
+Private telemetry constraints were added with OpenAI Codex.

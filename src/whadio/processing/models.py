@@ -36,6 +36,9 @@ class ProcessingJob(Base):
     created_at: Mapped[datetime] = MappedColumn[datetime](
         DateTime(timezone=True), server_default=func.now()
     )
+    queued_at: Mapped[datetime | None] = MappedColumn[datetime | None](
+        DateTime(timezone=True), server_default=func.now()
+    )
     attempts: Mapped[int] = MappedColumn[int](server_default=text("0"))
     started_at: Mapped[datetime | None] = MappedColumn[datetime | None](DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = MappedColumn[datetime | None](DateTime(timezone=True))

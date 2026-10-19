@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Final
 from pydantic import TypeAdapter
 
 from ...contracts.common import JobMessage
+from ...shared.telemetry import RuntimeAvailability
 from .jobs import IResultMessage, RunFailure, WorkerSpec
 
 if TYPE_CHECKING:
@@ -85,6 +86,15 @@ class ProcessSlot[J: JobMessage, R: IResultMessage]:
         self._startup_timeout: timedelta = startup_timeout
         self._process: SpawnProcess | None = None
         self._connection: Connection | None = None
+        self._starting: bool = False
+
+    @property
+    def availability(self) -> RuntimeAvailability:
+        if self._starting:
+            return "loading"
+        if self._process is not None and self._process.is_alive() and self._connection is not None:
+            return "ready"
+        return "unavailable"
 
     async def start(self) -> None:
         # CUDA cannot be used again in a forked child, so children are always spawned.
@@ -98,11 +108,14 @@ class ProcessSlot[J: JobMessage, R: IResultMessage]:
         process.start()
         child.close()
         self._process, self._connection = process, parent
+        self._starting = True
         try:
             await self._await_greeting(parent)
         except BaseException:
             await self._discard()
             raise
+        finally:
+            self._starting = False
 
     async def run(self, job: J) -> R:
         connection = await self._running_connection()
@@ -172,6 +185,13 @@ class SlotPool[J: JobMessage, R: IResultMessage]:
     def __init__(self, slots: Sequence[ProcessSlot[J, R]]) -> None:
         self._slots: tuple[ProcessSlot[J, R], ...] = tuple(slots)
         self._idle: asyncio.Queue[ProcessSlot[J, R]] = asyncio.Queue()
+
+    @property
+    def availability(self) -> RuntimeAvailability:
+        states = [slot.availability for slot in self._slots]
+        if states and all(state == "ready" for state in states):
+            return "ready"
+        return "loading" if "loading" in states else "unavailable"
 
     async def start(self) -> None:
         try:

@@ -17,6 +17,7 @@ from ...contracts.transcription import (
     TranscriptReady,
 )
 from ...shared.broker import BrokerSettings, MessagePublisher, connect, declare_queue
+from ...shared.telemetry import RuntimeActivity
 from .jobs import IResultMessage, RunFailure, WorkerSpec
 from .supervisor import ConsumerOptions, JobSupervisor, WorkerFailedError, serve_jobs
 
@@ -291,3 +292,27 @@ def test_worker_stops_its_runner_when_the_runner_fails_to_start(
 
     # Assert
     assert runner.stopped
+
+
+def test_runtime_activity_releases_capacity_when_a_job_is_cancelled() -> None:
+    # Arrange
+    activity = RuntimeActivity("asr", 1, "test-model")
+    journal = _Journal()
+
+    async def scenario() -> tuple[int, int]:
+        supervisor = JobSupervisor(
+            _SPEC, _Runner(blocks=True), _Publisher(journal), activity=activity
+        )
+        task = asyncio.create_task(
+            supervisor.handle(_Delivery(_JOB.model_dump_json().encode(), journal))
+        )
+        await asyncio.sleep(0)
+        during = activity.active
+        # Act
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        return during, activity.active
+
+    found = asyncio.run(scenario())
+    # Assert
+    assert found == (1, 0)

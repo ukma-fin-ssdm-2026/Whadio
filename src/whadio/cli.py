@@ -1,4 +1,6 @@
+import asyncio
 from typing import Annotated, Final
+from uuid import UUID
 
 import typer
 
@@ -116,3 +118,64 @@ def dev_user(
     created = asyncio.run(create(), loop_factory=asyncio.SelectorEventLoop)
     action = "Created" if created else "Updated"
     typer.echo(f"{action} development user {email}")
+
+
+admin_app = typer.Typer(
+    help="Operator-only administrator grants; requires deployment database access."
+)
+app.add_typer(admin_app, name="admin")
+
+
+def _administrator(user_id: UUID, *, enabled: bool) -> None:
+    from pydantic import ValidationError
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from .accounts.administrators import AdministratorRepository, AdministratorService
+    from .shared.database import Database, DatabaseSettings
+    from .shared.errors import UseCaseError
+
+    async def change() -> None:
+        database = Database(DatabaseSettings.model_validate({}))
+        try:
+            async with database.transaction() as session:
+                await AdministratorService(AdministratorRepository(session)).set_enabled(
+                    user_id, enabled=enabled
+                )
+        finally:
+            await database.close()
+
+    try:
+        asyncio.run(change(), loop_factory=asyncio.SelectorEventLoop)
+    except UseCaseError as error:
+        typer.echo(error.code.value, err=True)
+        raise typer.Exit(code=1) from None
+    except (SQLAlchemyError, ValidationError):
+        typer.echo("Administrator database configuration or connection unavailable.", err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo(
+        "Administrator permission granted." if enabled else "Administrator permission revoked."
+    )
+
+
+@admin_app.command(help="Grant administrator permission to an existing account.")
+def grant(user_id: Annotated[UUID, typer.Option(help="Existing account UUID.")]) -> None:
+    _administrator(user_id, enabled=True)
+
+
+@admin_app.command(help="Revoke administrator permission; existing sessions remain signed in.")
+def revoke(user_id: Annotated[UUID, typer.Option(help="Existing account UUID.")]) -> None:
+    _administrator(user_id, enabled=False)
+
+
+@app.command(
+    help=(
+        "Publish Linux host CPU, memory, volume and optional NVIDIA GPU observations. "
+        "Run on the actual host, not inside the web container."
+    )
+)
+def monitor_host(
+    *, once: Annotated[bool, typer.Option(help="Publish one sample and exit.")] = False
+) -> None:
+    from .admin.collector import collect_host
+
+    asyncio.run(collect_host(once=once))

@@ -12,6 +12,7 @@ from ...contracts.common import JobMessage
 from ...contracts.queues import DEAD_LETTERS
 from ...contracts.results import JobStarted
 from ...shared.broker import BrokerSettings, MessagePublisher, connect, declare_queue
+from ...shared.telemetry import RuntimeActivity, TelemetrySettings, publish_activity
 from .jobs import IJobRunner, IResultMessage, WorkerSpec
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,7 @@ class ConsumerOptions:
     concurrency: int
     consumer_timeout: timedelta
     shutdown_grace: timedelta
+    activity: RuntimeActivity | None = None
 
 
 def _utc_now() -> datetime:
@@ -68,7 +70,9 @@ class JobSupervisor[J: JobMessage, R: IResultMessage]:
         runner: IJobRunner[J, R],
         publisher: IResultPublisher,
         now: Callable[[], datetime] = _utc_now,
+        activity: RuntimeActivity | None = None,
     ) -> None:
+        self._activity: RuntimeActivity | None = activity
         self._spec: WorkerSpec[J, R] = spec
         self._runner: IJobRunner[J, R] = runner
         self._publisher: IResultPublisher = publisher
@@ -93,7 +97,13 @@ class JobSupervisor[J: JobMessage, R: IResultMessage]:
                 started_at=self._now(),
             )
             await self._publisher.publish(started)
-            result = await self._runner.run(job)
+            if self._activity is not None:
+                self._activity.active += 1
+            try:
+                result = await self._runner.run(job)
+            finally:
+                if self._activity is not None:
+                    self._activity.active -= 1
             await self._publisher.publish(result)
         except asyncio.CancelledError:
             await delivery.nack(requeue=True)
@@ -108,6 +118,7 @@ async def serve_jobs[J: JobMessage, R: IResultMessage](
     options: ConsumerOptions,
     stop: asyncio.Event,
 ) -> None:
+    activity = options.activity
     connection = await connect(broker, name=spec.name)
     async with connection:
         channel = await connection.channel()
@@ -116,7 +127,7 @@ async def serve_jobs[J: JobMessage, R: IResultMessage](
             await declare_queue(channel, queue.name, queue.arguments)
         jobs = await declare_queue(channel, spec.queue.name, spec.queue.arguments)
         publisher = AmqpResultPublisher(MessagePublisher(channel, broker.user), spec.results.name)
-        supervisor = JobSupervisor(spec, runner, publisher)
+        supervisor = JobSupervisor(spec, runner, publisher, activity=activity)
         in_flight: set[asyncio.Task[None]] = set()
         failed = asyncio.Event()
 
@@ -135,7 +146,19 @@ async def serve_jobs[J: JobMessage, R: IResultMessage](
 
         await _watch_consumer_cancel(channel, on_consumer_cancelled)
         try:
+            telemetry = TelemetrySettings()
+        except ValidationError:
+            logger.warning("Worker telemetry configuration invalid; collection disabled")
+            telemetry = None
+        observation_task = (
+            asyncio.create_task(publish_activity(activity, telemetry, stop))
+            if activity is not None and telemetry is not None and telemetry.receiver is not None
+            else None
+        )
+        try:
             await runner.start()
+            if activity is not None:
+                activity.ready = True
             # A job may hold its message for as long as its timeout allows; past the consumer
             # timeout RabbitMQ would hand the message to another worker while this one still runs.
             tag = await jobs.consume(
@@ -149,6 +172,9 @@ async def serve_jobs[J: JobMessage, R: IResultMessage](
             await jobs.cancel(tag)
             await _finish(in_flight, options.shutdown_grace)
         finally:
+            if observation_task is not None:
+                observation_task.cancel()
+                await asyncio.gather(observation_task, return_exceptions=True)
             await runner.stop()
     if failed.is_set():
         raise WorkerFailedError(f"{spec.name} stopped after a failure; the log has its cause")

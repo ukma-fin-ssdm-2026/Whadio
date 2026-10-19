@@ -10,6 +10,7 @@ from ...contracts.common import JobKind
 from ...contracts.queues import TRANSCRIPTION_REQUESTS
 from ...contracts.transcription import TranscriptionRequested
 from ...shared.logs import configure_logging
+from ...shared.telemetry import RuntimeActivity
 from ..supervision.jobs import WorkerSpec
 from ..supervision.slots import ProcessSlot, SlotPool, slot_program
 from ..supervision.supervisor import ConsumerOptions, serve_jobs
@@ -49,13 +50,28 @@ async def serve(settings: AsrWorkerSettings) -> None:
     for signal_number in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(signal_number, stop.set)
     asr = settings.asr
+    runner = build_runner(settings)
     options = ConsumerOptions(
         concurrency=asr.slots,
         # A job first waits for its slot to restart a process that crashed or overran.
         consumer_timeout=asr.startup_timeout + asr.job_timeout + _CONSUMER_TIMEOUT_MARGIN,
         shutdown_grace=asr.shutdown_grace,
+        activity=RuntimeActivity(
+            "asr",
+            settings.asr.slots,
+            settings.asr.parakeet.model
+            if settings.asr.recognizer.value == "parakeet"
+            else settings.asr.whisper.model,
+            availability=lambda: runner.availability,
+        ),
     )
-    await serve_jobs(ASR_WORKER, build_runner(settings), settings.broker, options, stop)
+    await serve_jobs(
+        ASR_WORKER,
+        runner,
+        settings.broker,
+        options,
+        stop,
+    )
 
 
 def main() -> None:

@@ -34,8 +34,12 @@ from ..accounts.services import (
     WorkspaceService,
     WorkspaceSettingsService,
 )
+from ..admin.services import ObservationStore
+from ..admin.settings import AdminSettings
 from ..audit.contracts import IContentAuditWriter
 from ..audit.services import AuditWriter
+from ..export.services import ExportService
+from ..export.settings import ExportSettings
 from ..meetings.contracts import EvictionNotice, IEvictionNotifier, QueuedNotes
 from ..meetings.persistence import MeetingPersistence, PersistenceDependencies
 from ..meetings.processing import IMeetingProcessing
@@ -64,6 +68,7 @@ logger = logging.getLogger(__name__)
 class CompositionRoot:
     def __init__(self, database: Database | None = None) -> None:
         self._database: Database | None = database
+        self.observations: ObservationStore = ObservationStore(AdminSettings())
         self._storage: IObjectStorage | None = None
         # Present while jobs are being published; setting it publishes the ones just committed.
         self._queued: asyncio.Event | None = None
@@ -382,3 +387,17 @@ def connect_integrations(app: FastAPI, integrations: RuntimeIntegrations) -> Non
     app.dependency_overrides[meeting_processing] = processing
     app.dependency_overrides[share_notifications] = shares
     app.dependency_overrides[eviction_notifications] = evictions
+
+
+def export_service(meetings: Meetings) -> ExportService:
+    return ExportService(meetings, str(ExportSettings().public_origin))
+
+
+Exports = Annotated[ExportService, Depends(export_service)]
+
+
+def observation_store() -> ObservationStore:
+    raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+
+
+Observations = Annotated[ObservationStore, Depends(observation_store)]
