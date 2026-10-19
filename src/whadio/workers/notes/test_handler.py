@@ -9,14 +9,13 @@ from ...contracts.notes import (
     NotesFailed,
     NotesFailure,
     NotesPreset,
-    NotesProvider,
     NotesReady,
     NotesRequested,
 )
 from .errors import NotesError
+from .fakes import ScriptedChatModel
 from .handler import NotesHandler, NotesResult
-from .llm import Completion
-from .prompt import ContextBudget, Prompt, PromptBuilder
+from .prompt import ContextBudget, PromptBuilder
 
 _AT = datetime(2026, 10, 9, 18, tzinfo=UTC)
 _TRANSCRIPT = Transcript(
@@ -55,23 +54,11 @@ _NOTES = """\
 """
 
 
-class _Model:
-    def __init__(self, answer: str | NotesError) -> None:
-        self._answer: str | NotesError = answer
-
-    @property
-    def provider(self) -> NotesProvider:
-        return NotesProvider.ANTHROPIC
-
-    async def complete(self, prompt: Prompt) -> Completion:
-        if isinstance(self._answer, NotesError):
-            raise self._answer
-        return Completion(text=self._answer, model_name=f"claude ({len(prompt.user)} chars)")
-
-
 def _handle(answer: str | NotesError, budget: int = 100_000) -> NotesResult:
     builder = PromptBuilder(ContextBudget(max_input_tokens=budget, chars_per_token=3.0))
-    return asyncio.run(NotesHandler(builder, _Model(answer), now=lambda: _AT).handle(_JOB))
+    return asyncio.run(
+        NotesHandler(builder, ScriptedChatModel(answer), now=lambda: _AT).handle(_JOB)
+    )
 
 
 def test_notes_take_the_proposed_name_from_the_model_answer() -> None:
