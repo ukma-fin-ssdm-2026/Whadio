@@ -6,8 +6,14 @@ export function formatDuration(seconds) {
   const remainingSeconds = seconds % 60;
 
   if (hours > 0) {
-    const minutePart = minutes > 0 ? ` ${minutes}m` : "";
-    return `${hours}h${minutePart} ${remainingSeconds}s`;
+    const parts = [`${hours}h`];
+
+    if (minutes > 0) {
+      parts.push(`${minutes}m`);
+    }
+
+    parts.push(`${remainingSeconds}s`);
+    return parts.join(" ");
   }
 
   return `${minutes}m ${remainingSeconds}s`;
