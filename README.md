@@ -89,7 +89,9 @@ take jobs from RabbitMQ and publish their results to `processing.results`.
   (the NVIDIA Container Toolkit is required) at `127.0.0.1:11434` and pulls the model into the
   `llm-models` volume; `task llm:logs` follows it. The notes worker in Compose reaches it as
   `http://llm-runtime:11434`; a worker run with `uv run whadio notes-worker` uses
-  `WHADIO_NOTES__LLM__BASE_URL`, `http://localhost:11434` by default. See
+  `WHADIO_NOTES__LLM__BASE_URL`, `http://localhost:11434` by default. With Ollama on a separate
+  GPU host, set `OLLAMA_ADDRESS` there to its private-network address, and `LLM_RUNTIME_URL` on
+  the main host to `http://<that address>:11434`. See
   [ADR-007](docs/architecture/decisions/ADR-007.md).
 - The ASR worker's first start downloads its models into the `asr-models` volume, which takes a
   few minutes.
