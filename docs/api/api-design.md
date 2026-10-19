@@ -891,21 +891,6 @@ All capture operations accept the extension's bearer token as well as the browse
   `503 INTEGRATION_UNAVAILABLE` if database access fails during authentication, permission checks,
   monitoring reads or transaction cleanup. Fresh but incomplete telemetry reports `partial` with
   `observation_incomplete`; unknown values remain null.
-- Operator setup: apply migration `0007` before starting the updated web runtime. Canonical
-  export links use `WHADIO_EXPORT_PUBLIC_ORIGIN`. Configure `WHADIO_ADMIN_SOURCES` with source
-  aliases, SHA-256 bearer-token hashes and their host/runtime scopes. Publishers use
-  `WHADIO_TELEMETRY_RECEIVER`, `WHADIO_TELEMETRY_SOURCE_ID`, `WHADIO_TELEMETRY_TOKEN` and
-  `WHADIO_TELEMETRY_INTERVAL_SECONDS`; Compose maps separate ASR/notes tokens. Host collectors
-  use `WHADIO_MONITOR_PROC` and `WHADIO_MONITOR_VOLUME` and run on the actual Linux host.
-  Keep the receiver on the private network and never publish meeting content or secrets.
-- Notes provider selection is deployment-wide: `WHADIO_NOTES__LLM__PROVIDER=anthropic|ollama`,
-  with `WHADIO_NOTES__LLM__MODEL`. Anthropic uses `WHADIO_NOTES__LLM__API_KEY`; Ollama uses a
-  private `WHADIO_NOTES__LLM__BASE_URL` and `WHADIO_NOTES__LLM__NUM_CTX`. Compose defaults the
-  local server address to `http://host.docker.internal:11434`. Restart the notes worker after
-  changing these settings. An unspecified model uses the Anthropic default; Ollama requires
-  an explicit model and rejects a missing/empty model at worker startup. Workspace BYOK and
-  automatic fallback are separate work. See [deployment setup](../../README.md#export-links-and-monitoring)
-  for the source-map format, token generation, collector settings and production export origin.
 
 #### `POST /admin/observations/{source_id}` · Private collector ingress
 
@@ -1298,9 +1283,3 @@ This document and the API code were prepared with the assistance of Claude Code 
 and 2026-10-04, and the requirements merged in PR #46. The stub code was checked with a type
 checker and with scripted requests against every implemented operation. The author reviewed
 and edited the content, and the document is reviewed through a pull request before merging.
-
-These PR #63 review revisions were assisted by OpenAI Codex. Everything was reviewed by me.
-
-
-Export and operational metadata contracts were implemented and documented with OpenAI Codex.
-UI work and end-to-end action-count verification remain separate.

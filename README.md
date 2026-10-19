@@ -28,9 +28,8 @@ uv run task infra:up             # PostgreSQL, RabbitMQ, SeaweedFS and Mailpit
 uv run task dev                  # the API on http://localhost:3000, with auto-reload
 ```
 
-Before deploying beyond localhost, complete [export and monitoring setup](#export-links-and-monitoring).
-The `.env.example` file covers the original local stack; the additional settings below must be
-added to your deployment's `.env` or environment when those features are enabled.
+[.env.example](.env.example) lists the settings and local defaults. Production export links and
+optional monitoring are configured below.
 
 ## Running the API
 
@@ -49,6 +48,8 @@ including what each error means, is in [`docs/api/api-design.md`](docs/api/api-d
   calls. Accounts cannot be created through the API yet.
 - Starting the server writes the OpenAPI specification to `docs/api/openapi-generated.yaml`
   and `.json`; to regenerate it without a server, run `uv run whadio openapi`.
+- Before deploying beyond localhost, set `WHADIO_EXPORT_PUBLIC_ORIGIN` to the public HTTP(S)
+  origin used by your users. Otherwise links in transcript downloads point to `http://localhost:3000`.
 
 ## Running the web app
 
@@ -83,62 +84,31 @@ take jobs from RabbitMQ and publish their results to `processing.results`.
 - In `.env`, the notes worker needs `WHADIO_NOTES__LLM__API_KEY` (Anthropic). The ASR worker needs
   `WHADIO_ASR__DIARIZATION__HF_TOKEN` from a Hugging Face account that accepted the conditions of
   `pyannote/speaker-diarization-community-1`.
-- To write notes with a self-hosted model, set `WHADIO_NOTES__LLM__PROVIDER=ollama` and
-  `WHADIO_NOTES__LLM__MODEL` to a model already pulled on your Ollama server, such as
-  `gemma3:12b`. The model is required; omitting it makes the worker reject its configuration
-  at startup. Compose forwards these settings, as does `uv run whadio notes-worker` when
-  reading `.env`. Set `WHADIO_NOTES__LLM__BASE_URL` to the server's private address. Direct
-  workers default to `http://localhost:11434`; Compose defaults to
-  `http://host.docker.internal:11434` for a server on the Docker host. Set
-  `WHADIO_NOTES__LLM__NUM_CTX` to its context window (default `32768`). Anthropic retains its
-  default model when no model is supplied. Restart the notes worker after changing providers.
+- For Ollama, set `WHADIO_NOTES__LLM__PROVIDER=ollama` and explicitly choose a pulled model
+  with `WHADIO_NOTES__LLM__MODEL`; a missing model is rejected at startup. Both Compose and
+  direct workers use these settings.
 - The ASR worker's first start downloads its models into the `asr-models` volume, which takes a
   few minutes.
 - The ASR worker downloads recordings through presigned links signed for
   `http://seaweedfs:8333`, the name it reaches storage by in Compose.
 
-## Export links and monitoring
+## Running monitoring
 
-Apply migrations with `uv run task db:upgrade` before starting the updated API. Set
-`WHADIO_EXPORT_PUBLIC_ORIGIN` to the public HTTP(S) origin used by your users, for example
-`https://whadio.example.com`. Without it, exported original-transcript links point to
-`http://localhost:3000`. This setting accepts an origin without a path, query or credentials.
+Telemetry is optional and disabled by default. Settings and source-map examples are in
+[.env.example](.env.example).
 
-Telemetry is disabled until configured. Add the following settings to the environment of the
-web runtime and the relevant collectors/workers:
+- In the web runtime, set `WHADIO_ADMIN_SOURCES` to a JSON map of source aliases, SHA-256 token
+  hashes and allowed host/runtime scopes. Give each source a separate bearer token.
+- For Compose workers, set `WHADIO_TELEMETRY_RECEIVER` to the private API origin and supply
+  `WHADIO_ASR_TELEMETRY_TOKEN` / `WHADIO_NOTES_TELEMETRY_TOKEN`. Register their source IDs as
+  `asr-worker` / `notes-worker`, with runtime scopes `asr` / `notes`.
+- Run `uv run whadio monitor-host` on each actual Linux host with its
+  `WHADIO_TELEMETRY_SOURCE_ID`, `WHADIO_TELEMETRY_TOKEN` and receiver. Set `WHADIO_MONITOR_PROC`
+  and `WHADIO_MONITOR_VOLUME` to the host's proc filesystem and monitored volume.
 
-| Setting | Where and what to configure |
-| --- | --- |
-| `WHADIO_ADMIN_SOURCES` | Web runtime: JSON map of source aliases to SHA-256 token hashes and allowed scopes; example below |
-| `WHADIO_TELEMETRY_RECEIVER` | Each publisher: private web origin reachable from that host/container; HTTPS or an encrypted private network |
-| `WHADIO_TELEMETRY_SOURCE_ID` | Host collector: its alias from the receiver's source map |
-| `WHADIO_TELEMETRY_TOKEN` | Host collector: that source's bearer token; configure it together with the receiver |
-| `WHADIO_ASR_TELEMETRY_TOKEN` | ASR Compose deployment: its own bearer token; Compose sets source ID `asr-worker` |
-| `WHADIO_NOTES_TELEMETRY_TOKEN` | Notes Compose deployment: its own bearer token; Compose sets source ID `notes-worker` |
-| `WHADIO_TELEMETRY_INTERVAL_SECONDS` | Each publisher: sample interval, default `10`, allowed `1` through `60` |
-| `WHADIO_MONITOR_PROC` | Linux host collector: host proc filesystem, default `/proc` |
-| `WHADIO_MONITOR_VOLUME` | Linux host collector: volume to measure, default `/` |
-
-Generate a separate token for each source and calculate its SHA-256 hash locally:
-
-```bash
-uv run python -c "import secrets; print(secrets.token_urlsafe(32))"
-uv run python -c "import getpass, hashlib; print(hashlib.sha256(getpass.getpass('Source token: ').encode()).hexdigest())"
-```
-
-Put the raw token only in its publisher's secret environment. On the receiver, set the source
-map using the hashes, replacing each placeholder with the corresponding 64-character hex hash:
-
-```dotenv
-WHADIO_ADMIN_SOURCES='{"main-host":{"kind":"host","token_hash":"<host-token-sha256>"},"asr-worker":{"kind":"runtime","runtime":"asr","token_hash":"<asr-token-sha256>"},"notes-worker":{"kind":"runtime","runtime":"notes","token_hash":"<notes-token-sha256>"}}'
-```
-
-Run `uv run whadio monitor-host` on each real Linux host with that host's source ID, token,
-receiver and volume settings. Host credentials have `kind=host`; worker credentials have
-`kind=runtime` and are restricted to `asr` or `notes`. The GPU host receives only its source's
-credential and settings. Restrict `/api/v1/admin/observations/` to the private network at the
-proxy. Restart the web runtime after changing its source map. Metadata and freshness behavior
-are described in [the administration API](docs/api/api-design.md#48-administration-and-operations).
+Use HTTPS or an encrypted private network and restrict the observation endpoint at the proxy.
+Keep only token hashes in the receiver's source map; give the GPU host only its own collector
+settings. Restart the web runtime or workers after changing their configuration.
 
 ## Connecting an AI assistant (MCP)
 
@@ -194,5 +164,3 @@ Testing policy and evidence are maintained in [`/docs/testing/`](docs/testing/).
 
 ## AI usage
 The document was prepared with the help of Claude Code (Claude Opus 5 model) based on the team's decisions; the content was manually checked and edited, and the document is reviewed via a pull request before merging.
-
-Export/monitoring setup and provider configuration corrections were prepared with OpenAI Codex.
