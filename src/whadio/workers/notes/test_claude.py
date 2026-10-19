@@ -126,6 +126,39 @@ def test_claude_refusal_is_reported_as_refused() -> None:
     assert reason is NotesFailure.PROVIDER_REFUSED
 
 
+def test_claude_answer_cut_off_by_the_answer_limit_is_invalid_output() -> None:
+    # Arrange
+    handler = _answering(
+        200,
+        _message(
+            {"type": "text", "text": "# Sync\n## Summary\nShould we"}, stop_reason="max_tokens"
+        ),
+    )
+
+    # Act
+    reason = _failure_of(handler)
+
+    # Assert
+    assert reason is NotesFailure.INVALID_OUTPUT
+
+
+def test_claude_answer_that_runs_out_of_the_window_is_reported_as_too_long() -> None:
+    # Arrange
+    handler = _answering(
+        200,
+        _message(
+            {"type": "text", "text": "# Sync\n## Summary\nShould we"},
+            stop_reason="model_context_window_exceeded",
+        ),
+    )
+
+    # Act
+    reason = _failure_of(handler)
+
+    # Assert
+    assert reason is NotesFailure.TRANSCRIPT_TOO_LONG
+
+
 @pytest.mark.parametrize(
     ("status", "expected"),
     [

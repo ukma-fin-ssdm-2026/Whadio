@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
-from typing import BinaryIO
 from uuid import UUID, uuid4
 
 import pytest
@@ -72,7 +71,7 @@ from ..processing.services import ProcessingCollaborators, ProcessingService
 from ..retention.services import RetentionService, StorageUnavailableError
 from ..shared.database import Database, DatabaseSettings
 from ..shared.errors import Failure, UseCaseError
-from ..shared.storage import ObjectStorageError, PresignedUrl
+from ..shared.fakes import InMemoryObjectStorage
 from .app import create_app
 from .composition import (
     CompositionRoot,
@@ -95,7 +94,7 @@ def test_multipart_allowance_does_not_relax_file_size_limit(
 ) -> None:
     # Arrange
     async def scenario() -> None:
-        storage, processing = MemoryObjects(), ProcessingFixture()
+        storage, processing = InMemoryObjectStorage(), ProcessingFixture()
         recording = _wav()
         monkeypatch.setattr(meeting_routes, "MAX_UPLOAD_BYTES", len(recording) - 1)
         async with (
@@ -109,7 +108,12 @@ def test_multipart_allowance_does_not_relax_file_size_limit(
             )
             error = ErrorResponse.model_validate_json(response.content).error
             # Assert
-            assert (response.status_code, error.code, processing.transcriptions, storage.data) == (
+            assert (
+                response.status_code,
+                error.code,
+                processing.transcriptions,
+                storage.objects,
+            ) == (
                 413,
                 ErrorCode.PAYLOAD_TOO_LARGE,
                 [],
@@ -161,27 +165,6 @@ class EvictionNotices:
         self.notices.append(notice)
 
 
-class MemoryObjects:
-    def __init__(self) -> None:
-        self.data: dict[str, bytes] = {}
-        self.created: list[str] = []
-        self.fail_deletion: bool = False
-
-    def put(self, key: str, data: BinaryIO, *, content_type: str) -> None:
-        del content_type
-        self.data[key] = data.read()
-        self.created.append(key)
-
-    def delete(self, key: str) -> None:
-        if self.fail_deletion:
-            raise ObjectStorageError("Storage unavailable")
-        self.data.pop(key, None)
-
-    def presign_get(self, key: str, *, expires_in: timedelta) -> PresignedUrl:
-        del key
-        return PresignedUrl("https://storage.test/playback", datetime.now(UTC) + expires_in)
-
-
 def _wav() -> bytes:
     recording = BytesIO()
     with wave.open(recording, "wb") as audio:
@@ -192,11 +175,11 @@ def _wav() -> bytes:
     return recording.getvalue()
 
 
-async def _clean_uploads(settings: DatabaseSettings, storage: MemoryObjects) -> None:
+async def _clean_uploads(settings: DatabaseSettings, storage: InMemoryObjectStorage) -> None:
     database = Database(settings)
     try:
         async with database.transaction() as session:
-            for key in storage.created:
+            for key in storage.uploaded:
                 await MeetingRepository(session).release_upload(key)
     finally:
         await database.close()
@@ -907,7 +890,7 @@ async def client_fixture(
     unit: Unit,
     user_id: UUID,
     processing: ProcessingFixture | None = None,
-    storage: MemoryObjects | None = None,
+    storage: InMemoryObjectStorage | None = None,
 ) -> AsyncGenerator[AsyncClient]:
     app = create_app(unit.database)
 
@@ -1291,7 +1274,7 @@ def test_upload_decodes_audio_before_creating_meeting(
 ) -> None:
     # Arrange
     async def scenario() -> None:
-        storage, processing = MemoryObjects(), ProcessingFixture()
+        storage, processing = InMemoryObjectStorage(), ProcessingFixture()
         try:
             async with (
                 unit_fixture(database_settings) as unit,
@@ -1312,7 +1295,7 @@ def test_upload_decodes_audio_before_creating_meeting(
                 assert (
                     response.status_code,
                     len(processing.transcriptions),
-                    len(storage.data),
+                    len(storage.objects),
                     "Location" in response.headers,
                 ) == ((201, 1, 1, True) if valid else (415, 0, 0, False))
         finally:
@@ -1329,9 +1312,9 @@ def test_failed_upload_keeps_durable_cleanup_when_storage_is_unavailable(
 ) -> None:
     # Arrange
     async def scenario() -> None:
-        storage, processing = MemoryObjects(), ProcessingFixture()
+        storage, processing = InMemoryObjectStorage(), ProcessingFixture()
         processing.unavailable = True
-        storage.fail_deletion = not cleanup_succeeds
+        storage.fail_delete = not cleanup_succeeds
         try:
             async with (
                 unit_fixture(database_settings) as unit,
@@ -1344,11 +1327,15 @@ def test_failed_upload_keeps_durable_cleanup_when_storage_is_unavailable(
                 )
                 pending = await unit.session.scalar(
                     select(RecordingDeletion.storage_key).where(
-                        RecordingDeletion.storage_key.in_(storage.created)
+                        RecordingDeletion.storage_key.in_(storage.uploaded)
                     )
                 )
                 # Assert
-                assert (response.status_code, len(storage.data), pending in storage.created) == (
+                assert (
+                    response.status_code,
+                    len(storage.objects),
+                    pending in storage.uploaded,
+                ) == (
                     503,
                     0 if cleanup_succeeds else 1,
                     True,
@@ -1564,7 +1551,7 @@ def test_upload_is_unavailable_without_a_broker(async_database: AsyncDatabase) -
 def test_upload_queues_a_transcription_job_to_publish(database_settings: DatabaseSettings) -> None:
     # Arrange
     async def scenario() -> None:
-        storage = MemoryObjects()
+        storage = InMemoryObjectStorage()
         try:
             async with unit_fixture(database_settings) as unit:
                 app = create_app(

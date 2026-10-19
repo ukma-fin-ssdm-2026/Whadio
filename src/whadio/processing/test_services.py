@@ -1,11 +1,14 @@
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
-from typing import BinaryIO
+from functools import partial
 from uuid import UUID, uuid4
 
 import pytest
+
+from conftest import NOW
 
 from ..accounts.enums import LlmProvider, NotesTemplate
 from ..contracts.common import JobKind, Segment, Transcript
@@ -39,7 +42,7 @@ from ..meetings.models import GlossaryTerm, Meeting, Speaker, TranscriptRevision
 from ..meetings.models import Transcript as StoredTranscript
 from ..meetings.persistence import GeneratedNotes
 from ..shared.errors import UseCaseError
-from ..shared.storage import PresignedUrl
+from ..shared.fakes import FixedClock, InMemoryObjectStorage
 from .enums import JobStatus, JobType
 from .repositories import Job
 from .services import (
@@ -52,8 +55,6 @@ from .services import (
     ProcessingService,
 )
 from .speakers import SpeakerEvent
-
-NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 
 
 def stored_version(*speaker_names: str) -> TranscriptVersion:
@@ -221,19 +222,6 @@ class FakeWorkspaces:
         return NotesTemplate.DETAILED
 
 
-class FakeStorage:
-    def put(self, key: str, data: BinaryIO, *, content_type: str) -> None:
-        del key, data, content_type
-
-    def delete(self, key: str) -> None:
-        del key
-
-    def presign_get(self, key: str, *, expires_in: timedelta) -> PresignedUrl:
-        return PresignedUrl(
-            url=f"http://storage.test/recordings/{key}", expires_at=NOW + expires_in
-        )
-
-
 @dataclass
 class FakeTimeline:
     events: tuple[SpeakerEvent, ...] = ()
@@ -259,6 +247,7 @@ class Pipeline:
     jobs: FakeJobs
     meetings: FakeMeetings
     notes: FakeNotes
+    storage: InMemoryObjectStorage
     publisher: FakePublisher = field(default_factory=FakePublisher)
 
     @property
@@ -270,15 +259,17 @@ def make_pipeline(
     meeting: Meeting | None = None, events: tuple[SpeakerEvent, ...] = ()
 ) -> Pipeline:
     jobs, meetings, notes = FakeJobs(), FakeMeetings(meeting or meeting_row()), FakeNotes()
+    storage = InMemoryObjectStorage(now=FixedClock(NOW))
     return Pipeline(
         ProcessingService(
             ProcessingCollaborators(
-                jobs, meetings, notes, FakeWorkspaces(), FakeStorage(), FakeTimeline(events)
+                jobs, meetings, notes, FakeWorkspaces(), storage, FakeTimeline(events)
             )
         ),
         jobs,
         meetings,
         notes,
+        storage,
     )
 
 
@@ -945,3 +936,28 @@ def test_dead_letter_of_a_finished_job_changes_nothing() -> None:
     asyncio.run(pipeline.service.dead_lettered(job_id, NOW))
     # Assert
     assert pipeline.meetings.update.state is ProcessingState.QUEUED
+
+
+# --- Recording storage ---
+
+
+@pytest.mark.parametrize(
+    "finish",
+    [notes_ready, partial(notes_failed, reason=NotesFailure.PROVIDER_AUTH_FAILED)],
+    ids=["processed", "failed"],
+)
+def test_processing_a_meeting_neither_uploads_nor_deletes_its_recording(
+    finish: Callable[[Pipeline, UUID], ProcessingResult],
+) -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    # Act
+    queue(pipeline)
+    (transcription,) = transcription_requests(publish_all(pipeline))
+    handle(pipeline, started(pipeline, transcription.job_id))
+    handle(pipeline, transcript_ready(pipeline, transcription.job_id))
+    (notes,) = notes_requests(publish_all(pipeline))
+    handle(pipeline, started(pipeline, notes.job_id, JobKind.NOTES))
+    handle(pipeline, finish(pipeline, notes.job_id))
+    # Assert
+    assert (pipeline.storage.uploaded, pipeline.storage.deleted) == ([], [])

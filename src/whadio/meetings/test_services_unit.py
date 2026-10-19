@@ -4,14 +4,15 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
+import pytest
 from sqlalchemy import Select, false, select
 
 from ..access_policy.contracts import MeetingScope
 from ..access_policy.models import MeetingAccessGrant
 from ..access_policy.services import ContentPath, Permission
 from ..accounts.enums import WorkspaceRole
-from ..audit.contracts import ContentEvent
 from ..audit.enums import AuditAction
+from ..audit.fakes import RecordingAuditWriter
 from ..shared.errors import Failure, UseCaseError
 from ..shared.pagination import ListWindow
 from .contracts import ContextReference, MeetingFilter, NoteVersion, TranscriptVersion
@@ -20,6 +21,12 @@ from .models import Folder, GlossaryTerm, Meeting, Note, TranscriptRevision
 from .services import MeetingService, RecordingInput
 
 NOW = datetime(2026, 10, 13, 9, 0, tzinfo=UTC)
+NAMES_THE_API_ACCEPTS = pytest.mark.parametrize(
+    "name", ["0\xad", "0\U0001239a"], ids=["soft-hyphen", "unassigned"]
+)
+NAMES_THE_API_REFUSES = pytest.mark.parametrize(
+    "name", ["0\x1f", "\x1cDesign"], ids=["unit-separator", "file-separator"]
+)
 
 
 class FakeMeetingRepository:
@@ -167,19 +174,11 @@ class FakePolicy:
         raise NotImplementedError(share_id, user_id, path)
 
 
-class FakeAudit:
-    def __init__(self) -> None:
-        self.events: list[ContentEvent] = []
-
-    async def write(self, event: ContentEvent) -> None:
-        self.events.append(event)
-
-
 @dataclass(frozen=True)
 class Team:
     meetings: MeetingService
     repository: FakeMeetingRepository
-    audit: FakeAudit
+    audit: RecordingAuditWriter
     owner: UUID
     member: UUID
     workspace: UUID
@@ -189,7 +188,7 @@ class Team:
 
 def team() -> Team:
     owner, member, workspace = uuid4(), uuid4(), uuid4()
-    repository, policy, audit = FakeMeetingRepository(), FakePolicy(), FakeAudit()
+    repository, policy, audit = FakeMeetingRepository(), FakePolicy(), RecordingAuditWriter()
     policy.roles[workspace, owner] = WorkspaceRole.OWNER
     policy.roles[workspace, member] = WorkspaceRole.MEMBER
     folder = Folder(
@@ -306,6 +305,26 @@ def test_renaming_a_meeting_is_audited() -> None:
     assert [event.action for event in unit.audit.events] == [AuditAction.MEETING_RENAMED]
 
 
+@NAMES_THE_API_ACCEPTS
+def test_meeting_name_the_api_accepts_is_kept(name: str) -> None:
+    # Arrange
+    unit = team()
+    # Act
+    meeting = asyncio.run(unit.meetings.update(unit.owner, unit.meeting, NOW, name=name))
+    # Assert
+    assert meeting.name == name
+
+
+@NAMES_THE_API_REFUSES
+def test_meeting_name_the_api_refuses_is_refused(name: str) -> None:
+    # Arrange
+    unit = team()
+    # Act
+    failure = refusal(unit.meetings.update(unit.owner, unit.meeting, NOW, name=name))
+    # Assert
+    assert failure is Failure.VALIDATION_ERROR
+
+
 def test_member_cannot_delete_someone_elses_meeting() -> None:
     # Arrange
     unit = team()
@@ -346,6 +365,26 @@ def test_folder_name_with_a_control_character_is_refused() -> None:
     assert failure is Failure.VALIDATION_ERROR
 
 
+@NAMES_THE_API_ACCEPTS
+def test_folder_name_the_api_accepts_is_kept(name: str) -> None:
+    # Arrange
+    unit = team()
+    # Act
+    folder = asyncio.run(unit.meetings.create_folder(unit.owner, unit.workspace, name, NOW))
+    # Assert
+    assert folder.name == name
+
+
+@NAMES_THE_API_REFUSES
+def test_folder_name_the_api_refuses_is_refused(name: str) -> None:
+    # Arrange
+    unit = team()
+    # Act
+    failure = refusal(unit.meetings.create_folder(unit.owner, unit.workspace, name, NOW))
+    # Assert
+    assert failure is Failure.VALIDATION_ERROR
+
+
 # --- Glossary ---
 
 
@@ -367,3 +406,23 @@ def test_member_cannot_delete_someone_elses_term() -> None:
     failure = refusal(unit.meetings.delete_term(unit.member, unit.workspace, added.term_id))
     # Assert
     assert failure is Failure.INSUFFICIENT_ROLE
+
+
+@NAMES_THE_API_ACCEPTS
+def test_term_the_api_accepts_is_kept(name: str) -> None:
+    # Arrange
+    unit = team()
+    # Act
+    added = asyncio.run(unit.meetings.add_term(unit.member, term(unit, name, unit.member)))
+    # Assert
+    assert added.term == name
+
+
+@NAMES_THE_API_REFUSES
+def test_term_the_api_refuses_is_refused(name: str) -> None:
+    # Arrange
+    unit = team()
+    # Act
+    failure = refusal(unit.meetings.add_term(unit.member, term(unit, name, unit.member)))
+    # Assert
+    assert failure is Failure.VALIDATION_ERROR
