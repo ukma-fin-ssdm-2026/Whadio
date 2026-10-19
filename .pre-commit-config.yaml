@@ -75,10 +75,8 @@ repos:
       - id: biome
         name: biome check --write (frontend)
         language: unsupported
-        entry: >-
-          sh -c 'test -x frontend/node_modules/.bin/biome && command -v npm >/dev/null
-          || { echo "Node or the frontend dependencies are missing: install Node 24+, then run task frontend:install" >&2; exit 1; };
-          exec npm --prefix frontend run check:fix'
+        # No shell wrapper: Windows has no sh outside Git Bash, while pre-commit resolves npm.cmd.
+        entry: npm --prefix frontend run check:fix
         files: ^frontend/
         pass_filenames: false
         require_serial: true
