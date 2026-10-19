@@ -15,7 +15,6 @@ from .settings import (
     load_notes_worker_settings,
 )
 
-_EPSILON: Final = math.ulp(0.0)
 _MICROSECOND: Final = 1e-6
 
 
@@ -207,9 +206,13 @@ def test_ollama_prompt_budget_keeps_a_smaller_input_budget(
         pytest.param("concurrency", 0, True, id="concurrency-bva-below-min"),
         pytest.param("concurrency", 1, False, id="concurrency-bva-min"),
         pytest.param("concurrency", 2, False, id="concurrency-bva-above-min"),
-        pytest.param("chars_per_token", -_EPSILON, True, id="chars-per-token-bva-below-bound"),
-        pytest.param("chars_per_token", 0.0, True, id="chars-per-token-bva-on-bound"),
-        pytest.param("chars_per_token", _EPSILON, False, id="chars-per-token-bva-above-bound"),
+        pytest.param(
+            "chars_per_token", math.nextafter(0.25, 0), True, id="chars-per-token-bva-below-min"
+        ),
+        pytest.param("chars_per_token", 0.25, False, id="chars-per-token-bva-min"),
+        pytest.param(
+            "chars_per_token", math.nextafter(0.25, 1), False, id="chars-per-token-bva-above-min"
+        ),
     ],
 )
 def test_notes_limit_is_refused_only_below_its_floor(
@@ -220,6 +223,16 @@ def test_notes_limit_is_refused_only_below_its_floor(
 
     # Assert
     assert found == ({field} if refused else set[str]())
+
+
+def test_infinite_chars_per_token_is_refused() -> None:
+    # Act
+    found = refused_fields(
+        NotesSettings, {"llm": {"api_key": "sk-ant-test"}, "chars_per_token": math.inf}
+    )
+
+    # Assert
+    assert found == {"chars_per_token"}
 
 
 @pytest.mark.parametrize(

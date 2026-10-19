@@ -78,7 +78,11 @@ class NotesSettings(BaseModel):
         description="Budget for the prompt; context meetings that do not fit are left out",
     )
     chars_per_token: float = Field(
-        default=2.5, gt=0, description="Characters per token assumed when estimating the prompt"
+        default=2.5,
+        ge=0.25,
+        allow_inf_nan=False,
+        description="Characters per token assumed when estimating the prompt; at least 0.25, "
+        "since a token covers at least one UTF-8 byte and a character at most four",
     )
     concurrency: int = Field(default=4, ge=1, description="Jobs handled at the same time")
     job_timeout: timedelta = Field(
