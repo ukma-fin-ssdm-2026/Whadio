@@ -58,7 +58,7 @@ def _transcribe(job: TranscriptionRequested) -> _Result:
 
 
 def _interrupt_and_transcribe(job: TranscriptionRequested) -> _Result:
-    os.kill(os.getpid(), signal.SIGINT)
+    signal.raise_signal(signal.SIGINT)
     time.sleep(0.2)
     return _transcribe(job)
 
