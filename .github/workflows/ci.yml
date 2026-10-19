@@ -15,7 +15,7 @@ concurrency:
 jobs:
   verify:
     name: Checks, tests and API contract
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     env:
       # Pushes to main check out main itself; the hook exists to stop local commits there.
       SKIP: no-commit-to-branch
@@ -109,7 +109,7 @@ jobs:
     concurrency:
       group: pages
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - name: Deploy to GitHub Pages
         id: deployment

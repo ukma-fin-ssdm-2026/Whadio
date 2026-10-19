@@ -15,7 +15,7 @@ concurrency:
 jobs:
   commit-messages:
     name: Pull request title and commit messages
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     defaults:
       run:
         shell: bash
