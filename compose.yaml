@@ -119,7 +119,8 @@ services:
       # `:-`, not `:?`: Compose reads the whole file, so `:?` would break every command.
       WHADIO_NOTES__LLM__API_KEY: ${WHADIO_NOTES__LLM__API_KEY:-}
       WHADIO_NOTES__LLM__PROVIDER: ${WHADIO_NOTES__LLM__PROVIDER:-anthropic}
-      WHADIO_NOTES__LLM__MODEL: ${WHADIO_NOTES__LLM__MODEL:-claude-sonnet-5-5}
+      # Unset models retain the provider's own default or required-field validation.
+      WHADIO_NOTES__LLM__MODEL:
       WHADIO_NOTES__LLM__BASE_URL: ${WHADIO_NOTES__LLM__BASE_URL:-http://host.docker.internal:11434}
       WHADIO_NOTES__LLM__NUM_CTX: ${WHADIO_NOTES__LLM__NUM_CTX:-32768}
       WHADIO_TELEMETRY_RECEIVER: ${WHADIO_TELEMETRY_RECEIVER:-}

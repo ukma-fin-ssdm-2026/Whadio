@@ -902,7 +902,10 @@ All capture operations accept the extension's bearer token as well as the browse
   with `WHADIO_NOTES__LLM__MODEL`. Anthropic uses `WHADIO_NOTES__LLM__API_KEY`; Ollama uses a
   private `WHADIO_NOTES__LLM__BASE_URL` and `WHADIO_NOTES__LLM__NUM_CTX`. Compose defaults the
   local server address to `http://host.docker.internal:11434`. Restart the notes worker after
-  changing these settings. Workspace BYOK and automatic fallback are separate work.
+  changing these settings. An unspecified model uses the Anthropic default; Ollama requires
+  an explicit model and rejects a missing/empty model at worker startup. Workspace BYOK and
+  automatic fallback are separate work. See [deployment setup](../../README.md#export-links-and-monitoring)
+  for the source-map format, token generation, collector settings and production export origin.
 
 #### `POST /admin/observations/{source_id}` · Private collector ingress
 
