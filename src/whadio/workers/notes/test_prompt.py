@@ -91,12 +91,11 @@ def _budget(max_input_chars: int, chars_per_token: float) -> ContextBudget:
 
 
 # Generated prompts take 2,100 to 2,700 characters, mostly the system prompt, so these budgets
-# refuse some requests and accept others with only part of their context. The divisors keep the
-# quotients of small character counts exact, so the estimate's rounding is the only one tested.
+# refuse some requests and accept others with only part of their context.
 _BUDGETS: Final = st.builds(
     _budget,
     st.integers(min_value=2_200, max_value=2_700),
-    st.sampled_from((1.0, 2.5, 3.0, 4.0)),
+    st.floats(min_value=1.0, max_value=4.0),
 )
 
 
@@ -285,6 +284,29 @@ def test_context_meeting_one_token_over_the_budget_is_left_out() -> None:
     # Arrange
     request = _request(_MEETING, context=(_context("Weekly sync", day=1),), glossary=_GLOSSARY)
     budget = ContextBudget(max_input_tokens=_prompt_chars(request) - 1, chars_per_token=1.0)
+
+    # Act
+    prompt = PromptBuilder(budget).build(request)
+
+    # Assert
+    assert prompt.context_meeting_ids == ()
+
+
+def test_context_meeting_that_fits_only_when_estimated_separately_is_left_out() -> None:
+    # Arrange
+    meeting = _transcript((0, "Speaker 1", "xxx"))
+    request = _request(
+        meeting, context=(_context("Weekly sync", day=1, text="x" * 28),), glossary=_GLOSSARY
+    )
+    bare = PromptBuilder(_GENEROUS).build(_request(meeting, glossary=_GLOSSARY))
+    full = PromptBuilder(_GENEROUS).build(request)
+    estimate = ContextBudget(max_input_tokens=0, chars_per_token=1.4)
+    separately = (
+        estimate.tokens(full.system)
+        + estimate.tokens(bare.user)
+        + estimate.tokens_for(len(full.user) - len(bare.user))
+    )
+    budget = ContextBudget(max_input_tokens=separately, chars_per_token=1.4)
 
     # Act
     prompt = PromptBuilder(budget).build(request)

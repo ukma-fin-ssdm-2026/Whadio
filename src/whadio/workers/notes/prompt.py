@@ -30,7 +30,10 @@ class ContextBudget:
     chars_per_token: float
 
     def tokens(self, text: str) -> int:
-        return math.ceil(len(text) / self.chars_per_token)
+        return self.tokens_for(len(text))
+
+    def tokens_for(self, chars: int) -> int:
+        return math.ceil(chars / self.chars_per_token)
 
 
 def render_transcript(transcript: Transcript) -> str:
@@ -59,10 +62,10 @@ class PromptBuilder:
         meeting = _meeting(request)
         task = "Write the notes for the meeting in <meeting>."
         fixed = _SEPARATOR.join(part for part in (glossary, meeting, task) if part)
-        used = self._budget.tokens(system) + self._budget.tokens(fixed)
-        if used > self._budget.max_input_tokens:
+        tokens_left = self._budget.max_input_tokens - self._budget.tokens(system)
+        if self._budget.tokens(fixed) > tokens_left:
             raise NotesError(NotesFailure.TRANSCRIPT_TOO_LONG)
-        context = self._fitting_context(request.context, self._budget.max_input_tokens - used)
+        context = self._fitting_context(request.context, len(fixed), tokens_left)
         rendered = [_context_meeting(meeting) for meeting in context]
         user = _SEPARATOR.join(part for part in (glossary, *rendered, meeting, task) if part)
         return Prompt(
@@ -73,15 +76,16 @@ class PromptBuilder:
         )
 
     def _fitting_context(
-        self, context: Iterable[ContextMeeting], tokens_left: int
+        self, context: Iterable[ContextMeeting], user_chars: int, tokens_left: int
     ) -> list[ContextMeeting]:
         chosen: list[ContextMeeting] = []
         for meeting in sorted(context, key=lambda m: m.recorded_at, reverse=True):
             # The meeting and the task always follow, so each context meeting adds one separator.
-            cost = self._budget.tokens(_context_meeting(meeting) + _SEPARATOR)
-            if cost <= tokens_left:
+            # Summing per-meeting estimates instead can round under the assembled prompt's.
+            with_meeting = user_chars + len(_context_meeting(meeting)) + len(_SEPARATOR)
+            if self._budget.tokens_for(with_meeting) <= tokens_left:
                 chosen.append(meeting)
-                tokens_left -= cost
+                user_chars = with_meeting
         return sorted(chosen, key=lambda m: m.recorded_at)
 
 
