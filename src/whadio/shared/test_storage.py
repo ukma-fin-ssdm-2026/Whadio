@@ -126,23 +126,32 @@ def test_presigned_url_lives_from_one_second_to_seven_days(
     assert parse_qs(urlsplit(presigned.url).query)["X-Amz-Expires"] == [expires]
 
 
-def test_presigning_refuses_a_lifetime_under_one_second() -> None:
+@pytest.mark.parametrize(
+    "lifetime",
+    [
+        pytest.param(timedelta(0), id="bva-below-min"),
+        pytest.param(timedelta(milliseconds=999), id="bva-below-min-by-a-fraction"),
+        pytest.param(timedelta(days=7, seconds=1), id="bva-above-max"),
+    ],
+)
+def test_presigning_refuses_a_lifetime_outside_one_second_to_seven_days(
+    lifetime: timedelta,
+) -> None:
     # Arrange
     storage = connect_s3_storage(_SETTINGS)
 
     # Act / Assert
-    with pytest.raises(ValueError, match="1 second"):
-        storage.presign_get(_KEY, expires_in=timedelta(milliseconds=999))
-
-
-@pytest.mark.parametrize("lifetime", [timedelta(0), timedelta(days=7, seconds=1)])
-def test_presigning_refuses_a_lifetime_outside_what_sigv4_allows(lifetime: timedelta) -> None:
-    # Arrange
-    storage = connect_s3_storage(_SETTINGS)
-
-    # Act / Assert
-    with pytest.raises(ValueError, match="at most 7 days"):
+    with pytest.raises(ValueError, match="presigned URL lives whole seconds"):
         storage.presign_get(_KEY, expires_in=lifetime)
+
+
+def test_presigning_refuses_a_lifetime_with_a_fraction_of_a_second() -> None:
+    # Arrange
+    storage = connect_s3_storage(_SETTINGS)
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="presigned URL lives whole seconds"):
+        storage.presign_get(_KEY, expires_in=timedelta(seconds=1.5))
 
 
 def test_put_stores_the_object_with_its_content_type_in_one_request() -> None:

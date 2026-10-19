@@ -8,6 +8,7 @@ from minio import Minio
 from minio.error import MinioException
 from pydantic import BaseModel, Field, HttpUrl, SecretStr
 
+MIN_PRESIGNED_LIFETIME: Final = timedelta(seconds=1)
 MAX_PRESIGNED_LIFETIME: Final = timedelta(days=7)
 _PART_SIZE: Final = 16 * 1024 * 1024
 
@@ -41,6 +42,14 @@ class IObjectStorage(Protocol):
     def delete(self, key: str) -> None: ...
 
     def presign_get(self, key: str, *, expires_in: timedelta) -> PresignedUrl: ...
+
+
+def check_presigned_lifetime(expires_in: timedelta) -> None:
+    # minio refuses a lifetime under 1 s and signs a fraction of a second truncated.
+    if expires_in.microseconds or not (
+        MIN_PRESIGNED_LIFETIME <= expires_in <= MAX_PRESIGNED_LIFETIME
+    ):
+        raise ValueError("a presigned URL lives whole seconds, from 1 second to 7 days")
 
 
 def _utc_now() -> datetime:
@@ -86,8 +95,7 @@ class S3ObjectStorage:
             raise ObjectStorageError("Deleting an object failed") from error
 
     def presign_get(self, key: str, *, expires_in: timedelta) -> PresignedUrl:
-        if not timedelta(0) < expires_in <= MAX_PRESIGNED_LIFETIME:
-            raise ValueError("a presigned URL lives longer than zero and at most 7 days")
+        check_presigned_lifetime(expires_in)
         now = self._now()
         url = self._signer.presigned_get_object(
             self._bucket, key, expires=expires_in, request_date=now

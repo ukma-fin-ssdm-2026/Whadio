@@ -84,12 +84,34 @@ def test_presigned_link_expires_its_lifetime_after_the_clock() -> None:
 
 @pytest.mark.parametrize(
     "expires_in",
-    [timedelta(0), timedelta(days=7, seconds=1)],
-    ids=["zero", "over-seven-days"],
+    [
+        pytest.param(timedelta(seconds=1), id="bva-min"),
+        pytest.param(timedelta(seconds=2), id="bva-above-min"),
+        pytest.param(timedelta(days=7, seconds=-1), id="bva-below-max"),
+        pytest.param(timedelta(days=7), id="bva-max"),
+    ],
+)
+def test_presign_accepts_a_lifetime_the_real_storage_accepts(expires_in: timedelta) -> None:
+    # Arrange
+    storage = InMemoryObjectStorage(now=FixedClock(_AT))
+    # Act
+    link = storage.presign_get("a", expires_in=expires_in)
+    # Assert
+    assert link.expires_at == _AT + expires_in
+
+
+@pytest.mark.parametrize(
+    "expires_in",
+    [
+        pytest.param(timedelta(0), id="bva-below-min"),
+        pytest.param(timedelta(milliseconds=999), id="bva-below-min-by-a-fraction"),
+        pytest.param(timedelta(days=7, seconds=1), id="bva-above-max"),
+        pytest.param(timedelta(seconds=1.5), id="fraction-of-a-second"),
+    ],
 )
 def test_presign_refuses_a_lifetime_the_real_storage_refuses(expires_in: timedelta) -> None:
     # Arrange
     storage = InMemoryObjectStorage()
     # Act / Assert
-    with pytest.raises(ValueError, match="presigned URL"):
+    with pytest.raises(ValueError, match="presigned URL lives whole seconds"):
         storage.presign_get("a", expires_in=expires_in)

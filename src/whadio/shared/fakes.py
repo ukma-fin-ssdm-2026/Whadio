@@ -3,7 +3,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import BinaryIO, override
 
-from .storage import MAX_PRESIGNED_LIFETIME, IObjectStorage, ObjectStorageError, PresignedUrl
+from .storage import IObjectStorage, ObjectStorageError, PresignedUrl, check_presigned_lifetime
 
 
 class FixedClock:
@@ -63,7 +63,6 @@ class InMemoryObjectStorage(IObjectStorage):
     @override
     def presign_get(self, key: str, *, expires_in: timedelta) -> PresignedUrl:
         self.caller_threads.add(threading.get_ident())
-        if not timedelta(0) < expires_in <= MAX_PRESIGNED_LIFETIME:
-            raise ValueError("a presigned URL lives longer than zero and at most 7 days")
+        check_presigned_lifetime(expires_in)
         self.presigned.append((key, expires_in))
         return PresignedUrl(url=f"{self._base_url}/{key}", expires_at=self._now() + expires_in)
