@@ -1,6 +1,6 @@
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from uuid import UUID
 
@@ -8,11 +8,25 @@ from sqlalchemy import delete, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..access_policy.services import IRetentionAccess
+from .enums import RecordingExpiryStatus
 from .models import Meeting, RecordingDeletion
 from .repositories import MeetingRepository
 
 WARNING_PERIOD = timedelta(days=7)
 BATCH_SIZE = 100
+
+
+def recording_expiry_status(deadline: datetime, now: datetime) -> RecordingExpiryStatus:
+    if deadline.utcoffset() is None or now.utcoffset() is None:
+        raise ValueError("Retention requires an aware timestamp")
+    remaining = deadline.astimezone(UTC) - now.astimezone(UTC)
+
+    if remaining <= timedelta(0):
+        return RecordingExpiryStatus.EXPIRED
+    if remaining <= WARNING_PERIOD:
+        return RecordingExpiryStatus.EXPIRING_SOON
+
+    return RecordingExpiryStatus.AVAILABLE
 
 
 class NotificationUnavailableError(Exception):
