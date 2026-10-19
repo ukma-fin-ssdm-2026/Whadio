@@ -3,22 +3,19 @@ import test from "node:test";
 
 import { formatDuration } from "./format-duration.js";
 
-test("formats a duration shorter than one hour", () => {
-  assert.equal(formatDuration(90), "1m 30s");
-});
+const durationCases = [
+  { seconds: 90, expected: "1m 30s" },
+  { seconds: 3661, expected: "1h 1m 1s" },
+  { seconds: 3605, expected: "1h 5s" },
+  { seconds: 3600, expected: "1h" },
+];
+
+for (const { seconds, expected } of durationCases) {
+  test(`formats ${seconds} seconds as ${expected}`, () => {
+    assert.equal(formatDuration(seconds), expected);
+  });
+}
 
 test("shows pending when duration is missing", () => {
   assert.equal(formatDuration(null), "Duration pending");
-});
-
-test("formats a duration longer than one hour", () => {
-  assert.equal(formatDuration(3661), "1h 1m 1s");
-});
-
-test("omits zero minutes from an hour duration", () => {
-  assert.equal(formatDuration(3605), "1h 5s");
-});
-
-test("omits trailing zero components from an exact hour", () => {
-  assert.equal(formatDuration(3600), "1h");
 });
