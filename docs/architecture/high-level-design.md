@@ -136,7 +136,7 @@ The deployable processes, all but the off-the-shelf services built from the same
 | Unit | Runs | Host | Instances |
 |---|---|---|---|
 | `web` | All backend modules except Retention; consumes `processing.results` | Main host | 1, stateless; more can run behind nginx |
-| `scheduler` | Retention, capture finalisation, re-publishing jobs stuck in `queued`, deleting expired registration and password-reset links, invitations and sessions | Main host | Exactly 1 |
+| `scheduler` | Retention, capture finalisation, re-publishing jobs stuck in `queued`, deleting expired registration and password-reset links, invitations and sessions, sending the notification emails reserved in the outbox | Main host | Exactly 1 |
 | `notes-worker` | Notes pipeline | Main host (CPU only) | 1 or more, competing consumers |
 | `asr-worker` | Transcription pipeline | GPU host | 1 per GPU |
 | `llm-runtime` | The built-in language model, on Ollama | GPU host | 1 |

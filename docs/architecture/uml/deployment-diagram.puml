@@ -60,6 +60,7 @@ notesWorker --> llm : HTTP /api/chat\n[TB-6]
 ' --- Egress to third parties ---
 notesWorker --> provider : HTTPS\nonly when the Owner configured a key\n[TB-7]
 web --> smtp : SMTP + STARTTLS\n[TB-8]
+scheduler --> smtp : SMTP + STARTTLS\n[TB-8]
 
 note bottom of gpu
   The GPU host opens no public ports and reaches
