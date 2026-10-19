@@ -10,3 +10,7 @@ test("formats a duration shorter than one hour", () => {
 test("shows pending when duration is missing", () => {
   assert.equal(formatDuration(null), "Duration pending");
 });
+
+test("formats a duration longer than one hour", () => {
+  assert.equal(formatDuration(3661), "1h 1m 1s");
+});
