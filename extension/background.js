@@ -62,7 +62,7 @@ class Upload {
   add(message) {
     this.slices.push(message.audio);
     if (message.speakers) {
-      this.events.push({ at_seconds: (Date.now() - this.startedAt) / 1000, speakers: message.speakers });
+      this.events.push({ at_seconds: message.at, speakers: message.speakers });
     }
     if (this.slices.length % SLICES_PER_CHUNK === 0) {
       this.cut();

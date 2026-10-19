@@ -52,18 +52,24 @@ if (!globalThis.whadioRecorder) {
     }, 250);
 
     const recorder = new MediaRecorder(mix.stream, { mimeType: "audio/webm;codecs=opus" });
+    // The names heard during a slice belong to when it began in the audio, not to when it arrived.
+    let sliceBegan = 0;
     recorder.addEventListener("dataavailable", (event) => {
+      const at = (sliceBegan - recordingBegan) / 1000;
+      sliceBegan = performance.now();
       const speakers = [...heard].sort();
       heard.clear();
       const changed = speakers.join("\n") !== previous;
       previous = speakers.join("\n");
       sent = sent.then(async () => {
         const audio = base64(await event.data.arrayBuffer());
-        port.postMessage(changed ? { audio, speakers } : { audio });
+        port.postMessage(changed ? { audio, speakers, at } : { audio });
       });
     });
     recorder.addEventListener("stop", () => sent.then(() => port.disconnect()), { once: true });
     recorder.start(1000);
+    const recordingBegan = performance.now();
+    sliceBegan = recordingBegan;
 
     session = { recorder, context, listening, streams: [tab, microphone], startedAt: Date.now() };
     tab.getAudioTracks()[0].addEventListener("ended", () => {
