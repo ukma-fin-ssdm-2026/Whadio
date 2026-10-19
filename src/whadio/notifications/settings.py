@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import timedelta
 from email.errors import HeaderParseError
 from email.headerregistry import Address
@@ -80,6 +81,12 @@ class OutboxSettings(BaseModel):
         return self
 
 
+@dataclass(frozen=True, slots=True)
+class MailDelivery:
+    smtp: SmtpSettings
+    public_url: HttpUrl
+
+
 class NotificationSettings(BaseSettings):
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_prefix="WHADIO_", env_nested_delimiter="__", env_file=".env", extra="ignore"
@@ -90,12 +97,28 @@ class NotificationSettings(BaseSettings):
         description="The mail relay; without it no notification is sent and none is refused "
         "(FR-047)",
     )
-    public_url: HttpUrl = Field(
-        description="Address the web application is reached at; mail links start with it"
+    public_url: HttpUrl | None = Field(
+        default=None,
+        description="Address the web application is reached at; mail links start with it. "
+        "Required with an SMTP relay",
     )
     outbox: OutboxSettings = Field(
         default_factory=OutboxSettings, description="Delivery of the reserved notices"
     )
+
+    @model_validator(mode="after")
+    def _relay_has_a_public_url(self) -> Self:
+        if self.smtp is not None and self.public_url is None:
+            raise ValueError("set WHADIO_PUBLIC_URL with an SMTP relay: mail links start with it")
+        return self
+
+    def delivery(self) -> MailDelivery | None:
+        """The relay with the address its links start with; None without a relay."""
+        match self.smtp, self.public_url:
+            case SmtpSettings() as smtp, HttpUrl() as public_url:
+                return MailDelivery(smtp, public_url)
+            case _:
+                return None
 
 
 def load_notification_settings() -> NotificationSettings:

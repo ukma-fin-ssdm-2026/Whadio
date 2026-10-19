@@ -2,9 +2,9 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from pydantic import SecretStr, ValidationError
+from pydantic import HttpUrl, SecretStr, ValidationError
 
-from .settings import OutboxSettings, SmtpSettings, load_notification_settings
+from .settings import MailDelivery, OutboxSettings, SmtpSettings, load_notification_settings
 
 
 @pytest.fixture(autouse=True)
@@ -61,13 +61,51 @@ def test_smtp_section_without_a_host_is_refused(monkeypatch: pytest.MonkeyPatch)
         load_notification_settings()
 
 
-def test_settings_without_a_public_url_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_settings_without_a_relay_or_a_public_url_have_no_delivery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # Arrange
     monkeypatch.delenv("WHADIO_PUBLIC_URL")
 
+    # Act
+    settings = load_notification_settings()
+
+    # Assert
+    assert settings.delivery() is None
+
+
+def test_relay_without_a_public_url_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    monkeypatch.delenv("WHADIO_PUBLIC_URL")
+    monkeypatch.setenv("WHADIO_SMTP__HOST", "smtp.example.com")
+    monkeypatch.setenv("WHADIO_SMTP__FROM_ADDRESS", "noreply@example.com")
+
     # Act / Assert
-    with pytest.raises(ValidationError, match="public_url"):
+    with pytest.raises(ValidationError, match="WHADIO_PUBLIC_URL"):
         load_notification_settings()
+
+
+def test_relay_with_a_public_url_delivers_with_both(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    monkeypatch.setenv("WHADIO_SMTP__HOST", "smtp.example.com")
+    monkeypatch.setenv("WHADIO_SMTP__FROM_ADDRESS", "noreply@example.com")
+
+    # Act
+    delivery = load_notification_settings().delivery()
+
+    # Assert
+    assert delivery == MailDelivery(
+        SmtpSettings(host="smtp.example.com", from_address="noreply@example.com"),
+        HttpUrl("https://whadio.example.com"),
+    )
+
+
+def test_public_url_without_a_relay_has_no_delivery() -> None:
+    # Act
+    settings = load_notification_settings()
+
+    # Assert
+    assert settings.delivery() is None
 
 
 def test_relay_defaults_to_starttls_on_the_submission_port() -> None:
