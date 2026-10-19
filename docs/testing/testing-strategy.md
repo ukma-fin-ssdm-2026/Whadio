@@ -68,3 +68,72 @@ never bypassed ad hoc.
 This strategy was prepared with OpenAI Codex from the requirements, threat model, quality
 attributes, current tests, coverage report and CI configuration. Zlata owns the decisions, reviewed
 the targets and is responsible for the final document.
+
+## Бонуси
+
+The evidence for the three Lab 6 bonuses. Andrii's contribution video explains each of them.
+
+### 1. Mutation testing
+
+- **What:** [mutmut](https://mutmut.readthedocs.io/) 3.8.0 mutates the notes prompt builder,
+  `src/whadio/workers/notes/prompt.py`, and runs the notes worker's tests against each mutant.
+  The scope is `[tool.mutmut]` in `pyproject.toml`; `uv run task mutation` runs it and lists the
+  survivors. It stays out of CI: a full run is cheap here, but its result needs a person to judge
+  which survivors matter.
+- **How it works:** each mutant is a copy of the module with one small change, such as `<=` turned
+  into `<` or a constant shifted by one. A test that fails kills the mutant; a mutant that survives
+  is a behaviour no test checks, even when the line is covered.
+- **Score:** 133 of 158 mutants killed (**84.2%**) before, 152 of 158 (**96.2%**) after the new
+  tests. Of the 6 left, 4 are equivalent (`quote=None` and `quote=False` behave the same in
+  `html.escape`; the starting speaker is reassigned before it is ever compared) and 2 only change
+  the case of the task sentence for the LLM, which no code reads.
+- **A survivor:** the hours of the transcript clock, `x__clock__mutmut_4`. The line was covered,
+  since `3725` renders as `01:02:05`, but `3725 // 3601` is also 1:
+
+  ```diff
+   def _clock(seconds: float) -> str:
+       whole = int(seconds)
+  -    return f"{whole // 3600:02d}:{whole % 3600 // 60:02d}:{whole % 60:02d}"
+  +    return f"{whole // 3601:02d}:{whole % 3600 // 60:02d}:{whole % 60:02d}"
+  ```
+
+- **The test that kills it:**
+  `test_rendered_transcript_clock_turns_over_at_each_minute_and_hour` checks the clock at 59, 60 and
+  61 seconds and at 3599, 3600 and 3601 seconds. With the mutant, `bva-on-an-hour` renders
+  `[00:00:00]` instead of `[01:00:00]`.
+
+### 2. Property-based tests
+
+[Hypothesis](https://hypothesis.readthedocs.io/) generates the inputs. The `ci` profile is
+derandomised, so CI runs are repeatable; the `dev` profile explores new inputs on every local run
+(root `conftest.py`).
+
+| Property | Test | Why it holds for any input |
+|---|---|---|
+| A page's next cursor decodes to its last item | `api/core/test_pagination.py`, `test_next_cursor_decodes_to_the_last_item_of_the_page` | The cursor only encodes the sort key and the item ID; if encoding lost anything, a client would skip or repeat items while paging. |
+| Accepted display text is stripped, has no control character, has a visible character, and validating it again returns it unchanged | `api/core/test_schemas.py`, five `test_*display_text*` properties | Validation either refuses a value or returns one in its normal form, whatever the Unicode it receives. |
+| A built notes prompt is either refused as too long or fits the token budget | `workers/notes/test_prompt.py`, `test_built_prompt_is_refused_or_fits_the_budget` | The budget is a hard limit of the model's context window, so no request may produce a prompt over it. |
+
+The last property found a real bug. Shrunk to 2 one-character segments, 4 context meetings and one
+glossary entry, a prompt used 2,579 tokens against a budget of 2,567: the 6 `\n\n` separators
+between the parts were never counted. The fix and its exact-boundary regression tests are in
+[#112](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/112).
+
+### 3. Coverage gate in CI
+
+- **Threshold:** **85%** of lines and branches combined, set once as `fail_under` in
+  `[tool.coverage.report]` in `pyproject.toml`. `uv run task test:cov` enforces it in CI on every
+  push and pull request, and in the push hook.
+- **Why 85%:** it was the measured total (85.6%) when the gate was introduced, after turning on
+  greenlet tracing so that SQLAlchemy's async code counts as run. A gate must pass on the day it is
+  introduced; 85% stops coverage from slipping below what the suite already proves, and can be raised
+  as coverage grows towards the 88% recorded above.
+- **CI:** the job summary shows the coverage table and the failed tests; the JUnit and HTML reports
+  are uploaded as an artifact.
+- **A green run:** [run 39311660739](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/39311660739)
+  on the course's runners, for pull request
+  [#117](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/117): 1090 passed, total coverage
+  **89.47%**, "Required test coverage of 85.0% reached".
+
+This section was drafted with Claude Code (Claude Opus 5.5) from the pull requests and the mutmut
+and CI results; Andrii checked it against them.
