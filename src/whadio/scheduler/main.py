@@ -1,13 +1,7 @@
 import asyncio
 import logging
 import signal
-from collections.abc import Callable
-from datetime import datetime
-from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from ..meetings.retention import IRetentionNotifier, NotificationUnavailableError
 from ..notifications.settings import load_notification_settings
 from ..retention.services import RetentionService
 from ..retention.storage import RecordingStorage
@@ -20,28 +14,13 @@ from .settings import SchedulerSettings
 logger = logging.getLogger(__name__)
 
 
-class UnavailableRetentionNotifications:
-    async def enqueue(self, meeting_id: UUID, recipient_id: UUID, deadline: datetime) -> None:
-        del meeting_id, recipient_id, deadline
-        raise NotificationUnavailableError("Recording warnings need a notification integration")
-
-
-async def run(
-    *,
-    once: bool = False,
-    notifications: Callable[[AsyncSession], IRetentionNotifier] | None = None,
-) -> int:
+async def run(*, once: bool = False) -> int:
     settings = SchedulerSettings.model_validate({})
     notification_settings = load_notification_settings()
     database = Database(DatabaseSettings.model_validate({}))
     try:
         retention = RetentionService(
-            RetentionTransactions(
-                database,
-                notifications
-                if notifications is not None
-                else lambda _session: UnavailableRetentionNotifications(),
-            ),
+            RetentionTransactions(database),
             RecordingStorage(connect_s3_storage(settings.storage)),
         )
         drainer = notification_drainer(notification_settings, database)

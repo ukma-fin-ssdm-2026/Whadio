@@ -1,30 +1,50 @@
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
-
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..access_policy.repositories import AccessRepository
 from ..access_policy.services import AccessPolicy
 from ..accounts.contracts import UserProfile
 from ..accounts.repositories import MembershipRepository
 from ..accounts.services import WorkspaceMembershipService
-from ..meetings.retention import IRetentionMeetings, IRetentionNotifier, RetentionMeetings
-from ..notifications.repositories import NotificationOutboxRepository
+from ..meetings.models import Meeting
+from ..meetings.repositories import MeetingRepository
+from ..meetings.retention import IRetentionMeetings, RetentionMeetings
+from ..notifications.repositories import INotificationOutbox, NotificationOutboxRepository
 from ..notifications.services import DeliveryUnit, NotificationDrainer, Recipient
 from ..notifications.settings import NotificationSettings
 from ..notifications.smtp import SmtpMailSender
-from ..notifications.templates import AppLinks
-from ..shared.database import Database, IUseCaseTransactions
+from ..notifications.templates import AppLinks, NoticeKind, RecordingDeletionWarning
+from ..shared.database import IUseCaseTransactions
+
+
+class IMeetingRecords(Protocol):
+    async def get(self, meeting_id: UUID, /) -> Meeting: ...
+
+
+class OutboxRetentionNotices:
+    """Meetings' `IRetentionNotifier`, answered by the notification outbox."""
+
+    def __init__(self, outbox: INotificationOutbox, meetings: IMeetingRecords) -> None:
+        self._outbox: INotificationOutbox = outbox
+        self._meetings: IMeetingRecords = meetings
+
+    async def enqueue(self, meeting_id: UUID, recipient_id: UUID, deadline: datetime) -> None:
+        meeting = await self._meetings.get(meeting_id)
+        await self._outbox.reserve(
+            recipient_id,
+            f"{NoticeKind.RECORDING_DELETION_WARNING}:{meeting_id}:{recipient_id}",
+            RecordingDeletionWarning(
+                meeting_id=meeting_id, meeting_name=meeting.name, deletes_at=deadline
+            ),
+        )
 
 
 class RetentionTransactions:
-    def __init__(
-        self, database: Database, notifications: Callable[[AsyncSession], IRetentionNotifier]
-    ) -> None:
-        self._database: Database = database
-        self._notifications: Callable[[AsyncSession], IRetentionNotifier] = notifications
+    def __init__(self, database: IUseCaseTransactions) -> None:
+        self._database: IUseCaseTransactions = database
 
     @asynccontextmanager
     async def transaction(self) -> AsyncGenerator[IRetentionMeetings]:
@@ -35,7 +55,9 @@ class RetentionTransactions:
                     AccessRepository(session),
                     WorkspaceMembershipService(MembershipRepository(session)),
                 ),
-                self._notifications(session),
+                OutboxRetentionNotices(
+                    NotificationOutboxRepository(session), MeetingRepository(session)
+                ),
             )
 
 
