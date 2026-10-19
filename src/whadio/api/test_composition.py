@@ -13,6 +13,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from httpx import ASGITransport, AsyncClient
+from pydantic import JsonValue
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
@@ -21,6 +22,7 @@ from conftest import AsyncDatabase
 
 from ..access_policy.repositories import AccessRepository
 from ..access_policy.services import AccessCollaborators, AccessPolicy, AccessService, ContentPath
+from ..accounts.contracts import UserProfile
 from ..accounts.enums import LlmProvider, NotesTemplate, SessionKind, WorkspaceRole
 from ..accounts.models import McpKey, Session, User, Workspace, WorkspaceMembership
 from ..accounts.repositories import MembershipRepository, WorkspaceSettingsRepository
@@ -64,6 +66,11 @@ from ..meetings.recordings import RecordingObjects
 from ..meetings.repositories import MeetingRepository
 from ..meetings.retention import IRetentionMeetings, RetentionMeetings
 from ..meetings.services import MeetingService, RecordingInput, TranscriptEdit
+from ..notifications.fakes import InMemoryNotificationOutbox
+from ..notifications.models import NotificationOutbox
+from ..notifications.repositories import notice_payload
+from ..notifications.templates import NoticeKind
+from ..notifications.templates import ShareAccessRequest as ShareAccessNotice
 from ..processing.enums import JobStatus, JobType
 from ..processing.models import ProcessingJob
 from ..processing.repositories import JobRepository
@@ -75,10 +82,12 @@ from ..shared.fakes import InMemoryObjectStorage
 from .app import create_app
 from .composition import (
     CompositionRoot,
+    OutboxShareNotices,
     RuntimeIntegrations,
     folder_service,
     meeting_processing,
     recording_objects,
+    share_notifications,
     transaction,
 )
 from .core.errors import ErrorCode, ErrorResponse
@@ -985,7 +994,24 @@ def test_http_self_exclusion_commits_restriction(database_settings: DatabaseSett
     asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
 
 
-def test_unavailable_notifications_roll_back_share_request(
+type ReservedNotice = tuple[UUID, str, NoticeKind, dict[str, JsonValue]]
+
+
+async def _reserved(unit: Unit, *recipients: UUID) -> list[ReservedNotice]:
+    rows = await unit.session.execute(
+        select(
+            NotificationOutbox.recipient_user_id,
+            NotificationOutbox.dedupe_key,
+            NotificationOutbox.kind,
+            NotificationOutbox.payload,
+        )
+        .where(NotificationOutbox.recipient_user_id.in_(recipients))
+        .order_by(NotificationOutbox.dedupe_key)
+    )
+    return [(recipient, key, kind, payload) for recipient, key, kind, payload in rows]
+
+
+def test_share_access_request_reserves_a_notice_for_the_share_creator(
     database_settings: DatabaseSettings,
 ) -> None:
     # Arrange
@@ -994,19 +1020,102 @@ def test_unavailable_notifications_roll_back_share_request(
             created = await unit.access.create_share(
                 unit.owner, unit.meeting, datetime.now(UTC), redact=False
             )
+            share_id = created.share.share_id
             async with client_fixture(unit, unit.outsider) as client:
                 # Act
                 response = await client.post(
-                    f"/api/v1/shares/{created.share.share_id}/access-requests",
-                    json={"token": created.token},
+                    f"/api/v1/shares/{share_id}/access-requests", json={"token": created.token}
                 )
-                requested = await AccessRepository(unit.session).requested(
-                    created.share.share_id, unit.outsider
-                )
+                reserved = await _reserved(unit, unit.owner, unit.outsider)
                 # Assert
-                assert (response.status_code, requested) == (503, False)
+                assert (response.status_code, reserved) == (
+                    201,
+                    [
+                        (
+                            unit.owner,
+                            f"share_access_request:{share_id}:{unit.outsider}",
+                            NoticeKind.SHARE_ACCESS_REQUEST,
+                            notice_payload(
+                                ShareAccessNotice(
+                                    share_id=share_id,
+                                    requester_name="test",
+                                    requester_email=f"{unit.outsider}@example.test",
+                                )
+                            ),
+                        )
+                    ],
+                )
 
     asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+def test_failed_share_request_rolls_back_its_notice(database_settings: DatabaseSettings) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            now = datetime.now(UTC)
+            created = await unit.access.create_share(unit.owner, unit.meeting, now, redact=False)
+            access = AccessService(
+                AccessCollaborators(
+                    AccessRepository(unit.session),
+                    MeetingRepository(unit.session),
+                    MembershipRepository(unit.session),
+                    AuditWriter(unit.session),
+                    share_notifications(unit.session),
+                )
+            )
+
+            # Act
+            async def request() -> None:
+                async with unit.session.begin_nested():
+                    await access.request_access(
+                        unit.outsider, created.share.share_id, created.token, now
+                    )
+                    raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+
+            with pytest.raises(UseCaseError):
+                await request()
+            reserved = await _reserved(unit, unit.owner)
+            # Assert
+            assert reserved == []
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+def test_repeated_share_notice_is_reserved_once(database_settings: DatabaseSettings) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            notices, share_id = share_notifications(unit.session), uuid4()
+            await notices.enqueue(share_id, unit.owner, unit.outsider)
+            # Act
+            await notices.enqueue(share_id, unit.owner, unit.outsider)
+            reserved = await _reserved(unit, unit.owner)
+            # Assert
+            assert len(reserved) == 1
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+class NoProfiles:
+    async def profile(self, user_id: UUID) -> UserProfile | None:
+        del user_id
+        return None
+
+
+def test_share_notice_for_a_requester_without_an_account_is_refused() -> None:
+    # Arrange
+    outbox = InMemoryNotificationOutbox(lambda: datetime.now(UTC))
+    notices = OutboxShareNotices(outbox, NoProfiles())
+
+    # Act
+    async def enqueue() -> None:
+        await notices.enqueue(uuid4(), uuid4(), uuid4())
+
+    with pytest.raises(UseCaseError) as failure:
+        asyncio.run(enqueue())
+    # Assert
+    assert (failure.value.code, outbox.notices) == (Failure.NOT_FOUND, {})
 
 
 async def _failed_update(unit: Unit) -> None:

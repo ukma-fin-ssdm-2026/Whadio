@@ -9,7 +9,6 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..access_policy.services import IShareRequestNotifier
 from ..accounts.enums import LlmProvider, NotesTemplate
 from ..accounts.repositories import MembershipRepository
 from ..audit.models import AuditEvent
@@ -34,9 +33,7 @@ from .composition import (
     Session,
     UnavailableEvictionNotifications,
     UnavailableMeetingProcessing,
-    UnavailableShareNotifications,
     eviction_notifications,
-    share_notifications,
     transaction,
 )
 from .test_composition import (
@@ -88,19 +85,13 @@ def test_runtime_factories_share_use_case_session_and_rollback_on_failure(
                 sessions.append(session)
                 return UnavailableMeetingProcessing()
 
-            def share_factory(session: AsyncSession) -> IShareRequestNotifier:
-                sessions.append(session)
-                return UnavailableShareNotifications()
-
             def eviction_factory(session: AsyncSession) -> IEvictionNotifier:
                 sessions.append(session)
                 return UnavailableEvictionNotifications()
 
             app = create_app(
                 unit.database,
-                integrations=RuntimeIntegrations(
-                    processing_factory, share_factory, eviction_factory
-                ),
+                integrations=RuntimeIntegrations(processing_factory, eviction_factory),
             )
 
             async def session_dependency() -> AsyncGenerator[AsyncSession]:
@@ -113,10 +104,9 @@ def test_runtime_factories_share_use_case_session_and_rollback_on_failure(
             async def probe(
                 session: Session,
                 processing: Processing,
-                shares: Annotated[IShareRequestNotifier, Depends(share_notifications)],
                 evictions: Annotated[IEvictionNotifier, Depends(eviction_notifications)],
             ) -> None:
-                del shares, evictions
+                del evictions
                 session.add(RecordingDeletion(storage_key="integration-probe"))
                 await session.flush()
                 await processing.queue_transcription(unit.meeting)
@@ -130,7 +120,7 @@ def test_runtime_factories_share_use_case_session_and_rollback_on_failure(
             # Assert
             assert (response.status_code, sessions, pending) == (
                 503,
-                [unit.session, unit.session, unit.session],
+                [unit.session, unit.session],
                 None,
             )
 
