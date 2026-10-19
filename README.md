@@ -28,8 +28,6 @@ uv run task infra:up             # PostgreSQL, RabbitMQ, SeaweedFS and Mailpit
 uv run task dev                  # the API on http://localhost:3000, with auto-reload
 ```
 
-[.env.example](.env.example) lists the settings and local defaults. Production export links and
-optional monitoring are configured below.
 
 ## Running the API
 
@@ -94,8 +92,7 @@ take jobs from RabbitMQ and publish their results to `processing.results`.
 
 ## Running monitoring
 
-Telemetry is optional and disabled by default. Settings and source-map examples are in
-[.env.example](.env.example).
+Telemetry is optional and disabled by default.
 
 - In the web runtime, set `WHADIO_ADMIN_SOURCES` to a JSON map of source aliases, SHA-256 token
   hashes and allowed host/runtime scopes. Give each source a separate bearer token.

@@ -227,6 +227,3 @@ These fields should drive the next threat-analysis step, especially for access c
 ## AI Usage
 
 This document and the accompanying data model diagram were prepared and revised with the assistance of Codex (GPT-5.5) and Claude Code (Claude Opus 5.5) and discussed in the working session of 2026-09-26. Reviewed by the author and the team before committing.
-
-
-Processing timing semantics were clarified with OpenAI Codex alongside migration 0007.

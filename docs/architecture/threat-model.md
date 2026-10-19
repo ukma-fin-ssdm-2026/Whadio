@@ -98,5 +98,3 @@ not stop workers or unrelated content APIs.
 ## AI Usage
 
 This threat model was prepared with the assistance of Codex (GPT-5.5), revised with Claude Code (Claude Opus 5.5), and reviewed against the project requirements, ADRs, high-level design, deployment diagram, and current data model.
-
-Private telemetry constraints were added with OpenAI Codex.
