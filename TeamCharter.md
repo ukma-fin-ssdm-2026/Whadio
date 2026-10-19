@@ -7,10 +7,10 @@
     - Denys Zabiiaka (GitHub: @SquidBow, NaUKMA email: d.zabiiaka@ukma.edu.ua)
 
 ## 2. Roles and Responsibilities
-- Repository Maintainer, Quality Lead, Data & Threat Modeler, API Documentation Lead, Code Reviewer: Zlata
-- CI Maintainer, Requirements Lead, Architecture Lead, Backend Lead, Code Quality Lead: Andrii
-- Documentation Lead, Integration Lead: Valeriia
-- Issue Tracker Lead, Traceability Lead, Requirements-Architecture Mapper, API Quality Lead, Security Analyst: Denys
+- Repository Maintainer, Quality Lead, Data & Threat Modeler, API Documentation Lead, Code Reviewer, Test Strategist: Zlata
+- CI Maintainer, Requirements Lead, Architecture Lead, Backend Lead, Code Quality Lead, Integration Lead: Andrii
+- Documentation Lead, Integration Lead, Debugging Lead: Valeriia
+- Issue Tracker Lead, Traceability Lead, Requirements-Architecture Mapper, API Quality Lead, Security Analyst, Test Lead: Denys
 
 ## 3. Communication Plan
 - Primary channel: Telegram chat, Google Meet calls
