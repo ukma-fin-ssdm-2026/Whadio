@@ -8,10 +8,10 @@ Whadio is an open-source meeting recording and transcription service focused on 
 
 | **Name** | **GitHub** | **Role** |
 |----------|----------|----------|
-| Andrii Shalaiev | @Hukyl | CI Maintainer, Requirements Lead, Architecture Lead, Backend Lead, Code Quality Lead |
-| Denys Zabiiaka  | @SquidBow | Issue Tracker Lead, Traceability Lead, Requirements-Architecture Mapper, API Quality Lead, Security Analyst |
-| Valeriia Missirova | @v-missirova | Documentation Lead, Integration Lead |
-| Zlata Tsepkalo | @t-zlata | Repository Maintainer, Quality Lead, Data & Threat Modeler, API Documentation Lead, Code Reviewer |
+| Andrii Shalaiev | @Hukyl | CI Maintainer, Requirements Lead, Architecture Lead, Backend Lead, Code Quality Lead, Integration lead |
+| Denys Zabiiaka  | @SquidBow | Issue Tracker Lead, Traceability Lead, Requirements-Architecture Mapper, API Quality Lead, Security Analyst, Test lead |
+| Valeriia Missirova | @v-missirova | Documentation Lead, Integration Lead, Debugging lead |
+| Zlata Tsepkalo | @t-zlata | Repository Maintainer, Quality Lead, Data & Threat Modeler, API Documentation Lead, Code Reviewer, Test strategist |
 
 
 # Development
