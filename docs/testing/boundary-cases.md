@@ -14,7 +14,8 @@ unusual states rather than numeric limits.
 
 The step is the smallest one the type can tell apart: one item or character for counts and
 lengths, one second for presigned links, one microsecond for `timedelta` settings, and the smallest
-positive float `ε` (`math.ulp(0.0)`) for float floors and segment times. Each parametrised case has
+positive float `ε` (`math.ulp(0.0)`) for floors at zero and segment times, and the neighbouring
+floats (`math.nextafter`) for other float floors. Each parametrised case has
 an id that starts with `bva-` and names the point, such as `bva-below-max`, so a failure names the
 technique and the edge it broke. All the tests are fast: they need no database, broker or storage.
 
@@ -39,7 +40,7 @@ it.
 | 5 | Proposed meeting name 1 to 200 characters | [`contracts/notes.py`](../../src/whadio/contracts/notes.py) `MeetingName` | 7-point | 0, 1, 2, 100, 199, 200, 201 (existing) | [`contracts/test_notes.py`](../../src/whadio/contracts/test_notes.py): `test_proposed_name_of_1_to_200_characters_is_accepted`, `test_empty_proposed_name_is_refused`, `test_proposed_name_longer_than_200_characters_is_refused` |
 | 6 | At most 20 context meetings | [`contracts/notes.py`](../../src/whadio/contracts/notes.py) `MAX_CONTEXT_MEETINGS` | 3-point | 19, 20, 21 (existing) | [`contracts/test_notes.py`](../../src/whadio/contracts/test_notes.py): `test_notes_request_with_up_to_20_context_meetings_is_accepted`, `test_notes_request_with_too_many_context_meetings_is_refused` |
 | 7 | Presigned link lifetime from 1 s to 7 days | [`shared/storage.py`](../../src/whadio/shared/storage.py) `S3ObjectStorage.presign_get` | 7-point; the nominal value is the existing 30-minute test | 0 (existing), 999 ms, 1 s, 2 s, 7 d − 1 s, 7 d, 7 d + 1 s (existing) | [`shared/test_storage.py`](../../src/whadio/shared/test_storage.py): `test_presigned_url_lives_from_one_second_to_seven_days`, `test_presigning_refuses_a_lifetime_under_one_second`, `test_presigning_refuses_a_lifetime_outside_what_sigv4_allows`, `test_presigned_url_carries_the_requested_lifetime` |
-| 8 | Notes limits: `max_output_tokens ≥ 1024`, `max_input_tokens ≥ 1000`, `concurrency ≥ 1`, `chars_per_token > 0` | [`workers/notes/settings.py`](../../src/whadio/workers/notes/settings.py) `NotesSettings` | 3-point each | 1023, 1024, 1025; 999, 1000, 1001; 0, 1, 2; −ε, 0, ε | [`workers/notes/test_settings.py`](../../src/whadio/workers/notes/test_settings.py): `test_notes_limit_is_refused_only_below_its_floor` |
+| 8 | Notes limits: `max_output_tokens ≥ 1024`, `max_input_tokens ≥ 1000`, `concurrency ≥ 1`, finite `chars_per_token ≥ 0.25` | [`workers/notes/settings.py`](../../src/whadio/workers/notes/settings.py) `NotesSettings` | 3-point each | 1023, 1024, 1025; 999, 1000, 1001; 0, 1, 2; the floats either side of 0.25 and 0.25 itself, and infinity | [`workers/notes/test_settings.py`](../../src/whadio/workers/notes/test_settings.py): `test_notes_limit_is_refused_only_below_its_floor`, `test_infinite_chars_per_token_is_refused`; [`workers/notes/test_prompt.py`](../../src/whadio/workers/notes/test_prompt.py): `test_meeting_over_the_budget_at_the_smallest_chars_per_token_is_refused` |
 | 8 | Ollama limits: `num_ctx ≥ 2048`, `keep_alive ≥ 0` | [`workers/notes/settings.py`](../../src/whadio/workers/notes/settings.py) `OllamaSettings` | 3-point each | 2047, 2048, 2049; −1 µs, 0, 1 µs | [`workers/notes/test_settings.py`](../../src/whadio/workers/notes/test_settings.py): `test_ollama_limit_is_refused_only_below_its_floor` |
 | 8 | ASR limits: `beam_size`, `embedding_batch_size`, `max_audio_bytes`, `slots` at least 1; at least 2 candidate languages | [`workers/asr/settings.py`](../../src/whadio/workers/asr/settings.py) `AsrSettings` | 3-point each | 0, 1, 2 for each count; 1 (existing), 2, 3 languages | [`workers/asr/test_settings.py`](../../src/whadio/workers/asr/test_settings.py): `test_asr_limit_is_refused_only_below_its_floor`, `test_settings_with_a_single_candidate_language_are_refused` |
 | 8 | Retention interval above zero seconds | [`scheduler/settings.py`](../../src/whadio/scheduler/settings.py) `SchedulerSettings` | 3-point | −ε, 0, ε | [`scheduler/test_settings.py`](../../src/whadio/scheduler/test_settings.py): `test_retention_interval_must_be_above_zero` |
@@ -54,8 +55,15 @@ error.
 
 ## What the boundaries showed
 
-No boundary failed: every limit sits where its declaration says. Three behaviours are worth
-knowing:
+One boundary failed. The notes settings accepted any `chars_per_token` above zero, but the prompt
+estimate divides by it: below about 5.6 × 10⁻³⁰⁹ the division overflows to infinity, and every
+notes job failed with an `OverflowError` instead of a notes failure. Infinity was accepted too and
+turned the budget off. The floor is now 0.25, the most cautious ratio a byte-level tokenizer can
+need (one token per byte at worst, a character at most four bytes), and infinity is refused. The
+schema test had checked the declaration alone; the prompt builder test now checks the value where
+it is used.
+
+Every other limit sits where its declaration says. Three behaviours are worth knowing:
 
 - **Padding does not count.** A name padded with Unicode white space (`" 　\t"` on both
   sides) is accepted at the maximum and refused one character past it, because the shared display

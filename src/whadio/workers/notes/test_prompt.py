@@ -217,6 +217,16 @@ def test_meeting_that_alone_exceeds_the_budget_is_refused() -> None:
     assert raised.value.reason is NotesFailure.TRANSCRIPT_TOO_LONG
 
 
+def test_meeting_over_the_budget_at_the_smallest_chars_per_token_is_refused() -> None:
+    # Arrange
+    budget = ContextBudget(max_input_tokens=1_000, chars_per_token=0.25)
+
+    # Act / Assert
+    with pytest.raises(NotesError) as raised:
+        PromptBuilder(budget).build(_request(_MEETING))
+    assert raised.value.reason is NotesFailure.TRANSCRIPT_TOO_LONG
+
+
 def test_prompt_without_glossary_has_no_glossary_element() -> None:
     # Act
     prompt = PromptBuilder(_GENEROUS).build(_request(_MEETING))
