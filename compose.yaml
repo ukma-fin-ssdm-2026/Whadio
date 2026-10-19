@@ -124,7 +124,8 @@ services:
       WHADIO_NOTES__LLM__NUM_CTX:
       WHADIO_NOTES__LLM__KEEP_ALIVE:
       WHADIO_NOTES__CONCURRENCY:
-      WHADIO_NOTES__LLM__BASE_URL: http://llm-runtime:11434
+      # Not BASE_URL from .env: that is the host's address, which a container cannot use.
+      WHADIO_NOTES__LLM__BASE_URL: ${LLM_RUNTIME_URL:-http://llm-runtime:11434}
 
   asr-worker:
     <<: *worker
@@ -147,7 +148,7 @@ services:
     volumes:
       - llm-models:/root/.ollama
     ports:
-      - 127.0.0.1:${OLLAMA_PORT:-11434}:11434
+      - ${OLLAMA_ADDRESS:-127.0.0.1}:${OLLAMA_PORT:-11434}:11434
     healthcheck:
       <<: *healthcheck
       test: [CMD, ollama, list]
