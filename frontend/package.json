@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
+    "test": "node --test src/*.test.js",
     "preview": "vite preview --host 127.0.0.1",
     "lint": "biome lint",
     "lint:fix": "biome lint --write",

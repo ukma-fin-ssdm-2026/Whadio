@@ -45,18 +45,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ApiError, api } from "./api";
 import "./styles.css";
+import { formatDuration } from "./format-duration";
 
 const USER_STORAGE_KEY = "whadio-user";
 
 function titleCase(value) {
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
-}
-
-function formatDuration(seconds) {
-  if (seconds == null) return "Duration pending";
-  const minutes = Math.floor(seconds / 60);
-  const remaining = seconds % 60;
-  return `${minutes}m ${remaining}s`;
 }
 
 function formatTimestamp(seconds) {
