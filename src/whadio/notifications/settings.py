@@ -53,9 +53,8 @@ class OutboxSettings(BaseModel):
     retry_backoff: timedelta = Field(
         default=timedelta(minutes=1),
         gt=timedelta(0),
-        description="Wait after the first attempt before a notice is due again; it doubles with "
-        "each further attempt. Keep it longer than a send can take: a notice whose send outlasts "
-        "it may be sent twice",
+        description="Wait after the first failed attempt before a notice is due again; it doubles "
+        "with each further failure",
     )
     max_retry_backoff: timedelta = Field(
         default=timedelta(hours=6),

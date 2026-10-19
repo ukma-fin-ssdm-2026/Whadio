@@ -2,12 +2,17 @@ import smtplib
 import ssl
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import timedelta
 from email.headerregistry import Address
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
-from typing import Protocol
+from typing import Final, Protocol
 
 from .settings import SmtpSettings
+
+# smtplib applies its timeout to each blocking step (the connection, the TLS handshake, every
+# command and reply), never to a whole send, which takes at most about this many.
+_BLOCKING_STEPS: Final = 16
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +27,11 @@ class MailDeliveryError(Exception):
 
 
 class IMailSender(Protocol):
+    @property
+    def longest_send(self) -> timedelta:
+        """How long a send may take before it is presumed lost."""
+        ...
+
     def send(self, mail: OutgoingMail) -> None:
         """Hand the mail to the relay, or raise MailDeliveryError naming no address or body."""
         ...
@@ -47,6 +57,10 @@ class SmtpMailSender:
     def __init__(self, settings: SmtpSettings, connect: ISmtpConnector = smtplib.SMTP) -> None:
         self._settings: SmtpSettings = settings
         self._connect: ISmtpConnector = connect
+
+    @property
+    def longest_send(self) -> timedelta:
+        return self._settings.timeout * _BLOCKING_STEPS
 
     def send(self, mail: OutgoingMail) -> None:
         message = self._compose(mail)

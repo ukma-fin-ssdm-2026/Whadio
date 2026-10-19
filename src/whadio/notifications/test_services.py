@@ -17,7 +17,7 @@ from .fakes import (
 )
 from .services import DrainResult, NotificationDrainer, Recipient
 from .settings import OutboxSettings
-from .smtp import MailDeliveryError, OutgoingMail
+from .smtp import IMailSender, MailDeliveryError, OutgoingMail
 from .templates import AppLinks, Locale, NoticeKind, ProcessingFinished, render
 
 NOW = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
@@ -25,6 +25,7 @@ RECIPIENT_ID = UUID("3c9d1a52-7b8e-4f61-9a0d-5e2f4b6c8d10")
 LINKS = AppLinks(HttpUrl("https://whadio.example.com"))
 FINISHED = ProcessingFinished(meeting_id=uuid4(), meeting_name="Weekly sync")
 OLENA = Recipient("Olena Koval", "olena@example.com")
+LONGEST_SEND = timedelta(minutes=8)
 UNREADABLE_RECIPIENT_ID = UUID("9e4f2a61-0c3b-4d7e-8f15-6a2b9c0d1e23")
 UNRENDERABLE = ProcessingFinished(
     meeting_id=UUID("5d7c3b19-8a2e-4f60-b1c4-2e9f0a7d6c85"), meeting_name="Weekly sync"
@@ -40,6 +41,22 @@ class LinksFailingFor(AppLinks):
         if meeting_id == self.broken_meeting_id:
             raise RuntimeError("template bug")
         return AppLinks.meeting(self, meeting_id)
+
+
+class StalledMailSender(IMailSender):
+    def __init__(self) -> None:
+        self.sending: threading.Event = threading.Event()
+        self.released: threading.Event = threading.Event()
+
+    @property
+    @override
+    def longest_send(self) -> timedelta:
+        return LONGEST_SEND
+
+    @override
+    def send(self, mail: OutgoingMail) -> None:
+        self.sending.set()
+        self.released.wait(timeout=10)
 
 
 @dataclass
@@ -77,7 +94,7 @@ def delivery(
 ) -> Delivery:
     clock = FixedClock(NOW)
     outbox = InMemoryNotificationOutbox(clock)
-    sender = RecordingMailSender(failure)
+    sender = RecordingMailSender(LONGEST_SEND, failure)
     directory = FixedRecipientDirectory(
         {} if recipient is None else {RECIPIENT_ID: recipient},
         {UNREADABLE_RECIPIENT_ID: RuntimeError("directory bug")},
@@ -183,6 +200,35 @@ def test_failed_notice_is_not_retried_before_its_backoff_ends() -> None:
     assert result == DrainResult(sent=0, failed=0)
 
 
+def test_notice_still_being_sent_after_its_backoff_is_not_sent_by_a_second_drainer() -> None:
+    # Arrange
+    clock = FixedClock(NOW)
+    outbox = InMemoryNotificationOutbox(clock)
+    transactions = InMemoryDeliveryTransactions(
+        outbox, FixedRecipientDirectory({RECIPIENT_ID: OLENA})
+    )
+    stalled = StalledMailSender()
+    first = NotificationDrainer(transactions, stalled, LINKS, OutboxSettings(), clock)
+    second = NotificationDrainer(
+        transactions, RecordingMailSender(LONGEST_SEND), LINKS, OutboxSettings(), clock
+    )
+    asyncio.run(outbox.reserve(RECIPIENT_ID, "finished", FINISHED))
+
+    async def scenario() -> DrainResult:
+        first_pass = asyncio.create_task(first.drain())
+        await asyncio.to_thread(stalled.sending.wait, 10)
+        clock.advance(OutboxSettings().retry_backoff + timedelta(seconds=1))
+        # Act
+        result = await second.drain()
+        stalled.released.set()
+        await first_pass
+        return result
+
+    result = asyncio.run(scenario())
+    # Assert
+    assert result == DrainResult(sent=0, failed=0)
+
+
 def test_backoff_doubles_with_each_failure_up_to_its_cap() -> None:
     # Arrange
     subject = delivery(
@@ -232,7 +278,7 @@ def test_failed_delivery_stores_the_error_with_addresses_masked() -> None:
     assert subject.outbox.notices[notice_id].last_error == "Relay refused <address> from <address>"
 
 
-def test_unexpected_sender_error_leaves_the_notice_rescheduled() -> None:
+def test_unexpected_sender_error_leaves_the_notice_due_after_the_longest_send() -> None:
     # Arrange
     subject = delivery(failure=RuntimeError("sender bug"))
     notice_id = subject.reserve()
@@ -243,7 +289,7 @@ def test_unexpected_sender_error_leaves_the_notice_rescheduled() -> None:
     stored = subject.outbox.notices[notice_id]
     assert (stored.attempts, stored.next_attempt_at, stored.sent_at) == (
         1,
-        NOW + timedelta(minutes=1),
+        NOW + LONGEST_SEND,
         None,
     )
 
@@ -270,7 +316,7 @@ COMPOSE_FAILURES = [
 
 
 @pytest.mark.parametrize(("recipient_id", "notice"), COMPOSE_FAILURES)
-def test_unexpected_error_while_composing_leaves_the_notice_rescheduled(
+def test_unexpected_error_while_composing_leaves_the_notice_due_after_the_longest_send(
     recipient_id: UUID, notice: ProcessingFinished
 ) -> None:
     # Arrange
@@ -283,7 +329,7 @@ def test_unexpected_error_while_composing_leaves_the_notice_rescheduled(
     stored = subject.outbox.notices[notice_id]
     assert (stored.attempts, stored.next_attempt_at, stored.sent_at) == (
         1,
-        NOW + timedelta(minutes=1),
+        NOW + LONGEST_SEND,
         None,
     )
 

@@ -164,17 +164,24 @@ def test_rescheduled_notice_counts_the_attempt_and_is_due_at_the_retry_time(
 
 
 @pytest.mark.slow
-def test_failure_stores_the_error(async_database: AsyncDatabase) -> None:
+def test_failure_stores_the_error_and_is_due_at_the_retry_time(
+    async_database: AsyncDatabase,
+) -> None:
     # Arrange
-    async def scenario(session: AsyncSession) -> str | None:
+    retry_at = datetime(2026, 10, 19, 12, 5, tzinfo=UTC)
+
+    async def scenario(session: AsyncSession) -> tuple[str | None, datetime]:
         notice = await reserve(session, f"test:{uuid4()}", FINISHED)
         # Act
-        await NotificationOutboxRepository(session).record_failure(notice, "SMTPServerDisconnected")
-        return (await stored(session, notice)).last_error
+        await NotificationOutboxRepository(session).record_failure(
+            notice, "SMTPServerDisconnected", retry_at
+        )
+        row = await stored(session, notice)
+        return row.last_error, row.next_attempt_at
 
     found = async_database.run(scenario)
     # Assert
-    assert found == "SMTPServerDisconnected"
+    assert found == ("SMTPServerDisconnected", retry_at)
 
 
 @pytest.mark.slow
@@ -187,7 +194,7 @@ def test_sent_notice_records_when_it_was_sent_and_drops_an_earlier_error(
     async def scenario(session: AsyncSession) -> tuple[datetime | None, str | None]:
         notice = await reserve(session, f"test:{uuid4()}", FINISHED)
         outbox = NotificationOutboxRepository(session)
-        await outbox.record_failure(notice, "SMTPServerDisconnected")
+        await outbox.record_failure(notice, "SMTPServerDisconnected", soon())
         # Act
         await outbox.mark_sent(notice, sent_at)
         row = await stored(session, notice)

@@ -54,7 +54,7 @@ class IOutboxDrain(Protocol):
 
     async def mark_sent(self, notice_id: UUID, sent_at: datetime, /) -> None: ...
 
-    async def record_failure(self, notice_id: UUID, error: str, /) -> None: ...
+    async def record_failure(self, notice_id: UUID, error: str, retry_at: datetime, /) -> None: ...
 
     async def remove_finished(self, before: datetime, max_attempts: int, /) -> int:
         """Delete notices sent before `before`, and given-up ones reserved before it."""
@@ -114,11 +114,11 @@ class NotificationOutboxRepository:
             .values(sent_at=sent_at, last_error=None)
         )
 
-    async def record_failure(self, notice_id: UUID, error: str) -> None:
+    async def record_failure(self, notice_id: UUID, error: str, retry_at: datetime) -> None:
         await self._session.execute(
             update(NotificationOutbox)
             .where(NotificationOutbox.notice_id == notice_id)
-            .values(last_error=error)
+            .values(last_error=error, next_attempt_at=retry_at)
         )
 
     async def remove_finished(self, before: datetime, max_attempts: int) -> int:
