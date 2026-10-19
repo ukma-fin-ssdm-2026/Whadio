@@ -53,9 +53,10 @@ stored and queued for transcription and notes, which the workers run; without a 
 object storage it refuses with `503 INTEGRATION_UNAVAILABLE`. Notes regeneration is outside the
 MVP and always refuses with `503 INTEGRATION_UNAVAILABLE`. A capture from the extension stores
 its chunks in object storage and, once completed, is queued through the same path as an upload;
-an interrupted capture is not finalised yet. Share access requests and retention
-warnings require a Notifications adapter; delivery is outside this slice. MCP reads require
-stored personal keys.
+an interrupted capture is not finalised yet. A share access request, a recording deletion
+warning and a meeting evicted at the hosted cap each reserve an email notice in the same
+transaction; the scheduler sends it when an SMTP relay is configured. MCP reads require stored
+personal keys.
 
 List operations in this slice use bounded database queries and opaque cursors scoped to the
 resource and signed-in caller. A deleted cursor anchor does not invalidate later pages. Folder

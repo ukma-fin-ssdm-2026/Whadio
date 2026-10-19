@@ -196,9 +196,10 @@ Source: [uml/sequence-meeting-pipeline.puml](uml/sequence-meeting-pipeline.puml)
    restricted meetings, and queues the notes job. The notes worker returns the notes, the proposed
    name and the meetings used as context.
 5. **Delivery.** The backend saves the notes, applies the proposed name as the meeting's name,
-   marked as generated, marks the meeting processed and emails the member. The SPA shows the
-   transcript and notes and prompts for a name, prefilled with the generated one; if the member
-   does not answer, the generated name stays (FR-033).
+   marked as generated, marks the meeting processed and reserves an email to the member in the
+   same transaction; the scheduler sends it. The SPA shows the transcript and notes and prompts
+   for a name, prefilled with the generated one; if the member does not answer, the generated name
+   stays (FR-033).
 
 ## 7. Failure behaviour
 
