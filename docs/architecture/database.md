@@ -148,16 +148,18 @@ validated per `kind` again when it is read.
 
 The scheduler sends what was reserved. Each pass, `NotificationDrainer` handles one due notice at
 a time in three transactions. The first only claims it with `FOR UPDATE SKIP LOCKED`, counts the
-attempt, moves `next_attempt_at` forward by a doubling, capped backoff and commits. The second
+attempt, moves `next_attempt_at` past the longest a send can take and commits. The second
 looks up the recipient's address through the `IRecipientDirectory` port, which the scheduler's
 composition root answers from Accounts, and the template is rendered. The mail then goes to the
 SMTP relay in a worker thread, with no transaction open. The third transaction marks the notice
-sent, or stores a sanitised error. The lock keeps a concurrent scheduler off the notice while it
-is claimed; after the commit, the future `next_attempt_at` does. An unexpected error while the
-mail is composed or sent stops the pass, but the notice is already rescheduled, so the next pass
-sends the others and retries it after its backoff. Delivery is at least once: a mail is sent
-again when its outcome cannot be recorded, or when its send outlasts
-`WHADIO_OUTBOX__RETRY_BACKOFF`. After `WHADIO_OUTBOX__MAX_ATTEMPTS` attempts a notice is given up. Each pass also deletes notices sent
+sent, or stores a sanitised error and moves `next_attempt_at` forward by a doubling, capped
+backoff instead. The lock keeps a concurrent scheduler off the notice while it is claimed; after
+the commit, the future `next_attempt_at` does. An unexpected error while the mail is composed or
+sent stops the pass, but the notice is already claimed, so the next pass sends the others and
+retries it once the longest send has passed. smtplib bounds each step of a send by
+`WHADIO_SMTP__TIMEOUT`, not the whole send, so the longest send is 16 times that timeout. Delivery
+is at least once: a mail is sent again when its outcome cannot be recorded, or when its send
+outlasts the longest send. After `WHADIO_OUTBOX__MAX_ATTEMPTS` attempts a notice is given up. Each pass also deletes notices sent
 longer ago than `WHADIO_OUTBOX__RETENTION`, and given-up ones reserved longer ago than it. Without
 `WHADIO_SMTP__*` the scheduler sends nothing and deletes nothing, reservations still succeed, and
 `WHADIO_PUBLIC_URL` is not needed. The batch size, backoff, attempts and retention are shown in

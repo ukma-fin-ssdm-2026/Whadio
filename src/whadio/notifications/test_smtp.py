@@ -2,6 +2,7 @@ import smtplib
 import ssl
 import time
 import traceback
+from datetime import timedelta
 from email.message import EmailMessage
 from typing import ClassVar, override
 from uuid import uuid4
@@ -100,6 +101,17 @@ def test_sender_connects_to_the_configured_relay_with_its_timeout() -> None:
 
     # Assert
     assert connector.addresses == [("relay.example.com", 1025, 30.0)]
+
+
+def test_longest_send_allows_the_timeout_for_each_smtp_step() -> None:
+    # Arrange
+    settings = PLAIN_RELAY.model_copy(update={"timeout": timedelta(seconds=10)})
+
+    # Act
+    longest = SmtpMailSender(settings).longest_send
+
+    # Assert
+    assert longest == timedelta(seconds=160)
 
 
 def test_message_is_addressed_from_the_sender_to_the_recipient() -> None:

@@ -2,7 +2,7 @@ import threading
 from collections.abc import AsyncGenerator, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import override
 from uuid import UUID, uuid4
 
@@ -15,10 +15,16 @@ from .templates import Notice, NoticeKind
 
 
 class RecordingMailSender(IMailSender):
-    def __init__(self, failure: Exception | None = None) -> None:
+    def __init__(self, longest_send: timedelta, failure: Exception | None = None) -> None:
         self.sent: list[OutgoingMail] = []
         self.caller_threads: set[int] = set()
         self.failure: Exception | None = failure
+        self._longest_send: timedelta = longest_send
+
+    @property
+    @override
+    def longest_send(self) -> timedelta:
+        return self._longest_send
 
     @override
     def send(self, mail: OutgoingMail) -> None:
@@ -97,8 +103,10 @@ class InMemoryNotificationOutbox(INotificationOutbox, IOutboxDrain):
         self.notices[notice_id] = replace(self.notices[notice_id], sent_at=sent_at, last_error=None)
 
     @override
-    async def record_failure(self, notice_id: UUID, error: str) -> None:
-        self.notices[notice_id] = replace(self.notices[notice_id], last_error=error)
+    async def record_failure(self, notice_id: UUID, error: str, retry_at: datetime) -> None:
+        self.notices[notice_id] = replace(
+            self.notices[notice_id], last_error=error, next_attempt_at=retry_at
+        )
 
     @override
     async def remove_finished(self, before: datetime, max_attempts: int) -> int:

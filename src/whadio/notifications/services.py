@@ -58,11 +58,12 @@ def _utc_now() -> datetime:
 class NotificationDrainer:
     """Sends due notices, each claimed in a transaction of its own that commits first.
 
-    The claim counts the attempt and makes the notice due again only after its backoff, so
-    composing or sending a mail that fails, hangs or raises leaves the notice to a later pass
-    instead of in front of the others, and a second drainer finds it not due. The mail is
-    composed and its outcome recorded in later transactions. Delivery is at least once: a mail is
-    sent again when its outcome is not recorded or its send outlasts the backoff.
+    The claim counts the attempt and makes the notice due again only after the sender's longest
+    send, so composing or sending a mail that hangs or raises leaves the notice to a later pass
+    instead of in front of the others, and a second drainer finds it not due while it is sent.
+    The mail is composed and its outcome recorded in later transactions; a failure makes the
+    notice due after its backoff instead. Delivery is at least once: a mail is sent again when its
+    outcome is not recorded or its send outlasts the longest send.
     """
 
     def __init__(
@@ -93,7 +94,9 @@ class NotificationDrainer:
                     await unit.outbox.mark_sent(entry.notice_id, self._now())
                     sent += 1
                     continue
-                await unit.outbox.record_failure(entry.notice_id, error)
+                await unit.outbox.record_failure(
+                    entry.notice_id, error, self._now() + self._backoff(entry.attempts)
+                )
             failed += 1
             if entry.attempts + 1 >= self._settings.max_attempts:
                 logger.warning(
@@ -116,7 +119,7 @@ class NotificationDrainer:
             entry = await unit.outbox.claim_due(self._now(), self._settings.max_attempts)
             if entry is not None:
                 await unit.outbox.reschedule(
-                    entry.notice_id, self._now() + self._backoff(entry.attempts)
+                    entry.notice_id, self._now() + self._sender.longest_send
                 )
             return entry
 
