@@ -3,6 +3,7 @@ from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from typing import override
 from uuid import UUID, uuid4
 
 import pytest
@@ -181,7 +182,7 @@ def test_storage_delete_can_be_repeated_after_database_commit_failure() -> None:
     assert (result, storage.deleted) == (([meeting_id], [meeting_id]), ["test", "test"])
 
 
-class PagedMeetings:
+class PagedMeetings(IRetentionMeetings):
     def __init__(self, count: int) -> None:
         self.ids: list[UUID] = sorted(uuid4() for _ in range(count))
         self.due_queries: int = 0
@@ -195,29 +196,38 @@ class PagedMeetings:
     def _page_after(self, after: UUID | None) -> list[UUID]:
         return [i for i in self.ids if after is None or i > after][:BATCH_SIZE]
 
-    async def due(self, _now: datetime, after: UUID | None = None) -> list[UUID]:
+    @override
+    async def due(self, now: datetime, after: UUID | None = None) -> list[UUID]:
+        del now
         self.due_queries += 1
         return self._page_after(after)
 
+    @override
     async def pending_deletions(self, after: UUID | None = None) -> list[UUID]:
         self.pending_queries += 1
         return self._page_after(after)
 
+    @override
     async def claim_deletion(self, deletion_id: UUID) -> str | None:
         return str(deletion_id)
 
+    @override
     async def complete_deletion(self, deletion_id: UUID) -> None:
         self.completed.append(deletion_id)
 
+    @override
     async def claim(self, meeting_id: UUID) -> ExpiringRecording | None:
         return ExpiringRecording(meeting_id, str(meeting_id), NOW, None, [])
 
-    async def mark_warned(self, _meeting_id: UUID, _now: datetime) -> None:
-        pass
+    @override
+    async def mark_warned(self, meeting_id: UUID, now: datetime) -> None:
+        del meeting_id, now
 
-    async def mark_deleted(self, _meeting_id: UUID, _now: datetime) -> None:
-        pass
+    @override
+    async def mark_deleted(self, meeting_id: UUID, now: datetime) -> None:
+        del meeting_id, now
 
+    @override
     async def notify(self, recording: ExpiringRecording) -> None:
         del recording
 

@@ -32,7 +32,7 @@ fake when a test checks only the result, and a mock when the test asserts on the
 - `InMemoryObjectStorage(now=FixedClock(NOW))` keeps the objects in `objects` and records the keys
   in `uploaded`, `deleted` and `presigned`, and the calling threads in `caller_threads`. Set
   `fail_put` or `fail_delete` to make the call raise `ObjectStorageError`. Like the real storage,
-  `presign_get` refuses a lifetime outside zero to seven days.
+  `presign_get` refuses a lifetime that is not a whole number of seconds from 1 s to 7 days.
 - `FixedClock(at)` refuses a time that is not aware UTC, so a test cannot mix naive and aware times.
   It keeps the time in UTC, so `advance()` across a daylight saving change moves it by the full
   interval.
