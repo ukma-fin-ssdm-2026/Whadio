@@ -86,7 +86,8 @@ class NotesSettings(BaseModel):
     )
     concurrency: int = Field(default=4, ge=1, description="Jobs handled at the same time")
     job_timeout: timedelta = Field(
-        default=timedelta(minutes=10), description="Time after which a job is given up"
+        default=timedelta(minutes=30),
+        description="Time after which a job is given up, with every call to the model it makes",
     )
     shutdown_grace: timedelta = Field(
         default=timedelta(minutes=1), description="Time running jobs get to finish on shutdown"

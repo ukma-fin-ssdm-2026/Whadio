@@ -9,14 +9,15 @@ from ...contracts.notes import (
     NotesFailed,
     NotesFailure,
     NotesPreset,
-    NotesProvider,
     NotesReady,
     NotesRequested,
 )
 from .errors import NotesError
+from .fakes import ScriptedChatModel
 from .handler import NotesHandler, NotesResult
-from .llm import Completion
-from .prompt import ContextBudget, Prompt, PromptBuilder
+from .map_reduce import MapReducePrompts
+from .prompt import ContextBudget, PromptBuilder
+from .writer import NotesWriter
 
 _AT = datetime(2026, 10, 9, 18, tzinfo=UTC)
 _TRANSCRIPT = Transcript(
@@ -55,23 +56,11 @@ _NOTES = """\
 """
 
 
-class _Model:
-    def __init__(self, answer: str | NotesError) -> None:
-        self._answer: str | NotesError = answer
-
-    @property
-    def provider(self) -> NotesProvider:
-        return NotesProvider.ANTHROPIC
-
-    async def complete(self, prompt: Prompt) -> Completion:
-        if isinstance(self._answer, NotesError):
-            raise self._answer
-        return Completion(text=self._answer, model_name=f"claude ({len(prompt.user)} chars)")
-
-
-def _handle(answer: str | NotesError, budget: int = 100_000) -> NotesResult:
-    builder = PromptBuilder(ContextBudget(max_input_tokens=budget, chars_per_token=3.0))
-    return asyncio.run(NotesHandler(builder, _Model(answer), now=lambda: _AT).handle(_JOB))
+def _handle(answer: str | NotesError, max_input_tokens: int = 100_000) -> NotesResult:
+    budget = ContextBudget(max_input_tokens=max_input_tokens, chars_per_token=3.0)
+    builder = PromptBuilder(budget)
+    writer = NotesWriter(builder, MapReducePrompts(builder, budget), ScriptedChatModel(answer))
+    return asyncio.run(NotesHandler(writer, now=lambda: _AT).handle(_JOB))
 
 
 def test_notes_take_the_proposed_name_from_the_model_answer() -> None:
@@ -116,7 +105,7 @@ def test_provider_failure_is_reported_with_its_reason() -> None:
 
 def test_transcript_too_long_for_the_budget_fails_without_calling_the_model() -> None:
     # Act
-    result = _handle(NotesError(NotesFailure.PROVIDER_UNAVAILABLE), budget=10)
+    result = _handle(NotesError(NotesFailure.PROVIDER_UNAVAILABLE), max_input_tokens=10)
 
     # Assert
     assert isinstance(result, NotesFailed)

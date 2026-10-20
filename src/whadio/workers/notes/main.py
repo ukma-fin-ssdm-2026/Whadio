@@ -18,6 +18,7 @@ from ..supervision.supervisor import ConsumerOptions, serve_jobs
 from .claude import ClaudeChatModel
 from .handler import NotesHandler, NotesResult, notes_failure
 from .llm import IChatModel
+from .map_reduce import MapReducePrompts
 from .ollama import OllamaChatModel
 from .prompt import ContextBudget, PromptBuilder
 from .settings import (
@@ -27,6 +28,7 @@ from .settings import (
     OllamaSettings,
     load_notes_worker_settings,
 )
+from .writer import NotesWriter
 
 NOTES_WORKER: Final = WorkerSpec(
     name="notes-worker",
@@ -66,10 +68,10 @@ async def open_chat_model(settings: NotesSettings) -> AsyncGenerator[IChatModel]
 def build_runner(
     settings: NotesSettings, model: IChatModel
 ) -> InlineRunner[NotesRequested, NotesResult]:
-    builder = PromptBuilder(ContextBudget(settings.max_prompt_tokens, settings.chars_per_token))
-    return InlineRunner(
-        NOTES_WORKER, NotesHandler(builder, model).handle, timeout=settings.job_timeout
-    )
+    budget = ContextBudget(settings.max_prompt_tokens, settings.chars_per_token)
+    builder = PromptBuilder(budget)
+    writer = NotesWriter(builder, MapReducePrompts(builder, budget), model)
+    return InlineRunner(NOTES_WORKER, NotesHandler(writer).handle, timeout=settings.job_timeout)
 
 
 async def serve(settings: NotesWorkerSettings) -> None:

@@ -13,10 +13,11 @@ from ...contracts.results import parse_result
 from ...shared.broker import BrokerSettings, MessagePublisher, connect, declare_queue
 from ..supervision.runners import InlineRunner
 from ..supervision.supervisor import ConsumerOptions, serve_jobs
+from .fakes import ScriptedChatModel
 from .handler import NotesHandler
-from .llm import Completion
 from .main import NOTES_WORKER, open_chat_model
-from .prompt import ContextBudget, Prompt, PromptBuilder
+from .map_reduce import MapReducePrompts
+from .prompt import ContextBudget, PromptBuilder
 from .settings import (
     AnthropicSettings,
     LlmSettings,
@@ -24,6 +25,7 @@ from .settings import (
     OllamaSettings,
     load_notes_worker_settings,
 )
+from .writer import NotesWriter
 
 _AT = datetime(2026, 10, 9, 18, tzinfo=UTC)
 _NOTES = """\
@@ -41,15 +43,6 @@ _NOTES = """\
 ## Відкриті питання
 —
 """
-
-
-class _FixedModel:
-    @property
-    def provider(self) -> NotesProvider:
-        return NotesProvider.ANTHROPIC
-
-    async def complete(self, prompt: Prompt) -> Completion:
-        return Completion(text=_NOTES, model_name=f"fixed ({len(prompt.user)} chars)")
 
 
 def _provider_opened_for(llm: LlmSettings) -> NotesProvider:
@@ -85,10 +78,10 @@ async def _run_one_job(broker: BrokerSettings, job: NotesRequested) -> list[str]
         queue=QueueSpec(f"test.notes.{suffix}", NOTES_REQUESTS.arguments),
         results=QueueSpec(f"test.results.{suffix}", PROCESSING_RESULTS.arguments),
     )
-    builder = PromptBuilder(ContextBudget(max_input_tokens=100_000, chars_per_token=3.0))
-    runner = InlineRunner(
-        spec, NotesHandler(builder, _FixedModel()).handle, timeout=timedelta(seconds=10)
-    )
+    budget = ContextBudget(max_input_tokens=100_000, chars_per_token=3.0)
+    builder = PromptBuilder(budget)
+    writer = NotesWriter(builder, MapReducePrompts(builder, budget), ScriptedChatModel(_NOTES))
+    runner = InlineRunner(spec, NotesHandler(writer).handle, timeout=timedelta(seconds=10))
     options = ConsumerOptions(
         concurrency=1, consumer_timeout=timedelta(minutes=1), shutdown_grace=timedelta(seconds=5)
     )

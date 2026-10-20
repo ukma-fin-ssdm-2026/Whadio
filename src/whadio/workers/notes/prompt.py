@@ -55,11 +55,23 @@ class PromptBuilder:
         self._budget: ContextBudget = budget
 
     def build(self, request: NotesRequested) -> Prompt:
+        return self.build_from(request, render_transcript(request.transcript))
+
+    def build_from(
+        self, request: NotesRequested, meeting_content: str, system_note: str = ""
+    ) -> Prompt:
+        """Build the notes prompt around `meeting_content`, which goes into <meeting> as markup.
+
+        The caller escapes any text in `meeting_content`. `system_note` follows the preset's system
+        prompt, and both count against the budget.
+        """
         language = request.transcript.language
         spec = PRESETS[request.preset]
-        system = _system_prompt(request.preset, spec, language)
+        system = _SEPARATOR.join(
+            part for part in (_system_prompt(request.preset, spec, language), system_note) if part
+        )
         glossary = _glossary(request.glossary)
-        meeting = _meeting(request)
+        meeting = _meeting(request, meeting_content)
         task = "Write the notes for the meeting in <meeting>."
         fixed = _SEPARATOR.join(part for part in (glossary, meeting, task) if part)
         tokens_left = self._budget.max_input_tokens - self._budget.tokens(system)
@@ -136,12 +148,12 @@ def _glossary(entries: Iterable[GlossaryEntry]) -> str:
     return "<glossary>\n" + "\n".join(terms) + "\n</glossary>" if terms else ""
 
 
-def _meeting(request: NotesRequested) -> str:
+def _meeting(request: NotesRequested, content: str) -> str:
     name = request.meeting.name
     attribute = f' name="{escape(name)}"' if name is not None else ""
     return (
         f'<meeting{attribute} recorded_at="{_date(request.meeting.recorded_at)}">\n'
-        f"{render_transcript(request.transcript)}\n</meeting>"
+        f"{content}\n</meeting>"
     )
 
 
@@ -151,6 +163,10 @@ def _context_meeting(meeting: ContextMeeting) -> str:
         f'recorded_at="{_date(meeting.recorded_at)}">\n'
         f"{render_transcript(meeting.transcript)}\n</context_meeting>"
     )
+
+
+def notes_language_name(language: str) -> str:
+    return _language_name(_notes_language(language))
 
 
 def _notes_language(language: str) -> str:
