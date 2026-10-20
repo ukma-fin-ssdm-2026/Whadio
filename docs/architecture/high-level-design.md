@@ -136,7 +136,7 @@ The deployable processes, all but the off-the-shelf services built from the same
 | Unit | Runs | Host | Instances |
 |---|---|---|---|
 | `web` | All backend modules except Retention; consumes `processing.results` | Main host | 1, stateless; more can run behind nginx |
-| `scheduler` | Retention, capture finalisation, re-publishing jobs stuck in `queued`, deleting expired registration and password-reset links, invitations and sessions | Main host | Exactly 1 |
+| `scheduler` | Retention, capture finalisation, re-publishing jobs stuck in `queued`, deleting expired registration and password-reset links, invitations and sessions, sending the notification emails reserved in the outbox | Main host | Exactly 1 |
 | `notes-worker` | Notes pipeline | Main host (CPU only) | 1 or more, competing consumers |
 | `asr-worker` | Transcription pipeline | GPU host | 1 per GPU |
 | `llm-runtime` | The built-in language model, on Ollama | GPU host | 1 |
@@ -196,9 +196,10 @@ Source: [uml/sequence-meeting-pipeline.puml](uml/sequence-meeting-pipeline.puml)
    restricted meetings, and queues the notes job. The notes worker returns the notes, the proposed
    name and the meetings used as context.
 5. **Delivery.** The backend saves the notes, applies the proposed name as the meeting's name,
-   marked as generated, marks the meeting processed and emails the member. The SPA shows the
-   transcript and notes and prompts for a name, prefilled with the generated one; if the member
-   does not answer, the generated name stays (FR-033).
+   marked as generated, marks the meeting processed and reserves an email to the member in the
+   same transaction; the scheduler sends it. The SPA shows the transcript and notes and prompts
+   for a name, prefilled with the generated one; if the member does not answer, the generated name
+   stays (FR-033).
 
 ## 7. Failure behaviour
 

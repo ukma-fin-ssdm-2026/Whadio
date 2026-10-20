@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Protocol
 from uuid import UUID
 
 from fastapi import Depends, FastAPI
@@ -18,6 +18,7 @@ from ..access_policy.services import (
     AccessService,
     IShareRequestNotifier,
 )
+from ..accounts.contracts import UserProfile
 from ..accounts.enums import NotesTemplate
 from ..accounts.passwords import Argon2PasswordHasher
 from ..accounts.repositories import (
@@ -50,6 +51,8 @@ from ..meetings.recordings import RecordingObjects
 from ..meetings.repositories import FolderRepository, MeetingRepository
 from ..meetings.services import FolderService, MeetingService, WorkspaceContent
 from ..meetings.settings import MeetingSettings
+from ..notifications.repositories import INotificationOutbox, NotificationOutboxRepository
+from ..notifications.templates import HostedEviction, NoticeKind, ShareAccessRequest
 from ..processing.consumer import (
     ProcessingTransactions,
     ResultSource,
@@ -111,7 +114,7 @@ class CompositionRoot:
                         memberships,
                         AuditWriter(session),
                         AccessPolicy(AccessRepository(session), memberships),
-                        UnavailableEvictionNotifications(),
+                        OutboxEvictionNotices(NotificationOutboxRepository(session)),
                     )
                 ),
                 WorkspaceSettingsService(WorkspaceSettingsRepository(session)),
@@ -228,15 +231,22 @@ def meeting_processing(session: Session) -> IMeetingProcessing:
 Processing = Annotated[IMeetingProcessing, Depends(meeting_processing)]
 
 
-class UnavailableEvictionNotifications:
+class OutboxEvictionNotices:
+    """Meetings' `IEvictionNotifier`, answered by the notification outbox."""
+
+    def __init__(self, outbox: INotificationOutbox) -> None:
+        self._outbox: INotificationOutbox = outbox
+
     async def enqueue(self, notice: EvictionNotice) -> None:
-        del notice
-        raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+        await self._outbox.reserve(
+            notice.recipient_id,
+            f"{NoticeKind.HOSTED_EVICTION}:{notice.meeting_id}:{notice.recipient_id}",
+            HostedEviction(meeting_name=notice.meeting_name),
+        )
 
 
 def eviction_notifications(session: Session) -> IEvictionNotifier:
-    del session
-    return UnavailableEvictionNotifications()
+    return OutboxEvictionNotices(NotificationOutboxRepository(session))
 
 
 def meeting_persistence(
@@ -302,15 +312,35 @@ def upload_protection(
 UploadGuard = Annotated[UploadProtection, Depends(upload_protection)]
 
 
-class UnavailableShareNotifications:
+class IProfiles(Protocol):
+    async def profile(self, user_id: UUID, /) -> UserProfile | None: ...
+
+
+class OutboxShareNotices:
+    """Access Policy's `IShareRequestNotifier`, answered by the notification outbox."""
+
+    def __init__(self, outbox: INotificationOutbox, profiles: IProfiles) -> None:
+        self._outbox: INotificationOutbox = outbox
+        self._profiles: IProfiles = profiles
+
     async def enqueue(self, share_id: UUID, creator_id: UUID, requester_id: UUID) -> None:
-        del share_id, creator_id, requester_id
-        raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+        requester = await self._profiles.profile(requester_id)
+        if requester is None:
+            raise UseCaseError(Failure.NOT_FOUND)
+        await self._outbox.reserve(
+            creator_id,
+            f"{NoticeKind.SHARE_ACCESS_REQUEST}:{share_id}:{requester_id}",
+            ShareAccessRequest(
+                share_id=share_id, requester_name=requester.name, requester_email=requester.email
+            ),
+        )
 
 
 def share_notifications(session: Session) -> IShareRequestNotifier:
-    del session
-    return UnavailableShareNotifications()
+    return OutboxShareNotices(
+        NotificationOutboxRepository(session),
+        WorkspaceMembershipService(MembershipRepository(session)),
+    )
 
 
 def access_service(
@@ -404,8 +434,6 @@ Captures = Annotated[CaptureService, Depends(capture_service)]
 @dataclass(frozen=True)
 class RuntimeIntegrations:
     processing: Callable[[AsyncSession], IMeetingProcessing] | None = None
-    shares: Callable[[AsyncSession], IShareRequestNotifier] | None = None
-    evictions: Callable[[AsyncSession], IEvictionNotifier] | None = None
 
 
 def connect_integrations(app: FastAPI, integrations: RuntimeIntegrations) -> None:
@@ -413,14 +441,4 @@ def connect_integrations(app: FastAPI, integrations: RuntimeIntegrations) -> Non
         factory = integrations.processing
         return UnavailableMeetingProcessing() if factory is None else factory(session)
 
-    def shares(session: Session) -> IShareRequestNotifier:
-        factory = integrations.shares
-        return UnavailableShareNotifications() if factory is None else factory(session)
-
-    def evictions(session: Session) -> IEvictionNotifier:
-        factory = integrations.evictions
-        return UnavailableEvictionNotifications() if factory is None else factory(session)
-
     app.dependency_overrides[meeting_processing] = processing
-    app.dependency_overrides[share_notifications] = shares
-    app.dependency_overrides[eviction_notifications] = evictions

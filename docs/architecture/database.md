@@ -146,6 +146,15 @@ aggregated for the returned page without loading meeting content.
 repeated reservation is dropped. The payload is a pydantic notice from `notifications/templates.py`,
 validated per `kind` again when it is read.
 
+The modules that report a change reserve through ports of their own, which the composition roots
+answer with the outbox, since Notifications may not import them. `api/composition.py` answers
+Access Policy's `IShareRequestNotifier`, adding the requester's name and email from Accounts, and
+Meetings' `IEvictionNotifier`, with the name snapshot taken before the deletion.
+`scheduler/composition.py` answers `IRetentionNotifier`, reading the meeting's name in the same
+session. The dedupe keys are `share_access_request:<share_id>:<requester_id>`,
+`hosted_eviction:<meeting_id>:<recipient_id>` and
+`recording_deletion_warning:<meeting_id>:<recipient_id>`.
+
 The scheduler sends what was reserved. Each pass, `NotificationDrainer` handles one due notice at
 a time in three transactions. The first only claims it with `FOR UPDATE SKIP LOCKED`, counts the
 attempt, moves `next_attempt_at` past the longest a send can take and commits. The second
@@ -270,7 +279,7 @@ Database safeguards protect stored data. Services enforce these use cases:
 | Transcript edits (FR-028) | Save edits as edited revisions and expose the original with an edited marker. The API's promise to preserve earlier edited revisions must also be implemented by services. |
 | Audit events (NFR-010, ADR-005) | Write actor-attributed events in the same transaction as the change. `FolderService.delete_folder` writes one `meeting_moved` event per moved meeting. The database trigger only refuses invalid deletion. |
 | Recording retention (FR-046) | Delete audio 90 days after the meeting, warn accessible members seven days beforehand, and keep transcripts and notes. |
-| Account and sharing flows | Share approval and revocation use services. Accounts writes and notification delivery remain unfinished. |
+| Account and sharing flows | Share approval and revocation use services. Accounts writes and the processing notices (FR-024) remain unfinished. |
 
 The retention interval and folder permissions above are confirmed product decisions. Storing
 `recording_delete_after` and `recording_deleted_at` does not run a retention schedule or send a
@@ -279,8 +288,9 @@ scheduler runs through `uv run whadio scheduler` (one instance per deployment), 
 `uv run whadio scheduler --once` for one pass. It drains recording cleanup before scanning expiry,
 continues after database failures and stops cleanly on SIGINT/SIGTERM. Configure storage with the
 `WHADIO_STORAGE__*` variables and the interval with `WHADIO_RETENTION_INTERVAL_SECONDS`, shown in
-`.env.example`. Warning delivery is deliberately unavailable until Notifications is connected;
-failed warnings are not marked sent, and expiry and cleanup continue independently. The one-pass
+`.env.example`. A warning is reserved in the notification outbox in the transaction that marks
+the recording warned, so a failed reservation leaves it unwarned for the next pass, and expiry
+and cleanup continue independently. The one-pass
 command exits unsuccessfully if any work fails. Database tests exercise the service
 and content-route behavior, but do not establish that those runtime integrations are complete.
 
