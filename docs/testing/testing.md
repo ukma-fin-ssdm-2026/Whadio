@@ -137,7 +137,7 @@ Coverage says which code ran, not whether the test checked the right thing. A te
 
 ### Mutation testing
 
-`uv run task mutation` runs mutmut over the notes prompt (`src/whadio/workers/notes/prompt.py`) against the notes worker's tests (`src/whadio/workers/notes/`), then lists the mutants that no test killed. `uv run mutmut show <name>` prints one of them as a diff. The scope is set in `[tool.mutmut]` in `pyproject.toml`. The task deletes `mutants/` first, because mutmut keeps a mutant's earlier verdict when only the tests have changed. The run stays out of the hooks and CI: run it by hand after changing the module or its tests.
+`uv run task mutation` runs mutmut over the notes prompt (`src/whadio/workers/notes/prompt.py`) against the notes worker's tests (`src/whadio/workers/notes/`), then lists the mutants that no test killed. `uv run mutmut show <name>` prints one of them as a diff. The scope is set in `[tool.mutmut]` in `pyproject.toml`. The task deletes `mutants/` first, because mutmut keeps a mutant's earlier verdict when only the tests have changed. The run stays out of the hooks and CI: run it by hand after changing the module or its tests. mutmut does not run on native Windows ([boxed/mutmut#397](https://github.com/boxed/mutmut/issues/397)); use WSL there.
 
 ## 3. Proposals for improving the tests
 
