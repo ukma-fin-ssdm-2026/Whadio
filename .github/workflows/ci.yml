@@ -15,7 +15,7 @@ concurrency:
 jobs:
   verify:
     name: Checks, tests and API contract
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     env:
       # Pushes to main check out main itself; the hook exists to stop local commits there.
       SKIP: no-commit-to-branch
@@ -51,12 +51,12 @@ jobs:
       - name: Run the commit-hook checks on all files
         run: uv run --frozen task check
 
-      - name: Start PostgreSQL, RabbitMQ and SeaweedFS and migrate the test database
+      - name: Start the services and migrate the test database
         env:
           WHADIO_DB_HOST: 127.0.0.1
         run: |
           cp .env.example .env
-          docker compose --profile core up --detach --wait postgres rabbitmq seaweedfs
+          uv run --frozen task infra:up
           uv run --frozen task db:upgrade
           uv run --frozen alembic check
 
@@ -119,7 +119,7 @@ jobs:
     concurrency:
       group: pages
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
