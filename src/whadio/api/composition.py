@@ -44,6 +44,7 @@ from ..capture.services import (
     CaptureSpeakerTimeline,
     IChunkStorage,
 )
+from ..export.services import ExportService
 from ..meetings.contracts import EvictionNotice, IEvictionNotifier, QueuedNotes
 from ..meetings.persistence import MeetingPersistence, PersistenceDependencies
 from ..meetings.processing import IMeetingProcessing
@@ -449,3 +450,16 @@ def connect_integrations(app: FastAPI, integrations: RuntimeIntegrations) -> Non
         return UnavailableMeetingProcessing() if factory is None else factory(session)
 
     app.dependency_overrides[meeting_processing] = processing
+
+
+def export_public_url() -> str:
+    raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+
+
+def export_service(
+    meetings: Meetings, public_url: Annotated[str, Depends(export_public_url)]
+) -> ExportService:
+    return ExportService(meetings, public_url)
+
+
+Exports = Annotated[ExportService, Depends(export_service)]
