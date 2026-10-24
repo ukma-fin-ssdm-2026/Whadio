@@ -691,12 +691,22 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /meetings/{meeting_id}/transcript/export` · Download the transcript
 
-- **Status:** Designed · **Caller:** any member who can read it · **Success:** `200`, a
+- **Status:** Implemented · **Caller:** any member who can read it · **Success:** `200`, a
   Markdown or WebVTT attachment
 - **Rules:**
   - `format` is `markdown` (the default) or `vtt`. `timestamps=false` drops timestamps from
     Markdown; VTT always has them.
-  - The current revision, split by speaker labels (FR-040, FR-041).
+  - `version=current` (default) selects corrected content; `version=original` selects immutable
+    original text/speaker labels. The selected version is labelled truthfully (FR-028, FR-040,
+    FR-041, NFR-011). Files and Link headers carry absolute authenticated original-view/download
+    URLs from `WHADIO_PUBLIC_URL`, including its optional deployment path prefix, never from the
+    request Host header. The original-view URL opens `/meetings/{id}?revision_id={original_id}`
+    in the SPA's transcript tab and returns there after sign-in. Download URLs remain API routes.
+    Without a configured URL, exports use `http://localhost:3000` for development; SMTP still
+    requires an explicit public URL. Invalid values are refused when the app is built.
+  - Markdown preserves speaker labels and optional timestamps; VTT is always timed.
+  - Files are UTF-8 attachments with `Cache-Control: no-store`; shares and administrator
+    status alone confer no export permission. Original retrieval still requires current access.
   - The file opens with a notice not to share it without the participants' permission and
     ends with an attribution (FR-042). An edited transcript says so.
 - **Errors:**
@@ -705,10 +715,11 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /meetings/{meeting_id}/notes/export` · Download the notes
 
-- **Status:** Designed · **Caller:** any member who can read it · **Success:** `200`, a
+- **Status:** Implemented · **Caller:** any member who can read it · **Success:** `200`, a
   Markdown attachment
 - **Rules:** the current notes, with their context meetings, the notice and the attribution
-  (FR-040, FR-042).
+  (FR-040, FR-042). Only the latest saved note is read; pending/failed regeneration does not
+  discard it. Context snapshots survive deletion of context meetings.
 - **Errors:**
   - `404 NOT_FOUND`: no such meeting, or the caller cannot read it.
   - `409 NO_NOTES`: the meeting has no notes yet.
@@ -1261,3 +1272,5 @@ checker and with scripted requests against every implemented operation. The auth
 and edited the content, and the document is reviewed through a pull request before merging.
 
 These PR #63 review revisions were assisted by OpenAI Codex. Everything was reviewed by me.
+
+The Export implementation and review changes were assisted by OpenAI Codex.
