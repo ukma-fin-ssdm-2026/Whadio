@@ -11,7 +11,6 @@ from ...capture.services import (
     MissingChunksError,
 )
 from ...processing.speakers import SpeakerEvent
-from ...shared.errors import Failure, UseCaseError
 from ..accounts.auth import CaptureUser
 from ..composition import Captures
 from ..core.errors import (
@@ -101,6 +100,18 @@ async def list_destinations(
 async def start_capture(
     payload: CaptureCreate, user: CaptureUser, captures: Captures, response: Response
 ) -> CaptureRead:
+    if not payload.consent_confirmed:
+        raise ApiError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Request contains invalid fields",
+            [
+                ErrorDetail(
+                    field="consent_confirmed",
+                    message="must be `true`: the participants agreed to be recorded",
+                )
+            ],
+        )
     view = await captures.start(
         user.id,
         payload.workspace_id,
@@ -175,7 +186,17 @@ async def put_chunk(
     try:
         events = _SPEAKER_EVENTS.validate_json(speaker_events)
     except ValidationError:
-        raise UseCaseError(Failure.VALIDATION_ERROR) from None
+        raise ApiError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Request contains invalid fields",
+            [
+                ErrorDetail(
+                    field="speaker_events",
+                    message="must be a JSON list of `{at_seconds, speakers}`",
+                )
+            ],
+        ) from None
     created = await captures.put_chunk(
         user.id,
         capture_id,
