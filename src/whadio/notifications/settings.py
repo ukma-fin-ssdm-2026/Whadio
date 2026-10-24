@@ -2,10 +2,11 @@ from dataclasses import dataclass
 from datetime import timedelta
 from email.errors import HeaderParseError
 from email.headerregistry import Address
-from typing import ClassVar, Self
+from typing import Self
 
 from pydantic import BaseModel, Field, HttpUrl, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from ..shared.settings import PublicUrlSettings
 
 
 class SmtpSettings(BaseModel):
@@ -86,20 +87,11 @@ class MailDelivery:
     public_url: HttpUrl
 
 
-class NotificationSettings(BaseSettings):
-    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
-        env_prefix="WHADIO_", env_nested_delimiter="__", env_file=".env", extra="ignore"
-    )
-
+class NotificationSettings(PublicUrlSettings):
     smtp: SmtpSettings | None = Field(
         default=None,
         description="The mail relay; without it no notification is sent and none is refused "
         "(FR-047)",
-    )
-    public_url: HttpUrl | None = Field(
-        default=None,
-        description="Address the web application is reached at; mail links start with it. "
-        "Required with an SMTP relay",
     )
     outbox: OutboxSettings = Field(
         default_factory=OutboxSettings, description="Delivery of the reserved notices"

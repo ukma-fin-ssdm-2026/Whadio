@@ -65,6 +65,7 @@ from ..processing.repositories import JobRepository
 from ..processing.services import ProcessingCollaborators, ProcessingService
 from ..shared.database import Database, DatabaseSettings, IUseCaseTransactions
 from ..shared.errors import Failure, UseCaseError
+from ..shared.settings import PublicUrlSettings
 from ..shared.storage import IObjectStorage, connect_s3_storage
 from .settings import WebSettings
 
@@ -72,7 +73,13 @@ logger = logging.getLogger(__name__)
 
 
 class CompositionRoot:
-    def __init__(self, database: Database | None = None) -> None:
+    def __init__(
+        self, database: Database | None = None, *, public_settings: PublicUrlSettings | None = None
+    ) -> None:
+        settings = (
+            public_settings if public_settings is not None else PublicUrlSettings.model_validate({})
+        )
+        self.public_url: str = str(settings.public_url or "http://localhost:3000")
         self._database: Database | None = database
         self._storage: IObjectStorage | None = None
         # Present while jobs are being published; setting it publishes the ones just committed.
