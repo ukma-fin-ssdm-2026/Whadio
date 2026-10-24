@@ -4,7 +4,7 @@ from typing import Final, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, Field, TypeAdapter
-from sqlalchemy import exists, select, update
+from sqlalchemy import exists, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..meetings.contracts import ContextReference
@@ -129,7 +129,13 @@ class JobRepository:
         await self._session.execute(
             update(ProcessingJob)
             .where(ProcessingJob.processing_job_id == job_id)
-            .values(status=JobStatus.QUEUED, published_at=None)
+            .values(
+                status=JobStatus.QUEUED,
+                published_at=None,
+                queued_at=func.clock_timestamp(),
+                started_at=None,
+                finished_at=None,
+            )
         )
 
     async def finish(
