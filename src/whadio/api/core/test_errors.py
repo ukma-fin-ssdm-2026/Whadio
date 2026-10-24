@@ -1,9 +1,11 @@
 from typing import Annotated
 from uuid import UUID, uuid4
 
+import pytest
 from fastapi import FastAPI, Query
 from fastapi.testclient import TestClient
 
+from ...shared.errors import Failure, UseCaseError
 from ..accounts.schemas import SignIn
 from .errors import ErrorResponse, register_error_handlers
 
@@ -19,6 +21,10 @@ def _client() -> TestClient:
     @app.get("/meetings/{meeting_id}")
     async def get_meeting(meeting_id: UUID, limit: Annotated[int, Query(ge=1, le=100)] = 20) -> str:
         return f"{meeting_id}:{limit}"
+
+    @app.get("/failures/{failure}")
+    async def fail(failure: Failure) -> None:
+        raise UseCaseError(failure)
 
     return TestClient(app)
 
@@ -70,3 +76,15 @@ def test_invalid_path_parameter_is_echoed() -> None:
     # Assert
     detail = ErrorResponse.model_validate_json(response.text).error.details[0]
     assert (detail.field, detail.provided_value) == ("meeting_id", "not-a-uuid")
+
+
+@pytest.mark.parametrize("failure", list(Failure))
+def test_use_case_failure_has_a_readable_message(failure: Failure) -> None:
+    # Arrange
+    client = _client()
+
+    # Act
+    response = client.get(f"/failures/{failure.value}")
+
+    # Assert
+    assert ErrorResponse.model_validate_json(response.text).error.message != failure.value
