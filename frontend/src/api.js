@@ -65,11 +65,12 @@ export const api = {
   },
 
   getMeeting(meetingId) {
-    return request(`/meetings/${meetingId}`);
+    return request(`/meetings/${encodeURIComponent(meetingId)}`);
   },
 
-  getTranscript(meetingId) {
-    return request(`/meetings/${meetingId}/transcript`);
+  getTranscript(meetingId, revisionId = null) {
+    const query = revisionId ? `?${new URLSearchParams({ revision_id: revisionId })}` : "";
+    return request(`/meetings/${encodeURIComponent(meetingId)}/transcript${query}`);
   },
 
   listNotes(meetingId) {
