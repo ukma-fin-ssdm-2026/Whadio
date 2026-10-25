@@ -255,9 +255,11 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 - **Rules:**
   - Works in both modes, because operator-issued links work on invite-only instances.
   - Creates the account, its personal workspace and default folder, and signs the browser in.
-  - Requires `accept_terms: true` (FR-002) and a password of 12 to 128 characters.
+  - Requires `accept_terms: true` (FR-002) and a password of 12 to 128 characters with at least
+    one digit and one uppercase letter.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used (section 6.3).
+  - `422 VALIDATION_ERROR` on `password`: the password breaks the rule above.
 
 #### `POST /password-resets` · Request a password-reset link
 
@@ -273,10 +275,14 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 #### `POST /password-resets/{reset_id}/complete` · Set a new password from a link
 
 - **Status:** Designed · **Caller:** public · **Success:** `204`
-- **Rules:** ends every session and extension token of the account, this browser's included.
-  MCP keys keep working.
+- **Rules:**
+  - Requires a new password of 12 to 128 characters with at least one digit and one uppercase
+    letter.
+  - Ends every session and extension token of the account, this browser's included. MCP keys keep
+    working.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used (section 6.3).
+  - `422 VALIDATION_ERROR` on `password`: the password breaks the rule above.
 
 #### `POST /sessions` · Sign in
 
@@ -477,11 +483,15 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 - **Status:** Designed · **Caller:** public · **Success:** `201`, the user and the
   membership; the session cookie is set
-- **Rules:** for an invited address without an account. It creates the account and its
-  personal workspace, joins the workspace, and signs the browser in (FR-002).
+- **Rules:**
+  - For an invited address without an account. It creates the account and its personal
+    workspace, joins the workspace, and signs the browser in (FR-002).
+  - Requires a password of 12 to 128 characters with at least one digit and one uppercase
+    letter.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used.
   - `409 ACCOUNT_EXISTS`: the address has an account, so sign in and accept instead.
+  - `422 VALIDATION_ERROR` on `password`: the password breaks the rule above.
 
 #### `POST /invitations/{invitation_id}/decline` · Decline an invitation
 
@@ -880,14 +890,25 @@ All capture operations accept the extension's bearer token as well as the browse
 
 ### 4.8 Administration and operations
 
-#### `GET /admin/jobs`, `GET /admin/metrics` · Operational dashboard
+#### `GET /admin/jobs`, `GET /admin/metrics` · Operational job monitoring
 
-- **Status:** Designed · **Caller:** administrator · **Success:** `200`, a page of jobs, or
-  the current metrics
-- **Rules:** queue depth, waiting times, failures and load (FR-045). Never any recording,
-  transcript or notes content.
-- **Errors:**
-  - `403 INSUFFICIENT_ROLE`: the caller is not an administrator.
+- **Status:** Implemented backend. The dashboard and host/model telemetry remain pending under
+  #139; these APIs do not complete US-019/FR-045 by themselves.
+- **Caller:** signed-in instance administrator; workspace roles alone grant no access.
+- **Jobs:** workspace UUID, job type/state, stored attempt counter and safe failure descriptions.
+  Times distinguish original creation, entry into the current queue period and attempt start/end.
+  Unknown historical queue waits are null. Results sort by creation time then job UUID descending;
+  filters cover workspace, job type, state and inclusive creation interval. Cursors are bound
+  to filters. Meeting names, meeting IDs, content, context payloads and raw failures are omitted.
+- **Metrics:** logical-job counts from PostgreSQL and the oldest known current queue wait, with
+  unknown queue waits counted separately. `generated_at` is the assembly time and `status=ok`
+  means the database query succeeded. No source, host or model measurements are included or
+  required. Counts describe retained jobs; deleting a meeting removes its jobs from the counts.
+- **Rules:** `Cache-Control: no-store`. Administrator revocation applies on the next request
+  without sign-out. Administrator status confers no meeting-content access. These APIs do not
+  change Processing's attempt counting or retry limits.
+- **Errors:** `401 UNAUTHENTICATED`, `403 INSUFFICIENT_ROLE`, `422 VALIDATION_ERROR`, and the
+  shared error envelope for unexpected failures. There is no route-specific database handler.
 
 #### `GET /health` · Liveness probe
 
@@ -1274,3 +1295,6 @@ and edited the content, and the document is reviewed through a pull request befo
 These PR #63 review revisions were assisted by OpenAI Codex. Everything was reviewed by me.
 
 The Export implementation and review changes were assisted by OpenAI Codex.
+
+
+Later revisions were assisted by OpenAI Codex and verified by author.

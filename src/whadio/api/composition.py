@@ -18,6 +18,7 @@ from ..access_policy.services import (
     AccessService,
     IShareRequestNotifier,
 )
+from ..accounts.administrators import AdministratorRepository, AdministratorService
 from ..accounts.contracts import UserProfile
 from ..accounts.enums import NotesTemplate
 from ..accounts.passwords import Argon2PasswordHasher
@@ -35,6 +36,7 @@ from ..accounts.services import (
     WorkspaceService,
     WorkspaceSettingsService,
 )
+from ..admin.services import AdminService
 from ..audit.contracts import IContentAuditWriter
 from ..audit.services import AuditWriter
 from ..capture.repositories import CaptureRepository
@@ -46,6 +48,7 @@ from ..capture.services import (
 )
 from ..export.services import ExportService
 from ..meetings.contracts import EvictionNotice, IEvictionNotifier, QueuedNotes
+from ..meetings.monitoring import MeetingMetadata
 from ..meetings.persistence import MeetingPersistence, PersistenceDependencies
 from ..meetings.processing import IMeetingProcessing
 from ..meetings.recordings import RecordingObjects
@@ -62,6 +65,7 @@ from ..processing.consumer import (
     serve_publishing,
     serve_results,
 )
+from ..processing.monitoring import IJobMonitoring, JobMonitoring
 from ..processing.repositories import JobRepository
 from ..processing.services import ProcessingCollaborators, ProcessingService
 from ..shared.database import Database, DatabaseSettings, IUseCaseTransactions
@@ -463,3 +467,24 @@ def export_service(
 
 
 Exports = Annotated[ExportService, Depends(export_service)]
+
+
+def administrator_service(session: Session) -> AdministratorService:
+    return AdministratorService(AdministratorRepository(session))
+
+
+Administrators = Annotated[AdministratorService, Depends(administrator_service)]
+
+
+def job_monitoring(session: Session) -> IJobMonitoring:
+    return JobMonitoring(session, MeetingMetadata(session))
+
+
+MonitoredJobs = Annotated[IJobMonitoring, Depends(job_monitoring)]
+
+
+def admin_service(jobs: MonitoredJobs) -> AdminService:
+    return AdminService(jobs)
+
+
+Administration = Annotated[AdminService, Depends(admin_service)]

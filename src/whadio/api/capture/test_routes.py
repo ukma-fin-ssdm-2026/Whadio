@@ -251,6 +251,74 @@ def test_capture_without_consent_is_invalid(async_database: AsyncDatabase) -> No
     assert status == 422
 
 
+def test_capture_without_consent_names_the_consent_field(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(ready: Recorder) -> list[str | None]:
+        # Act
+        response = await ready.client.post("/api/v1/captures", json={"consent_confirmed": False})
+        error = ErrorResponse.model_validate_json(response.content).error
+        return [detail.field for detail in error.details]
+
+    fields = run(async_database, scenario)
+    # Assert
+    assert fields == ["consent_confirmed"]
+
+
+def test_unknown_folder_is_named_in_the_details(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(ready: Recorder) -> tuple[int, list[str | None]]:
+        # Act
+        response = await ready.client.post(
+            "/api/v1/captures",
+            json={
+                "consent_confirmed": True,
+                "workspace_id": str(ready.workspace_id),
+                "folder_id": str(uuid4()),
+            },
+        )
+        error = ErrorResponse.model_validate_json(response.content).error
+        return response.status_code, [detail.field for detail in error.details]
+
+    found = run(async_database, scenario)
+    # Assert
+    assert found == (422, ["folder_id"])
+
+
+def test_folder_without_workspace_is_named_in_the_details(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(ready: Recorder) -> tuple[int, list[str | None]]:
+        # Act
+        response = await ready.client.post(
+            "/api/v1/captures", json={"consent_confirmed": True, "folder_id": str(uuid4())}
+        )
+        error = ErrorResponse.model_validate_json(response.content).error
+        return response.status_code, [detail.field for detail in error.details]
+
+    found = run(async_database, scenario)
+    # Assert
+    assert found == (422, ["folder_id"])
+
+
+def test_invalid_speaker_events_are_named_in_the_details(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(ready: Recorder) -> list[str | None]:
+        capture = await ready.start()
+        # Act
+        response = await ready.client.put(
+            f"/api/v1/captures/{capture.id}/chunks/0",
+            files={"audio": ("chunk.webm", HEAD, "audio/webm;codecs=opus")},
+            data={"speaker_events": "not json"},
+        )
+        error = ErrorResponse.model_validate_json(response.content).error
+        return [detail.field for detail in error.details]
+
+    fields = run(async_database, scenario)
+    # Assert
+    assert fields == ["speaker_events"]
+
+
 def test_completed_capture_is_queued_once(async_database: AsyncDatabase) -> None:
     # Arrange
     async def scenario(ready: Recorder) -> list[UUID]:
