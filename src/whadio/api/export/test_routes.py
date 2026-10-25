@@ -16,6 +16,57 @@ pytestmark = pytest.mark.slow
 
 
 @pytest.mark.parametrize("format_name", ["markdown", "vtt"])
+@pytest.mark.parametrize("version", ["current", "original"])
+@pytest.mark.parametrize("timestamps", [True, False])
+def test_original_links_use_separate_canonical_web_and_api_bases(
+    database_settings: DatabaseSettings,
+    monkeypatch: pytest.MonkeyPatch,
+    format_name: str,
+    version: str,
+    *,
+    timestamps: bool,
+) -> None:
+    # Arrange
+    monkeypatch.setenv("WHADIO_PUBLIC_URL", "https://app.example/whadio/")
+    monkeypatch.setenv("WHADIO_API_PUBLIC_URL", "https://api.example/service/")
+
+    async def scenario() -> tuple[int, bool, bool, bool]:
+        async with (
+            unit_fixture(database_settings) as unit,
+            client_fixture(unit, unit.member) as client,
+        ):
+            await unit.meetings.edit_transcript(
+                unit.member,
+                unit.meeting,
+                TranscriptEdit(unit.revision, {unit.segment: "corrected"}, {}),
+                datetime.now(UTC),
+            )
+            view = f"https://app.example/whadio/meetings/{unit.meeting}?revision_id={unit.revision}"
+            download = (
+                f"https://api.example/service/api/v1/meetings/{unit.meeting}"
+                f"/transcript/export?version=original&format={format_name}"
+            )
+            if format_name == "markdown":
+                download += f"&timestamps={str(timestamps).lower()}"
+            # Act
+            response = await client.get(
+                f"/api/v1/meetings/{unit.meeting}/transcript/export",
+                params={"format": format_name, "version": version, "timestamps": timestamps},
+                headers={"Host": "attacker.example"},
+            )
+            return (
+                response.status_code,
+                view in response.text and view in response.headers["Link"],
+                download in response.text and download in response.headers["Link"],
+                "attacker.example" not in response.text + response.headers["Link"],
+            )
+
+    found = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+    # Assert
+    assert found == (200, True, True, True)
+
+
+@pytest.mark.parametrize("format_name", ["markdown", "vtt"])
 def test_download_current_and_original_preserves_provenance(
     database_settings: DatabaseSettings, monkeypatch: pytest.MonkeyPatch, format_name: str
 ) -> None:

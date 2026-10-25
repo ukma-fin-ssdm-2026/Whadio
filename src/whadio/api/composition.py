@@ -85,6 +85,7 @@ class CompositionRoot:
             public_settings if public_settings is not None else PublicUrlSettings.model_validate({})
         )
         self.public_url: str = str(settings.public_url or "http://localhost:3000")
+        self.api_public_url: str = str(settings.api_public_url or self.public_url)
         self._database: Database | None = database
         self._storage: IObjectStorage | None = None
         # Present while jobs are being published; setting it publishes the ones just committed.
@@ -460,10 +461,16 @@ def export_public_url() -> str:
     raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
 
 
+def export_api_public_url() -> str:
+    raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+
+
 def export_service(
-    meetings: Meetings, public_url: Annotated[str, Depends(export_public_url)]
+    meetings: Meetings,
+    public_url: Annotated[str, Depends(export_public_url)],
+    api_public_url: Annotated[str, Depends(export_api_public_url)],
 ) -> ExportService:
-    return ExportService(meetings, public_url)
+    return ExportService(meetings, public_url, api_public_url)
 
 
 Exports = Annotated[ExportService, Depends(export_service)]

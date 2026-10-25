@@ -65,9 +65,14 @@ def _cue(text: str) -> str:
 
 
 class ExportService:
-    def __init__(self, meetings: IExportMeetings, public_origin: str) -> None:
+    def __init__(
+        self, meetings: IExportMeetings, public_origin: str, api_public_origin: str | None = None
+    ) -> None:
         self._meetings: IExportMeetings = meetings
         self._origin: str = quote(public_origin.rstrip("/"), safe=":/%[]@!$&'*,;=~._-")
+        self._api_origin: str = quote(
+            (api_public_origin or public_origin).rstrip("/"), safe=":/%[]@!$&'*,;=~._-"
+        )
 
     async def transcript(
         self,
@@ -86,7 +91,7 @@ class ExportService:
             found = await self._meetings.transcript(
                 actor_id, meeting_id, found.original_revision_id
             )
-        base = f"{self._origin}/api/v1/meetings/{meeting_id}/transcript"
+        base = f"{self._api_origin}/api/v1/meetings/{meeting_id}/transcript"
         original_view = (
             f"{self._origin}/meetings/{meeting_id}?revision_id={found.original_revision_id}"
         )

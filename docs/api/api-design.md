@@ -709,8 +709,10 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - `version=current` (default) selects corrected content; `version=original` selects immutable
     original text/speaker labels. The selected version is labelled truthfully (FR-028, FR-040,
     FR-041, NFR-011). Files and Link headers carry absolute authenticated original-view/download
-    URLs from `WHADIO_PUBLIC_URL`, including its optional deployment path prefix, never from the
-    request Host header. The original-view URL opens `/meetings/{id}?revision_id={original_id}`
+    URLs from configured canonical bases, never from the request Host header. Original-view
+    links use `WHADIO_PUBLIC_URL`; download links use `WHADIO_API_PUBLIC_URL`, falling back to
+    the web base when omitted. The API base excludes `/api/v1`; both bases preserve optional
+    deployment path prefixes. The original-view URL opens `/meetings/{id}?revision_id={original_id}`
     in the SPA's transcript tab and returns there after sign-in. Download URLs remain API routes.
     Without a configured URL, exports use `http://localhost:3000` for development; SMTP still
     requires an explicit public URL. Invalid values are refused when the app is built.
