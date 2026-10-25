@@ -1,6 +1,7 @@
 import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import KeyOutlinedIcon from "@mui/icons-material/KeyOutlined";
@@ -31,6 +32,8 @@ import {
   IconButton,
   InputLabel,
   MenuItem,
+  MenuList,
+  Paper,
   Select,
   Stack,
   Switch,
@@ -41,7 +44,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ApiError, api } from "./api";
 import { meetingLibraryPath, meetingPath, readMeetingLink } from "./meeting-link";
@@ -1300,6 +1303,39 @@ function MeetingDetail({
         item.speaker.toLowerCase().includes(transcriptQuery.toLowerCase()),
     );
 
+  const header = (
+    <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={2}>
+      <Box>
+        <Typography variant="h1" fontSize={{ xs: 34, md: 48 }}>
+          {meeting.title}
+        </Typography>
+        <Typography className="meeting-date" color="text.secondary">
+          {formatDate(meeting.date)}
+        </Typography>
+      </Box>
+      <Stack className="meeting-meta-actions" direction="row" gap={0.75} alignItems="center">
+        <ExportControls
+          key={`${meeting.id}-${tab}-${transcript?.revision.revision_id}`}
+          meetingId={meeting.id}
+          tab={tab}
+          transcript={transcript}
+          notes={notes}
+          loading={loading}
+        />
+        <MetaIcon title={`Source: ${meeting.source}`}>
+          {meeting.source === "Google Meet" ? (
+            <VideoCameraFrontOutlinedIcon fontSize="small" />
+          ) : (
+            <CloudUploadOutlinedIcon fontSize="small" />
+          )}
+        </MetaIcon>
+        <MetaIcon title="Workspace access">
+          <GroupsOutlinedIcon fontSize="small" />
+        </MetaIcon>
+      </Stack>
+    </Stack>
+  );
+
   return (
     <Stack gap={1.5}>
       <Tabs value={tab} onChange={(_, value) => onTab(value)} className="meeting-tabs">
@@ -1309,29 +1345,8 @@ function MeetingDetail({
       </Tabs>
 
       {tab === "notes" ? (
-        <Card className="notes-panel">
-          <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={2}>
-            <Box>
-              <Typography variant="h1" fontSize={{ xs: 34, md: 48 }}>
-                {meeting.title}
-              </Typography>
-              <Typography className="meeting-date" color="text.secondary">
-                {formatDate(meeting.date)}
-              </Typography>
-            </Box>
-            <Stack className="meeting-meta-actions" direction="row" gap={0.75} alignItems="center">
-              <MetaIcon title={`Source: ${meeting.source}`}>
-                {meeting.source === "Google Meet" ? (
-                  <VideoCameraFrontOutlinedIcon fontSize="small" />
-                ) : (
-                  <CloudUploadOutlinedIcon fontSize="small" />
-                )}
-              </MetaIcon>
-              <MetaIcon title="Workspace access">
-                <GroupsOutlinedIcon fontSize="small" />
-              </MetaIcon>
-            </Stack>
-          </Stack>
+        <Card className="notes-panel" sx={{ overflow: "visible" }}>
+          {header}
           <Divider sx={{ my: 2.5 }} />
           {isProcessing(meeting) ? (
             <Stack className="processing-panel" direction="row" gap={1.5} alignItems="center">
@@ -1367,6 +1382,8 @@ function MeetingDetail({
         <Box className="recording-grid">
           {tab === "recording" && (
             <Card className="notes-panel">
+              {header}
+              <Divider sx={{ my: 2.5 }} />
               {recordingUrl ? (
                 <Box className="player player-ready">
                   <video controls src={recordingUrl} aria-label={`${meeting.title} recording`} />
@@ -1386,7 +1403,13 @@ function MeetingDetail({
               )}
             </Card>
           )}
-          <Card className="transcript-panel">
+          <Card className="transcript-panel" sx={{ overflow: "visible" }}>
+            {tab === "transcript" && (
+              <>
+                {header}
+                <Divider sx={{ my: 2.5 }} />
+              </>
+            )}
             <Stack gap={1.5}>
               <Stack direction="row" justifyContent="space-between" alignItems="center">
                 <Typography variant="h2" fontSize={22}>
@@ -1446,6 +1469,102 @@ function MeetingDetail({
   );
 }
 
+export function ExportDownloadMenu({ meetingId, tab, transcript, onDownload }) {
+  if (tab === "notes") {
+    return (
+      <MenuList aria-label="Notes download formats">
+        <MenuItem component="a" href={api.notesExportUrl(meetingId)} onClick={onDownload}>
+          Markdown (.md)
+        </MenuItem>
+      </MenuList>
+    );
+  }
+  const version = transcript.revision.revision_type === "original" ? "original" : "current";
+  return (
+    <MenuList
+      aria-label={`${version === "original" ? "Original" : "Current"} transcript download formats`}
+    >
+      <MenuItem
+        component="a"
+        href={api.transcriptExportUrl(meetingId, { version, timestamps: false })}
+        onClick={onDownload}
+      >
+        Markdown (.md)
+      </MenuItem>
+      <MenuItem
+        component="a"
+        href={api.transcriptExportUrl(meetingId, { version })}
+        onClick={onDownload}
+      >
+        Markdown with timestamps (.md)
+      </MenuItem>
+
+      <MenuItem
+        component="a"
+        href={api.transcriptExportUrl(meetingId, { version, format: "vtt" })}
+        onClick={onDownload}
+      >
+        WebVTT (.vtt)
+      </MenuItem>
+    </MenuList>
+  );
+}
+
+export function ExportControls({ meetingId, tab, transcript, notes, loading }) {
+  const [open, setOpen] = useState(false);
+  const button = useRef(null);
+  const menuId = useId();
+  if (loading || (tab === "notes" ? !notes : tab !== "transcript" || !transcript)) return null;
+  return (
+    <Box
+      sx={{ position: "relative" }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={(event) => {
+        if (!event.currentTarget.contains(document.activeElement)) setOpen(false);
+      }}
+      onFocus={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(true);
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          setOpen(false);
+          button.current?.focus();
+        }
+      }}
+    >
+      <IconButton
+        ref={button}
+        className="meta-icon-button"
+        size="small"
+        aria-label={tab === "notes" ? "Download notes" : "Download transcript"}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        onClick={() => setOpen(true)}
+      >
+        <DownloadOutlinedIcon fontSize="small" />
+      </IconButton>
+      {open && (
+        <Paper
+          id={menuId}
+          elevation={3}
+          sx={{ position: "absolute", top: "100%", right: 0, zIndex: 10, minWidth: 220 }}
+        >
+          <ExportDownloadMenu
+            meetingId={meetingId}
+            tab={tab}
+            transcript={transcript}
+            onDownload={() => setOpen(false)}
+          />
+        </Paper>
+      )}
+    </Box>
+  );
+}
+
 function MetaIcon({ title, children }) {
   return (
     <Tooltip title={title} arrow>
@@ -1456,4 +1575,6 @@ function MetaIcon({ title, children }) {
   );
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+if (!import.meta.env.SSR) {
+  createRoot(document.getElementById("root")).render(<App />);
+}

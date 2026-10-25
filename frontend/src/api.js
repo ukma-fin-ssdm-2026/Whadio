@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
+const API_BASE = import.meta.env?.VITE_API_BASE_URL ?? "/api/v1";
 
 export class ApiError extends Error {
   constructor(message, status, code) {
@@ -75,6 +75,19 @@ export const api = {
 
   listNotes(meetingId) {
     return request(`/meetings/${meetingId}/notes?limit=100`);
+  },
+
+  transcriptExportUrl(
+    meetingId,
+    { format = "markdown", version = "current", timestamps = true } = {},
+  ) {
+    const query = new URLSearchParams({ format, version });
+    if (format === "markdown") query.set("timestamps", String(timestamps));
+    return `${API_BASE}/meetings/${encodeURIComponent(meetingId)}/transcript/export?${query}`;
+  },
+
+  notesExportUrl(meetingId) {
+    return `${API_BASE}/meetings/${encodeURIComponent(meetingId)}/notes/export`;
   },
 
   getRecording(meetingId) {
