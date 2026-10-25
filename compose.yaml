@@ -102,7 +102,7 @@ services:
       test: [CMD, curl, -fsS, -o, /dev/null, http://localhost:8333/healthz]
 
   mailpit:
-    image: axllent/mailpit:v1.31.4
+    image: axllent/mailpit:v1.31.6
     profiles: [core]
     ports:
       - 127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025
@@ -139,7 +139,7 @@ services:
       - asr-models:/var/cache/huggingface
 
   llm-runtime:
-    image: ollama/ollama:0.35.1
+    image: ollama/ollama:0.40.6
     profiles: [gpu]
     environment:
       OLLAMA_NUM_PARALLEL: "1"
@@ -162,7 +162,7 @@ services:
 
   # Runs once and pulls the model the notes worker is set to use.
   llm-pull:
-    image: ollama/ollama:0.35.1
+    image: ollama/ollama:0.40.6
     profiles: [gpu]
     entrypoint: [sh, /pull.sh]
     depends_on:
