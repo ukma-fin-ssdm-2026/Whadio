@@ -1224,7 +1224,6 @@ def reserved(
     ]
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError)
 def test_finished_processing_is_reserved_as_a_finished_notice() -> None:
     # Arrange
     outbox = InMemoryNotificationOutbox(lambda: datetime.now(UTC))
@@ -1243,7 +1242,6 @@ def test_finished_processing_is_reserved_as_a_finished_notice() -> None:
     ]
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError)
 def test_failed_processing_is_reserved_as_a_failed_notice() -> None:
     # Arrange
     outbox = InMemoryNotificationOutbox(lambda: datetime.now(UTC))
@@ -1262,7 +1260,6 @@ def test_failed_processing_is_reserved_as_a_failed_notice() -> None:
     ]
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError)
 def test_repeated_processing_outcome_is_reserved_once() -> None:
     # Arrange
     outbox = InMemoryNotificationOutbox(lambda: datetime.now(UTC))
@@ -1287,7 +1284,6 @@ def _outsider(unit: Unit) -> UUID:
     return unit.outsider
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError)
 @pytest.mark.parametrize(
     ("restricted", "reader", "expected"),
     [
