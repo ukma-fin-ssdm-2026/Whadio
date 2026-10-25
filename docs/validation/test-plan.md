@@ -98,6 +98,7 @@ runs, and record each run in [Results](#results).
 | Case | Date | Commit | Configuration | Result | Measured | Defects |
 |---|---|---|---|---|---|---|
 | TC-NOTES-01 | 2026-10-25 | `0a7db9f` | Ollama in Compose, `gemma4:12b-it-qat` | Pass, 4 of 4 | 138 s, mostly model loading | None |
+| TC-NFR-03 | 2026-10-25 | `a8eb270` (#151); the first run `bea46c7` | GPU machine (i5-10400F, RTX 4070 12 GB, WSL2), Compose with `compose.cuda.yaml`: pyannote community-1 on the GPU, Parakeet TDT 0.6B v3 int8 on the CPU, 1 slot | Pass, 3 of 3 | Queued to transcript ready in 434 s, 425 s and 437 s, against 900 s. The first run spent 67 s in pyannote and 351 s in Parakeet. Notes came from 1 part at `num_ctx` 32768 and from 4 parts at 20480 | Without a GPU it misses: transcription takes 0.70–0.74 of the recording's length (#150) |
 
 ## AI Usage
 
