@@ -14,7 +14,7 @@ The requirements that shape the architecture most, and what each one forces.
 |---|---|---|
 | A failure of transcription or note generation must not make the whole service unavailable. | NFR-015 | Machine-learning work runs in separate processes that the backend reaches only through a message broker. |
 | Meetings already received stay stored while processing is unavailable. | NFR-014 | Durable queues and object storage live on the always-on main host; a job waits until a worker takes it. |
-| A one-hour recording is transcribed within 15 minutes in 90% of runs. | NFR-002 | Speaker diarization, the slowest stage on a CPU, runs on the GPU host's GPU; the GPU host stays on in the reference deployment. |
+| A one-hour recording is transcribed within 15 minutes in 90% of runs. | NFR-002 | Speaker diarization, the slowest stage on a CPU, runs on the GPU host's GPU; the GPU host stays on in the reference deployment. On a CPU alone, transcription takes about 0.7 of the recording's length, so a host without a GPU misses the target. |
 | The open-source build can be installed outside the team's hosting, given stated resources. | NFR-016, NFR-017 | One container image and Docker Compose profiles; the same system runs on one machine or two. |
 | Without a configured provider, no request leaves the system; provider keys are the Owner's alone. | FR-021, FR-022, NFR-013 | The built-in language model runs inside the deployment. Only the notes worker calls an external provider, and only with the Owner's key. |
 | Meeting content reaches only those with access, on every path. | NFR-007, NFR-009, FR-037, FR-044 | One Access Policy module sits on every read path. Workers receive only data the backend has already authorised. |
@@ -250,7 +250,8 @@ choice that does not change the architecture.
   turnaround.
 - **One host (self-hosting, development).** Both Compose profiles run on a single machine with a
   GPU, with no private network. On a machine without a GPU, the quantized CPU models are used (see the
-  hardware assumptions in the [project description](../../Project-Description.md)).
+  hardware assumptions in the [project description](../../Project-Description.md)), and NFR-002
+  does not hold.
 
 ### Registration modes
 

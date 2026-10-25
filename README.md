@@ -95,12 +95,14 @@ take jobs from RabbitMQ and publish their results to `processing.results`.
   [ADR-007](docs/architecture/decisions/ADR-007.md).
 - The ASR worker's first start downloads its models into the `asr-models` volume, which takes a
   few minutes.
-- Diarization runs on the CPU by default. On a machine with an NVIDIA GPU (driver 580 or newer
-  and the NVIDIA Container Toolkit), add `COMPOSE_FILE=compose.yaml:compose.cuda.yaml` to `.env`
-  (`;` instead of `:` on Windows) before `task workers:up`: the ASR worker then gets its own image,
-  `whadio:dev-cuda`, with CUDA builds of torch, and diarizes on the GPU. A worker run with
-  `uv run whadio asr-worker` needs `uv sync --extra asr --extra cuda` and
-  `WHADIO_ASR__DIARIZATION__DEVICE=cuda` instead; `uv sync --extra asr --extra cpu` switches back.
+- Diarization runs on the CPU by default, which is enough for development, but transcription then
+  takes about 0.7 of a recording's length, against NFR-002's 15 minutes per hour. On a machine with
+  an NVIDIA GPU (driver 580 or newer and the NVIDIA Container Toolkit), add
+  `COMPOSE_FILE=compose.yaml:compose.cuda.yaml` to `.env` (`;` instead of `:` on Windows) before
+  `task workers:up`: the ASR worker then gets its own image, `whadio:dev-cuda`, with CUDA builds of
+  torch, and diarizes on the GPU. A worker run with `uv run whadio asr-worker` needs
+  `uv sync --extra asr --extra cuda` and `WHADIO_ASR__DIARIZATION__DEVICE=cuda` instead;
+  `uv sync --extra asr --extra cpu` switches back.
 - The ASR worker downloads recordings through presigned links signed for
   `http://seaweedfs:8333`, the name it reaches storage by in Compose.
 
