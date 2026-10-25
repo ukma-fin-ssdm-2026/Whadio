@@ -6,9 +6,9 @@ from .passwords import is_password_strong
 @pytest.mark.parametrize(
     "password",
     [
-        "abc123",
-        "abcdefghijklmn",
-        "abcdefghijk1m",
+        "Abcdefghij1",
+        "Abcdefghijkl",
+        "abcdefghijk1",
         "Abcdefghijk1" + "m" * 117,
     ],
 )
