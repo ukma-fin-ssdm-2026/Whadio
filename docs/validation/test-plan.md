@@ -12,8 +12,7 @@ This plan states when the recording-to-notes path of Whadio counts as verified.
 the stored transcript and notes, access to restricted meetings over every content path, the audit
 log, exports, job monitoring, and reading results in the web app. Not tested here: features with
 no API yet (registration, invitations, membership changes and password reset in US-001, US-002 and
-US-020; notes regeneration, US-010; a workspace's own model provider, US-008; processing e-mails,
-US-009; server load and model usage on the admin dashboard, US-019 Test-03); screens the web app
+US-020; notes regeneration, US-010; a workspace's own model provider, US-008; server load and model usage on the admin dashboard, US-019 Test-03); screens the web app
 does not have yet (folders, transcript edits, shares, the glossary), so those are tested through the API
 and the user-action limits of NFR-005 and NFR-006 are not measured; the Chrome extension capture
 (US-003, NFR-004); recognition quality scores (WER needs a reference corpus we do not have); real
@@ -55,6 +54,8 @@ speakers, preset sections, time). A pass in one never stands in for the other.
 | TC-PROC-01 | Processing: repeated results | Unit | Negative | A duplicate or late result of a finished job queues nothing more and leaves the meeting unchanged. | Denys | NFR-014, US-004 | CI, exists |
 | TC-PROC-02 | Processing: retry limit | Unit | Negative | A retryable failure past the attempt limit fails the meeting with its reason; the job is not published again. | Denys | US-004 (Test-03) | CI, exists |
 | TC-PROC-03 | Processing: the transcription job's state table | Unit | Negative | Each of the 25 state and event pairs in [Бонуси](#бонуси) leaves the job in the state the table names; an event the state does not accept changes nothing. | Andrii | US-004 (Test-03) | CI, exists |
+| TC-PROC-04 | Processing: notices of a meeting's outcome | Unit | Positive | The uploader is notified once when the meeting is processed and once when its processing finally fails (a permanent failure, a retryable one at the attempt limit, a dead letter, a job that cannot be published); nobody is notified for a retry below the limit, a transcript still waiting for notes, a late result, or an uploader who can no longer read the meeting. | Andrii | US-009 (Test-01, Test-03) | CI, exists |
+| TC-PROC-05 | Processing notices in the outbox | Integration | Negative | A notice is reserved for its recipient as `processing_finished` or `processing_failed` with only the meeting's ID and name, and a repeated outcome is reserved once; the readers check follows the access policy, so a member left out of a restricted meeting and an outsider are refused. | Andrii | US-009 (Test-02), NFR-007 | CI, exists |
 | TC-MTG-02 | Meetings: accepting an upload | Integration | Positive | A supported file creates one `queued` meeting, a privately stored recording and one transcription job in the outbox; nothing is published inside the request. | Valeriia | US-004 (Test-01), NFR-014 | CI, exists |
 | TC-NFR-04 | Core features during a processing outage | Integration | Positive | The API runs with no processing integration and no storage, which is how it sees a stopped worker, broker or LLM runtime. 20 requests go to each function NFR-015 names: sign-in, the workspace list, the meeting list, a processed meeting's transcript, and the sharing settings (its access and its shares). At least 95% of each function's requests succeed; any response but `2xx` counts as a failure. Recovery after the restart is TC-PIPE-01 and TC-NFR-01. | Andrii | NFR-015 | CI, exists |
 | TC-AUD-01 | Audit: a change and its record | Unit | Positive | Renaming a meeting writes one audit event with the actor, the action and the meeting. | Denys | US-013, NFR-010 | CI, exists |
@@ -152,6 +153,26 @@ change exactly what it names, such as ST-08 queueing the job to be published aga
 | Failed | ST-21: failed | ST-22: failed | ST-23: failed | ST-24: failed | ST-25: failed |
 
 Run it with `uv run pytest src/whadio/processing/test_services.py -k state_table -v`.
+
+### 3. Tests as a specification for an agent
+
+The processing e-mails of FR-024 (US-009, TC-PROC-04 and TC-PROC-05) were specified as tests
+before any code sent them, and an AI agent then wrote the code from those tests alone.
+
+1. `8333215`, `test(#87): [RED] specify the processing notices`. Eleven service tests and six
+   adapter cases, written by hand. The 13 that describe missing behaviour are strict xfails, which
+   pass the commit hook without bypassing it; the 4 refusals already held and pass. It also adds
+   the two Protocols and adapters that raise `NotImplementedError`, so the tests can run.
+2. `88a5159`, `feat(#87): send processing notices from the outbox`. The implementation, with the
+   xfail marks removed and no test changed.
+
+**Використання ШІ.** A Claude Code agent (Claude Opus 5.5) wrote `88a5159`, given only the red
+tests and `AGENTS.md`. The tests were green on its first run, with every static check passing; no
+code was fixed by hand. It also merged the three final-failure paths into `_finally_failed`, and
+reported three points: a second failure of a re-queued meeting would not be mailed (no path
+re-queues a failed meeting today), `database.md` still called the notices unfinished (now
+updated), and one untested re-raise in `PolicyMeetingReaders.can_read`. Its review against the AI-code
+checklist goes into `review-log.md`.
 
 ### 4. Executable non-functional test
 
