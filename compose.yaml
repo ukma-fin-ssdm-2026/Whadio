@@ -102,7 +102,7 @@ services:
       test: [CMD, curl, -fsS, -o, /dev/null, http://localhost:8333/healthz]
 
   mailpit:
-    image: axllent/mailpit:v1.31.4
+    image: axllent/mailpit:v1.31.6
     profiles: [core]
     ports:
       - 127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025
