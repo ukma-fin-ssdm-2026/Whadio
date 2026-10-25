@@ -43,7 +43,10 @@ def _load_diarizer(settings: DiarizationSettings) -> IDiarizer:
 
     token = None if settings.hf_token is None else settings.hf_token.get_secret_value()
     return load_pyannote(
-        settings.model, token=token, embedding_batch_size=settings.embedding_batch_size
+        settings.model,
+        token=token,
+        embedding_batch_size=settings.embedding_batch_size,
+        device=settings.device,
     )
 
 

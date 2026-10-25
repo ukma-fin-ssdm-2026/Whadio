@@ -3,6 +3,8 @@
 FROM ghcr.io/astral-sh/uv:0.11.16 AS uv
 
 FROM python:3.13.16-slim-trixie AS build
+# The torch build: cpu, or cuda for diarization on an NVIDIA GPU (compose.cuda.yaml).
+ARG TORCH=cpu
 COPY --from=uv /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -12,11 +14,11 @@ WORKDIR /app
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --locked --no-dev --no-install-project --extra asr --extra cpu
+    uv sync --locked --no-dev --no-install-project --extra asr --extra ${TORCH}
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable --extra asr --extra cpu
+    uv sync --locked --no-dev --no-editable --extra asr --extra ${TORCH}
 
 FROM python:3.13.16-slim-trixie
 RUN useradd --create-home --uid 10001 whadio \

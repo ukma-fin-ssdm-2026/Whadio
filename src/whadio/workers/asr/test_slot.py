@@ -11,7 +11,9 @@ from pydantic import HttpUrl
 
 from ...contracts.transcription import AudioLink, TranscriptionRequested, TranscriptReady
 from .audio import SAMPLE_RATE, AudioDecoder
-from .settings import load_asr_worker_settings
+from .diarization.device import DeviceUnavailableError, DiarizationDevice
+from .pipeline import TranscriptionPipeline
+from .settings import AsrSettings, load_asr_worker_settings
 from .slot import build_pipeline
 
 _TESTDATA = Path(__file__).parent / "testdata"
@@ -33,11 +35,22 @@ def _two_speakers() -> bytes:
     return buffer.getvalue()
 
 
+def _pipeline_or_skip(settings: AsrSettings, client: httpx2.Client) -> TranscriptionPipeline:
+    try:
+        return build_pipeline(settings, client)
+    except DeviceUnavailableError:
+        pytest.skip("Diarization on cuda needs an NVIDIA GPU and torch from the cuda extra")
+
+
 @pytest.mark.slow
 @pytest.mark.models
-def test_transcriber_tells_two_speakers_apart(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_transcriber_tells_two_speakers_apart(
+    monkeypatch: pytest.MonkeyPatch, device: DiarizationDevice
+) -> None:
     # Arrange
     monkeypatch.setenv("WHADIO_BROKER__URL", "amqp://unused:unused@localhost:5672/whadio")
+    monkeypatch.setenv("WHADIO_ASR__DIARIZATION__DEVICE", device)
     settings = load_asr_worker_settings().asr
     recording = _two_speakers()
     job = TranscriptionRequested(
@@ -56,7 +69,7 @@ def test_transcriber_tells_two_speakers_apart(monkeypatch: pytest.MonkeyPatch) -
 
     # Act
     with httpx2.Client(transport=httpx2.MockTransport(serve)) as client:
-        result = build_pipeline(settings, client).run(job)
+        result = _pipeline_or_skip(settings, client).run(job)
 
     # Assert
     assert isinstance(result, TranscriptReady)

@@ -1,0 +1,19 @@
+# Runs the ASR worker's diarization on an NVIDIA GPU. Opt in from .env with
+# COMPOSE_FILE=compose.yaml:compose.cuda.yaml (`;` instead of `:` on Windows).
+
+services:
+  asr-worker:
+    build:
+      args:
+        TORCH: cuda
+    # Not whadio:dev, which holds the CPU build the notes worker keeps using.
+    image: whadio:dev-cuda
+    environment:
+      WHADIO_ASR__DIARIZATION__DEVICE: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

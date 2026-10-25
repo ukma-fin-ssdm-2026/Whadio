@@ -5,6 +5,7 @@ from pyannote.audio.telemetry import set_telemetry_metrics
 
 from ..audio import SAMPLE_RATE, Audio
 from . import SpeakerTurn
+from .device import DiarizationDevice, require_device
 
 
 class PyannoteDiarizer:
@@ -23,11 +24,16 @@ class PyannoteDiarizer:
         )
 
 
-def load_pyannote(model: str, *, token: str | None, embedding_batch_size: int) -> PyannoteDiarizer:
+def load_pyannote(
+    model: str, *, token: str | None, embedding_batch_size: int, device: DiarizationDevice
+) -> PyannoteDiarizer:
+    # Before the download, which can take minutes on the first start.
+    require_device(device, cuda_available=torch.cuda.is_available())
     # pyannote.audio 4 sends usage telemetry to otel.pyannote.ai unless it is switched off.
     set_telemetry_metrics(enabled=False)
     pipeline = Pipeline.from_pretrained(model, token=token)
     if not isinstance(pipeline, SpeakerDiarization):
         raise TypeError(f"{model} is not a speaker diarization pipeline")
     pipeline.embedding_batch_size = embedding_batch_size
+    pipeline.to(torch.device(device))
     return PyannoteDiarizer(pipeline)

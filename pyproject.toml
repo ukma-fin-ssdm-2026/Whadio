@@ -35,6 +35,12 @@ cpu = [
     "torchaudio==2.11.0",
     "torchcodec==0.17.0",
 ]
+# Diarization on an NVIDIA GPU: CUDA 13.0 builds of the same versions, for driver 580 or newer.
+cuda = [
+    "torch==2.14.1",
+    "torchaudio==2.11.0",
+    "torchcodec==0.17.0",
+]
 asr = [
     "faster-whisper>=1.2.1",
     "httpx2>=2.13",
@@ -71,16 +77,32 @@ dev = [
 
 [tool.uv]
 required-version = ">=0.11.16"
+# The two extras install different builds of the same packages.
+conflicts = [[{ extra = "cpu" }, { extra = "cuda" }]]
 
 # torch, torchaudio and torchcodec must come from one index: mismatched builds abort the process.
 [tool.uv.sources]
-torch = [{ index = "pytorch-cpu", extra = "cpu" }]
-torchaudio = [{ index = "pytorch-cpu", extra = "cpu" }]
-torchcodec = [{ index = "pytorch-cpu", extra = "cpu" }]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu130", extra = "cuda" },
+]
+torchaudio = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu130", extra = "cuda" },
+]
+torchcodec = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu130", extra = "cuda" },
+]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
 [tool.ruff]
