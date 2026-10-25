@@ -252,7 +252,8 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 - **Rules:**
   - Works in both modes, because operator-issued links work on invite-only instances.
   - Creates the account, its personal workspace and default folder, and signs the browser in.
-  - Requires `accept_terms: true` (FR-002) and a password of 12 to 128 characters.
+  - Requires `accept_terms: true` (FR-002) and a password of 12 to 128 characters with at least
+    one digit and one uppercase letter, checked by `accounts.passwords.is_password_strong`.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used (section 6.3).
 
@@ -270,8 +271,11 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 #### `POST /password-resets/{reset_id}/complete` · Set a new password from a link
 
 - **Status:** Designed · **Caller:** public · **Success:** `204`
-- **Rules:** ends every session and extension token of the account, this browser's included.
-  MCP keys keep working.
+- **Rules:**
+  - Requires a new password that passes `accounts.passwords.is_password_strong`, as registration
+    does.
+  - Ends every session and extension token of the account, this browser's included. MCP keys keep
+    working.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used (section 6.3).
 
