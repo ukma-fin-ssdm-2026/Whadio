@@ -11,6 +11,7 @@ from ...capture.services import (
     MissingChunksError,
 )
 from ...processing.speakers import SpeakerEvent
+from ...shared.errors import Failure, UseCaseError
 from ..accounts.auth import CaptureUser
 from ..composition import Captures
 from ..core.errors import (
@@ -112,13 +113,28 @@ async def start_capture(
                 )
             ],
         )
-    view = await captures.start(
-        user.id,
-        payload.workspace_id,
-        payload.folder_id,
-        consent_confirmed=payload.consent_confirmed,
-        now=datetime.now(UTC),
-    )
+    try:
+        view = await captures.start(
+            user.id,
+            payload.workspace_id,
+            payload.folder_id,
+            consent_confirmed=payload.consent_confirmed,
+            now=datetime.now(UTC),
+        )
+    except UseCaseError as error:
+        if error.code != Failure.VALIDATION_ERROR:
+            raise
+        raise ApiError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Request contains invalid fields",
+            [
+                ErrorDetail(
+                    field="folder_id",
+                    message="must be a folder of the chosen `workspace_id`",
+                )
+            ],
+        ) from None
     response.headers["Location"] = f"/api/v1/captures/{view.capture_id}"
     return _capture_read(view)
 

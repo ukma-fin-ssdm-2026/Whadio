@@ -264,6 +264,43 @@ def test_capture_without_consent_names_the_consent_field(async_database: AsyncDa
     assert fields == ["consent_confirmed"]
 
 
+def test_unknown_folder_is_named_in_the_details(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(ready: Recorder) -> tuple[int, list[str | None]]:
+        # Act
+        response = await ready.client.post(
+            "/api/v1/captures",
+            json={
+                "consent_confirmed": True,
+                "workspace_id": str(ready.workspace_id),
+                "folder_id": str(uuid4()),
+            },
+        )
+        error = ErrorResponse.model_validate_json(response.content).error
+        return response.status_code, [detail.field for detail in error.details]
+
+    found = run(async_database, scenario)
+    # Assert
+    assert found == (422, ["folder_id"])
+
+
+def test_folder_without_workspace_is_named_in_the_details(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(ready: Recorder) -> tuple[int, list[str | None]]:
+        # Act
+        response = await ready.client.post(
+            "/api/v1/captures", json={"consent_confirmed": True, "folder_id": str(uuid4())}
+        )
+        error = ErrorResponse.model_validate_json(response.content).error
+        return response.status_code, [detail.field for detail in error.details]
+
+    found = run(async_database, scenario)
+    # Assert
+    assert found == (422, ["folder_id"])
+
+
 def test_invalid_speaker_events_are_named_in_the_details(async_database: AsyncDatabase) -> None:
     # Arrange
     async def scenario(ready: Recorder) -> list[str | None]:
