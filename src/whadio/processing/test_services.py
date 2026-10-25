@@ -4,6 +4,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 from functools import partial
+from typing import Final
 from uuid import UUID, uuid4
 
 import pytest
@@ -975,6 +976,83 @@ def test_dead_letter_of_a_finished_job_changes_nothing() -> None:
     asyncio.run(pipeline.service.dead_lettered(job_id, NOW))
     # Assert
     assert pipeline.meetings.update.state is ProcessingState.QUEUED
+
+
+# --- Transcription job state transitions ---
+
+
+type JobEvent = Callable[[Pipeline, UUID], None]
+
+
+def _start(pipeline: Pipeline, job_id: UUID) -> None:
+    handle(pipeline, started(pipeline, job_id))
+
+
+def _finish(pipeline: Pipeline, job_id: UUID) -> None:
+    handle(pipeline, transcript_ready(pipeline, job_id))
+
+
+def _fail_retryably(pipeline: Pipeline, job_id: UUID) -> None:
+    failure = TranscriptionFailure.STORAGE_UNAVAILABLE
+    handle(pipeline, transcription_failed(pipeline, job_id, failure))
+
+
+def _fail_permanently(pipeline: Pipeline, job_id: UUID) -> None:
+    failure = TranscriptionFailure.UNSUPPORTED_AUDIO
+    handle(pipeline, transcription_failed(pipeline, job_id, failure))
+
+
+def _dead_letter(pipeline: Pipeline, job_id: UUID) -> None:
+    asyncio.run(pipeline.service.dead_lettered(job_id, NOW))
+
+
+_QUEUED: Final = (JobStatus.QUEUED, 0)
+_RUNNING: Final = (JobStatus.RUNNING, 1)
+_LAST_ATTEMPT: Final = (JobStatus.RUNNING, MAX_ATTEMPTS)
+_SUCCEEDED: Final = (JobStatus.SUCCEEDED, 1)
+_FAILED: Final = (JobStatus.FAILED, 1)
+
+_STATE_TABLE: Final = (
+    pytest.param(_QUEUED, _start, JobStatus.RUNNING, id="ST-01"),
+    pytest.param(_QUEUED, _finish, JobStatus.SUCCEEDED, id="ST-02"),
+    pytest.param(_QUEUED, _fail_retryably, JobStatus.QUEUED, id="ST-03"),
+    pytest.param(_QUEUED, _fail_permanently, JobStatus.QUEUED, id="ST-04"),
+    pytest.param(_QUEUED, _dead_letter, JobStatus.FAILED, id="ST-05"),
+    pytest.param(_RUNNING, _start, JobStatus.RUNNING, id="ST-06"),
+    pytest.param(_RUNNING, _finish, JobStatus.SUCCEEDED, id="ST-07"),
+    pytest.param(_RUNNING, _fail_retryably, JobStatus.QUEUED, id="ST-08"),
+    pytest.param(_RUNNING, _fail_permanently, JobStatus.FAILED, id="ST-09"),
+    pytest.param(_RUNNING, _dead_letter, JobStatus.FAILED, id="ST-10"),
+    pytest.param(_LAST_ATTEMPT, _start, JobStatus.RUNNING, id="ST-11"),
+    pytest.param(_LAST_ATTEMPT, _finish, JobStatus.SUCCEEDED, id="ST-12"),
+    pytest.param(_LAST_ATTEMPT, _fail_retryably, JobStatus.FAILED, id="ST-13"),
+    pytest.param(_LAST_ATTEMPT, _fail_permanently, JobStatus.FAILED, id="ST-14"),
+    pytest.param(_LAST_ATTEMPT, _dead_letter, JobStatus.FAILED, id="ST-15"),
+    pytest.param(_SUCCEEDED, _start, JobStatus.SUCCEEDED, id="ST-16"),
+    pytest.param(_SUCCEEDED, _finish, JobStatus.SUCCEEDED, id="ST-17"),
+    pytest.param(_SUCCEEDED, _fail_retryably, JobStatus.SUCCEEDED, id="ST-18"),
+    pytest.param(_SUCCEEDED, _fail_permanently, JobStatus.SUCCEEDED, id="ST-19"),
+    pytest.param(_SUCCEEDED, _dead_letter, JobStatus.SUCCEEDED, id="ST-20"),
+    pytest.param(_FAILED, _start, JobStatus.FAILED, id="ST-21"),
+    pytest.param(_FAILED, _finish, JobStatus.FAILED, id="ST-22"),
+    pytest.param(_FAILED, _fail_retryably, JobStatus.FAILED, id="ST-23"),
+    pytest.param(_FAILED, _fail_permanently, JobStatus.FAILED, id="ST-24"),
+    pytest.param(_FAILED, _dead_letter, JobStatus.FAILED, id="ST-25"),
+)
+
+
+@pytest.mark.parametrize(("state", "event", "expected"), _STATE_TABLE)
+def test_transcription_job_follows_the_state_table(
+    state: tuple[JobStatus, int], event: JobEvent, expected: JobStatus
+) -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    status, attempts = state
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION, status=status, attempts=attempts)
+    # Act
+    event(pipeline, job_id)
+    # Assert
+    assert pipeline.jobs.jobs[job_id].status is expected
 
 
 # --- Recording storage ---
