@@ -97,6 +97,14 @@ jobs:
       - name: Audit dependencies and the git history
         run: uv run --frozen task audit
 
+      # Only the CPU variant: TORCH=cuda adds about 3.5 GB of CUDA wheels to every cold build.
+      - name: Build the worker image and run its entry point
+        run: |
+          tag="whadio:ci-${GITHUB_RUN_ID}"
+          trap 'docker image rm --force "$tag" > /dev/null' EXIT
+          docker build --build-arg TORCH=cpu --tag "$tag" .
+          docker run --rm "$tag" --help
+
       - name: Lint OpenAPI specification
         run: npx --yes @redocly/cli@2.55.0 lint docs/api/openapi-generated.yaml
 
