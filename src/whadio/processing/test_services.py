@@ -1187,10 +1187,6 @@ def processing_notice(pipeline: Pipeline, outcome: ProcessingOutcome) -> Process
     return ProcessingNotice(meeting.created_by_user_id, meeting.meeting_id, meeting.name, outcome)
 
 
-_NOT_SENT_YET: Final = pytest.mark.xfail(strict=True, raises=AssertionError)
-
-
-@_NOT_SENT_YET
 def test_processed_meeting_notifies_its_uploader() -> None:
     # Arrange
     pipeline = make_pipeline()
@@ -1201,7 +1197,6 @@ def test_processed_meeting_notifies_its_uploader() -> None:
     assert pipeline.notices.sent == [processing_notice(pipeline, ProcessingOutcome.FINISHED)]
 
 
-@_NOT_SENT_YET
 def test_permanent_transcription_failure_notifies_the_uploader() -> None:
     # Arrange
     pipeline = make_pipeline()
@@ -1213,7 +1208,6 @@ def test_permanent_transcription_failure_notifies_the_uploader() -> None:
     assert pipeline.notices.sent == [processing_notice(pipeline, ProcessingOutcome.FAILED)]
 
 
-@_NOT_SENT_YET
 def test_retryable_failure_at_the_attempt_limit_notifies_the_uploader() -> None:
     # Arrange
     pipeline = make_pipeline()
@@ -1225,7 +1219,6 @@ def test_retryable_failure_at_the_attempt_limit_notifies_the_uploader() -> None:
     assert pipeline.notices.sent == [processing_notice(pipeline, ProcessingOutcome.FAILED)]
 
 
-@_NOT_SENT_YET
 def test_final_notes_failure_notifies_the_uploader() -> None:
     # Arrange
     pipeline = make_pipeline()
@@ -1237,7 +1230,6 @@ def test_final_notes_failure_notifies_the_uploader() -> None:
     assert pipeline.notices.sent == [processing_notice(pipeline, ProcessingOutcome.FAILED)]
 
 
-@_NOT_SENT_YET
 def test_dead_lettered_job_notifies_the_uploader() -> None:
     # Arrange
     pipeline = make_pipeline()
@@ -1248,7 +1240,6 @@ def test_dead_lettered_job_notifies_the_uploader() -> None:
     assert pipeline.notices.sent == [processing_notice(pipeline, ProcessingOutcome.FAILED)]
 
 
-@_NOT_SENT_YET
 def test_job_that_cannot_be_published_notifies_the_uploader() -> None:
     # Arrange
     pipeline = make_pipeline()
@@ -1260,7 +1251,6 @@ def test_job_that_cannot_be_published_notifies_the_uploader() -> None:
     assert pipeline.notices.sent == [processing_notice(pipeline, ProcessingOutcome.FAILED)]
 
 
-@_NOT_SENT_YET
 def test_repeated_notes_result_notifies_the_uploader_once() -> None:
     # Arrange
     pipeline = make_pipeline()

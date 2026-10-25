@@ -57,7 +57,13 @@ from ..meetings.repositories import FolderRepository, MeetingRepository
 from ..meetings.services import FolderService, MeetingService, WorkspaceContent
 from ..meetings.settings import MeetingSettings
 from ..notifications.repositories import INotificationOutbox, NotificationOutboxRepository
-from ..notifications.templates import HostedEviction, NoticeKind, ShareAccessRequest
+from ..notifications.templates import (
+    HostedEviction,
+    NoticeKind,
+    ProcessingFailed,
+    ProcessingFinished,
+    ShareAccessRequest,
+)
 from ..processing.consumer import (
     ProcessingTransactions,
     ResultSource,
@@ -66,6 +72,7 @@ from ..processing.consumer import (
     serve_publishing,
     serve_results,
 )
+from ..processing.enums import ProcessingOutcome
 from ..processing.monitoring import IJobMonitoring, JobMonitoring
 from ..processing.repositories import JobRepository
 from ..processing.services import ProcessingCollaborators, ProcessingNotice, ProcessingService
@@ -270,8 +277,18 @@ class OutboxProcessingNotices:
         self._outbox: INotificationOutbox = outbox
 
     async def notify(self, notice: ProcessingNotice) -> None:
-        del notice
-        raise NotImplementedError
+        match notice.outcome:
+            case ProcessingOutcome.FINISHED:
+                model = ProcessingFinished(
+                    meeting_id=notice.meeting_id, meeting_name=notice.meeting_name
+                )
+            case ProcessingOutcome.FAILED:
+                model = ProcessingFailed(
+                    meeting_id=notice.meeting_id, meeting_name=notice.meeting_name
+                )
+        await self._outbox.reserve(
+            notice.recipient_id, f"{model.kind}:{notice.meeting_id}:{notice.recipient_id}", model
+        )
 
 
 class PolicyMeetingReaders:
@@ -282,8 +299,13 @@ class PolicyMeetingReaders:
         self._policy: AccessPolicy = policy
 
     async def can_read(self, user_id: UUID, meeting_id: UUID) -> bool:
-        del user_id, meeting_id
-        raise NotImplementedError
+        try:
+            await self._policy.authorize(await self._meetings.scope(meeting_id), user_id)
+        except UseCaseError as error:
+            if error.code == Failure.NOT_FOUND:
+                return False
+            raise
+        return True
 
 
 def eviction_notifications(session: Session) -> IEvictionNotifier:
