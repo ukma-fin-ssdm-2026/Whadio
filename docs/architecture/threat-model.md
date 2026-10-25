@@ -83,4 +83,4 @@ The most sensitive assets are password hashes, meeting recordings and capture ch
 
 ## AI Usage
 
-This threat model was prepared with the assistance of Codex (GPT-5.5), revised with Claude Code (Claude Opus 5.5), and reviewed against the project requirements, ADRs, high-level design, deployment diagram, and current data model.
+This threat model was prepared with the assistance of Codex (GPT-5.5), revised with Claude Code (Claude Opus 5.5) and later with Codex (GPT-6.1), and reviewed against the project requirements, ADRs, high-level design, deployment diagram, and current data model.

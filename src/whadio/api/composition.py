@@ -18,6 +18,7 @@ from ..access_policy.services import (
     AccessService,
     IShareRequestNotifier,
 )
+from ..accounts.administrators import AdministratorRepository, AdministratorService
 from ..accounts.contracts import UserProfile
 from ..accounts.enums import NotesTemplate
 from ..accounts.passwords import Argon2PasswordHasher
@@ -35,6 +36,7 @@ from ..accounts.services import (
     WorkspaceService,
     WorkspaceSettingsService,
 )
+from ..admin.services import AdminService
 from ..audit.contracts import IContentAuditWriter
 from ..audit.services import AuditWriter
 from ..capture.repositories import CaptureRepository
@@ -45,6 +47,7 @@ from ..capture.services import (
     IChunkStorage,
 )
 from ..meetings.contracts import EvictionNotice, IEvictionNotifier, QueuedNotes
+from ..meetings.monitoring import MeetingMetadata
 from ..meetings.persistence import MeetingPersistence, PersistenceDependencies
 from ..meetings.processing import IMeetingProcessing
 from ..meetings.recordings import RecordingObjects
@@ -61,6 +64,7 @@ from ..processing.consumer import (
     serve_publishing,
     serve_results,
 )
+from ..processing.monitoring import IJobMonitoring, JobMonitoring
 from ..processing.repositories import JobRepository
 from ..processing.services import ProcessingCollaborators, ProcessingService
 from ..shared.database import Database, DatabaseSettings, IUseCaseTransactions
@@ -442,3 +446,24 @@ def connect_integrations(app: FastAPI, integrations: RuntimeIntegrations) -> Non
         return UnavailableMeetingProcessing() if factory is None else factory(session)
 
     app.dependency_overrides[meeting_processing] = processing
+
+
+def administrator_service(session: Session) -> AdministratorService:
+    return AdministratorService(AdministratorRepository(session))
+
+
+Administrators = Annotated[AdministratorService, Depends(administrator_service)]
+
+
+def job_monitoring(session: Session) -> IJobMonitoring:
+    return JobMonitoring(session, MeetingMetadata(session))
+
+
+MonitoredJobs = Annotated[IJobMonitoring, Depends(job_monitoring)]
+
+
+def admin_service(jobs: MonitoredJobs) -> AdminService:
+    return AdminService(jobs)
+
+
+Administration = Annotated[AdminService, Depends(admin_service)]
