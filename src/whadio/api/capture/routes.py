@@ -101,13 +101,40 @@ async def list_destinations(
 async def start_capture(
     payload: CaptureCreate, user: CaptureUser, captures: Captures, response: Response
 ) -> CaptureRead:
-    view = await captures.start(
-        user.id,
-        payload.workspace_id,
-        payload.folder_id,
-        consent_confirmed=payload.consent_confirmed,
-        now=datetime.now(UTC),
-    )
+    if not payload.consent_confirmed:
+        raise ApiError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Request contains invalid fields",
+            [
+                ErrorDetail(
+                    field="consent_confirmed",
+                    message="must be `true`: the participants agreed to be recorded",
+                )
+            ],
+        )
+    try:
+        view = await captures.start(
+            user.id,
+            payload.workspace_id,
+            payload.folder_id,
+            consent_confirmed=payload.consent_confirmed,
+            now=datetime.now(UTC),
+        )
+    except UseCaseError as error:
+        if error.code != Failure.VALIDATION_ERROR:
+            raise
+        raise ApiError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Request contains invalid fields",
+            [
+                ErrorDetail(
+                    field="folder_id",
+                    message="must be a folder of the chosen `workspace_id`",
+                )
+            ],
+        ) from None
     response.headers["Location"] = f"/api/v1/captures/{view.capture_id}"
     return _capture_read(view)
 
@@ -175,7 +202,17 @@ async def put_chunk(
     try:
         events = _SPEAKER_EVENTS.validate_json(speaker_events)
     except ValidationError:
-        raise UseCaseError(Failure.VALIDATION_ERROR) from None
+        raise ApiError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Request contains invalid fields",
+            [
+                ErrorDetail(
+                    field="speaker_events",
+                    message="must be a JSON list of `{at_seconds, speakers}`",
+                )
+            ],
+        ) from None
     created = await captures.put_chunk(
         user.id,
         capture_id,
