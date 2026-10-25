@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..access_policy.contracts import IMeetingAccessSource
 from ..access_policy.repositories import AccessRepository
 from ..access_policy.services import (
     AccessCollaborators,
@@ -67,7 +68,7 @@ from ..processing.consumer import (
 )
 from ..processing.monitoring import IJobMonitoring, JobMonitoring
 from ..processing.repositories import JobRepository
-from ..processing.services import ProcessingCollaborators, ProcessingService
+from ..processing.services import ProcessingCollaborators, ProcessingNotice, ProcessingService
 from ..shared.database import Database, DatabaseSettings, IUseCaseTransactions
 from ..shared.errors import Failure, UseCaseError
 from ..shared.settings import PublicUrlSettings
@@ -133,6 +134,10 @@ class CompositionRoot:
                 WorkspaceSettingsService(WorkspaceSettingsRepository(session)),
                 self._storage,
                 CaptureSpeakerTimeline(CaptureRepository(session)),
+                OutboxProcessingNotices(NotificationOutboxRepository(session)),
+                PolicyMeetingReaders(
+                    MeetingRepository(session), AccessPolicy(AccessRepository(session), memberships)
+                ),
             )
         )
 
@@ -256,6 +261,29 @@ class OutboxEvictionNotices:
             f"{NoticeKind.HOSTED_EVICTION}:{notice.meeting_id}:{notice.recipient_id}",
             HostedEviction(meeting_name=notice.meeting_name),
         )
+
+
+class OutboxProcessingNotices:
+    """Processing's `IProcessingNotifier`, answered by the notification outbox."""
+
+    def __init__(self, outbox: INotificationOutbox) -> None:
+        self._outbox: INotificationOutbox = outbox
+
+    async def notify(self, notice: ProcessingNotice) -> None:
+        del notice
+        raise NotImplementedError
+
+
+class PolicyMeetingReaders:
+    """Processing's `IMeetingReaders`, answered by Access Policy."""
+
+    def __init__(self, meetings: IMeetingAccessSource, policy: AccessPolicy) -> None:
+        self._meetings: IMeetingAccessSource = meetings
+        self._policy: AccessPolicy = policy
+
+    async def can_read(self, user_id: UUID, meeting_id: UUID) -> bool:
+        del user_id, meeting_id
+        raise NotImplementedError
 
 
 def eviction_notifications(session: Session) -> IEvictionNotifier:
