@@ -54,6 +54,7 @@ speakers, preset sections, time). A pass in one never stands in for the other.
 | TC-NFR-01 | Processing pipeline, worker crash | Integration | Negative | The ASR worker is killed after it reports `job_started`; after a restart the meeting reaches `processed` with exactly one transcript (NFR-014: 100% of received meetings stay stored, visible and processable). | Andrii | NFR-014, US-004 | CI, planned; also on the GPU machine |
 | TC-PROC-01 | Processing: repeated results | Unit | Negative | A duplicate or late result of a finished job queues nothing more and leaves the meeting unchanged. | Denys | NFR-014, US-004 | CI, exists |
 | TC-PROC-02 | Processing: retry limit | Unit | Negative | A retryable failure past the attempt limit fails the meeting with its reason; the job is not published again. | Denys | US-004 (Test-03) | CI, exists |
+| TC-PROC-03 | Processing: the transcription job's state table | Unit | Negative | Each of the 25 state and event pairs in [Бонуси](#бонуси) leaves the job in the state the table names; an event the state does not accept changes nothing. | Andrii | US-004 (Test-03), NFR-014 | CI, exists |
 | TC-MTG-02 | Meetings: accepting an upload | Integration | Positive | A supported file creates one `queued` meeting, a privately stored recording and one transcription job in the outbox; nothing is published inside the request. | Valeriia | US-004 (Test-01), NFR-014 | CI, exists |
 | TC-NFR-04 | Core features during a processing outage | Integration | Positive | The API runs with no processing integration and no storage, which is how it sees a stopped worker, broker or LLM runtime. 20 requests go to each function NFR-015 names: sign-in, the workspace list, the meeting list, a processed meeting's transcript, and the sharing settings (its access and its shares). At least 95% of each function's requests succeed; any response but `2xx` counts as a failure. Recovery after the restart is TC-PIPE-01 and TC-NFR-01. | Andrii | NFR-015 | CI, exists |
 | TC-AUD-01 | Audit: a change and its record | Unit | Positive | Renaming a meeting writes one audit event with the actor, the action and the meeting. | Denys | US-013, NFR-010 | CI, exists |
@@ -130,6 +131,24 @@ Drafted with Claude Code (Claude Opus 5.5) from Zlata's initial draft (OpenAI Co
 machine runs, and checked against the code at `69d178d`. The team reviews it before merging.
 
 ## Бонуси
+
+### 2. State-transition table
+
+`processing/test_services.py::test_transcription_job_follows_the_state_table` applies state
+transition testing to the transcription job. Each cell below is one parametrized case with the ID
+shown, and the test asserts the job's status after the event. The states and events come from
+`ProcessingService.handle` and `dead_lettered`, with `MAX_ATTEMPTS` = 5. A cell where the state
+stays the same is a transition the job refuses.
+
+| State \ event | Started | Transcript ready | Retryable failure | Permanent failure | Dead-lettered |
+|---|---|---|---|---|---|
+| Queued | ST-01: running | ST-02: succeeded | ST-03: queued | ST-04: queued | ST-05: failed |
+| Running, attempt 1 of 5 | ST-06: running | ST-07: succeeded | ST-08: queued, retried | ST-09: failed | ST-10: failed |
+| Running, attempt 5 of 5 | ST-11: running | ST-12: succeeded | ST-13: failed | ST-14: failed | ST-15: failed |
+| Succeeded | ST-16: succeeded | ST-17: succeeded | ST-18: succeeded | ST-19: succeeded | ST-20: succeeded |
+| Failed | ST-21: failed | ST-22: failed | ST-23: failed | ST-24: failed | ST-25: failed |
+
+Run it with `uv run pytest src/whadio/processing/test_services.py -k state_table -v`.
 
 ### 4. Executable non-functional test
 
