@@ -14,11 +14,14 @@ WORKDIR /app
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --locked --no-dev --no-install-project --extra asr --extra ${TORCH}
+    uv sync --locked --no-dev --no-build --no-install-project --extra asr --extra ${TORCH}
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
+# uv sync cannot build the project alone, so it is built here, and the dependencies above stay
+# limited to wheels: no package's setup scripts run during installation.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable --extra asr --extra ${TORCH}
+    uv build --wheel --out-dir /tmp/dist \
+    && uv pip install --python /app/.venv --no-deps --no-build /tmp/dist/whadio-*.whl
 
 FROM python:3.13.16-slim-trixie
 RUN useradd --create-home --uid 10001 whadio \
