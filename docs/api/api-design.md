@@ -253,9 +253,10 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - Works in both modes, because operator-issued links work on invite-only instances.
   - Creates the account, its personal workspace and default folder, and signs the browser in.
   - Requires `accept_terms: true` (FR-002) and a password of 12 to 128 characters with at least
-    one digit and one uppercase letter, checked by `accounts.passwords.is_password_strong`.
+    one digit and one uppercase letter.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used (section 6.3).
+  - `422 VALIDATION_ERROR` on `password`: the password breaks the rule above.
 
 #### `POST /password-resets` · Request a password-reset link
 
@@ -272,12 +273,13 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 - **Status:** Designed · **Caller:** public · **Success:** `204`
 - **Rules:**
-  - Requires a new password that passes `accounts.passwords.is_password_strong`, as registration
-    does.
+  - Requires a new password of 12 to 128 characters with at least one digit and one uppercase
+    letter.
   - Ends every session and extension token of the account, this browser's included. MCP keys keep
     working.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used (section 6.3).
+  - `422 VALIDATION_ERROR` on `password`: the password breaks the rule above.
 
 #### `POST /sessions` · Sign in
 
@@ -478,11 +480,15 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 - **Status:** Designed · **Caller:** public · **Success:** `201`, the user and the
   membership; the session cookie is set
-- **Rules:** for an invited address without an account. It creates the account and its
-  personal workspace, joins the workspace, and signs the browser in (FR-002).
+- **Rules:**
+  - For an invited address without an account. It creates the account and its personal
+    workspace, joins the workspace, and signs the browser in (FR-002).
+  - Requires a password of 12 to 128 characters with at least one digit and one uppercase
+    letter.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used.
   - `409 ACCOUNT_EXISTS`: the address has an account, so sign in and accept instead.
+  - `422 VALIDATION_ERROR` on `password`: the password breaks the rule above.
 
 #### `POST /invitations/{invitation_id}/decline` · Decline an invitation
 
