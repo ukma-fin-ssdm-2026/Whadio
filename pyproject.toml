@@ -124,6 +124,16 @@ respect-type-ignore-comments = false
 [tool.ty.rules]
 all = "error"
 
+# pydantic 2.14 declares JsonValue as a quoted alias for type checkers, so ty reads `JsonValue | None` as `str | None`
+[[tool.ty.overrides]]
+include = [
+    "src/whadio/audit/models.py",
+    "src/whadio/capture/models.py",
+    "src/whadio/processing/models.py",
+    "src/whadio/meetings/test_services.py",
+]
+rules = { unsupported-operator = "ignore" }
+
 [tool.basedpyright]
 include = ["src"]
 pythonPlatform = "Linux"

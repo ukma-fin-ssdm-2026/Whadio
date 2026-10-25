@@ -5687,6 +5687,7 @@
           "NO_NOTES",
           "INTEGRATION_UNAVAILABLE",
           "TRANSCRIPT_EXISTS",
+          "ALREADY_PROCESSED",
           "FOLDER_RECOVERY_CONFLICT",
           "DEFAULT_FOLDER",
           "FOLDER_EXISTS",
