@@ -11,3 +11,8 @@ class JobStatus(StrEnum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+
+
+class ProcessingOutcome(StrEnum):
+    FINISHED = "finished"
+    FAILED = "failed"

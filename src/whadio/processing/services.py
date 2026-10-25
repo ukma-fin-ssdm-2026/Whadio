@@ -42,7 +42,7 @@ from ..meetings.models import GlossaryTerm, Meeting
 from ..meetings.persistence import GeneratedNotes
 from ..shared.errors import Failure, UseCaseError
 from ..shared.storage import IObjectStorage
-from .enums import JobStatus, JobType
+from .enums import JobStatus, JobType, ProcessingOutcome
 from .repositories import IJobRepository, Job
 from .speakers import ISpeakerTimeline, resolve_speaker_names
 
@@ -113,6 +113,24 @@ class IGeneratedNotes(Protocol):
     ) -> None: ...
 
 
+@dataclass(frozen=True, slots=True)
+class ProcessingNotice:
+    recipient_id: UUID
+    meeting_id: UUID
+    meeting_name: str
+    outcome: ProcessingOutcome
+
+
+class IProcessingNotifier(Protocol):
+    async def notify(self, notice: ProcessingNotice, /) -> None:
+        """Add the notice in the caller's transaction; a meeting's repeated outcome is dropped."""
+        ...
+
+
+class IMeetingReaders(Protocol):
+    async def can_read(self, user_id: UUID, meeting_id: UUID, /) -> bool: ...
+
+
 @dataclass(frozen=True)
 class ProcessingCollaborators:
     jobs: IJobRepository
@@ -121,6 +139,8 @@ class ProcessingCollaborators:
     workspaces: IWorkspaceSettings
     storage: IObjectStorage
     speaker_timeline: ISpeakerTimeline
+    notices: IProcessingNotifier
+    readers: IMeetingReaders
 
 
 class ProcessingService:

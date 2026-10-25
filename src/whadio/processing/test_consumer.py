@@ -45,7 +45,7 @@ from .consumer import (
 )
 from .enums import JobType
 from .repositories import JobRepository
-from .services import JobRequest, ProcessingCollaborators, ProcessingService
+from .services import JobRequest, ProcessingCollaborators, ProcessingNotice, ProcessingService
 from .speakers import SpeakerEvent
 
 WORKER = "whadio-asr"
@@ -384,6 +384,8 @@ def processing_service(session: AsyncSession) -> ProcessingService:
             WorkspaceSettingsService(WorkspaceSettingsRepository(session)),
             InMemoryObjectStorage(now=FixedClock(NOW)),
             NoSpeakerTimeline(),
+            DroppedNotices(),
+            NoReaders(),
         )
     )
 
@@ -391,6 +393,17 @@ def processing_service(session: AsyncSession) -> ProcessingService:
 class NoSpeakerTimeline:
     async def speaker_events(self, _meeting_id: UUID) -> tuple[SpeakerEvent, ...]:
         return ()
+
+
+class DroppedNotices:
+    async def notify(self, notice: ProcessingNotice) -> None:
+        del notice
+
+
+class NoReaders:
+    async def can_read(self, user_id: UUID, meeting_id: UUID) -> bool:
+        del user_id, meeting_id
+        return False
 
 
 class UnavailableEvictions:

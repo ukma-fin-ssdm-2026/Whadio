@@ -44,7 +44,7 @@ from ..meetings.models import Transcript as StoredTranscript
 from ..meetings.persistence import GeneratedNotes
 from ..shared.errors import UseCaseError
 from ..shared.fakes import FixedClock, InMemoryObjectStorage
-from .enums import JobStatus, JobType
+from .enums import JobStatus, JobType, ProcessingOutcome
 from .repositories import Job
 from .services import (
     DEAD_LETTERED,
@@ -53,6 +53,7 @@ from .services import (
     UNPUBLISHABLE,
     JobRequest,
     ProcessingCollaborators,
+    ProcessingNotice,
     ProcessingService,
 )
 from .speakers import SpeakerEvent
@@ -104,6 +105,7 @@ def meeting_row(name: str = "Meeting 2026-10-11 12:00 UTC", *, generated: bool =
         storage_path="meetings/recording.mp4",
         recorded_at=NOW,
         processing_state=ProcessingState.QUEUED,
+        created_by_user_id=uuid4(),
     )
 
 
@@ -231,6 +233,23 @@ class FakeTimeline:
         return self.events
 
 
+class FakeNotices:
+    def __init__(self) -> None:
+        self.sent: list[ProcessingNotice] = []
+
+    async def notify(self, notice: ProcessingNotice) -> None:
+        self.sent.append(notice)
+
+
+@dataclass
+class FakeReaders:
+    readable: bool = True
+
+    async def can_read(self, user_id: UUID, meeting_id: UUID) -> bool:
+        del user_id, meeting_id
+        return self.readable
+
+
 class FakePublisher:
     def __init__(self) -> None:
         self.requests: list[JobRequest] = []
@@ -249,6 +268,8 @@ class Pipeline:
     meetings: FakeMeetings
     notes: FakeNotes
     storage: InMemoryObjectStorage
+    notices: FakeNotices
+    readers: FakeReaders
     publisher: FakePublisher = field(default_factory=FakePublisher)
 
     @property
@@ -261,16 +282,26 @@ def make_pipeline(
 ) -> Pipeline:
     jobs, meetings, notes = FakeJobs(), FakeMeetings(meeting or meeting_row()), FakeNotes()
     storage = InMemoryObjectStorage(now=FixedClock(NOW))
+    notices, readers = FakeNotices(), FakeReaders()
     return Pipeline(
         ProcessingService(
             ProcessingCollaborators(
-                jobs, meetings, notes, FakeWorkspaces(), storage, FakeTimeline(events)
+                jobs,
+                meetings,
+                notes,
+                FakeWorkspaces(),
+                storage,
+                FakeTimeline(events),
+                notices,
+                readers,
             )
         ),
         jobs,
         meetings,
         notes,
         storage,
+        notices,
+        readers,
     )
 
 
@@ -1146,6 +1177,142 @@ def test_transcription_job_follows_the_state_table(
     event(pipeline, job_id)
     # Assert
     assert _observe(pipeline, job_id) == transition(before)
+
+
+# --- Processing notices ---
+
+
+def processing_notice(pipeline: Pipeline, outcome: ProcessingOutcome) -> ProcessingNotice:
+    meeting = pipeline.meetings.meeting
+    return ProcessingNotice(meeting.created_by_user_id, meeting.meeting_id, meeting.name, outcome)
+
+
+_NOT_SENT_YET: Final = pytest.mark.xfail(strict=True, raises=AssertionError)
+
+
+@_NOT_SENT_YET
+def test_processed_meeting_notifies_its_uploader() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.NOTES)
+    # Act
+    handle(pipeline, notes_ready(pipeline, job_id))
+    # Assert
+    assert pipeline.notices.sent == [processing_notice(pipeline, ProcessingOutcome.FINISHED)]
+
+
+@_NOT_SENT_YET
+def test_permanent_transcription_failure_notifies_the_uploader() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION)
+    failure = transcription_failed(pipeline, job_id, TranscriptionFailure.UNSUPPORTED_AUDIO)
+    # Act
+    handle(pipeline, failure)
+    # Assert
+    assert pipeline.notices.sent == [processing_notice(pipeline, ProcessingOutcome.FAILED)]
+
+
+@_NOT_SENT_YET
+def test_retryable_failure_at_the_attempt_limit_notifies_the_uploader() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION, attempts=MAX_ATTEMPTS)
+    failure = transcription_failed(pipeline, job_id, TranscriptionFailure.STORAGE_UNAVAILABLE)
+    # Act
+    handle(pipeline, failure)
+    # Assert
+    assert pipeline.notices.sent == [processing_notice(pipeline, ProcessingOutcome.FAILED)]
+
+
+@_NOT_SENT_YET
+def test_final_notes_failure_notifies_the_uploader() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.NOTES)
+    failure = notes_failed(pipeline, job_id, NotesFailure.TRANSCRIPT_TOO_LONG)
+    # Act
+    handle(pipeline, failure)
+    # Assert
+    assert pipeline.notices.sent == [processing_notice(pipeline, ProcessingOutcome.FAILED)]
+
+
+@_NOT_SENT_YET
+def test_dead_lettered_job_notifies_the_uploader() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION)
+    # Act
+    asyncio.run(pipeline.service.dead_lettered(job_id, NOW))
+    # Assert
+    assert pipeline.notices.sent == [processing_notice(pipeline, ProcessingOutcome.FAILED)]
+
+
+@_NOT_SENT_YET
+def test_job_that_cannot_be_published_notifies_the_uploader() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    queue(pipeline)
+    pipeline.meetings.meeting.storage_path = None
+    # Act
+    publish_all(pipeline)
+    # Assert
+    assert pipeline.notices.sent == [processing_notice(pipeline, ProcessingOutcome.FAILED)]
+
+
+@_NOT_SENT_YET
+def test_repeated_notes_result_notifies_the_uploader_once() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.NOTES)
+    handle(pipeline, notes_ready(pipeline, job_id))
+    # Act
+    handle(pipeline, notes_ready(pipeline, job_id))
+    # Assert
+    assert pipeline.notices.sent == [processing_notice(pipeline, ProcessingOutcome.FINISHED)]
+
+
+def test_retryable_failure_below_the_attempt_limit_notifies_nobody() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION, attempts=MAX_ATTEMPTS - 1)
+    failure = transcription_failed(pipeline, job_id, TranscriptionFailure.STORAGE_UNAVAILABLE)
+    # Act
+    handle(pipeline, failure)
+    # Assert
+    assert pipeline.notices.sent == []
+
+
+def test_ready_transcript_notifies_nobody_before_the_notes() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION)
+    # Act
+    handle(pipeline, transcript_ready(pipeline, job_id))
+    # Assert
+    assert pipeline.notices.sent == []
+
+
+def test_uploader_who_can_no_longer_read_the_meeting_is_not_notified() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    pipeline.readers.readable = False
+    job_id = add_job(pipeline, JobType.NOTES)
+    # Act
+    handle(pipeline, notes_ready(pipeline, job_id))
+    # Assert
+    assert pipeline.notices.sent == []
+
+
+def test_late_failure_of_a_finished_job_notifies_nobody() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION, status=JobStatus.SUCCEEDED)
+    failure = transcription_failed(pipeline, job_id, TranscriptionFailure.UNSUPPORTED_AUDIO)
+    # Act
+    handle(pipeline, failure)
+    # Assert
+    assert pipeline.notices.sent == []
 
 
 # --- Recording storage ---

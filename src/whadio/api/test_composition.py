@@ -1,7 +1,7 @@
 import asyncio
 import hashlib
 import wave
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -27,7 +27,7 @@ from ..accounts.contracts import UserProfile
 from ..accounts.enums import LlmProvider, NotesTemplate, SessionKind, WorkspaceRole
 from ..accounts.models import McpKey, Session, User, Workspace, WorkspaceMembership
 from ..accounts.repositories import MembershipRepository, WorkspaceSettingsRepository
-from ..accounts.services import WorkspaceSettingsService
+from ..accounts.services import WorkspaceMembershipService, WorkspaceSettingsService
 from ..audit.contracts import ContentEvent
 from ..audit.models import AuditEvent
 from ..audit.services import AuditWriter
@@ -69,13 +69,13 @@ from ..meetings.retention import IRetentionMeetings, RetentionMeetings
 from ..meetings.services import MeetingService, RecordingInput, TranscriptEdit
 from ..notifications.fakes import InMemoryNotificationOutbox
 from ..notifications.models import NotificationOutbox
-from ..notifications.repositories import notice_payload
-from ..notifications.templates import NoticeKind
+from ..notifications.repositories import NotificationOutboxRepository, notice_payload
+from ..notifications.templates import NoticeKind, ProcessingFailed, ProcessingFinished
 from ..notifications.templates import ShareAccessRequest as ShareAccessNotice
-from ..processing.enums import JobStatus, JobType
+from ..processing.enums import JobStatus, JobType, ProcessingOutcome
 from ..processing.models import ProcessingJob
 from ..processing.repositories import JobRepository
-from ..processing.services import ProcessingCollaborators, ProcessingService
+from ..processing.services import ProcessingCollaborators, ProcessingNotice, ProcessingService
 from ..retention.services import RetentionService, StorageUnavailableError
 from ..shared.database import Database, DatabaseSettings
 from ..shared.errors import Failure, UseCaseError
@@ -83,7 +83,9 @@ from ..shared.fakes import InMemoryObjectStorage
 from .app import create_app
 from .composition import (
     CompositionRoot,
+    OutboxProcessingNotices,
     OutboxShareNotices,
+    PolicyMeetingReaders,
     RuntimeIntegrations,
     folder_service,
     meeting_processing,
@@ -1204,6 +1206,118 @@ def test_share_notice_for_a_requester_without_an_account_is_refused() -> None:
     assert (failure.value.code, outbox.notices) == (Failure.NOT_FOUND, {})
 
 
+# --- Processing notices ---
+
+
+def meeting_readers(unit: Unit) -> PolicyMeetingReaders:
+    memberships = WorkspaceMembershipService(MembershipRepository(unit.session))
+    return PolicyMeetingReaders(
+        MeetingRepository(unit.session), AccessPolicy(AccessRepository(unit.session), memberships)
+    )
+
+
+def reserved(
+    outbox: InMemoryNotificationOutbox,
+) -> list[tuple[UUID, NoticeKind, Mapping[str, JsonValue]]]:
+    return [
+        (stored.recipient_id, stored.kind, stored.payload) for stored in outbox.notices.values()
+    ]
+
+
+@pytest.mark.xfail(strict=True, raises=NotImplementedError)
+def test_finished_processing_is_reserved_as_a_finished_notice() -> None:
+    # Arrange
+    outbox = InMemoryNotificationOutbox(lambda: datetime.now(UTC))
+    notice = ProcessingNotice(uuid4(), uuid4(), "Sprint planning", ProcessingOutcome.FINISHED)
+    # Act
+    asyncio.run(OutboxProcessingNotices(outbox).notify(notice))
+    # Assert
+    assert reserved(outbox) == [
+        (
+            notice.recipient_id,
+            NoticeKind.PROCESSING_FINISHED,
+            notice_payload(
+                ProcessingFinished(meeting_id=notice.meeting_id, meeting_name="Sprint planning")
+            ),
+        )
+    ]
+
+
+@pytest.mark.xfail(strict=True, raises=NotImplementedError)
+def test_failed_processing_is_reserved_as_a_failed_notice() -> None:
+    # Arrange
+    outbox = InMemoryNotificationOutbox(lambda: datetime.now(UTC))
+    notice = ProcessingNotice(uuid4(), uuid4(), "Sprint planning", ProcessingOutcome.FAILED)
+    # Act
+    asyncio.run(OutboxProcessingNotices(outbox).notify(notice))
+    # Assert
+    assert reserved(outbox) == [
+        (
+            notice.recipient_id,
+            NoticeKind.PROCESSING_FAILED,
+            notice_payload(
+                ProcessingFailed(meeting_id=notice.meeting_id, meeting_name="Sprint planning")
+            ),
+        )
+    ]
+
+
+@pytest.mark.xfail(strict=True, raises=NotImplementedError)
+def test_repeated_processing_outcome_is_reserved_once() -> None:
+    # Arrange
+    outbox = InMemoryNotificationOutbox(lambda: datetime.now(UTC))
+    notices = OutboxProcessingNotices(outbox)
+    notice = ProcessingNotice(uuid4(), uuid4(), "Sprint planning", ProcessingOutcome.FINISHED)
+
+    async def notify_twice() -> None:
+        await notices.notify(notice)
+        await notices.notify(notice)
+
+    # Act
+    asyncio.run(notify_twice())
+    # Assert
+    assert len(outbox.notices) == 1
+
+
+def _member(unit: Unit) -> UUID:
+    return unit.member
+
+
+def _outsider(unit: Unit) -> UUID:
+    return unit.outsider
+
+
+@pytest.mark.xfail(strict=True, raises=NotImplementedError)
+@pytest.mark.parametrize(
+    ("restricted", "reader", "expected"),
+    [
+        pytest.param(False, _member, True, id="member-open-meeting"),
+        pytest.param(True, _member, False, id="member-left-out-of-restriction"),
+        pytest.param(False, _outsider, False, id="outsider"),
+    ],
+)
+def test_meeting_readers_follow_the_access_policy(
+    database_settings: DatabaseSettings,
+    *,
+    restricted: bool,
+    reader: Callable[[Unit], UUID],
+    expected: bool,
+) -> None:
+    # Arrange
+    async def scenario() -> bool:
+        async with unit_fixture(database_settings) as unit:
+            if restricted:
+                await unit.access.replace_access(
+                    unit.owner, unit.meeting, {unit.owner}, datetime.now(UTC), restricted=True
+                )
+            return await meeting_readers(unit).can_read(reader(unit), unit.meeting)
+
+    # Act
+    readable = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+    # Assert
+    assert readable is expected
+
+
 async def _failed_update(unit: Unit) -> None:
     async with unit.session.begin_nested():
         await unit.meetings.update(unit.member, unit.meeting, datetime.now(UTC), name="changed")
@@ -1760,6 +1874,8 @@ def test_upload_queues_a_transcription_job_to_publish(database_settings: Databas
                                 WorkspaceSettingsService(WorkspaceSettingsRepository(unit.session)),
                                 storage,
                                 CaptureSpeakerTimeline(CaptureRepository(unit.session)),
+                                OutboxProcessingNotices(NotificationOutboxRepository(unit.session)),
+                                meeting_readers(unit),
                             )
                         )
                     ),
