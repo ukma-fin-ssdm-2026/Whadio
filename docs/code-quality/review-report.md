@@ -3,8 +3,6 @@
 Team's repository URL: <https://github.com/ukma-fin-ssdm-2026/waterfall/tree/main>
 Reviewed commit SHA: `ee2c003582951b07d7e12e453d7739e03c35b619`.
 
-**State:** preliminary, will be enhanced later.
-
 ## Strong sides
 
 1. Consistent error contracts - the team is using a single error model for all errors.
@@ -31,6 +29,10 @@ No AI was used when writing the above portion of the file.
 ## AI Review
 
 Was done by: Claude Code (Opus 5.5@xhigh).
+
+<details>
+
+<summary>Raw AI output</summary>
 
 ### Strengths
 1. **Thin controllers behind repository interfaces, with one error contract** — Controllers only handle HTTP concerns. They take `IVacancyRepository` / `ISavedVacancyRepository` through constructor injection (`src/api/Controllers/VacanciesController.cs:22-26`, `src/api/Controllers/SavedVacanciesController.cs:24-32`), and the implementations are registered in one place (`src/api/Program.cs:77-78`). Swapping the in-memory stub for EF Core later should touch only the `Services` layer. Error responses all come from one factory, `ApiErrorResponse.Create` (`src/api/Models/Common/ApiErrorResponse.cs:14-32`), through shared helpers `ErrorNotFound` / `ErrorBadRequest` / `ErrorConflict` in `src/api/Controllers/ApiControllerBase.cs:46-94`. So every 4xx has the same `code` / `message` / `request_id` / `details` shape, and no action builds error JSON by hand. All repository methods are async and pass a `CancellationToken` through (`src/api/Services/IVacancyRepository.cs:10-14`), so the contract is ready for a real database.
@@ -90,10 +92,39 @@ The design doc defers JWT only for saved vacancies (`docs/api/api-design.md:10`)
 - Set Kestrel `Limits.MaxRequestBodySize` to roughly 64 KB and add `AddRateLimiter` on the write routes.
 - Replace `AllowAll` CORS with an explicit origin list. The native MAUI client does not need CORS at all.
 
+</details>
+
 ## Comparison between human and AI review
 
-Given the correct prompt and the context of requirements on the code review criteria used on the course, Claude has described more points than we did and in much greater detail, listing the exact paths and lines for the errors or lines of interest. Additionally, Claude has explore each problem in much more detail, unveiling more issues that we did.
+Given the correct prompt and the context of requirements on the code review criteria used on the course, Claude has described more points than we did and in much greater detail, listing the exact paths and lines for the errors or lines of interest. Additionally, Claude has explored each problem in much more detail, unveiling more issues than we did.
 
-In general, the responses overlap; we suspect that this is due to the "obviousness" of the strengths and weaknesses (given the small number of actual points to explore given the code from Lab04). However, there are some disagreements: where Claude has named usage of controllers as a good thing for consolidating business logic, we believe that this makes the framework code seep into the business logic, making future change of the API framework and/or reuse of business logic much harder, which in the future will require refactoring.
+In general, the responses overlap; we suspect that this is due to the "obviousness" of the strengths and weaknesses (given the small number of actual points to explore given the code from Lab04). However, there are some disagreements: where Claude has named usage of controllers as a good thing for consolidating business logic, we believe that this makes the framework code seep into the business logic, making future change of the API framework and/or reuse of business logic much harder, which in the future will require refactoring. Some misses of Claude were inconsistent commenting between modules (like MCP using English) and the bad practice of using non-English comments in the main code.
 
 No AI was used in the comparison between human and AI review.
+
+## Feedback on our code
+
+The pun-intended team reviewed our Lab 4 code at commit `8dbbe90`
+([their report](https://github.com/ukma-fin-ssdm-2026/pun-intended-team/blob/main/docs/code-quality/review-report.md)).
+Below is each point and what we did with it.
+
+| Point | Source | Status | What we did |
+|---|---|---|---|
+| AI usage notes should name who checked the document | In class | Done | The Lab 5 documents name the person who checked them |
+| Ruff `D` finds 98 missing docstrings | In class | Rejected | Our standard keeps docstrings to those that state a contract (`AGENTS.md`, "Comments"), so `pyproject.toml` disables the `D` rules on purpose |
+| `ruff format --check`: 10 files need reformatting | In class | Done | The count came from Ruff's default line length, 88, while ours is 100. `ruff format` now runs on every commit and in CI |
+| Inconsistent boolean names (`use_builtin_model`, `redact_speaker_names`, `link_active`, `accept_terms`) | In class | Accepted, not done | Valid. Only `use_builtin_model` and `redact_speaker_names` are implemented so far; the names get the `is_`/`has_` form when their operations are built |
+| Fixture names hide what they return or raise (`transcribed()`, `folder_in()`) | In class, AI | Done | The demo fixtures are gone; the routes read the database through the modules' services |
+| Handlers hold business logic (`list_meetings`, `upload_recording`) | In class, AI | Partly done | `list_meetings` now only maps the query to the Meetings service's filter. `upload_recording` still orchestrates storage, persistence and the transcription job in the route |
+| The `name` filter is a plain `str`, not `DisplayText` | In class (risk) | Rejected | Not a vulnerability: the filter is 1 to 200 characters, stripped, and only used for a case-insensitive substring match. It is never stored or returned |
+| Validation errors echo the rejected input, passwords included | AI (risk) | Done | Only query and path values are echoed now, with regression tests ([static analysis](static-analysis.md), "Validation errors echoed the rejected password") |
+| Meeting routes ignore the signed-in user, so there is no authorization | AI | Done | Meeting operations check the signed-in user's access through Access Policy |
+| Almost no tests | AI | Done | 484 tests, 279 of them on every commit |
+| The upload size is checked only after the body is spooled | AI | Done | Oversized requests are refused before the multipart body is parsed, and streamed bytes are counted when `Content-Length` is missing or understated |
+| FFmpeg decodes uploads in the API process | AI | Accepted | The API decodes only the first audio frame, to refuse a file that is not audio before it is stored. The ASR worker does the full decode |
+| The MCP endpoint needs no key | AI | Done | The MCP server now requires a personal MCP key and reads only meetings its owner can access |
+| Secrets compared with `!=` | AI | Done | Passwords are verified with argon2id, and session tokens are looked up by their hash |
+| Sign-out does not end the session | AI | Done | Sign-out deletes the session |
+
+This section was drafted with Claude Code (Claude Opus 5.5), which checked each point against the
+code; Andrii Shalaiev reviewed the statuses and decisions.

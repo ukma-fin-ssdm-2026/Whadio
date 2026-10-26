@@ -1,10 +1,10 @@
-import unicodedata
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Annotated, ClassVar, Final
+from typing import Annotated, ClassVar
 
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints
 
+from ...shared.text import display_text
 from .errors import ApiError, ErrorCode, ErrorDetail
 
 
@@ -24,23 +24,9 @@ def _to_utc(value: datetime) -> datetime:
 
 UtcDatetime = Annotated[AwareDatetime, AfterValidator(_to_utc)]
 
-_VISIBLE_CATEGORIES: Final = frozenset("LNPS")
-# Graphic characters that render blank: the Hangul fillers and the Braille blank.
-_BLANK_GRAPHICS: Final = frozenset("\u115f\u1160\u3164\uffa0\u2800")
-
-
-def _displayable(value: str) -> str:
-    if any(unicodedata.category(char) == "Cc" for char in value):
-        raise ValueError("must not contain control characters such as line breaks")
-    if not any(
-        unicodedata.category(char)[0] in _VISIBLE_CATEGORIES and char not in _BLANK_GRAPHICS
-        for char in value
-    ):
-        raise ValueError("must contain a visible character, not only spaces or invisible ones")
-    return value
-
-
-DisplayText = Annotated[str, StringConstraints(strip_whitespace=True), AfterValidator(_displayable)]
+# pydantic may check a field's `max_length` before the validator runs, so the value is stripped
+# first to count only what is kept.
+DisplayText = Annotated[str, StringConstraints(strip_whitespace=True), AfterValidator(display_text)]
 
 
 class PageQuery(Input):
@@ -48,7 +34,7 @@ class PageQuery(Input):
     cursor: str | None = Field(
         default=None,
         min_length=1,
-        max_length=512,
+        max_length=4096,
         description="Opaque `next_cursor` from the previous page; omit for the first page",
     )
 

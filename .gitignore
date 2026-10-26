@@ -3,4 +3,11 @@ __pycache__/
 *.py[cod]
 .env
 dist/
+*.db
+recordings/
 node_modules/
+.coverage*
+reports/
+htmlcov-ci/
+.hypothesis/
+mutants/

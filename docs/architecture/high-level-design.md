@@ -64,7 +64,7 @@ Rules 1 and 6 are checked on every commit and in CI by the import-linter contrac
 | A single-process monolith, with models loaded in the web process | A GPU out-of-memory error or a model crash would take the web application down (NFR-015), and the web host would need a GPU. |
 | Choreography: the transcript event consumed by both the backend and the notes worker | Notes need the context set, the preset and the provider configuration, which only the backend can assemble under the access rules (FR-019, FR-037). Notes could also arrive before the transcript is saved, and regeneration (FR-025) starts from the backend anyway. |
 | A database table as the job queue | With several workers, a shared table needs claiming and skipping logic that a broker provides natively. A queue also gives backpressure: the GPU takes one job at a time while peaks wait in the queue. |
-| Splitting the ASR worker into a thin worker on the main host and a model server on the GPU host, as is done for notes | The notes split relies on an off-the-shelf server with a standard API, an interchangeable external provider (BYOK) and a secret to keep on the main host. None applies to transcription: no standard API covers recognition with glossary biasing and diarization, audio may not leave Whadio's servers, and the job carries no secret. A job of several minutes would also need an asynchronous API on the model server, duplicating the broker. The choice is internal to the Transcription pipeline and can be revisited without changing the messages. |
+| Splitting the ASR worker into a thin worker on the main host and a model server on the GPU host, as is done for notes | The notes split relies on an off-the-shelf model server, an interchangeable external provider (BYOK) and a secret to keep on the main host. None applies to transcription: no standard API covers recognition with glossary biasing and diarization, audio may not leave Whadio's servers, and the job carries no secret. A job of several minutes would also need an asynchronous API on the model server, duplicating the broker. The choice is internal to the Transcription pipeline and can be revisited without changing the messages. |
 
 ## 3. Components
 
@@ -89,10 +89,10 @@ Source: [uml/component-diagram.puml](uml/component-diagram.puml)
 | Accounts & Workspaces | Registration in the instance's registration mode, invitation links and their cancellation, password reset, links issued by the operator, sign-in and sessions, workspaces, membership and roles, LLM provider configuration, MCP keys. Checks workspace-administration permissions against the member's role. | FR-001–FR-003, FR-005–FR-008, FR-021, FR-043, FR-047–FR-049, NFR-018 |
 | Access Policy | Decides who may read which meeting: workspace role, per-meeting restriction, share grants and redaction. A share grants reading only to the account its creator approved; opening its link otherwise records an access request for the creator. | FR-004, FR-037–FR-039, FR-044, NFR-007–NFR-009 |
 | Meetings | Meetings, folders, transcript and notes versions, speaker labels, naming, glossary, playback. The single read path for meeting content. Enforces the meeting cap: when a meeting is queued, counts the queued and later meetings across the workspaces of its workspace's Owner, and evicts the earliest-created one if the cap is exceeded. | FR-017, FR-027–FR-036, NFR-003 |
-| Processing | The pipeline's orchestrator: publishes jobs, consumes results, tracks processing state, assembles the context set, limits regeneration. | FR-012, FR-014, FR-015, FR-018–FR-020, FR-022, FR-023, FR-025, FR-026 |
+| Processing | The pipeline's orchestrator: publishes jobs, consumes results, tracks processing state, names diarized speakers from the Meet timeline that Capture stored, assembles the context set, limits regeneration. | FR-012, FR-014–FR-016, FR-018–FR-020, FR-022, FR-023, FR-025, FR-026 |
 | Export | Markdown and VTT export with the consent notice and attribution. | FR-040–FR-042 |
 | Notifications | Email to members when processing finishes or fails, before recordings expire, and when the meeting cap evicts a meeting; to a share's creator when an account requests access; registration, invitation and password-reset links to the address they are for. | FR-001, FR-006, FR-024, FR-038, FR-046, FR-048, NFR-003 |
-| Retention | Deletes recordings three months after the meeting and triggers the advance warning. | FR-046 |
+| Retention | Deletes recordings 90 days after the meeting and triggers the warning 7 days before deletion. | FR-046 |
 | Admin & Monitoring | The administrator dashboard: queue, failures, load and model usage, without meeting content. | FR-045 |
 | Audit | The append-only record of who changed a meeting's content or access: actor, action, target IDs and time, never content. Written by Meetings, Access Policy and Accounts & Workspaces; no API reads it, and the operator consults it in the database. | NFR-010 |
 
@@ -115,7 +115,7 @@ configuring the provider, is checked by Accounts & Workspaces against the member
 
 | Component | Responsibility | Requirements |
 |---|---|---|
-| Transcription pipeline | Audio normalisation, speech recognition with glossary biasing (Parakeet or Whisper), diarization (pyannote), naming speakers from the Meet timeline. | FR-015, FR-016, FR-029 |
+| Transcription pipeline | Audio normalisation, speech recognition with glossary biasing (Parakeet or Whisper), diarization (pyannote) into numbered speakers. | FR-015, FR-029 |
 | Notes pipeline | Builds the prompt from the preset, transcript and context set; calls the built-in model or the configured provider; proposes the meeting name. | FR-018, FR-021–FR-023, FR-033 |
 
 ### Infrastructure
@@ -125,7 +125,7 @@ configuring the provider, is checked by Accounts & Workspaces against the member
 | PostgreSQL | The backend's data; each module owns its tables. |
 | Object storage (S3-compatible) | Audio chunks and recordings. Any server that implements the S3 API with presigned URLs fits; the product is a deployment choice (for example SeaweedFS or Garage). |
 | Message broker (RabbitMQ) | Job and result queues between the backend and the workers. |
-| LLM runtime | An off-the-shelf server exposing an OpenAI-compatible chat completions API for the built-in model (for example llama.cpp server or vLLM). |
+| LLM runtime | Ollama, serving the built-in model through its native chat API ([ADR-007](decisions/ADR-007.md)). |
 | LLM provider | An external API used only when the workspace Owner configured a key. |
 | SMTP relay | Delivers notification email and the registration, invitation and password-reset links. Optional in `invite-only` mode; without it, no email is sent, so the instance sends no notifications (FR-047). |
 
@@ -136,15 +136,19 @@ The deployable processes, all but the off-the-shelf services built from the same
 | Unit | Runs | Host | Instances |
 |---|---|---|---|
 | `web` | All backend modules except Retention; consumes `processing.results` | Main host | 1, stateless; more can run behind nginx |
-| `scheduler` | Retention, capture finalisation, re-publishing jobs stuck in `queued`, deleting expired registration and password-reset links, invitations and sessions | Main host | Exactly 1 |
+| `scheduler` | Retention, capture finalisation, re-publishing jobs stuck in `queued`, deleting expired registration and password-reset links, invitations and sessions, sending the notification emails reserved in the outbox | Main host | Exactly 1 |
 | `notes-worker` | Notes pipeline | Main host (CPU only) | 1 or more, competing consumers |
 | `asr-worker` | Transcription pipeline | GPU host | 1 per GPU |
-| `llm-runtime` | The built-in language model, on an off-the-shelf server | GPU host | 1 |
+| `llm-runtime` | The built-in language model, on Ollama | GPU host | 1 |
 | `nginx`, `postgres`, `rabbitmq`, `object-storage` | Off-the-shelf services | Main host | 1 each |
 
 The notes worker needs no GPU: the model runs in `llm-runtime`, and the worker only builds the
 prompt and calls it. When every workspace uses its own provider key, `llm-runtime` can be stopped
 without touching the notes worker.
+
+Database migrations are packaged in `whadio.migrations` and run through the CLI as a separate
+composition root. That runtime may load all module models to populate schema metadata; backend
+modules, workers and other runtimes do not import it. This adds no backend-module dependency.
 
 ## 5. Interfaces
 
@@ -166,8 +170,8 @@ worker needs, so workers never read the database; audio is fetched through a tim
 URL, and a workspace's own provider key travels only to the notes worker on the main host.
 
 **Infrastructure.** The backend uses PostgreSQL over SQL and object storage over the S3 API, and
-sends email to the SMTP relay over SMTP with STARTTLS. The notes worker calls `llm-runtime` over an
-OpenAI-compatible HTTP API, and the configured provider over HTTPS.
+sends email to the SMTP relay over SMTP with STARTTLS. The notes worker calls `llm-runtime` over
+Ollama's native HTTP chat API, and the configured provider over HTTPS.
 
 ## 6. Main flow
 
@@ -185,15 +189,17 @@ Source: [uml/sequence-meeting-pipeline.puml](uml/sequence-meeting-pipeline.puml)
    acknowledged stay stored. Once the capture has been idle past a timeout, the scheduler assembles
    what was received into a partial recording and queues it like any other.
 3. **Transcription.** The ASR worker takes the job, reports that it started, fetches the audio,
-   and returns the transcript with named speakers. The backend saves it, and the member can read it
+   and returns the transcript with numbered speakers. The backend names them from the speaker
+   events the extension sent where the match is unambiguous, saves it, and the member can read it
    while the notes are still being generated.
 4. **Notes.** The backend assembles the preset, the provider and the context set, excluding
    restricted meetings, and queues the notes job. The notes worker returns the notes, the proposed
    name and the meetings used as context.
 5. **Delivery.** The backend saves the notes, applies the proposed name as the meeting's name,
-   marked as generated, marks the meeting processed and emails the member. The SPA shows the
-   transcript and notes and prompts for a name, prefilled with the generated one; if the member
-   does not answer, the generated name stays (FR-033).
+   marked as generated, marks the meeting processed and reserves an email to the member in the
+   same transaction; the scheduler sends it. The SPA shows the transcript and notes and prompts
+   for a name, prefilled with the generated one; if the member does not answer, the generated name
+   stays (FR-033).
 
 ## 7. Failure behaviour
 
@@ -295,6 +301,6 @@ The architecture leaves room for these changes without restructuring:
 ## AI Usage
 
 This document and its diagrams were prepared and revised with the assistance of Claude Code (Claude
-Opus 5.5). The architecture follows the decisions of the team's working session of 2026-09-24 and
+Opus 5.5) with the later additions from OpenAI Codex. The architecture follows the decisions of the team's working session of 2026-09-24 and
 the architecture-lead decisions that followed it. The author reviewed and edited the content, and
 the document is reviewed through a pull request before merging.

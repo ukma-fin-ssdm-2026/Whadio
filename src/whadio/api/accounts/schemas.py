@@ -84,6 +84,30 @@ class SessionRead(Output):
     )
 
 
+class McpKeyCreate(Input):
+    expires_in_days: int | None = Field(
+        default=None,
+        ge=1,
+        le=365,
+        strict=True,
+        description="Days until expiry; omit for a key that does not expire",
+    )
+
+
+class McpKeyRead(Output):
+    id: UUID = Field(description="MCP key identifier")
+    created_at: datetime = Field(description="When the key was created")
+    expires_at: datetime | None = Field(description="When the key expires, or null")
+    revoked_at: datetime | None = Field(description="When the key was revoked, or null")
+    is_active: bool = Field(description="Whether the key can authenticate now")
+
+
+class McpKeyCreated(McpKeyRead):
+    secret: str = Field(
+        description="Bearer token shown only in this response; store it before closing"
+    )
+
+
 class WorkspaceCreate(Input):
     name: WorkspaceName
     default_preset: Preset = Field(

@@ -2,6 +2,8 @@ minimum_pre_commit_version: "4.4.0"
 default_install_hook_types: [pre-commit, commit-msg, pre-push]
 default_stages: [pre-commit]
 fail_fast: true
+# Generated coverage reports, committed for Lab 6.
+exclude: ^htmlcov(-before)?/
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -70,11 +72,20 @@ repos:
         entry: uv run --frozen ruff format
         <<: *whole-project
 
+      - id: biome
+        name: biome check --write (frontend)
+        language: unsupported
+        # No shell wrapper: Windows has no sh outside Git Bash, while pre-commit resolves npm.cmd.
+        entry: npm --prefix frontend run check:fix
+        files: ^frontend/
+        pass_filenames: false
+        require_serial: true
+
       - id: no-suppressions
-        name: no inline suppression comments (configure exceptions in pyproject.toml)
+        name: no inline suppression comments (configure exceptions in pyproject.toml or biome.jsonc)
         language: pygrep
-        entry: '#\s*(?:type:\s*ignore|pyright:\s*(?:ignore|basic)|ty:\s*ignore|noqa|nosec|ruff:\s*(?:noqa|ignore))'
-        types_or: [python, pyi]
+        entry: '#\s*(?:type:\s*ignore|pyright:\s*(?:ignore|basic)|ty:\s*ignore|noqa|nosec|ruff:\s*(?:noqa|ignore))|biome-ignore'
+        types_or: [python, pyi, javascript, jsx, css]
 
       - id: typos
         name: typos
@@ -144,8 +155,8 @@ repos:
         <<: *whole-project
 
       - id: pytest-full
-        name: pytest (full)
-        entry: uv run --frozen pytest -q
+        name: pytest (full, with the coverage gate)
+        entry: uv run --frozen task test:cov
         stages: [pre-push, manual]
         <<: *whole-project
 

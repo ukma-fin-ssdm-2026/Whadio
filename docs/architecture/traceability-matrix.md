@@ -24,11 +24,11 @@ Architectural view of the requirements in [rtm.md](../requirements/rtm.md) and [
 | US-014 Folders, move, delete | FR-034, FR-035, FR-036 | Meetings, Access Policy | Flat folders; deleting a folder moves meetings to default | Integration test |
 | US-015 Restrict a meeting | FR-037 | Access Policy | One check point for lists, links, MCP and context | Test every path |
 | US-016 Share read-only | FR-038, FR-039, FR-047 | Access Policy, Meetings, Notifications, SMTP relay | Revocable read-only share; the link yields an access request, and the share is bound to the account its creator approves; optional name redaction; a share link never creates an account | API test; test with a mail catcher |
-| US-017 Export | FR-040, FR-041, FR-042 | Export, Meetings, Access Policy | Current version, "edited" marker, notice and attribution | Reference-file tests |
+| US-017 Export | FR-040, FR-041, FR-042 | Export, Meetings, Access Policy | Current/original downloads, saved-note context, notice and attribution; authenticated SPA revision links | Renderer and API authorization tests; browser navigation verification |
 | US-018 Own AI assistant | FR-043, FR-044 | MCP client, MCP Server, Accounts & Workspaces, Access Policy | Keys shown once, stored hashed; results filtered by Access Policy | Unit and API tests |
-| US-019 Admin dashboard | FR-045 | Admin & Monitoring, Processing | Reads job states from Processing and system metrics only, no content | Query review |
+| US-019 Admin dashboard | FR-045 | Admin & Monitoring, Processing | Job-list/count backend implemented without telemetry | Access/revocation, content-isolation, pagination, counts and retry-timing tests |
 | US-020 Reset a forgotten password | FR-048, FR-049 | Accounts & Workspaces, Notifications, SMTP relay | Single-use emailed link; a new password ends every earlier session and extension token; requested by users only in `verified` mode, and issued by the operator in either | API tests with a mail catcher and a mocked clock |
-| Retention policy (referenced in US-011) | FR-046 | Retention, Notifications | Scheduled deletion of recordings three months after the meeting; Notifications warns members in advance | Test with a mocked clock |
+| Retention policy (referenced in US-011) | FR-046 | Retention, Notifications | Scheduled deletion of recordings 90 days after the meeting; Notifications warns accessible members 7 days in advance | Test with a mocked clock |
 
 ### Non-functional requirements
 
@@ -93,4 +93,4 @@ and a new upload succeed, restart the host, and confirm both jobs complete.
 ## AI Usage
 
 Drafted and revised with Claude Code (Claude Opus 5.5) from requirements.md, rtm.md, the component
-diagram and the 2026-09-26 architecture review. Reviewed by the team before merging.
+diagram and the 2026-09-26 architecture review. Later FR and NFR clarifications were assisted by OpenAI Codex. Reviewed by the team before merging.

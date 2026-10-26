@@ -7,10 +7,10 @@
     - Denys Zabiiaka (GitHub: @SquidBow, NaUKMA email: d.zabiiaka@ukma.edu.ua)
 
 ## 2. Roles and Responsibilities
-- Repository Maintainer, Quality Lead, Data & Threat Modeler, API Documentation Lead, Review Manager, AI Code Reviewer: Zlata
-- CI Maintainer, Requirements Lead, Architecture Lead, Backend Lead, Test Planner: Andrii
-- Documentation Lead, Integration Lead, AI Code Reviewer: Valeriia
-- Issue Tracker Lead, Traceability Lead, Requirements-Architecture Mapper, API Quality Lead, Quality Analyst: Denys
+- Repository Maintainer, Quality Lead, Data & Threat Modeler, API Documentation Lead, Code Reviewer, Test Strategist, Review Manager, AI Code Reviewer: Zlata
+- CI Maintainer, Requirements Lead, Architecture Lead, Backend Lead, Code Quality Lead, Integration Lead, Test Planner: Andrii
+- Documentation Lead, Integration Lead, Debugging Lead, AI Code Reviewer: Valeriia
+- Issue Tracker Lead, Traceability Lead, Requirements-Architecture Mapper, API Quality Lead, Security Analyst, Test Lead, Quality Analyst: Denys
 
 ## 3. Communication Plan
 - Primary channel: Telegram chat, Google Meet calls
@@ -28,12 +28,8 @@
     - final results.
 - Commit conventions: `<type>(#<issue-number>): short message` format is used (e.g., `docs(#3): add TeamCharter.md`).
 - Dependency updates: Dependabot's pull requests are not tied to issues; their branches keep the `dependabot/...` names, and their commits use `build(deps): ...` or `build(deps-dev): ...`.
-- Code review rules:
-    - each PR requires at least one approval, and the reviewer submits the review themselves;
-    - AI-assisted review: the reviewer goes through the PR with an AI agent, discusses its findings, and posts only the comments they agree with and can justify. The agent, the depth of discussion, and how comments reach GitHub (inline, in the summary, drafted by the agent as a pending review) are the reviewer's choice. PRs that only add report links or signatures are exempt;
-    - the reviewer answers for every posted comment as their own, and the review summary names the AI tool used and states that the reviewer verified each point.
 - Issue workflow: open issue -> assign -> work -> pull request -> AI-assisted review -> address every review comment -> merge -> close.
-- Definition of Done: every issue lists clear acceptance criteria before work starts on it. A task is considered completed when the code meets these criteria, passes all tests and automated checks, receives reviewer approval, and is successfully merged into the `main` branch.
+- Code review rules and Definition of Done: see section 11.
 - Task priority labels:
     - `high priority` — critical tasks that block the work of other members, stop CI/CD pipelines, or are mandatory for the nearest deadline. These are taken into work first.
     - `low priority` — minor improvements, refactoring, or non-critical tasks that do not block the team. Executed in the background when free time is available.
@@ -94,5 +90,30 @@ Overload -> notify in the primary channel -> brief discussion and selection of a
 - [x] Valeriia (GitHub: @v-missirova)
 - [x] Denys (GitHub: @SquidBow)
 
+## 11. Code Quality and Review Policy
+- Coding standard:
+    - Python: PEP 8, enforced by `ruff format` and by `ruff check` with every rule enabled; strict types, checked by ty and basedpyright; the house rules in `AGENTS.md`, "Code standards";
+    - frontend: formatted by Biome and checked by its recommended lint rules, the React and accessibility rules included; every rule exception sits in `frontend/biome.jsonc` with a reason.
+- Mandatory tools: Ruff, Biome, ty, basedpyright, Bandit, import-linter, deptry, gitleaks, zizmor, actionlint, typos, pytest, uv audit, npm audit and Dependabot; `docs/code-quality/static-analysis.md` lists what each one checks.
+- Where the checks run:
+    - every commit: the pre-commit hooks, the fast tests included, and Biome when the commit touches the frontend;
+    - every push: the whole test suite, which fails below 85% line and branch coverage, so the push needs the Compose services and `WHADIO_TEST_DATABASE_URL`;
+    - CI, on every push and pull request: the same hooks on all files, Biome included, the whole test suite against the Compose services with the same coverage gate, the dependency audit (uv audit, and npm audit for the frontend, its build tools included), a secret scan of the whole history, and the pull request title and commit messages;
+    - checks are never bypassed (`--no-verify`, `SKIP=`), and inline suppressions are refused: a false positive gets a scoped exception in `pyproject.toml` or `frontend/biome.jsonc` with a one-line reason, in its own pull request.
+- Code review rules:
+    - each PR requires at least one approval, and the reviewer submits the review themselves;
+    - AI-assisted review: the reviewer goes through the PR with an AI agent, discusses its findings, and posts only the comments they agree with and can justify. The agent, the depth of discussion, and how comments reach GitHub (inline, in the summary, drafted by the agent as a pending review) are the reviewer's choice. PRs that only add report links or signatures are exempt;
+    - the reviewer answers for every posted comment as their own, and the review summary names the AI tool used and states that the reviewer verified each point.
+- Definition of Done: every issue lists clear acceptance criteria before work starts on it. A task is considered completed when the code meets these criteria, passes all tests and automated checks, receives reviewer approval, and is successfully merged into the `main` branch. In particular:
+    - formatting: every commit-hook check passes, locally and in CI;
+    - tests: new behaviour has tests next to the code it tests, in the Arrange-Act-Assert form, covering edge cases and refusals;
+    - documentation: the documents governing the change are updated, the OpenAPI specification is regenerated with any route or schema change, and AI use is disclosed.
+- Responsible roles:
+    - Code Quality Lead (Andrii): maintains the tools, the hooks and CI, and reports the static analysis results;
+    - Code Reviewer (Zlata): reviews other teams' code;
+    - Security Analyst (Denys): checks how the code handles data, and triages security findings;
+    - Documentation Lead (Valeriia): keeps the charter and the reports up to date;
+    - every member reviews teammates' pull requests, and each module owner answers for the quality of their module.
+
 ## AI Usage
-This document was prepared with the assistance of AI (Gemini 3.1 Pro); the review rules in section 4 were revised with Claude Code (Claude Opus 5.5). The author reviewed and edited the content, and the document is reviewed through a pull request before merging.
+This document was prepared with the assistance of AI (Gemini 3.1 Pro); the review rules were revised, and section 11 and the Lab 5 roles were drafted, with Claude Code (Claude Opus 5.5). The author reviewed and edited the content, and the document is reviewed through a pull request before merging.

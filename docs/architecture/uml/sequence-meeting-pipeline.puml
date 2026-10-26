@@ -91,13 +91,14 @@ end note
 
 mq ->> notes ++ : NotesRequested
 notes -> notes : Build the prompt from the preset,\ntranscript and context set
-notes -> llm ++ : POST /v1/chat/completions
+notes -> llm ++ : POST /api/chat
 llm --> notes -- : Completion
 notes ->> mq -- : NotesReady {notes, proposed name, context meetings}
 mq ->> web ++ : NotesReady
-web -> db : Save notes and the context used; set the proposed\nname, marked as generated; state = processed
-web -> web : Notify the member by email (FR-024)
+web -> db : Save notes and the context used; set the proposed\nname, marked as generated; state = processed;\nreserve the member's email notice (FR-024)
 deactivate web
+scheduler -> db : Claim the reserved notice after the commit
+scheduler -> scheduler : Email the member (FR-024)
 
 == Delivery ==
 

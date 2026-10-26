@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Whadio API",
-    "description": "Whadio records Google Meet calls from the browser, transcribes them with speaker labels and\nwrites notes, inside workspaces with roles, restrictions and sharing.\n\nThis server is a **stub**: every endpoint answers with fixed demo data, and writes return the\nresult they would have but store nothing. Only part of the designed API is implemented; the\nfull design is in `docs/api/api-design.md`.\n\n## Quick start\n1. `POST /api/v1/sessions` with `alice@whadio.dev` and the password `whadio-demo-pass`. The browser\n   keeps the session cookie, so every later call in this page is signed in.\n2. `GET /api/v1/workspaces`, then `GET /api/v1/workspaces/7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d/meetings`.\n3. `GET /api/v1/meetings/5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9/transcript` is processed;\n   `0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d` is still queued and answers `409`.\n\n## Conventions\n- **Errors:** every 4xx and 5xx body is `{\"error\": {\"code\", \"message\", \"details\",\n  \"request_id\"}}`. Branch on `code`; `request_id` equals the `X-Request-ID` response header.\n- **Lists:** `limit` (1-100, default 20) and `cursor`; responses are\n  `{\"items\": [...], \"pagination\": {\"limit\", \"next_cursor\", \"has_more\"}}`.\n- **Visibility:** a resource the caller cannot see is `404`, never `403`, so its existence does\n  not leak. `403` means the caller can see it but their role does not allow the action.\n- **Time:** ISO 8601 with an offset; returned in UTC.",
+    "description": "Whadio records Google Meet calls from the browser, transcribes them with speaker labels and\nwrites notes, inside workspaces with roles, restrictions and sharing.\n\nSign-in, workspaces, meeting content, folders, glossary, revisions, restrictions and shares are\nstored in PostgreSQL. Requests need a stored, unexpired session; MCP needs a stored personal key.\nAn upload is stored in object storage and queued for transcription and notes, which the workers\nrun.\n\nNotes regeneration is not built yet: it returns `503 INTEGRATION_UNAVAILABLE`, as does an upload\non a server without a broker or object storage. A share access request reserves an email to the\nshare's creator with the request; the scheduler sends it when an SMTP relay is configured. The API\ncontract is in `docs/api/api-design.md`.\n\n## Conventions\n- **Errors:** every 4xx and 5xx body is `{\"error\": {\"code\", \"message\", \"details\",\n  \"request_id\"}}`. Branch on `code`; `request_id` equals the `X-Request-ID` response header.\n- **Lists:** `limit` (1-100, default 20) and `cursor`; responses are\n  `{\"items\": [...], \"pagination\": {\"limit\", \"next_cursor\", \"has_more\"}}`.\n- **Visibility:** a resource the caller cannot see is `404`, never `403`, so its existence does\n  not leak. `403` means the caller can see it but their role does not allow the action.\n- **Time:** ISO 8601 with an offset; returned in UTC.",
     "version": "0.1.0"
   },
   "paths": {
@@ -84,11 +84,238 @@
           "accounts"
         ],
         "summary": "Sign out",
-        "description": "Ends the session presented by the cookie or the extension's bearer token and clears the cookie. Always `204`, also without a session: signing out is idempotent.",
+        "description": "Ends the sessions presented by the cookie and by the extension's bearer token, and clears the cookie. Always `204`, also without a session: signing out is idempotent.",
         "operationId": "sign_out_api_v1_sessions_current_delete",
         "responses": {
           "204": {
             "description": "Signed out"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "extensionToken": []
+          }
+        ]
+      }
+    },
+    "/api/v1/users/me/mcp-keys": {
+      "get": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "List my MCP keys",
+        "description": "Lists the caller's keys newest first, including revoked and expired keys. Secrets are never returned.",
+        "operationId": "list_mcp_keys_api_v1_users_me_mcp_keys_get",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of items to return",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Maximum number of items to return"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque `next_cursor` from the previous page; omit for the first page",
+              "title": "Cursor"
+            },
+            "description": "Opaque `next_cursor` from the previous page; omit for the first page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of personal MCP keys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_McpKeyRead_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Create an MCP key",
+        "description": "Creates a personal key for AI assistants. The secret is shown once and only its SHA-256 hash is stored.",
+        "operationId": "create_mcp_key_api_v1_users_me_mcp_keys_post",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/McpKeyCreate"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new key and its one-time secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpKeyCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/me/mcp-keys/{key_id}": {
+      "delete": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Revoke an MCP key",
+        "description": "Revokes one of the caller's keys. Revoking an already revoked key is harmless.",
+        "operationId": "revoke_mcp_key_api_v1_users_me_mcp_keys__key_id__delete",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "MCP key identifier",
+              "title": "Key Id"
+            },
+            "description": "MCP key identifier"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Key revoked"
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`NOT_FOUND`: no such key among the caller's own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
         }
       }
@@ -130,7 +357,7 @@
                 {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 512
+                  "maxLength": 4096
                 },
                 {
                   "type": "null"
@@ -563,7 +790,7 @@
                 {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 512
+                  "maxLength": 4096
                 },
                 {
                   "type": "null"
@@ -757,6 +984,16 @@
               }
             }
           },
+          "400": {
+            "description": "`MALFORMED_REQUEST`: invalid or repeated Content-Length header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
             "content": {
@@ -778,7 +1015,7 @@
             }
           },
           "413": {
-            "description": "`PAYLOAD_TOO_LARGE`: the file is larger than 500 MiB",
+            "description": "`PAYLOAD_TOO_LARGE`: the file is larger than 500 MiB or the multipart request exceeds 501 MiB",
             "content": {
               "application/json": {
                 "schema": {
@@ -803,6 +1040,100 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/meetings/{meeting_id}/recording": {
+      "get": {
+        "tags": [
+          "meetings"
+        ],
+        "summary": "Get a recording playback link",
+        "description": "Get a five-minute playback link after checking meeting access. Refuses unfinished recordings and recordings removed by retention.",
+        "operationId": "recording_link_api_v1_meetings__meeting_id__recording_get",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meeting_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Meeting identifier",
+              "examples": [
+                "5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9"
+              ],
+              "title": "Meeting Id"
+            },
+            "description": "Meeting identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybackLink"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`NOT_FOUND`: no such meeting, or the caller cannot read it (restricted meetings are reported as missing, never as forbidden)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`RECORDING_NOT_READY`: recording is still being captured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`RECORDING_DELETED`: retention removed the recording",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -1079,6 +1410,25 @@
               "title": "Meeting Id"
             },
             "description": "Meeting identifier"
+          },
+          {
+            "name": "revision_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Revision to read; current when omitted",
+              "title": "Revision Id"
+            },
+            "description": "Revision to read; current when omitted"
           }
         ],
         "responses": {
@@ -1187,7 +1537,7 @@
                 {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 512
+                  "maxLength": 4096
                 },
                 {
                   "type": "null"
@@ -1246,8 +1596,8 @@
         "tags": [
           "notes"
         ],
-        "summary": "Regenerate the notes",
-        "description": "Any member who can read the meeting. Queues notes generation with the chosen preset and answers at once with `202`: generation runs in a worker. Poll the meeting in `Location` until `processing_state` is `processed` or `failed`.\n\nLimits: one run at a time, and a configured number of regenerations per meeting (3 by default); every requested run counts, failed ones included. The transcript is never regenerated, and a failed run keeps the previous notes current.",
+        "summary": "Regenerate the notes (not available yet)",
+        "description": "Regenerating notes is outside the MVP. After checking that the caller can read the meeting, this always answers `503 INTEGRATION_UNAVAILABLE`. The planned behaviour is in `docs/api/api-design.md`.",
         "operationId": "regenerate_notes_api_v1_meetings__meeting_id__notes_post",
         "security": [
           {
@@ -1271,38 +1621,9 @@
             "description": "Meeting identifier"
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NotesRequest"
-              }
-            }
-          }
-        },
         "responses": {
-          "202": {
-            "description": "The queued job",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProcessingJobRead"
-                }
-              }
-            },
-            "headers": {
-              "Location": {
-                "description": "URL of the meeting to poll",
-                "schema": {
-                  "type": "string",
-                  "format": "uri"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "`MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON",
+          "503": {
+            "description": "`INTEGRATION_UNAVAILABLE`: regenerating notes is not available yet",
             "content": {
               "application/json": {
                 "schema": {
@@ -1331,8 +1652,3034 @@
               }
             }
           },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/folders": {
+      "get": {
+        "tags": [
+          "meetings"
+        ],
+        "summary": "List Folders",
+        "description": "List workspace folders with counts of meetings the caller can read. Restricted meetings without access are excluded from counts.",
+        "operationId": "list_folders_api_v1_workspaces__workspace_id__folders_get",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Workspace identifier",
+              "examples": [
+                "7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d"
+              ],
+              "title": "Workspace Id"
+            },
+            "description": "Workspace identifier"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of items to return",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Maximum number of items to return"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque `next_cursor` from the previous page; omit for the first page",
+              "title": "Cursor"
+            },
+            "description": "Opaque `next_cursor` from the previous page; omit for the first page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_FolderRead_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "409": {
-            "description": "`NOTES_IN_PROGRESS`: a run is already queued or running; `REGENERATION_LIMIT`: the meeting used up its regenerations; `NOT_TRANSCRIBED`: the meeting is not processed yet",
+            "description": "Content conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "meetings"
+        ],
+        "summary": "Create Folder",
+        "description": "Create a folder in this workspace. Requires a Moderator or Owner; names are unique ignoring case.",
+        "operationId": "create_folder_api_v1_workspaces__workspace_id__folders_post",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Workspace identifier",
+              "examples": [
+                "7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d"
+              ],
+              "title": "Workspace Id"
+            },
+            "description": "Workspace identifier"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Content conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/folders/{folder_id}": {
+      "patch": {
+        "tags": [
+          "meetings"
+        ],
+        "summary": "Rename Folder",
+        "description": "Rename a workspace folder. Requires a Moderator or Owner and a name unique within the workspace.",
+        "operationId": "rename_folder_api_v1_workspaces__workspace_id__folders__folder_id__patch",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Workspace identifier",
+              "examples": [
+                "7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d"
+              ],
+              "title": "Workspace Id"
+            },
+            "description": "Workspace identifier"
+          },
+          {
+            "name": "folder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Folder identifier",
+              "examples": [
+                "e8f7d6c5-b4a3-4291-8f7e-6d5c4b3a2918"
+              ],
+              "title": "Folder Id"
+            },
+            "description": "Folder identifier"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Content conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "meetings"
+        ],
+        "summary": "Delete Folder",
+        "description": "Delete a non-default folder and move its meetings to the default folder, preserving their content and access restrictions. Requires a Moderator or Owner.",
+        "operationId": "delete_folder_api_v1_workspaces__workspace_id__folders__folder_id__delete",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Workspace identifier",
+              "examples": [
+                "7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d"
+              ],
+              "title": "Workspace Id"
+            },
+            "description": "Workspace identifier"
+          },
+          {
+            "name": "folder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Folder identifier",
+              "examples": [
+                "e8f7d6c5-b4a3-4291-8f7e-6d5c4b3a2918"
+              ],
+              "title": "Folder Id"
+            },
+            "description": "Folder identifier"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Content conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/folders/{folder_id}/restore": {
+      "post": {
+        "tags": [
+          "meetings"
+        ],
+        "summary": "Restore Folder",
+        "description": "Restore a deleted folder and its previous meeting placement. Requires a Moderator or Owner; refuses to overwrite later moves.",
+        "operationId": "restore_folder_api_v1_workspaces__workspace_id__folders__folder_id__restore_post",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Workspace identifier",
+              "examples": [
+                "7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d"
+              ],
+              "title": "Workspace Id"
+            },
+            "description": "Workspace identifier"
+          },
+          {
+            "name": "folder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Folder identifier",
+              "examples": [
+                "e8f7d6c5-b4a3-4291-8f7e-6d5c4b3a2918"
+              ],
+              "title": "Folder Id"
+            },
+            "description": "Folder identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Content conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/meetings/{meeting_id}/transcript/revisions": {
+      "get": {
+        "tags": [
+          "meetings"
+        ],
+        "summary": "List Revisions",
+        "description": "List transcript revisions newest first for an accessible meeting, including original provenance and current revision status.",
+        "operationId": "list_revisions_api_v1_meetings__meeting_id__transcript_revisions_get",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meeting_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Meeting identifier",
+              "examples": [
+                "5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9"
+              ],
+              "title": "Meeting Id"
+            },
+            "description": "Meeting identifier"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of items to return",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Maximum number of items to return"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque `next_cursor` from the previous page; omit for the first page",
+              "title": "Cursor"
+            },
+            "description": "Opaque `next_cursor` from the previous page; omit for the first page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_RevisionRead_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Content conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "meetings"
+        ],
+        "summary": "Edit Transcript",
+        "description": "Create a transcript revision with text corrections or speaker renames. Requires meeting access and the current base revision; preserves the original transcript.",
+        "operationId": "edit_transcript_api_v1_meetings__meeting_id__transcript_revisions_post",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meeting_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Meeting identifier",
+              "examples": [
+                "5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9"
+              ],
+              "title": "Meeting Id"
+            },
+            "description": "Meeting identifier"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevisionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Content conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/glossary-terms": {
+      "get": {
+        "tags": [
+          "meetings"
+        ],
+        "summary": "Glossary",
+        "description": "List the workspace glossary for a signed-in workspace member.",
+        "operationId": "glossary_api_v1_workspaces__workspace_id__glossary_terms_get",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Workspace identifier",
+              "examples": [
+                "7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d"
+              ],
+              "title": "Workspace Id"
+            },
+            "description": "Workspace identifier"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of items to return",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Maximum number of items to return"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque `next_cursor` from the previous page; omit for the first page",
+              "title": "Cursor"
+            },
+            "description": "Opaque `next_cursor` from the previous page; omit for the first page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_TermRead_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Content conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "meetings"
+        ],
+        "summary": "Add Term",
+        "description": "Add a workspace glossary term as a member. Terms are unique ignoring case; any source meeting must be accessible.",
+        "operationId": "add_term_api_v1_workspaces__workspace_id__glossary_terms_post",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Workspace identifier",
+              "examples": [
+                "7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d"
+              ],
+              "title": "Workspace Id"
+            },
+            "description": "Workspace identifier"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Content conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/glossary-terms/{term_id}": {
+      "patch": {
+        "tags": [
+          "meetings"
+        ],
+        "summary": "Update Term",
+        "description": "Update a glossary term as its author, a Moderator or the Owner. A changed term must remain unique ignoring case.",
+        "operationId": "update_term_api_v1_workspaces__workspace_id__glossary_terms__term_id__patch",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Workspace identifier",
+              "examples": [
+                "7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d"
+              ],
+              "title": "Workspace Id"
+            },
+            "description": "Workspace identifier"
+          },
+          {
+            "name": "term_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Glossary term identifier",
+              "title": "Term Id"
+            },
+            "description": "Glossary term identifier"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Content conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "meetings"
+        ],
+        "summary": "Delete Term",
+        "description": "Remove a glossary term as its author, a Moderator or the Owner.",
+        "operationId": "delete_term_api_v1_workspaces__workspace_id__glossary_terms__term_id__delete",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Workspace identifier",
+              "examples": [
+                "7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d"
+              ],
+              "title": "Workspace Id"
+            },
+            "description": "Workspace identifier"
+          },
+          {
+            "name": "term_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Glossary term identifier",
+              "title": "Term Id"
+            },
+            "description": "Glossary term identifier"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Content conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/meetings/{meeting_id}/access": {
+      "get": {
+        "tags": [
+          "access"
+        ],
+        "summary": "Read Access",
+        "description": "Read the access mode and selected members of a meeting the caller can read.",
+        "operationId": "read_access_api_v1_meetings__meeting_id__access_get",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meeting_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Meeting identifier",
+              "examples": [
+                "5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9"
+              ],
+              "title": "Meeting Id"
+            },
+            "description": "Meeting identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Access or share conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Recipient access was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Notifications integration unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "access"
+        ],
+        "summary": "Replace Access",
+        "description": "Replace meeting access as a Moderator or Owner who can read it. Restricted access requires selected workspace members; unselected members lose access immediately.",
+        "operationId": "replace_access_api_v1_meetings__meeting_id__access_put",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meeting_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Meeting identifier",
+              "examples": [
+                "5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9"
+              ],
+              "title": "Meeting Id"
+            },
+            "description": "Meeting identifier"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccessInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Access or share conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Recipient access was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Notifications integration unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/meetings/{meeting_id}/shares": {
+      "get": {
+        "tags": [
+          "access"
+        ],
+        "summary": "List Shares",
+        "description": "List shares of a meeting the caller can read, newest first.",
+        "operationId": "list_shares_api_v1_meetings__meeting_id__shares_get",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meeting_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Meeting identifier",
+              "examples": [
+                "5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9"
+              ],
+              "title": "Meeting Id"
+            },
+            "description": "Meeting identifier"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of items to return",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Maximum number of items to return"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque `next_cursor` from the previous page; omit for the first page",
+              "title": "Cursor"
+            },
+            "description": "Opaque `next_cursor` from the previous page; omit for the first page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ShareRead_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Access or share conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Recipient access was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Notifications integration unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "access"
+        ],
+        "summary": "Create Share",
+        "description": "Create a read-only share of an accessible meeting. Disclose its token once in the link fragment; a share creator must approve the recipient account.",
+        "operationId": "create_share_api_v1_meetings__meeting_id__shares_post",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meeting_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Meeting identifier",
+              "examples": [
+                "5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9"
+              ],
+              "title": "Meeting Id"
+            },
+            "description": "Meeting identifier"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareCreated"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Access or share conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Recipient access was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Notifications integration unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/me/shares": {
+      "get": {
+        "tags": [
+          "access"
+        ],
+        "summary": "Recipient Shares",
+        "description": "List active shares bound to the signed-in account, newest first.",
+        "operationId": "recipient_shares_api_v1_users_me_shares_get",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of items to return",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Maximum number of items to return"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque `next_cursor` from the previous page; omit for the first page",
+              "title": "Cursor"
+            },
+            "description": "Opaque `next_cursor` from the previous page; omit for the first page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ShareRead_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Access or share conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Recipient access was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Notifications integration unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shares/{share_id}": {
+      "delete": {
+        "tags": [
+          "access"
+        ],
+        "summary": "Revoke Share",
+        "description": "Revoke a share as its creator. Its bound recipient can no longer read the meeting through it.",
+        "operationId": "revoke_share_api_v1_shares__share_id__delete",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "External share identifier",
+              "title": "Share Id"
+            },
+            "description": "External share identifier"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Access or share conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Recipient access was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Notifications integration unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shares/{share_id}/access-requests": {
+      "post": {
+        "tags": [
+          "access"
+        ],
+        "summary": "Request Access",
+        "description": "Request access with a token from the share link fragment. Requires an existing account and reserves the creator notification in the same transaction.",
+        "operationId": "request_access_api_v1_shares__share_id__access_requests_post",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "External share identifier",
+              "title": "Share Id"
+            },
+            "description": "External share identifier"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Access or share conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Recipient access was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Notifications integration unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "access"
+        ],
+        "summary": "List Requests",
+        "description": "List access requests for a share as its creator, newest first.",
+        "operationId": "list_requests_api_v1_shares__share_id__access_requests_get",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "External share identifier",
+              "title": "Share Id"
+            },
+            "description": "External share identifier"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of items to return",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Maximum number of items to return"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque `next_cursor` from the previous page; omit for the first page",
+              "title": "Cursor"
+            },
+            "description": "Opaque `next_cursor` from the previous page; omit for the first page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_RequestRead_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Access or share conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Recipient access was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Notifications integration unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/share-access-requests/{request_id}/approve": {
+      "post": {
+        "tags": [
+          "access"
+        ],
+        "summary": "Approve Request",
+        "description": "Approve a pending request as the share creator, binding the share to that one account. Refuses revoked or already bound shares.",
+        "operationId": "approve_request_api_v1_share_access_requests__request_id__approve_post",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Share access request identifier",
+              "title": "Request Id"
+            },
+            "description": "Share access request identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Access or share conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Recipient access was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Notifications integration unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/share-access-requests/{request_id}/decline": {
+      "post": {
+        "tags": [
+          "access"
+        ],
+        "summary": "Decline Request",
+        "description": "Decline a pending access request as the share creator.",
+        "operationId": "decline_request_api_v1_share_access_requests__request_id__decline_post",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Share access request identifier",
+              "title": "Request Id"
+            },
+            "description": "Share access request identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Access or share conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Recipient access was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Notifications integration unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shares/{share_id}/transcript": {
+      "get": {
+        "tags": [
+          "access"
+        ],
+        "summary": "Shared Transcript",
+        "description": "Read a transcript through an active share bound to the caller, applying speaker-name redaction where configured. Export and onward sharing are not permitted.",
+        "operationId": "shared_transcript_api_v1_shares__share_id__transcript_get",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "External share identifier",
+              "title": "Share Id"
+            },
+            "description": "External share identifier"
+          },
+          {
+            "name": "revision_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Revision to read; current when omitted",
+              "title": "Revision Id"
+            },
+            "description": "Revision to read; current when omitted"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Access or share conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Recipient access was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Notifications integration unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shares/{share_id}/notes": {
+      "get": {
+        "tags": [
+          "access"
+        ],
+        "summary": "Shared Notes",
+        "description": "List notes through an active share bound to the caller, applying configured speaker-name redaction.",
+        "operationId": "shared_notes_api_v1_shares__share_id__notes_get",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "External share identifier",
+              "title": "Share Id"
+            },
+            "description": "External share identifier"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of items to return",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Maximum number of items to return"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque `next_cursor` from the previous page; omit for the first page",
+              "title": "Cursor"
+            },
+            "description": "Opaque `next_cursor` from the previous page; omit for the first page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_NoteRead_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Access or share conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Recipient access was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Notifications integration unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/meetings/{meeting_id}/transcript/export": {
+      "get": {
+        "tags": [
+          "export"
+        ],
+        "summary": "Download a transcript",
+        "description": "Download the current or immutable original transcript as UTF-8 Markdown or WebVTT. Requires meeting membership/access; share grants and administrator status confer no export rights. Link headers and the file identify the original. VTT is always timed.",
+        "operationId": "export_transcript_api_v1_meetings__meeting_id__transcript_export_get",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meeting_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Meeting identifier",
+              "examples": [
+                "5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9"
+              ],
+              "title": "Meeting Id"
+            },
+            "description": "Meeting identifier"
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ExportFormat",
+              "description": "Attachment format",
+              "default": "markdown"
+            },
+            "description": "Attachment format"
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ExportVersion",
+              "description": "Current revision or immutable original",
+              "default": "current"
+            },
+            "description": "Current revision or immutable original"
+          },
+          {
+            "name": "timestamps",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include timestamps in Markdown; VTT is always timed",
+              "default": true,
+              "title": "Timestamps"
+            },
+            "description": "Include timestamps in Markdown; VTT is always timed"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/vtt": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "headers": {
+              "Link": {
+                "description": "Authenticated original view and download URLs",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Content unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid export options",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/meetings/{meeting_id}/notes/export": {
+      "get": {
+        "tags": [
+          "export"
+        ],
+        "summary": "Download current notes",
+        "description": "Download the latest saved notes and context provenance as UTF-8 Markdown. Requires meeting access, not an external share. No notes returns 409 NO_NOTES.",
+        "operationId": "export_notes_api_v1_meetings__meeting_id__notes_export_get",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meeting_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Meeting identifier",
+              "examples": [
+                "5d1f0c2a-9b8e-4f7d-a6c5-b4d3e2f1a0b9"
+              ],
+              "title": "Meeting Id"
+            },
+            "description": "Meeting identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Content unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid export options",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/captures/destinations": {
+      "get": {
+        "tags": [
+          "capture"
+        ],
+        "summary": "Where a recording can go",
+        "description": "The caller's workspaces, oldest first, each with the folders a recording can be filed in. The folder is the notes context, so it is chosen before recording.",
+        "operationId": "list_destinations_api_v1_captures_destinations_get",
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "extensionToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of items to return",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Maximum number of items to return"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque `next_cursor` from the previous page; omit for the first page",
+              "title": "Cursor"
+            },
+            "description": "Opaque `next_cursor` from the previous page; omit for the first page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of workspaces with their folders",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_DestinationRead_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
             "content": {
               "application/json": {
                 "schema": {
@@ -1352,6 +4699,654 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/captures": {
+      "post": {
+        "tags": [
+          "capture"
+        ],
+        "summary": "Start recording",
+        "description": "Opens a capture and creates its meeting in state `recording`. `consent_confirmed` must be `true`, and the confirmation is stored with the meeting. Without a destination the meeting goes to the default folder of the caller's personal workspace.",
+        "operationId": "start_capture_api_v1_captures_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptureCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The open capture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`NOT_FOUND`: no such workspace, or the caller is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each; `consent_confirmed` must be `true`, and `folder_id` must be a folder of the workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "extensionToken": []
+          }
+        ]
+      }
+    },
+    "/api/v1/captures/{capture_id}": {
+      "get": {
+        "tags": [
+          "capture"
+        ],
+        "summary": "Get a capture",
+        "description": "The capture with the numbers of the chunks already stored, so the extension can resume after a lost connection and upload only what is missing.",
+        "operationId": "get_capture_api_v1_captures__capture_id__get",
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "extensionToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "capture_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Capture identifier",
+              "examples": [
+                "3c2b1a09-8f7e-4d6c-b5a4-93827160f5e4"
+              ],
+              "title": "Capture Id"
+            },
+            "description": "Capture identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The capture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`NOT_FOUND`: no such capture, or another account opened it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/captures/{capture_id}/chunks/{seq}": {
+      "put": {
+        "tags": [
+          "capture"
+        ],
+        "summary": "Upload one chunk",
+        "description": "Multipart with the `audio` part (`audio/*`) and `speaker_events`, a JSON list of the participants seen speaking during the chunk. Uploading the same chunk again changes nothing.",
+        "operationId": "put_chunk_api_v1_captures__capture_id__chunks__seq__put",
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "extensionToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "capture_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Capture identifier",
+              "examples": [
+                "3c2b1a09-8f7e-4d6c-b5a4-93827160f5e4"
+              ],
+              "title": "Capture Id"
+            },
+            "description": "Capture identifier"
+          },
+          {
+            "name": "seq",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000000,
+              "minimum": 0,
+              "description": "Chunk number, from 0 in recording order",
+              "title": "Seq"
+            },
+            "description": "Chunk number, from 0 in recording order"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_put_chunk_api_v1_captures__capture_id__chunks__seq__put"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The chunk was stored",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "200": {
+            "description": "The same chunk was already stored"
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`NOT_FOUND`: no such capture, or another account opened it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`CHUNK_MISMATCH`: different audio is already stored under this number; `CAPTURE_CLOSED`: the capture was completed or finalised",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "`PAYLOAD_TOO_LARGE`: the chunk exceeds `max_chunk_bytes`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "`UNSUPPORTED_MEDIA_TYPE`: the part is not `audio/*`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each; the chunk is empty or `speaker_events` is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/captures/{capture_id}/complete": {
+      "post": {
+        "tags": [
+          "capture"
+        ],
+        "summary": "Finish recording",
+        "description": "Joins chunks `0..last_seq` into the recording and queues the meeting through the same path as an upload. Repeating it with the same `last_seq` returns the same result.",
+        "operationId": "complete_capture_api_v1_captures__capture_id__complete_post",
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "extensionToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "capture_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Capture identifier",
+              "examples": [
+                "3c2b1a09-8f7e-4d6c-b5a4-93827160f5e4"
+              ],
+              "title": "Capture Id"
+            },
+            "description": "Capture identifier"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptureComplete"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The assembled capture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`NOT_FOUND`: no such capture, or another account opened it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`MISSING_CHUNKS`: numbers below `last_seq` never arrived, listed in `details`; `EMPTY_CAPTURE`: no chunk arrived; `CAPTURE_CLOSED`: already finalised with a different `last_seq`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`INTEGRATION_UNAVAILABLE`: storage or the job queue is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/jobs": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List operational jobs",
+        "description": "Administrator-only metadata, newest enqueue time then job ID descending. One as_of timestamp per page. Filters are bound into the cursor. Counts and jobs disappear with their meetings; no content, names or raw failures are exposed.",
+        "operationId": "jobs_api_v1_admin_jobs_get",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of items to return",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Maximum number of items to return"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque `next_cursor` from the previous page; omit for the first page",
+              "title": "Cursor"
+            },
+            "description": "Opaque `next_cursor` from the previous page; omit for the first page"
+          },
+          {
+            "name": "workspace_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by workspace ID",
+              "title": "Workspace Id"
+            },
+            "description": "Filter by workspace ID"
+          },
+          {
+            "name": "job_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/JobType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by transcription or notes",
+              "title": "Job Type"
+            },
+            "description": "Filter by transcription or notes"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/JobStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by logical-job state",
+              "title": "Status"
+            },
+            "description": "Filter by logical-job state"
+          },
+          {
+            "name": "created_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive original enqueue-time lower bound",
+              "title": "Created From"
+            },
+            "description": "Inclusive original enqueue-time lower bound"
+          },
+          {
+            "name": "created_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive original enqueue-time upper bound",
+              "title": "Created To"
+            },
+            "description": "Inclusive original enqueue-time upper bound"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_JobSnapshot_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Browser session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "INSUFFICIENT_ROLE: administrator permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid filter or cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/metrics": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Read operational metrics",
+        "description": "Administrator-only logical-job aggregates read from PostgreSQL. Unknown queue waiting times remain null. No host or model telemetry is required or returned.",
+        "operationId": "metrics_api_v1_admin_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Browser session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "INSUFFICIENT_ROLE: administrator permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid filter or cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
       }
     },
     "/health": {
@@ -1379,6 +5374,29 @@
   },
   "components": {
     "schemas": {
+      "AccessInput": {
+        "properties": {
+          "access_mode": {
+            "$ref": "#/components/schemas/AccessMode",
+            "description": "Workspace or selected-member access"
+          },
+          "member_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Member Ids",
+            "description": "Selected workspace members"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "access_mode"
+        ],
+        "title": "AccessInput"
+      },
       "AccessMode": {
         "type": "string",
         "enum": [
@@ -1386,6 +5404,51 @@
           "restricted"
         ],
         "title": "AccessMode"
+      },
+      "AccessRead": {
+        "properties": {
+          "access_mode": {
+            "$ref": "#/components/schemas/AccessMode",
+            "description": "Meeting visibility"
+          },
+          "member_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Member Ids",
+            "description": "Selected members"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_mode",
+          "member_ids"
+        ],
+        "title": "AccessRead"
+      },
+      "Body_put_chunk_api_v1_captures__capture_id__chunks__seq__put": {
+        "properties": {
+          "audio": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "Audio",
+            "description": "The chunk's audio, `audio/*`"
+          },
+          "speaker_events": {
+            "type": "string",
+            "maxLength": 200000,
+            "title": "Speaker Events",
+            "description": "JSON list of `{at_seconds, speakers}` seen during the chunk",
+            "default": "[]"
+          }
+        },
+        "type": "object",
+        "required": [
+          "audio"
+        ],
+        "title": "Body_put_chunk_api_v1_captures__capture_id__chunks__seq__put"
       },
       "Body_upload_recording_api_v1_workspaces__workspace_id__meetings_post": {
         "properties": {
@@ -1433,6 +5496,116 @@
         ],
         "title": "Body_upload_recording_api_v1_workspaces__workspace_id__meetings_post"
       },
+      "CaptureComplete": {
+        "properties": {
+          "last_seq": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Last Seq",
+            "description": "Number of the last chunk of the recording"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "last_seq"
+        ],
+        "title": "CaptureComplete"
+      },
+      "CaptureCreate": {
+        "properties": {
+          "workspace_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Id",
+            "description": "Destination workspace; the caller's personal workspace when omitted"
+          },
+          "folder_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Id",
+            "description": "Destination folder of that workspace; its default folder when omitted"
+          },
+          "consent_confirmed": {
+            "type": "boolean",
+            "title": "Consent Confirmed",
+            "description": "The recorder confirms the participants agreed to be recorded; must be `true`"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "consent_confirmed"
+        ],
+        "title": "CaptureCreate"
+      },
+      "CaptureRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Capture identifier"
+          },
+          "meeting_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Meeting Id",
+            "description": "The meeting the recording becomes"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CaptureStatus",
+            "description": "`recording` while chunks are accepted; `assembled` once completed"
+          },
+          "received_seqs": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Received Seqs",
+            "description": "Numbers of the chunks stored so far, ascending"
+          },
+          "max_chunk_bytes": {
+            "type": "integer",
+            "title": "Max Chunk Bytes",
+            "description": "Largest chunk the server accepts, in bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "meeting_id",
+          "status",
+          "received_seqs",
+          "max_chunk_bytes"
+        ],
+        "title": "CaptureRead"
+      },
+      "CaptureStatus": {
+        "type": "string",
+        "enum": [
+          "recording",
+          "idle",
+          "assembled",
+          "abandoned"
+        ],
+        "title": "CaptureStatus"
+      },
       "ContextMeetingRead": {
         "properties": {
           "meeting_id": {
@@ -1460,6 +5633,42 @@
           "name"
         ],
         "title": "ContextMeetingRead"
+      },
+      "DestinationRead": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id",
+            "description": "Workspace identifier"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Workspace name"
+          },
+          "is_personal": {
+            "type": "boolean",
+            "title": "Is Personal",
+            "description": "The caller's personal workspace, used when no destination is chosen"
+          },
+          "folders": {
+            "items": {
+              "$ref": "#/components/schemas/FolderOption"
+            },
+            "type": "array",
+            "title": "Folders",
+            "description": "Folders a recording can be filed in"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "name",
+          "is_personal",
+          "folders"
+        ],
+        "title": "DestinationRead"
       },
       "ErrorBody": {
         "properties": {
@@ -1503,6 +5712,21 @@
       "ErrorCode": {
         "type": "string",
         "enum": [
+          "NO_NOTES",
+          "INTEGRATION_UNAVAILABLE",
+          "TRANSCRIPT_EXISTS",
+          "ALREADY_PROCESSED",
+          "FOLDER_RECOVERY_CONFLICT",
+          "DEFAULT_FOLDER",
+          "FOLDER_EXISTS",
+          "TERM_EXISTS",
+          "STALE_REVISION",
+          "LINK_INVALID",
+          "ACCESS_REQUEST_EXISTS",
+          "ALREADY_HAS_ACCESS",
+          "ACCESS_REQUEST_NOT_PENDING",
+          "SHARE_ALREADY_BOUND",
+          "SHARE_REVOKED",
           "MALFORMED_REQUEST",
           "VALIDATION_ERROR",
           "UNAUTHENTICATED",
@@ -1513,7 +5737,13 @@
           "PERSONAL_WORKSPACE",
           "NOT_TRANSCRIBED",
           "NOTES_IN_PROGRESS",
+          "RECORDING_NOT_READY",
+          "RECORDING_DELETED",
           "REGENERATION_LIMIT",
+          "CHUNK_MISMATCH",
+          "CAPTURE_CLOSED",
+          "MISSING_CHUNKS",
+          "EMPTY_CAPTURE",
           "PAYLOAD_TOO_LARGE",
           "UNSUPPORTED_MEDIA_TYPE",
           "RATE_LIMITED",
@@ -1549,9 +5779,9 @@
           },
           "provided_value": {
             "$ref": "#/components/schemas/JsonValue",
-            "description": "The value the client sent, when it is safe to echo back",
+            "description": "The value the client sent, for a query or path parameter only; body fields, headers and cookies are never echoed back",
             "examples": [
-              "alice@"
+              "500"
             ]
           }
         },
@@ -1575,6 +5805,112 @@
         "title": "ErrorResponse",
         "description": "The single error envelope returned for every 4xx and 5xx response."
       },
+      "ExportFormat": {
+        "type": "string",
+        "enum": [
+          "markdown",
+          "vtt"
+        ],
+        "title": "ExportFormat"
+      },
+      "ExportVersion": {
+        "type": "string",
+        "enum": [
+          "current",
+          "original"
+        ],
+        "title": "ExportVersion"
+      },
+      "FolderInput": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "description": "Folder name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "FolderInput"
+      },
+      "FolderOption": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Folder identifier"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Folder name"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "description": "The workspace's default folder"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "is_default"
+        ],
+        "title": "FolderOption"
+      },
+      "FolderRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Folder identifier"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Folder name"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "description": "Whether the folder receives unfiled meetings"
+          },
+          "meeting_count": {
+            "type": "integer",
+            "title": "Meeting Count",
+            "description": "Number of meetings the caller can read"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "is_default",
+          "meeting_count"
+        ],
+        "title": "FolderRead"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
       "Health": {
         "properties": {
           "status": {
@@ -1592,13 +5928,245 @@
         ],
         "title": "Health"
       },
-      "JobKind": {
-        "type": "string",
-        "enum": [
-          "transcription",
-          "notes"
+      "JobCounts": {
+        "properties": {
+          "job_type": {
+            "$ref": "#/components/schemas/JobType",
+            "description": "Job type"
+          },
+          "queued": {
+            "type": "integer",
+            "title": "Queued",
+            "description": "Distinct retained queued jobs"
+          },
+          "running": {
+            "type": "integer",
+            "title": "Running",
+            "description": "Distinct retained running jobs"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed",
+            "description": "Distinct retained failed jobs, not lifetime failures"
+          },
+          "unpublished": {
+            "type": "integer",
+            "title": "Unpublished",
+            "description": "Queued jobs not yet published"
+          },
+          "oldest_queue_wait_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Queue Wait Seconds",
+            "description": "Oldest known current queue wait; null when none is known"
+          },
+          "unknown_queue_waits": {
+            "type": "integer",
+            "title": "Unknown Queue Waits",
+            "description": "Queued historical jobs whose current queue-entry time is unknown"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_type",
+          "queued",
+          "running",
+          "failed",
+          "unpublished",
+          "oldest_queue_wait_seconds",
+          "unknown_queue_waits"
         ],
-        "title": "JobKind"
+        "title": "JobCounts"
+      },
+      "JobSnapshot": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id",
+            "description": "Logical job identifier; grants no content access"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id",
+            "description": "Workspace identifier without its potentially sensitive name"
+          },
+          "job_type": {
+            "$ref": "#/components/schemas/JobType",
+            "description": "Transcription or notes"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus",
+            "description": "Persisted logical-job state"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "Original enqueue time in UTC"
+          },
+          "queued_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queued At",
+            "description": "Entry into current queued period; null for unknown historical retries"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At",
+            "description": "Current or final attempt start, null before start"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At",
+            "description": "Final completion time, null until terminal"
+          },
+          "attempts_started": {
+            "type": "integer",
+            "title": "Attempts Started",
+            "description": "Number of accepted attempt starts, including the first"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date-time",
+            "title": "As Of",
+            "description": "Common observation time used for duration calculations"
+          },
+          "queue_wait_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue Wait Seconds",
+            "description": "Current queue wait; null outside queued state or if unknown"
+          },
+          "running_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Running Seconds",
+            "description": "Current attempt running time; null outside running state"
+          },
+          "last_queue_wait_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Queue Wait Seconds",
+            "description": "Wait preceding the started attempt, when known"
+          },
+          "last_attempt_duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt Duration Seconds",
+            "description": "Final attempt duration for a terminal started job"
+          },
+          "total_elapsed_seconds": {
+            "type": "number",
+            "title": "Total Elapsed Seconds",
+            "description": "Logical-job age including all waits/retries, frozen at completion"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code",
+            "description": "Allowlisted failure code; no raw exception or provider text"
+          },
+          "failure_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Description",
+            "description": "Fixed safe explanation of the failure"
+          },
+          "timing_anomaly": {
+            "type": "boolean",
+            "title": "Timing Anomaly",
+            "description": "A clock-skew duration was bounded at zero"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "workspace_id",
+          "job_type",
+          "status",
+          "created_at",
+          "queued_at",
+          "started_at",
+          "finished_at",
+          "attempts_started",
+          "as_of",
+          "queue_wait_seconds",
+          "running_seconds",
+          "last_queue_wait_seconds",
+          "last_attempt_duration_seconds",
+          "total_elapsed_seconds",
+          "failure_code",
+          "failure_description",
+          "timing_anomaly"
+        ],
+        "title": "JobSnapshot"
       },
       "JobStatus": {
         "type": "string",
@@ -1610,7 +6178,154 @@
         ],
         "title": "JobStatus"
       },
+      "JobType": {
+        "type": "string",
+        "enum": [
+          "transcription",
+          "notes"
+        ],
+        "title": "JobType"
+      },
       "JsonValue": {},
+      "McpKeyCreate": {
+        "properties": {
+          "expires_in_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 365.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In Days",
+            "description": "Days until expiry; omit for a key that does not expire"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "McpKeyCreate"
+      },
+      "McpKeyCreated": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "MCP key identifier"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "When the key was created"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At",
+            "description": "When the key expires, or null"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At",
+            "description": "When the key was revoked, or null"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "description": "Whether the key can authenticate now"
+          },
+          "secret": {
+            "type": "string",
+            "title": "Secret",
+            "description": "Bearer token shown only in this response; store it before closing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "expires_at",
+          "revoked_at",
+          "is_active",
+          "secret"
+        ],
+        "title": "McpKeyCreated"
+      },
+      "McpKeyRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "MCP key identifier"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "When the key was created"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At",
+            "description": "When the key expires, or null"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At",
+            "description": "When the key was revoked, or null"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "description": "Whether the key can authenticate now"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "expires_at",
+          "revoked_at",
+          "is_active"
+        ],
+        "title": "McpKeyRead"
+      },
       "MeetingRead": {
         "properties": {
           "id": {
@@ -1892,6 +6607,37 @@
         "type": "object",
         "title": "MeetingUpdate"
       },
+      "MetricsRead": {
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At",
+            "description": "UTC assembly time for the job counts"
+          },
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status",
+            "description": "Job counts were read successfully"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobCounts"
+            },
+            "type": "array",
+            "title": "Jobs",
+            "description": "Logical-job aggregates from PostgreSQL"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generated_at",
+          "status",
+          "jobs"
+        ],
+        "title": "MetricsRead"
+      },
       "NoteRead": {
         "properties": {
           "id": {
@@ -1968,30 +6714,6 @@
         ],
         "title": "NoteRead"
       },
-      "NotesRequest": {
-        "properties": {
-          "preset": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Preset"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Notes preset; defaults to the workspace's. Prompts are fixed and never shown"
-          },
-          "use_builtin_model": {
-            "type": "boolean",
-            "title": "Use Builtin Model",
-            "description": "Generate with the built-in model even if the workspace configured a provider, e.g. after that provider failed",
-            "default": false
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "NotesRequest"
-      },
       "PageInfo": {
         "properties": {
           "limit": {
@@ -2033,6 +6755,90 @@
           "has_more"
         ],
         "title": "PageInfo"
+      },
+      "Page_DestinationRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DestinationRead"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Items of this page, in the documented order"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "pagination"
+        ],
+        "title": "Page[DestinationRead]"
+      },
+      "Page_FolderRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FolderRead"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Items of this page, in the documented order"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "pagination"
+        ],
+        "title": "Page[FolderRead]"
+      },
+      "Page_JobSnapshot_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JobSnapshot"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Items of this page, in the documented order"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "pagination"
+        ],
+        "title": "Page[JobSnapshot]"
+      },
+      "Page_McpKeyRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/McpKeyRead"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Items of this page, in the documented order"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "pagination"
+        ],
+        "title": "Page[McpKeyRead]"
       },
       "Page_MeetingSummary_": {
         "properties": {
@@ -2076,6 +6882,90 @@
         ],
         "title": "Page[NoteRead]"
       },
+      "Page_RequestRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RequestRead"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Items of this page, in the documented order"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "pagination"
+        ],
+        "title": "Page[RequestRead]"
+      },
+      "Page_RevisionRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RevisionRead"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Items of this page, in the documented order"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "pagination"
+        ],
+        "title": "Page[RevisionRead]"
+      },
+      "Page_ShareRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ShareRead"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Items of this page, in the documented order"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "pagination"
+        ],
+        "title": "Page[ShareRead]"
+      },
+      "Page_TermRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TermRead"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Items of this page, in the documented order"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "pagination"
+        ],
+        "title": "Page[TermRead]"
+      },
       "Page_WorkspaceSummary_": {
         "properties": {
           "items": {
@@ -2097,6 +6987,27 @@
         ],
         "title": "Page[WorkspaceSummary]"
       },
+      "PlaybackLink": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Authorized playback link, valid for five minutes."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At",
+            "description": "When the playback link expires."
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "title": "PlaybackLink"
+      },
       "Preset": {
         "type": "string",
         "enum": [
@@ -2105,69 +7016,6 @@
           "interview"
         ],
         "title": "Preset"
-      },
-      "ProcessingJobRead": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id",
-            "description": "Job identifier"
-          },
-          "meeting_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Meeting Id",
-            "description": "Meeting being processed"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/JobKind",
-            "description": "Pipeline stage"
-          },
-          "status": {
-            "$ref": "#/components/schemas/JobStatus",
-            "description": "Job state"
-          },
-          "preset": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Preset"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Notes preset, for notes jobs"
-          },
-          "provider": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Provider"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Notes provider, for notes jobs"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At",
-            "description": "When the job was queued"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "meeting_id",
-          "kind",
-          "status",
-          "preset",
-          "provider",
-          "created_at"
-        ],
-        "title": "ProcessingJobRead"
       },
       "ProcessingState": {
         "type": "string",
@@ -2197,6 +7045,95 @@
           "partial"
         ],
         "title": "RecordingStatus"
+      },
+      "RequestInput": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Token",
+            "description": "Token from the link fragment"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "title": "RequestInput"
+      },
+      "RequestRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Access request identifier"
+          },
+          "requester_user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Requester User Id",
+            "description": "Requesting account"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Requester's name, shown only to them and the share creator"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email",
+            "description": "Requester's email, shown only to them and the share creator"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "pending, approved or declined"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "requester_user_id",
+          "name",
+          "email",
+          "status"
+        ],
+        "title": "RequestRead"
+      },
+      "RevisionInput": {
+        "properties": {
+          "base_revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Base Revision Id",
+            "description": "Current revision the edit is based on"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/SegmentCorrection"
+            },
+            "type": "array",
+            "title": "Segments",
+            "description": "Text corrections"
+          },
+          "speakers": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerRename"
+            },
+            "type": "array",
+            "title": "Speakers",
+            "description": "Speaker label changes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "base_revision_id"
+        ],
+        "title": "RevisionInput"
       },
       "RevisionRead": {
         "properties": {
@@ -2261,6 +7198,28 @@
           "owner"
         ],
         "title": "Role"
+      },
+      "SegmentCorrection": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Segment of the base revision"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "Corrected text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "text"
+        ],
+        "title": "SegmentCorrection"
       },
       "SegmentRead": {
         "properties": {
@@ -2361,6 +7320,123 @@
         ],
         "title": "SessionRead"
       },
+      "ShareCreated": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Share identifier"
+          },
+          "redact_speaker_names": {
+            "type": "boolean",
+            "title": "Redact Speaker Names",
+            "description": "Whether speaker names are hidden"
+          },
+          "recipient_user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipient User Id",
+            "description": "Approved recipient"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At",
+            "description": "When access ended"
+          },
+          "link": {
+            "type": "string",
+            "title": "Link",
+            "description": "Share link with one-time token disclosure in its fragment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "redact_speaker_names",
+          "recipient_user_id",
+          "revoked_at",
+          "link"
+        ],
+        "title": "ShareCreated"
+      },
+      "ShareInput": {
+        "properties": {
+          "redact_speaker_names": {
+            "type": "boolean",
+            "title": "Redact Speaker Names",
+            "description": "Replace speaker names",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ShareInput"
+      },
+      "ShareRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Share identifier"
+          },
+          "redact_speaker_names": {
+            "type": "boolean",
+            "title": "Redact Speaker Names",
+            "description": "Whether speaker names are hidden"
+          },
+          "recipient_user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipient User Id",
+            "description": "Approved recipient"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At",
+            "description": "When access ended"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "redact_speaker_names",
+          "recipient_user_id",
+          "revoked_at"
+        ],
+        "title": "ShareRead"
+      },
       "SignIn": {
         "properties": {
           "email": {
@@ -2434,6 +7510,177 @@
           "is_unnamed"
         ],
         "title": "SpeakerRead"
+      },
+      "SpeakerRename": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Speaker of the base revision"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Display Name",
+            "description": "Corrected label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "display_name"
+        ],
+        "title": "SpeakerRename"
+      },
+      "TermInput": {
+        "properties": {
+          "term": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Term",
+            "description": "Glossary term"
+          },
+          "preferred_form": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Preferred Form",
+            "description": "Preferred spelling"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Description",
+            "description": "Explanation",
+            "default": ""
+          },
+          "source_meeting_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Meeting Id",
+            "description": "Accessible meeting the term came from"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "term",
+          "preferred_form"
+        ],
+        "title": "TermInput"
+      },
+      "TermPatch": {
+        "properties": {
+          "term": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Term",
+            "description": "New term"
+          },
+          "preferred_form": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Form",
+            "description": "New spelling"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "New explanation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TermPatch"
+      },
+      "TermRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Term identifier"
+          },
+          "term": {
+            "type": "string",
+            "title": "Term",
+            "description": "Term"
+          },
+          "preferred_form": {
+            "type": "string",
+            "title": "Preferred Form",
+            "description": "Preferred spelling"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "Explanation"
+          },
+          "source_meeting_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Meeting Id",
+            "description": "Source meeting, if still present"
+          },
+          "created_by_user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Created By User Id",
+            "description": "Author of the term"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "term",
+          "preferred_form",
+          "description",
+          "source_meeting_id",
+          "created_by_user_id"
+        ],
+        "title": "TermRead"
       },
       "TranscriptRead": {
         "properties": {
@@ -2557,6 +7804,46 @@
           "created_at"
         ],
         "title": "UserRead"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
       },
       "WorkspaceCreate": {
         "properties": {
@@ -2775,6 +8062,22 @@
     {
       "name": "notes",
       "description": "Generated notes and their regeneration"
+    },
+    {
+      "name": "access",
+      "description": "Restrictions and external shares"
+    },
+    {
+      "name": "export",
+      "description": "Authorized transcript and notes downloads"
+    },
+    {
+      "name": "capture",
+      "description": "Recording from the Chrome extension in chunks"
+    },
+    {
+      "name": "admin",
+      "description": "Operational job metadata without meeting content"
     },
     {
       "name": "meta",

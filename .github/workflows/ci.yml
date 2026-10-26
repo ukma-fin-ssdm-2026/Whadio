@@ -15,7 +15,7 @@ concurrency:
 jobs:
   verify:
     name: Checks, tests and API contract
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     env:
       # Pushes to main check out main itself; the hook exists to stop local commits there.
       SKIP: no-commit-to-branch
@@ -27,7 +27,7 @@ jobs:
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
 
       - name: Install dependencies
         run: uv sync --locked --extra asr --extra cpu
@@ -38,17 +38,61 @@ jobs:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml', '.python-version') }}
 
+      - name: Install Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install the frontend dependencies
+        run: npm ci --prefix frontend --ignore-scripts
+
       - name: Run the commit-hook checks on all files
         run: uv run --frozen task check
 
-      - name: Start RabbitMQ and SeaweedFS
+      - name: Start the services and migrate the test database
+        env:
+          WHADIO_DB_HOST: 127.0.0.1
         run: |
           cp .env.example .env
-          docker compose up --detach --wait rabbitmq seaweedfs
+          uv run --frozen task infra:up
+          uv run --frozen task db:upgrade
+          uv run --frozen alembic check
 
       # CI has no downloaded ML models; the tests that need them run locally.
-      - name: Run the whole test suite
-        run: uv run --frozen task test -- -m "not models"
+      - name: Run the whole test suite with the coverage gate
+        id: tests
+        env:
+          WHADIO_TEST_DATABASE_URL: postgresql+psycopg://whadio_app:whadio-dev-app@127.0.0.1:5432/whadio
+        run: >-
+          uv run --frozen task test:cov --
+          --junitxml=reports/junit.xml
+          --cov-report=term-missing:skip-covered
+          --cov-report=html
+
+      - name: Summarise coverage and failed tests
+        if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
+        run: |
+          {
+            echo "### Coverage (line and branch)"
+            echo
+            uv run --frozen coverage report --format=markdown --fail-under=0 ||
+              echo "Coverage report unavailable."
+            echo
+            uv run --frozen python -I .github/scripts/junit_failures.py reports/junit.xml ||
+              printf '### Failed tests\n\nTest report unavailable.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the test and coverage reports
+        if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-reports
+          path: |
+            reports/
+            htmlcov-ci/
+          retention-days: 14
 
       - name: Audit dependencies and the git history
         run: uv run --frozen task audit
@@ -75,7 +119,7 @@ jobs:
     concurrency:
       group: pages
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - name: Deploy to GitHub Pages
         id: deployment

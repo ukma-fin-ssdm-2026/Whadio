@@ -13,6 +13,7 @@ from .errors import NotesError
 from .presets import FALLBACK_LANGUAGE, PRESETS, PresetSpec
 
 _LANGUAGE_NAMES: Final[Mapping[str, str]] = MappingProxyType({"uk": "Ukrainian", "en": "English"})
+_SEPARATOR: Final = "\n\n"
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,7 +30,10 @@ class ContextBudget:
     chars_per_token: float
 
     def tokens(self, text: str) -> int:
-        return math.ceil(len(text) / self.chars_per_token)
+        return self.tokens_for(len(text))
+
+    def tokens_for(self, chars: int) -> int:
+        return math.ceil(chars / self.chars_per_token)
 
 
 def render_transcript(transcript: Transcript) -> str:
@@ -51,18 +55,31 @@ class PromptBuilder:
         self._budget: ContextBudget = budget
 
     def build(self, request: NotesRequested) -> Prompt:
+        return self.build_from(request, render_transcript(request.transcript))
+
+    def build_from(
+        self, request: NotesRequested, meeting_content: str, system_note: str = ""
+    ) -> Prompt:
+        """Build the notes prompt around `meeting_content`, which goes into <meeting> as markup.
+
+        The caller escapes any text in `meeting_content`. `system_note` follows the preset's system
+        prompt, and both count against the budget.
+        """
         language = request.transcript.language
         spec = PRESETS[request.preset]
-        system = _system_prompt(request.preset, spec, language)
+        system = _SEPARATOR.join(
+            part for part in (_system_prompt(request.preset, spec, language), system_note) if part
+        )
         glossary = _glossary(request.glossary)
-        meeting = _meeting(request)
+        meeting = _meeting(request, meeting_content)
         task = "Write the notes for the meeting in <meeting>."
-        used = self._budget.tokens(system) + self._budget.tokens(glossary + meeting + task)
-        if used > self._budget.max_input_tokens:
+        fixed = _SEPARATOR.join(part for part in (glossary, meeting, task) if part)
+        tokens_left = self._budget.max_input_tokens - self._budget.tokens(system)
+        if self._budget.tokens(fixed) > tokens_left:
             raise NotesError(NotesFailure.TRANSCRIPT_TOO_LONG)
-        context = self._fitting_context(request.context, self._budget.max_input_tokens - used)
+        context = self._fitting_context(request.context, len(fixed), tokens_left)
         rendered = [_context_meeting(meeting) for meeting in context]
-        user = "\n\n".join(part for part in (glossary, *rendered, meeting, task) if part)
+        user = _SEPARATOR.join(part for part in (glossary, *rendered, meeting, task) if part)
         return Prompt(
             system=system,
             user=user,
@@ -71,14 +88,16 @@ class PromptBuilder:
         )
 
     def _fitting_context(
-        self, context: Iterable[ContextMeeting], tokens_left: int
+        self, context: Iterable[ContextMeeting], user_chars: int, tokens_left: int
     ) -> list[ContextMeeting]:
         chosen: list[ContextMeeting] = []
         for meeting in sorted(context, key=lambda m: m.recorded_at, reverse=True):
-            cost = self._budget.tokens(_context_meeting(meeting))
-            if cost <= tokens_left:
+            # The meeting and the task always follow, so each context meeting adds one separator.
+            # Summing per-meeting estimates instead can round under the assembled prompt's.
+            with_meeting = user_chars + len(_context_meeting(meeting)) + len(_SEPARATOR)
+            if self._budget.tokens_for(with_meeting) <= tokens_left:
                 chosen.append(meeting)
-                tokens_left -= cost
+                user_chars = with_meeting
         return sorted(chosen, key=lambda m: m.recorded_at)
 
 
@@ -129,12 +148,12 @@ def _glossary(entries: Iterable[GlossaryEntry]) -> str:
     return "<glossary>\n" + "\n".join(terms) + "\n</glossary>" if terms else ""
 
 
-def _meeting(request: NotesRequested) -> str:
+def _meeting(request: NotesRequested, content: str) -> str:
     name = request.meeting.name
     attribute = f' name="{escape(name)}"' if name is not None else ""
     return (
         f'<meeting{attribute} recorded_at="{_date(request.meeting.recorded_at)}">\n'
-        f"{render_transcript(request.transcript)}\n</meeting>"
+        f"{content}\n</meeting>"
     )
 
 
@@ -144,6 +163,10 @@ def _context_meeting(meeting: ContextMeeting) -> str:
         f'recorded_at="{_date(meeting.recorded_at)}">\n'
         f"{render_transcript(meeting.transcript)}\n</context_meeting>"
     )
+
+
+def notes_language_name(language: str) -> str:
+    return _language_name(_notes_language(language))
 
 
 def _notes_language(language: str) -> str:

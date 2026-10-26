@@ -1,9 +1,12 @@
 import asyncio
 import signal
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Final
 
 import anthropic
+import httpx2
 
 from ...contracts.common import JobKind
 from ...contracts.notes import NotesRequested
@@ -14,8 +17,18 @@ from ..supervision.runners import InlineRunner
 from ..supervision.supervisor import ConsumerOptions, serve_jobs
 from .claude import ClaudeChatModel
 from .handler import NotesHandler, NotesResult, notes_failure
+from .llm import IChatModel
+from .map_reduce import MapReducePrompts
+from .ollama import OllamaChatModel
 from .prompt import ContextBudget, PromptBuilder
-from .settings import NotesSettings, NotesWorkerSettings, load_notes_worker_settings
+from .settings import (
+    AnthropicSettings,
+    NotesSettings,
+    NotesWorkerSettings,
+    OllamaSettings,
+    load_notes_worker_settings,
+)
+from .writer import NotesWriter
 
 NOTES_WORKER: Final = WorkerSpec(
     name="notes-worker",
@@ -27,19 +40,38 @@ NOTES_WORKER: Final = WorkerSpec(
 _CONSUMER_TIMEOUT_MARGIN: Final = timedelta(minutes=5)
 
 
+@asynccontextmanager
+async def open_chat_model(settings: NotesSettings) -> AsyncGenerator[IChatModel]:
+    timeout = settings.job_timeout.total_seconds()
+    match settings.llm:
+        case AnthropicSettings() as llm:
+            async with anthropic.AsyncAnthropic(
+                api_key=llm.api_key.get_secret_value(), timeout=timeout
+            ) as client:
+                yield ClaudeChatModel(
+                    client,
+                    model=llm.model,
+                    max_output_tokens=settings.max_output_tokens,
+                    effort=llm.effort,
+                )
+        case OllamaSettings() as llm:
+            async with httpx2.AsyncClient(base_url=str(llm.base_url), timeout=timeout) as client:
+                yield OllamaChatModel(
+                    client,
+                    model=llm.model,
+                    num_ctx=llm.num_ctx,
+                    num_predict=settings.max_output_tokens,
+                    keep_alive=llm.keep_alive,
+                )
+
+
 def build_runner(
-    settings: NotesSettings, client: anthropic.AsyncAnthropic
+    settings: NotesSettings, model: IChatModel
 ) -> InlineRunner[NotesRequested, NotesResult]:
-    model = ClaudeChatModel(
-        client,
-        model=settings.model,
-        max_output_tokens=settings.max_output_tokens,
-        effort=settings.effort,
-    )
-    builder = PromptBuilder(ContextBudget(settings.max_input_tokens, settings.chars_per_token))
-    return InlineRunner(
-        NOTES_WORKER, NotesHandler(builder, model).handle, timeout=settings.job_timeout
-    )
+    budget = ContextBudget(settings.max_prompt_tokens, settings.chars_per_token)
+    builder = PromptBuilder(budget)
+    writer = NotesWriter(builder, MapReducePrompts(builder, budget), model)
+    return InlineRunner(NOTES_WORKER, NotesHandler(writer).handle, timeout=settings.job_timeout)
 
 
 async def serve(settings: NotesWorkerSettings) -> None:
@@ -53,10 +85,8 @@ async def serve(settings: NotesWorkerSettings) -> None:
         consumer_timeout=notes.job_timeout + _CONSUMER_TIMEOUT_MARGIN,
         shutdown_grace=notes.shutdown_grace,
     )
-    async with anthropic.AsyncAnthropic(
-        api_key=notes.api_key.get_secret_value(), timeout=notes.job_timeout.total_seconds()
-    ) as client:
-        await serve_jobs(NOTES_WORKER, build_runner(notes, client), settings.broker, options, stop)
+    async with open_chat_model(notes) as model:
+        await serve_jobs(NOTES_WORKER, build_runner(notes, model), settings.broker, options, stop)
 
 
 def main() -> None:

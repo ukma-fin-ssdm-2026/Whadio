@@ -1,9 +1,13 @@
 import json
+import math
+from typing import Final
 
 import pytest
 from pydantic import ValidationError
 
 from .common import Segment, Transcript
+
+_EPSILON: Final = math.ulp(0.0)
 
 
 def _segment(start: float, end: float, speaker: str | None = "Speaker 1") -> dict[str, object]:
@@ -42,6 +46,45 @@ def test_segment_accepts_whole_seconds() -> None:
 
     # Assert
     assert segment.end_seconds == pytest.approx(2.0)
+
+
+def test_segment_ending_just_after_it_starts_is_accepted() -> None:
+    # Arrange
+    end = math.nextafter(5.0, math.inf)
+    body = json.dumps(_segment(start=5.0, end=end))
+
+    # Act
+    segment = Segment.model_validate_json(body)
+
+    # Assert
+    assert segment.end_seconds == end
+
+
+@pytest.mark.parametrize(
+    "start",
+    [
+        pytest.param(0.0, id="bva-min"),
+        pytest.param(_EPSILON, id="bva-above-min"),
+    ],
+)
+def test_segment_starting_at_or_after_the_recording_start_is_accepted(start: float) -> None:
+    # Arrange
+    body = json.dumps(_segment(start=start, end=1.0))
+
+    # Act
+    segment = Segment.model_validate_json(body)
+
+    # Assert
+    assert segment.start_seconds == start
+
+
+def test_segment_starting_before_the_recording_start_is_refused() -> None:
+    # Arrange
+    body = json.dumps(_segment(start=-_EPSILON, end=1.0))
+
+    # Act / Assert
+    with pytest.raises(ValidationError, match="greater than or equal to 0"):
+        Segment.model_validate_json(body)
 
 
 def test_segment_with_unknown_field_is_refused() -> None:

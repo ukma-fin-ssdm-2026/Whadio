@@ -5,7 +5,13 @@ tasks:
     desc: Install the dependencies and the git hooks
     cmds:
       - uv sync --locked --extra asr --extra cpu
+      - task: frontend:install
       - uv run --frozen pre-commit install --install-hooks
+
+  frontend:install:
+    desc: Install the frontend's dependencies from its lockfile
+    cmds:
+      - npm ci --prefix frontend
 
   dev:
     desc: Run the API with auto-reload on http://localhost:3000
@@ -13,10 +19,11 @@ tasks:
       - uv run --frozen fastapi dev --entrypoint whadio.api.main:app --port 3000
 
   fix:
-    desc: Apply ruff's fixes and formatting to the whole project
+    desc: Apply ruff's and Biome's fixes and formatting to the whole project
     cmds:
       - uv run --frozen ruff check --fix
       - uv run --frozen ruff format
+      - npm --prefix frontend run check:fix
 
   check:
     desc: Run every commit-hook check on all files, as CI does
@@ -28,16 +35,41 @@ tasks:
     cmds:
       - uv run --frozen pytest {{.CLI_ARGS}}
 
+  test:cov:
+    desc: Run the suite CI runs, with the line and branch coverage gate from pyproject.toml
+    preconditions:
+      - sh: test -n "$WHADIO_TEST_DATABASE_URL"
+        msg: >-
+          Set WHADIO_TEST_DATABASE_URL to the test database (start it with `task infra:up`); see
+          docs/testing/testing.md
+    cmds:
+      # `--cov` takes an optional source, so it goes last or it swallows a forwarded test path.
+      - uv run --frozen pytest -m "not models" {{.CLI_ARGS}} --cov
+
+  mutation:
+    desc: Mutation-test the notes prompt with mutmut and list the mutants the tests let survive
+    cmds:
+      # mutmut keeps a mutant's cached verdict when only the tests change; start from scratch.
+      - rm -rf mutants
+      - uv run --frozen mutmut run
+      - uv run --frozen mutmut results
+
   audit:
     desc: Look for vulnerable dependencies and for secrets anywhere in the git history
     cmds:
       - uv run --frozen pre-commit run uv-audit --hook-stage manual --all-files
+      - npm audit --prefix frontend --audit-level=high
       - uv run --frozen pre-commit run gitleaks-history --hook-stage manual --all-files
 
   openapi:
     desc: Regenerate docs/api/openapi-generated.yaml and .json
     cmds:
       - uv run --frozen whadio openapi
+
+  db:upgrade:
+    desc: Apply the packaged database migrations using the owner role
+    cmds:
+      - uv run --frozen whadio db-upgrade
 
   infra:up:
     desc: Start PostgreSQL, RabbitMQ, SeaweedFS and Mailpit, and wait until they are healthy
@@ -80,3 +112,18 @@ tasks:
     desc: Follow the workers' logs
     cmds:
       - docker compose --profile core --profile gpu logs --follow notes-worker asr-worker
+
+  llm:up:
+    desc: Start Ollama on the GPU and pull the notes model from .env; the first pull takes a while
+    preconditions:
+      - sh: test -f .env
+        msg: Copy .env.example to .env first
+    cmds:
+      - docker compose --profile gpu up --detach --wait llm-runtime
+      # `up --wait` returns once the one-shot pull is running, not when it has finished.
+      - docker compose --profile gpu run --rm llm-pull
+
+  llm:logs:
+    desc: Follow the Ollama runtime's logs
+    cmds:
+      - docker compose --profile gpu logs --follow llm-runtime

@@ -6,9 +6,7 @@ from typing import Final
 from ...contracts.notes import NotesFailed, NotesFailure, NotesReady, NotesRequested
 from ..supervision.jobs import RunFailure
 from .errors import NotesError
-from .llm import IChatModel
-from .output import parse_notes
-from .prompt import PromptBuilder
+from .writer import NotesWriter
 
 logger = logging.getLogger(__name__)
 
@@ -37,19 +35,15 @@ def notes_failure(job: NotesRequested, failure: RunFailure) -> NotesResult:
 class NotesHandler:
     def __init__(
         self,
-        builder: PromptBuilder,
-        model: IChatModel,
+        writer: NotesWriter,
         now: Callable[[], datetime] = _utc_now,
     ) -> None:
-        self._builder: PromptBuilder = builder
-        self._model: IChatModel = model
+        self._writer: NotesWriter = writer
         self._now: Callable[[], datetime] = now
 
     async def handle(self, job: NotesRequested) -> NotesResult:
         try:
-            prompt = self._builder.build(job)
-            completion = await self._model.complete(prompt)
-            notes = parse_notes(completion.text, prompt.headings)
+            written = await self._writer.write(job)
         except NotesError as error:
             logger.warning("Notes for job %s failed: %s", job.job_id, error.reason)
             return NotesFailed(
@@ -59,19 +53,20 @@ class NotesHandler:
                 reason=error.reason,
             )
         logger.info(
-            "Notes for job %s written by %s with %d context meetings",
+            "Notes for job %s written by %s from %d transcript parts with %d context meetings",
             job.job_id,
-            completion.model_name,
-            len(prompt.context_meeting_ids),
+            written.model_name,
+            written.transcript_parts,
+            len(written.context_meeting_ids),
         )
         return NotesReady(
             job_id=job.job_id,
             meeting_id=job.meeting_id,
             finished_at=self._now(),
             preset=job.preset,
-            provider=self._model.provider,
-            model_name=completion.model_name,
-            content=notes.content,
-            proposed_name=notes.proposed_name,
-            context_meeting_ids=prompt.context_meeting_ids,
+            provider=written.provider,
+            model_name=written.model_name,
+            content=written.notes.content,
+            proposed_name=written.notes.proposed_name,
+            context_meeting_ids=written.context_meeting_ids,
         )

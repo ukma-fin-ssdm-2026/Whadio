@@ -42,37 +42,25 @@ separate "Web API" component.
 
 ## 2. Implementation status
 
-The design has **70 operations**. The code implements **16 of them as stubs**:
+Access Policy, Meetings and Retention now have PostgreSQL-backed services. Meeting lists,
+folders, glossary, transcript revisions, notes, restrictions, shares, recipient share lists and
+recording playback use stored authorization. Folder deletion can be undone through its restore
+operation. Other operations below retain their design contracts; their Status labels describe
+the original design milestone and are not an assertion that every Designed operation is absent.
 
-- **Sessions:** sign in and sign out.
-- **Workspaces:** list, create, read, update, delete.
-- **Meetings:** list with filters, upload a recording, read, rename or move, delete.
-- **Transcript:** read the current revision.
-- **Notes:** list them, regenerate them.
-- **Health:** liveness.
+Sign-in, sign-out and workspace administration use stored accounts and sessions. An upload is
+stored and queued for transcription and notes, which the workers run; without a broker and
+object storage it refuses with `503 INTEGRATION_UNAVAILABLE`. Notes regeneration is outside the
+MVP and always refuses with `503 INTEGRATION_UNAVAILABLE`. A capture from the extension stores
+its chunks in object storage and, once completed, is queued through the same path as an upload;
+an interrupted capture is not finalised yet. A share access request, a recording deletion
+warning and a meeting evicted at the hosted cap each reserve an email notice in the same
+transaction; the scheduler sends it when an SMTP relay is configured. MCP reads require stored
+personal keys.
 
-Every other operation in section 4 is **designed**: its contract is fixed here, and it is not
-yet in the code. Each operation in section 4 is marked *Stub* or *Designed*.
-
-**What a stub does:**
-- It answers with fixed demo data, listed at the top of the Swagger page. Writes return the
-  result they would have, but store nothing.
-- It validates all input for real: types, lengths, enums, unknown fields, cross-field rules
-  and the format of uploaded audio.
-- It authenticates for real against one demo account: a missing or unknown session gets `401`.
-- It returns errors that follow from the demo data:
-  - `404` for an id that does not exist;
-  - `409 PERSONAL_WORKSPACE` for deleting the personal workspace;
-  - `409 NOT_TRANSCRIBED` for the transcript of a queued meeting;
-  - `422` for a `folder_id` that is not a folder of the meeting's workspace;
-  - `413` and `415` for an upload that is too large or is not a supported audio format.
-
-**What a stub documents but never produces:**
-- role checks (`403 INSUFFICIENT_ROLE`);
-- limits (`429`, `409 REGENERATION_LIMIT`, `409 NOTES_IN_PROGRESS`);
-- the origin check (`403 ORIGIN_REJECTED`) and `Idempotency-Key` replays (section 6.8);
-- the `X-Request-ID` header on successful responses: the stub sets it on errors only;
-- MCP key authentication (section 6.11).
+List operations in this slice use bounded database queries and opaque cursors scoped to the
+resource and signed-in caller. A deleted cursor anchor does not invalidate later pages. Folder
+counts include only visible meetings; note versions on later pages are not marked current.
 
 ## 3. Resource model
 
@@ -267,9 +255,11 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 - **Rules:**
   - Works in both modes, because operator-issued links work on invite-only instances.
   - Creates the account, its personal workspace and default folder, and signs the browser in.
-  - Requires `accept_terms: true` (FR-002) and a password of 12 to 128 characters.
+  - Requires `accept_terms: true` (FR-002) and a password of 12 to 128 characters with at least
+    one digit and one uppercase letter.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used (section 6.3).
+  - `422 VALIDATION_ERROR` on `password`: the password breaks the rule above.
 
 #### `POST /password-resets` · Request a password-reset link
 
@@ -285,10 +275,14 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 #### `POST /password-resets/{reset_id}/complete` · Set a new password from a link
 
 - **Status:** Designed · **Caller:** public · **Success:** `204`
-- **Rules:** ends every session and extension token of the account, this browser's included.
-  MCP keys keep working.
+- **Rules:**
+  - Requires a new password of 12 to 128 characters with at least one digit and one uppercase
+    letter.
+  - Ends every session and extension token of the account, this browser's included. MCP keys keep
+    working.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used (section 6.3).
+  - `422 VALIDATION_ERROR` on `password`: the password breaks the rule above.
 
 #### `POST /sessions` · Sign in
 
@@ -317,21 +311,21 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /users/me/mcp-keys` · List my MCP keys
 
-- **Status:** Designed · **Caller:** any user · **Success:** `200`, a page of keys, newest
+- **Status:** Implemented · **Caller:** any user · **Success:** `200`, a page of keys, newest
   first
 - **Rules:** revoked keys are included. A key's secret is never shown again after creation.
 - **Errors:** common only.
 
 #### `POST /users/me/mcp-keys` · Create an MCP key
 
-- **Status:** Designed · **Caller:** any user · **Success:** `201`, the key with its secret
+- **Status:** Implemented · **Caller:** any user · **Success:** `201`, the key with its secret
 - **Rules:** the secret is shown once and only its hash is stored (FR-043).
   `expires_in_days` is between 1 and 365; without it, the key does not expire.
 - **Errors:** common only.
 
 #### `DELETE /users/me/mcp-keys/{key_id}` · Revoke an MCP key
 
-- **Status:** Designed · **Caller:** the key's owner · **Success:** `204`
+- **Status:** Implemented · **Caller:** the key's owner · **Success:** `204`
 - **Rules:** revoking twice is harmless.
 - **Errors:**
   - `404 NOT_FOUND`: no such key among the caller's own.
@@ -412,10 +406,15 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 - **Status:** Designed · **Caller:** Moderator or Owner · **Success:** `204`
 - **Rules:** the member loses access to the workspace and all of its meetings at once.
+  Before removing a restricted meeting's last selected recipient, a Moderator must explicitly
+  select another remaining member through the meeting access endpoint. Removal is refused
+  while any affected restricted meeting would have no recipient; it never grants the Owner
+  access automatically or changes the meeting to workspace access.
 - **Errors:**
   - `403 INSUFFICIENT_ROLE`: the caller is a plain member.
   - `404 NOT_FOUND`: no such workspace or member.
   - `409 OWNER_IMMUTABLE`: the target is the Owner.
+  - `409 RESTRICTED_MEETING_REQUIRES_RECIPIENT`: replacement access must be selected first.
 
 #### `GET /workspaces/{workspace_id}/invitations` · List pending invitations
 
@@ -484,11 +483,15 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 - **Status:** Designed · **Caller:** public · **Success:** `201`, the user and the
   membership; the session cookie is set
-- **Rules:** for an invited address without an account. It creates the account and its
-  personal workspace, joins the workspace, and signs the browser in (FR-002).
+- **Rules:**
+  - For an invited address without an account. It creates the account and its personal
+    workspace, joins the workspace, and signs the browser in (FR-002).
+  - Requires a password of 12 to 128 characters with at least one digit and one uppercase
+    letter.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used.
   - `409 ACCOUNT_EXISTS`: the address has an account, so sign in and accept instead.
+  - `422 VALIDATION_ERROR` on `password`: the password breaks the rule above.
 
 #### `POST /invitations/{invitation_id}/decline` · Decline an invitation
 
@@ -521,6 +524,20 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - `404 NOT_FOUND`: no such workspace or folder.
   - `409 FOLDER_EXISTS`: the new name is taken.
   - `409 DEFAULT_FOLDER`: the default folder cannot be deleted.
+
+#### `POST /workspaces/{workspace_id}/folders/{folder_id}/restore` · Undo folder deletion
+
+- **Status:** Implemented · **Caller:** Moderator or Owner · **Success:** `200`, the restored folder
+- **Rules:** restores the deleted folder's identity/name and all surviving meetings moved from it
+  to the default folder in one action (NFR-005). Recording references, transcripts, notes and
+  access grants stay unchanged. Restored meeting moves are audited. Recovery remains available
+  until used or the workspace is deleted; deleted meetings are not recreated.
+- **Errors:**
+  - `403 INSUFFICIENT_ROLE`: caller is a plain member.
+  - `404 NOT_FOUND`: no workspace membership or no pending recovery for this folder.
+  - `409 FOLDER_EXISTS`: its former name is now occupied, ignoring case.
+  - `409 FOLDER_RECOVERY_CONFLICT`: a surviving meeting was moved out of the default folder after
+    deletion. The restore changes nothing; it does not overwrite those subsequent moves.
 
 #### `GET`, `POST /workspaces/{workspace_id}/glossary-terms` · List or add terms
 
@@ -562,6 +579,10 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   **Success:** `201`, the meeting in state `queued`; `Location` points to it
 - **Rules:**
   - Multipart: an audio `file`, plus an optional `folder_id` and `name` (FR-013).
+  - The file limit is 500 MiB. The HTTP boundary allows a total request of 501 MiB,
+    including multipart overhead. Oversized declared bodies are rejected before parsing;
+    incoming bytes are counted even without a length header or with an understated length.
+    Rejection stops parsing, closes partial upload files and does not call the upload use case.
   - The meeting is queued for processing at once. Its speakers are labelled `Speaker 1`,
     `Speaker 2`, and so on (FR-016).
   - `folder_id` must be a folder of this workspace; without it, the default folder is used.
@@ -570,8 +591,10 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - Without `name`, the meeting is named after its date and time until it is renamed
     (FR-033).
 - **Errors:**
+  - `400 MALFORMED_REQUEST`: an invalid or repeated `Content-Length` header.
   - `404 NOT_FOUND`: no such workspace, or the caller is not a member.
-  - `413 PAYLOAD_TOO_LARGE`: the file is larger than 500 MiB.
+  - `413 PAYLOAD_TOO_LARGE`: the file is larger than 500 MiB, or the complete multipart request
+    exceeds 501 MiB.
   - `415 UNSUPPORTED_MEDIA_TYPE`: the content is not a supported audio format, so no meeting is
     created (FR-013).
 
@@ -613,7 +636,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 - **Errors:**
   - `404 NOT_FOUND`: no such meeting, or the caller cannot read it.
   - `409 RECORDING_NOT_READY`: the meeting is still being captured.
-  - `410 RECORDING_DELETED`: retention removed the audio after 3 months (FR-046). The
+  - `410 RECORDING_DELETED`: retention removed the audio after 90 days (FR-046). The
     transcript and notes stay.
 
 #### `GET /meetings/{meeting_id}/transcript` · Get the transcript
@@ -622,7 +645,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   revision
 - **Rules:**
   - Timestamped segments with speaker labels (FR-027).
-  - Designed, not in the stub: `?revision_id=` selects another revision. The original is
+  - `?revision_id=` selects another revision. The original is
     always reachable through `original_revision_id` (NFR-006, NFR-011).
 - **Errors:**
   - `404 NOT_FOUND`: no such meeting, or the caller cannot read it; or no such revision.
@@ -657,8 +680,11 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /meetings/{meeting_id}/notes` · Regenerate the notes
 
-- **Status:** Stub · **Caller:** any member who can read it · **Success:** `202`, the queued
-  job; `Location` points to the meeting to poll
+- **Status:** Designed; outside the MVP. The server answers every request that passes the read
+  check with `503 INTEGRATION_UNAVAILABLE`, and its OpenAPI specification documents only that.
+  What follows is the planned behaviour.
+- **Caller:** any member who can read it · **Success:** `202`, the queued job; `Location`
+  points to the meeting to poll
 - **Rules:**
   - `preset` defaults to the workspace's. `use_builtin_model` bypasses a configured provider,
     for example after it failed (FR-023).
@@ -671,15 +697,28 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - `409 NOT_TRANSCRIBED`: there is no transcript to write notes from.
   - `409 NOTES_IN_PROGRESS`: a run is already queued or running.
   - `409 REGENERATION_LIMIT`: the meeting used up its regenerations.
+  - `503 INTEGRATION_UNAVAILABLE`: regeneration is not available yet; it is outside the MVP.
 
 #### `GET /meetings/{meeting_id}/transcript/export` · Download the transcript
 
-- **Status:** Designed · **Caller:** any member who can read it · **Success:** `200`, a
+- **Status:** Implemented · **Caller:** any member who can read it · **Success:** `200`, a
   Markdown or WebVTT attachment
 - **Rules:**
   - `format` is `markdown` (the default) or `vtt`. `timestamps=false` drops timestamps from
     Markdown; VTT always has them.
-  - The current revision, split by speaker labels (FR-040, FR-041).
+  - `version=current` (default) selects corrected content; `version=original` selects immutable
+    original text/speaker labels. The selected version is labelled truthfully (FR-028, FR-040,
+    FR-041, NFR-011). Files and Link headers carry absolute authenticated original-view/download
+    URLs from configured canonical bases, never from the request Host header. Original-view
+    links use `WHADIO_PUBLIC_URL`; download links use `WHADIO_API_PUBLIC_URL`, falling back to
+    the web base when omitted. The API base excludes `/api/v1`; both bases preserve optional
+    deployment path prefixes. The original-view URL opens `/meetings/{id}?revision_id={original_id}`
+    in the SPA's transcript tab and returns there after sign-in. Download URLs remain API routes.
+    Without a configured URL, exports use `http://localhost:3000` for development; SMTP still
+    requires an explicit public URL. Invalid values are refused when the app is built.
+  - Markdown preserves speaker labels and optional timestamps; VTT is always timed.
+  - Files are UTF-8 attachments with `Cache-Control: no-store`; shares and administrator
+    status alone confer no export permission. Original retrieval still requires current access.
   - The file opens with a notice not to share it without the participants' permission and
     ends with an attribution (FR-042). An edited transcript says so.
 - **Errors:**
@@ -688,10 +727,11 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /meetings/{meeting_id}/notes/export` · Download the notes
 
-- **Status:** Designed · **Caller:** any member who can read it · **Success:** `200`, a
+- **Status:** Implemented · **Caller:** any member who can read it · **Success:** `200`, a
   Markdown attachment
 - **Rules:** the current notes, with their context meetings, the notice and the attribution
-  (FR-040, FR-042).
+  (FR-040, FR-042). Only the latest saved note is read; pending/failed regeneration does not
+  discard it. Context snapshots survive deletion of context meetings.
 - **Errors:**
   - `404 NOT_FOUND`: no such meeting, or the caller cannot read it.
   - `409 NO_NOTES`: the meeting has no notes yet.
@@ -791,7 +831,7 @@ All capture operations accept the extension's bearer token as well as the browse
 
 #### `GET /captures/destinations` · Where a recording can go
 
-- **Status:** Designed · **Caller:** any user · **Success:** `200`, a page of workspaces,
+- **Status:** Implemented · **Caller:** any user · **Success:** `200`, a page of workspaces,
   each with its folders
 - **Rules:** the extension files a recording in a folder before it is processed, because the
   folder is the notes context (FR-012, FR-019).
@@ -799,16 +839,19 @@ All capture operations accept the extension's bearer token as well as the browse
 
 #### `POST /captures` · Start recording
 
-- **Status:** Designed · **Caller:** any member of the target workspace · **Success:** `201`,
-  the open capture
-- **Rules:** `consent_confirmed` must be `true` (FR-009), and it is stored with the meeting.
-  The meeting is created in state `recording`.
+- **Status:** Implemented · **Caller:** any member of the target workspace · **Success:**
+  `201`, the open capture
+- **Rules:**
+  - `consent_confirmed` must be `true` (FR-009), and it is stored with the meeting. The
+    meeting is created in state `recording`.
+  - Without `workspace_id` the meeting goes to the default folder of the caller's personal
+    workspace (FR-012); without `folder_id`, to the default folder of the chosen workspace.
 - **Errors:**
   - `404 NOT_FOUND`: no such workspace, or the caller is not a member.
 
 #### `GET /captures/{capture_id}` · Get a capture
 
-- **Status:** Designed · **Caller:** the account that opened it · **Success:** `200`, the
+- **Status:** Implemented · **Caller:** the account that opened it · **Success:** `200`, the
   capture with `received_seqs`
 - **Rules:** lets the extension resume after a lost connection and upload only what is
   missing.
@@ -817,7 +860,7 @@ All capture operations accept the extension's bearer token as well as the browse
 
 #### `PUT /captures/{capture_id}/chunks/{seq}` · Upload one chunk
 
-- **Status:** Designed · **Caller:** the account that opened it · **Success:** `201` when
+- **Status:** Implemented · **Caller:** the account that opened it · **Success:** `201` when
   stored; `200` when the same chunk was already stored
 - **Rules:**
   - Multipart: `audio` (`audio/*`) and `speaker_events` (the active speakers seen on the Meet
@@ -832,14 +875,15 @@ All capture operations accept the extension's bearer token as well as the browse
 
 #### `POST /captures/{capture_id}/complete` · Finish recording
 
-- **Status:** Designed · **Caller:** the account that opened it · **Success:** `200`, the
+- **Status:** Implemented · **Caller:** the account that opened it · **Success:** `200`, the
   assembled capture
 - **Rules:**
   - Assembles chunks `0..last_seq` and queues the meeting, through the same path as an upload
     (FR-012).
   - Repeating it with the same `last_seq` returns the same result.
   - If the extension never completes, the server finalises the chunks it has as a `partial`
-    recording after a timeout.
+    recording after a timeout. Not built yet: recovering an interrupted capture is outside the
+    MVP.
 - **Errors:**
   - `404 NOT_FOUND`: no such capture, or another account opened it.
   - `409 MISSING_CHUNKS`: some numbers below `last_seq` never arrived; `details` lists them.
@@ -848,14 +892,25 @@ All capture operations accept the extension's bearer token as well as the browse
 
 ### 4.8 Administration and operations
 
-#### `GET /admin/jobs`, `GET /admin/metrics` · Operational dashboard
+#### `GET /admin/jobs`, `GET /admin/metrics` · Operational job monitoring
 
-- **Status:** Designed · **Caller:** administrator · **Success:** `200`, a page of jobs, or
-  the current metrics
-- **Rules:** queue depth, waiting times, failures and load (FR-045). Never any recording,
-  transcript or notes content.
-- **Errors:**
-  - `403 INSUFFICIENT_ROLE`: the caller is not an administrator.
+- **Status:** Implemented backend. The dashboard and host/model telemetry remain pending under
+  #139; these APIs do not complete US-019/FR-045 by themselves.
+- **Caller:** signed-in instance administrator; workspace roles alone grant no access.
+- **Jobs:** workspace UUID, job type/state, stored attempt counter and safe failure descriptions.
+  Times distinguish original creation, entry into the current queue period and attempt start/end.
+  Unknown historical queue waits are null. Results sort by creation time then job UUID descending;
+  filters cover workspace, job type, state and inclusive creation interval. Cursors are bound
+  to filters. Meeting names, meeting IDs, content, context payloads and raw failures are omitted.
+- **Metrics:** logical-job counts from PostgreSQL and the oldest known current queue wait, with
+  unknown queue waits counted separately. `generated_at` is the assembly time and `status=ok`
+  means the database query succeeded. No source, host or model measurements are included or
+  required. Counts describe retained jobs; deleting a meeting removes its jobs from the counts.
+- **Rules:** `Cache-Control: no-store`. Administrator revocation applies on the next request
+  without sign-out. Administrator status confers no meeting-content access. These APIs do not
+  change Processing's attempt counting or retry limits.
+- **Errors:** `401 UNAUTHENTICATED`, `403 INSUFFICIENT_ROLE`, `422 VALIDATION_ERROR`, and the
+  shared error envelope for unexpected failures. There is no route-specific database handler.
 
 #### `GET /health` · Liveness probe
 
@@ -875,7 +930,7 @@ unknown routes:
   "error": {
     "code": "VALIDATION_ERROR",
     "message": "Request contains invalid fields",
-    "details": [{"field": "email", "message": "value is not a valid email address", "provided_value": "alice@"}],
+    "details": [{"field": "limit", "message": "Input should be less than or equal to 100", "provided_value": "500"}],
     "request_id": "req_4f9c2a1be07d"
   }
 }
@@ -885,6 +940,9 @@ unknown routes:
   return is listed in its documented responses.
 - **`message`** is for people and may change. Clients never parse it.
 - **`details`** names each invalid field, for validation errors.
+- **`details[].provided_value`** echoes what the client sent for a query or path parameter.
+  It is always `null` for body fields, headers and cookies, which can carry a password or a
+  token.
 - **`request_id`** equals the `X-Request-ID` response header. Server errors are logged with
   it and never echo internals.
 
@@ -985,6 +1043,9 @@ status, and which operations return it.
   or cancelled.
 - **`DEFAULT_FOLDER`:** deleting the default folder, which receives the meetings of deleted
   folders (FR-034).
+- **`RESTRICTED_MEETING_REQUIRES_RECIPIENT`:** removing the last selected recipient of a
+  restricted meeting before a replacement is selected. Returned as `409` by
+  `DELETE /workspaces/{id}/members/{user_id}`.
 - **`FOLDER_EXISTS`, `TERM_EXISTS`:** a folder name or a glossary term that already exists in
   the workspace, ignoring case.
 - **`NOT_TRANSCRIBED`:** the meeting has no transcript yet, because it is recording, queued,
@@ -1014,7 +1075,7 @@ status, and which operations return it.
 
 **`410 Gone`**
 
-- **`RECORDING_DELETED`:** the recording was removed by the 3-month retention rule (FR-046).
+- **`RECORDING_DELETED`:** the recording was removed by the 90-day retention rule (FR-046).
   It is `410` rather than `404` so the client can explain that the transcript and notes still
   exist. Returned by `GET /meetings/{id}/recording`.
 - **`SHARE_REVOKED`:** the bound recipient reads a share that its creator revoked. It is
@@ -1195,9 +1256,10 @@ Transcription and notes run in workers, not in the request:
 The MCP server at `/mcp/` exposes four read-only tools: `list_meetings`, `search_meetings`,
 `get_transcript` and `get_notes`.
 
-In the design, the tools act as the owner of the presented MCP key and read through Access
-Policy, so a restricted meeting stays invisible to an assistant (FR-044). The stub reads the
-same demo data as the REST stubs and does not check keys yet.
+The tools act as the owner of the presented MCP key and read through Access Policy, so a
+restricted meeting stays invisible to an assistant (FR-044). Keys are issued and revoked through
+the browser-authenticated REST API, stored only as SHA-256 hashes, and checked on every MCP call.
+Revoked and expired keys are refused.
 
 Generating the server from the OpenAPI specification (`FastMCP.from_fastapi`) was rejected for
 two reasons:
@@ -1211,7 +1273,7 @@ tool set over automatic conversion.
 
 ### 6.12 Choices where the requirements are silent
 
-- **Who manages folders:** Moderators and the Owner.
+- **Who manages folders:** Moderators and the Owner, Members may browse folders and move accessible meetings.
 - **Who edits glossary terms:** any member can add one. Its author, a Moderator or the Owner
   can change or remove it.
 - **Who renames or moves a meeting:** any member who can read it. Deleting it stays with its
@@ -1231,3 +1293,10 @@ This document and the API code were prepared with the assistance of Claude Code 
 and 2026-10-04, and the requirements merged in PR #46. The stub code was checked with a type
 checker and with scripted requests against every implemented operation. The author reviewed
 and edited the content, and the document is reviewed through a pull request before merging.
+
+These PR #63 review revisions were assisted by OpenAI Codex. Everything was reviewed by me.
+
+The Export implementation and review changes were assisted by OpenAI Codex.
+
+
+Later revisions were assisted by OpenAI Codex and verified by author.

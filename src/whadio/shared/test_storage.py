@@ -3,10 +3,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import override
 from urllib.parse import parse_qs, urlsplit
+from uuid import uuid4
 
 import pytest
 import urllib3
 from pydantic import HttpUrl, SecretStr
+
+from conftest import refused_fields
 
 from .storage import (
     ObjectStorageError,
@@ -101,14 +104,54 @@ def test_presigned_url_reports_when_it_expires() -> None:
     assert presigned.expires_at == _NOW + timedelta(hours=2)
 
 
-@pytest.mark.parametrize("lifetime", [timedelta(0), timedelta(days=7, seconds=1)])
-def test_presigning_refuses_a_lifetime_outside_what_sigv4_allows(lifetime: timedelta) -> None:
+@pytest.mark.parametrize(
+    ("lifetime", "expires"),
+    [
+        pytest.param(timedelta(seconds=1), "1", id="bva-min"),
+        pytest.param(timedelta(seconds=2), "2", id="bva-above-min"),
+        pytest.param(timedelta(days=7, seconds=-1), "604799", id="bva-below-max"),
+        pytest.param(timedelta(days=7), "604800", id="bva-max"),
+    ],
+)
+def test_presigned_url_lives_from_one_second_to_seven_days(
+    lifetime: timedelta, expires: str
+) -> None:
+    # Arrange
+    storage = connect_s3_storage(_SETTINGS)
+
+    # Act
+    presigned = storage.presign_get(_KEY, expires_in=lifetime)
+
+    # Assert
+    assert parse_qs(urlsplit(presigned.url).query)["X-Amz-Expires"] == [expires]
+
+
+@pytest.mark.parametrize(
+    "lifetime",
+    [
+        pytest.param(timedelta(0), id="bva-below-min"),
+        pytest.param(timedelta(milliseconds=999), id="bva-below-min-by-a-fraction"),
+        pytest.param(timedelta(days=7, seconds=1), id="bva-above-max"),
+    ],
+)
+def test_presigning_refuses_a_lifetime_outside_one_second_to_seven_days(
+    lifetime: timedelta,
+) -> None:
     # Arrange
     storage = connect_s3_storage(_SETTINGS)
 
     # Act / Assert
-    with pytest.raises(ValueError, match="at most 7 days"):
+    with pytest.raises(ValueError, match="presigned URL lives whole seconds"):
         storage.presign_get(_KEY, expires_in=lifetime)
+
+
+def test_presigning_refuses_a_lifetime_with_a_fraction_of_a_second() -> None:
+    # Arrange
+    storage = connect_s3_storage(_SETTINGS)
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="presigned URL lives whole seconds"):
+        storage.presign_get(_KEY, expires_in=timedelta(seconds=1.5))
 
 
 def test_put_stores_the_object_with_its_content_type_in_one_request() -> None:
@@ -149,3 +192,27 @@ def test_delete_reports_a_refused_request_as_a_storage_error() -> None:
     # Act / Assert
     with pytest.raises(ObjectStorageError, match="Deleting an object failed"):
         storage.delete(_KEY)
+
+
+@pytest.mark.parametrize(
+    ("length", "refused"),
+    [
+        pytest.param(2, {"bucket"}, id="bva-below-min"),
+        pytest.param(3, set[str](), id="bva-min"),
+        pytest.param(4, set[str](), id="bva-above-min"),
+    ],
+)
+def test_bucket_name_needs_at_least_3_characters(length: int, refused: set[str]) -> None:
+    # Arrange
+    data = {
+        "endpoint_url": "http://seaweedfs:8333",
+        "access_key": "whadio-test",
+        "secret_key": uuid4().hex,
+        "bucket": "b" * length,
+    }
+
+    # Act
+    found = refused_fields(ObjectStorageSettings, data)
+
+    # Assert
+    assert found == refused

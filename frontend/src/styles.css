@@ -4,9 +4,7 @@
 
 body {
   min-width: 320px;
-  background:
-    linear-gradient(135deg, rgb(15 118 110 / 7%), transparent 34rem),
-    #f6f4ef;
+  background: linear-gradient(135deg, rgb(15 118 110 / 7%), transparent 34rem), #f6f4ef;
 }
 
 button {
@@ -161,6 +159,40 @@ button {
   padding: 1.25rem clamp(1rem, 3vw, 2.5rem) 2rem;
 }
 
+.auth-screen {
+  display: grid;
+  min-height: 100vh;
+  padding: 1.25rem;
+  place-items: center;
+}
+
+.auth-card {
+  display: grid;
+  gap: 1.1rem;
+  width: min(100%, 26rem);
+  padding: 1.5rem;
+}
+
+.error-banner {
+  margin-bottom: 1rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid #d6a6a1;
+  border-radius: 0.5rem;
+  background: #fff5f3;
+  color: #8a332b;
+}
+
+.content-loading {
+  display: grid;
+  min-height: 8rem;
+  place-items: center;
+}
+
+.empty-state {
+  padding: 1.25rem;
+  text-align: center;
+}
+
 .breadcrumbs {
   min-height: 1.8rem;
   margin-bottom: 0.8rem;
@@ -290,6 +322,17 @@ button {
   background: #fbfcfb !important;
 }
 
+.mcp-key-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 0.85rem;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  border: 1px solid #dde2dc;
+  border-radius: 0.5rem;
+  background: #fbfcfb;
+}
+
 @keyframes settings-slide {
   from {
     opacity: 0;
@@ -403,6 +446,10 @@ button {
   line-height: 1.75;
 }
 
+.notes-markdown {
+  white-space: pre-wrap;
+}
+
 .meeting-meta-actions {
   flex-shrink: 0;
   padding-top: 0.25rem;
@@ -452,6 +499,16 @@ button {
   text-align: center;
 }
 
+.player-ready {
+  min-height: 27rem;
+  background: #101715;
+}
+
+.player-ready video {
+  width: 100%;
+  max-height: 34rem;
+}
+
 .play-circle {
   display: grid;
   width: 4.5rem;
@@ -499,5 +556,14 @@ button {
     padding-bottom: 0.75rem;
     border-right: 0;
     border-bottom: 1px solid #dde2dc;
+  }
+
+  .mcp-key-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .mcp-key-row .MuiChip-root {
+    grid-column: 2;
+    justify-self: start;
   }
 }

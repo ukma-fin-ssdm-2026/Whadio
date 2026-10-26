@@ -1,21 +1,22 @@
 from datetime import UTC, datetime
 from typing import Annotated
-from uuid import uuid4
 
 from fastapi import APIRouter, Query, Request, Response
 
+from ...accounts.enums import NotesTemplate
+from ...accounts.repositories import MemberWorkspace
+from ..composition import Workspaces
 from ..core.errors import (
     DOC_INVALID,
     DOC_MALFORMED,
     DOC_UNAUTHENTICATED,
-    ApiError,
     ErrorCode,
     error_responses,
 )
 from ..core.schemas import Page, PageQuery, paginate
 from .auth import BrowserUser
-from .fixtures import WORKSPACES, workspace
 from .schemas import (
+    Preset,
     Provider,
     Role,
     WorkspaceCreate,
@@ -31,6 +32,20 @@ _NOT_FOUND = "`NOT_FOUND`: no such workspace, or the caller is not a member"
 _OWNER_ONLY = f"`{ErrorCode.INSUFFICIENT_ROLE}`: only the Owner can do this"
 
 
+def workspace_read(found: MemberWorkspace) -> WorkspaceRead:
+    return WorkspaceRead(
+        id=found.workspace_id,
+        name=found.name,
+        is_personal=found.is_personal,
+        my_role=Role(found.role.value.lower()),
+        member_count=found.member_count,
+        # Only the built-in model writes notes until workspaces can choose a provider.
+        notes_provider=Provider.WHADIO,
+        created_at=found.created_at,
+        default_preset=Preset(found.default_template.value),
+    )
+
+
 @router.get(
     "/workspaces",
     summary="List my workspaces",
@@ -39,10 +54,12 @@ _OWNER_ONLY = f"`{ErrorCode.INSUFFICIENT_ROLE}`: only the Owner can do this"
     responses=error_responses({401: DOC_UNAUTHENTICATED, 422: DOC_INVALID}),
 )
 async def list_workspaces(
-    query: Annotated[PageQuery, Query()], _user: BrowserUser
+    query: Annotated[PageQuery, Query()], user: BrowserUser, workspaces: Workspaces
 ) -> Page[WorkspaceSummary]:
-    workspaces: list[WorkspaceSummary] = [*WORKSPACES.values()]
-    return paginate(workspaces, query)
+    found: list[WorkspaceSummary] = [
+        workspace_read(item) for item in await workspaces.list_workspaces(user.id)
+    ]
+    return paginate(found, query)
 
 
 @router.post(
@@ -65,17 +82,19 @@ async def list_workspaces(
     },
 )
 async def create_workspace(
-    payload: WorkspaceCreate, _user: BrowserUser, request: Request, response: Response
+    payload: WorkspaceCreate,
+    user: BrowserUser,
+    workspaces: Workspaces,
+    request: Request,
+    response: Response,
 ) -> WorkspaceRead:
-    created = WorkspaceRead(
-        id=uuid4(),
-        name=payload.name,
-        is_personal=False,
-        my_role=Role.OWNER,
-        member_count=1,
-        notes_provider=Provider.WHADIO,
-        created_at=datetime.now(UTC),
-        default_preset=payload.default_preset,
+    created = workspace_read(
+        await workspaces.create(
+            user.id,
+            payload.name,
+            NotesTemplate(payload.default_preset.value),
+            datetime.now(UTC),
+        )
     )
     response.headers["Location"] = str(request.url_for("get_workspace", workspace_id=created.id))
     return created
@@ -88,8 +107,10 @@ async def create_workspace(
     response_description="The workspace",
     responses=error_responses({401: DOC_UNAUTHENTICATED, 404: _NOT_FOUND, 422: DOC_INVALID}),
 )
-async def get_workspace(workspace_id: WorkspaceId, _user: BrowserUser) -> WorkspaceRead:
-    return workspace(workspace_id)
+async def get_workspace(
+    workspace_id: WorkspaceId, user: BrowserUser, workspaces: Workspaces
+) -> WorkspaceRead:
+    return workspace_read(await workspaces.get(user.id, workspace_id))
 
 
 @router.patch(
@@ -109,9 +130,19 @@ async def get_workspace(workspace_id: WorkspaceId, _user: BrowserUser) -> Worksp
     ),
 )
 async def update_workspace(
-    workspace_id: WorkspaceId, payload: WorkspaceUpdate, _user: BrowserUser
+    workspace_id: WorkspaceId,
+    payload: WorkspaceUpdate,
+    user: BrowserUser,
+    workspaces: Workspaces,
 ) -> WorkspaceRead:
-    return workspace(workspace_id).model_copy(update=payload.model_dump(exclude_none=True))
+    return workspace_read(
+        await workspaces.update(
+            user.id,
+            workspace_id,
+            payload.name,
+            None if payload.default_preset is None else NotesTemplate(payload.default_preset.value),
+        )
+    )
 
 
 @router.delete(
@@ -131,6 +162,7 @@ async def update_workspace(
         }
     ),
 )
-async def delete_workspace(workspace_id: WorkspaceId, _user: BrowserUser) -> None:
-    if workspace(workspace_id).is_personal:
-        raise ApiError(409, ErrorCode.PERSONAL_WORKSPACE, "A personal workspace cannot be deleted")
+async def delete_workspace(
+    workspace_id: WorkspaceId, user: BrowserUser, workspaces: Workspaces
+) -> None:
+    await workspaces.delete(user.id, workspace_id, datetime.now(UTC))

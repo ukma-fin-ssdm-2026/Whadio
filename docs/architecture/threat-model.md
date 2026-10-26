@@ -19,7 +19,7 @@ The most sensitive assets are password hashes, meeting recordings and capture ch
 | `TB-5` | Web/scheduler/workers to RabbitMQ | Processing jobs, transcripts, context sets, provider-key material, status events | Components trust durable broker messages to start work or update state. |
 | `TB-6` | Main host to lower-trust GPU host | AMQP traffic, presigned audio URLs, local LLM requests | Processing crosses a private mesh to a team member's GPU workstation treated as a lower-trust zone. |
 | `TB-7` | Notes worker to external LLM provider | Transcript and context text, BYOK credential use | Meeting content leaves Whadio only when configured by a workspace Owner. |
-| `TB-8` | Web container to SMTP relay | Notification metadata, email addresses, and single-use registration, invitation and password-reset links | Whadio depends on an external mail service. |
+| `TB-8` | Web and scheduler containers to SMTP relay | Notification metadata, which the scheduler sends from the outbox, email addresses, and single-use registration, invitation and password-reset links | Whadio depends on an external mail service. |
 
 ## STRIDE Walkthrough
 
@@ -29,7 +29,7 @@ The most sensitive assets are password hashes, meeting recordings and capture ch
 | Google Meet DOM boundary | `TB-2` | Fake participant names | Page layout or injected DOM changes labels | No proof of captured names | Extension reads more DOM data than needed | Meet UI changes break capture | Extension permission abuse |
 | nginx public entry point | `TB-1`, `TB-3` | Credential/session spoofing | Request tampering without TLS | Missing access logs | Protected content routed incorrectly | Request flood or slow uploads | Proxy exposes internal paths |
 | Web backend | `TB-3`, `TB-4`, `TB-5`, `TB-8` | Impersonated user/service | Broken validation changes meetings, roles, shares | Missing audit records | Authorization bugs leak meetings | Expensive processing requests | Workspace role bypass |
-| scheduler | `TB-4`, `TB-5` | Fake scheduler publisher | Re-publishes stale or forged jobs | No evidence of retention/capture finalization | Failure causes leak content details | Timer job flood | Scheduler gets broader store/broker rights |
+| scheduler | `TB-4`, `TB-5`, `TB-8` | Fake scheduler publisher | Re-publishes stale or forged jobs | No evidence of retention/capture finalization | Failure causes leak content details | Timer job flood | Scheduler gets broader store/broker rights |
 | PostgreSQL and object storage | `TB-4` | Stolen service credentials | Direct row/object modification | No protected audit trail | Database or recording leak | Storage exhaustion | Overbroad service account |
 | RabbitMQ | `TB-5`, `TB-6` | Fake worker or publisher | Forged job/result message | Worker denies processing a job | Notes jobs expose transcripts, context, provider-key material | Queue flood blocks processing | Worker receives unauthorized job scope |
 | GPU host and asr-worker | `TB-6` | Fake main host or worker | Forged TranscriptReady message | Missing job execution evidence | Presigned URL, timeline, glossary leak | GPU exhaustion | Worker gains broader mesh access |
@@ -83,4 +83,4 @@ The most sensitive assets are password hashes, meeting recordings and capture ch
 
 ## AI Usage
 
-This threat model was prepared with the assistance of Codex (GPT-5.5), revised with Claude Code (Claude Opus 5.5), and reviewed against the project requirements, ADRs, high-level design, deployment diagram, and current data model.
+This threat model was prepared with the assistance of Codex (GPT-5.5), revised with Claude Code (Claude Opus 5.5) and later with Codex (GPT-6.1), and reviewed against the project requirements, ADRs, high-level design, deployment diagram, and current data model.

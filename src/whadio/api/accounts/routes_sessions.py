@@ -2,14 +2,10 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Response
 
-from ..core.errors import DOC_INVALID, DOC_MALFORMED, ApiError, ErrorCode, error_responses
-from .auth import (
-    BROWSER_SESSION_TTL,
-    EXTENSION_TOKEN_TTL,
-    clear_session_cookie,
-    set_session_cookie,
-)
-from .fixtures import ALICE, DEMO_EMAIL, DEMO_EXTENSION_TOKEN, DEMO_PASSWORD
+from ...accounts import enums
+from ..composition import SignIns
+from ..core.errors import DOC_INVALID, DOC_MALFORMED, ErrorCode, error_responses
+from .auth import Bearer, Cookie, clear_session_cookie, set_session_cookie, user_read
 from .schemas import SessionKind, SessionRead, SignIn
 
 router = APIRouter(tags=["accounts"])
@@ -36,19 +32,19 @@ router = APIRouter(tags=["accounts"])
         }
     ),
 )
-async def sign_in(payload: SignIn, response: Response) -> SessionRead:
-    if (payload.email, payload.password) != (DEMO_EMAIL, DEMO_PASSWORD):
-        raise ApiError(401, ErrorCode.INVALID_CREDENTIALS, "Wrong email address or password")
-    now = datetime.now(UTC)
+async def sign_in(payload: SignIn, response: Response, sign_ins: SignIns) -> SessionRead:
+    signed = await sign_ins.sign_in(
+        payload.email, payload.password, enums.SessionKind(payload.kind.value), datetime.now(UTC)
+    )
     if payload.kind is SessionKind.EXTENSION:
         return SessionRead(
             kind=payload.kind,
-            expires_at=now + EXTENSION_TOKEN_TTL,
-            user=ALICE,
-            token=DEMO_EXTENSION_TOKEN,
+            expires_at=signed.expires_at,
+            user=user_read(signed.user),
+            token=signed.token,
         )
-    set_session_cookie(response)
-    return SessionRead(kind=payload.kind, expires_at=now + BROWSER_SESSION_TTL, user=ALICE)
+    set_session_cookie(response, signed.token, signed.expires_at)
+    return SessionRead(kind=payload.kind, expires_at=signed.expires_at, user=user_read(signed.user))
 
 
 @router.delete(
@@ -56,10 +52,17 @@ async def sign_in(payload: SignIn, response: Response) -> SessionRead:
     status_code=204,
     summary="Sign out",
     description=(
-        "Ends the session presented by the cookie or the extension's bearer token and clears "
-        "the cookie. Always `204`, also without a session: signing out is idempotent."
+        "Ends the sessions presented by the cookie and by the extension's bearer token, and "
+        "clears the cookie. Always `204`, also without a session: signing out is idempotent."
     ),
     response_description="Signed out",
 )
-async def sign_out(response: Response) -> None:
+async def sign_out(response: Response, cookie: Cookie, bearer: Bearer, sign_ins: SignIns) -> None:
+    await sign_ins.sign_out(
+        [
+            token
+            for token in (cookie, None if bearer is None else bearer.credentials)
+            if token is not None
+        ]
+    )
     clear_session_cookie(response)

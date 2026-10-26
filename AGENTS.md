@@ -23,6 +23,7 @@ When the code and these documents disagree, stop and ask instead of picking one.
 
 ```text
 src/whadio/
+  migrations/     packaged Alembic revisions and database integrity guards
   cli.py          the `whadio` command: `web`, `openapi`; the workers and the scheduler add theirs
   api/            the `web` runtime: FastAPI app, one subpackage of routes per module, MCP server
   scheduler/      the `scheduler` runtime: periodic jobs
@@ -43,7 +44,7 @@ infra/            configuration that compose.yaml mounts into the services
 | `processing` | Processing | Denys |
 | `audit` | Audit | Denys |
 | `retention` | Retention | Valeriia |
-| `capture` | Capture: the recording upload | to be assigned |
+| `capture` | Capture: the recording upload | Denys |
 | `export`, `notifications`, `admin` | Export, Notifications, Admin & Monitoring | after the MVP |
 | `contracts`, `workers` | Job contracts, Transcription and Notes pipelines | Andrii, Zlata |
 | `frontend/` | Web SPA | Zlata |
@@ -83,12 +84,13 @@ update of the high-level design in the same pull request.
 
 ## Setup
 
-You need uv 0.11.16 or newer, Docker with Compose v2, and git. Every tool, Task included, installs
-into `.venv`; never install project tools globally.
+You need uv 0.11.16 or newer, Node 24 or newer with npm, Docker with Compose v2, and git. Every
+tool, Task included, installs into `.venv` or `frontend/node_modules`; never install project tools
+globally.
 
 ```bash
 uv sync --extra asr --extra cpu  # Python 3.13, the dependencies and the dev tools, in .venv
-uv run task setup                # also installs the git hooks
+uv run task setup                # also runs npm ci --prefix frontend and installs the git hooks
 cp .env.example .env             # local credentials for the Compose stack
 uv run task infra:up             # PostgreSQL, RabbitMQ, SeaweedFS and Mailpit
 uv run task dev                  # the API with auto-reload
@@ -115,20 +117,25 @@ presigned links are signed for `http://seaweedfs:8333`.
 A change is done when `uv run task check` and `uv run task test` pass and a teammate has approved
 the pull request. The commit hook runs the same checks as `task check`, in this order, and stops at
 the first failure: branch name, file hygiene, gitleaks, `uv lock --check`, `ruff check --fix` and
-`ruff format` on the whole project, the suppression ban, typos, schema and workflow checks,
-import-linter, ty, basedpyright, Bandit, deptry, the OpenAPI drift check and the fast tests. The
-commit message is checked last. `git push` runs the whole test suite. CI repeats all of this but
-the branch name, and adds `uv run task audit`: uv audit and a gitleaks scan of the whole history.
+`ruff format` on the whole project, `biome check --write` on the frontend, the suppression ban,
+typos, schema and workflow checks, import-linter, ty, basedpyright, Bandit, deptry, the OpenAPI
+drift check and the fast tests. The commit message is checked last. `git push` runs
+`uv run task test:cov`: the whole test suite but the `models` tests, failing below 85% line and
+branch coverage. It needs the services running and `WHADIO_TEST_DATABASE_URL` exported
+(`docs/testing/testing.md`). CI repeats all of this but the branch name, and adds
+`uv run task audit`: uv audit, `npm audit` and a gitleaks scan of the whole history.
 On a pull request, CI checks the title and every commit message against the commit format.
 
 - Never bypass the checks: no `--no-verify`, no `SKIP=`. If a check is wrong, fix it in its own
   pull request.
 - Never add an inline suppression: `# type: ignore`, `# pyright: ignore`, `# ty: ignore`,
-  `# noqa` and `# nosec` are refused. Fix the code. A genuine false positive gets a scoped
-  exception in `pyproject.toml` with a one-line reason, and the pull request explains it.
-- When a hook changes files (ruff, whitespace, the OpenAPI specification), review the change, stage
-  it and commit again.
-- Ruff's fixes conflict with a partly staged file: run `uv run task fix` and stage the whole file.
+  `# noqa`, `# nosec` and `biome-ignore` are refused. Fix the code. A genuine false positive gets
+  a scoped exception in `pyproject.toml` or `frontend/biome.jsonc` with a one-line reason, and the
+  pull request explains it.
+- When a hook changes files (ruff, Biome, whitespace, the OpenAPI specification), review the
+  change, stage it and commit again.
+- Ruff's and Biome's fixes conflict with a partly staged file: run `uv run task fix` and stage the
+  whole file.
 - Changing a route or a schema regenerates `docs/api/openapi-generated.*`; commit them with it.
 
 ## Code standards
@@ -179,7 +186,7 @@ Tests use pytest:
   no issue.
 - One concern per commit; never mix formatting with behaviour.
 - A pull request references its issue, needs one teammate's approval and follows the review rules
-  in `TeamCharter.md`, section 4. Its title follows the commit format, since a squash merge uses it.
+  in `TeamCharter.md`, section 11. Its title follows the commit format, since a squash merge uses it.
 - Disclose AI use: an "AI Usage" section in documents, and the tool named in review summaries
   (`TeamCharter.md`, section 9).
 
@@ -189,4 +196,5 @@ Tests use pytest:
 - change the import-linter contracts, the hooks, CI or the tool configuration in `pyproject.toml`;
 - run `uv run task infra:reset`, which deletes the local database, broker and storage data;
 - commit `.env`, credentials, recordings or model weights;
-- install anything outside `.venv`; add dependencies with `uv add`, and tools with `uv add --dev`.
+- install anything outside `.venv` and `frontend/node_modules`; add Python dependencies with
+  `uv add`, tools with `uv add --dev`, and frontend packages with `npm install --prefix frontend`.
