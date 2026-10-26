@@ -4405,8 +4405,8 @@
         "tags": [
           "export"
         ],
-        "summary": "Export Transcript",
-        "description": "Download the current transcript of an accessible meeting as Markdown or WebVTT. External share access does not authorize exports.",
+        "summary": "Download a transcript",
+        "description": "Download the current or immutable original transcript as UTF-8 Markdown or WebVTT. Requires meeting membership/access; share grants and administrator status confer no export rights. Link headers and the file identify the original. VTT is always timed.",
         "operationId": "export_transcript_api_v1_meetings__meeting_id__transcript_export_get",
         "security": [
           {
@@ -4434,11 +4434,22 @@
             "in": "query",
             "required": false,
             "schema": {
-              "$ref": "#/components/schemas/TranscriptFormat",
+              "$ref": "#/components/schemas/ExportFormat",
               "description": "Attachment format",
               "default": "markdown"
             },
             "description": "Attachment format"
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ExportVersion",
+              "description": "Current revision or immutable original",
+              "default": "current"
+            },
+            "description": "Current revision or immutable original"
           },
           {
             "name": "timestamps",
@@ -4446,19 +4457,34 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Include timestamps in Markdown",
+              "description": "Include timestamps in Markdown; VTT is always timed",
               "default": true,
               "title": "Timestamps"
             },
-            "description": "Include timestamps in Markdown"
+            "description": "Include timestamps in Markdown; VTT is always timed"
           }
         ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
-              "application/json": {
-                "schema": {}
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/vtt": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "headers": {
+              "Link": {
+                "description": "Authenticated original view and download URLs",
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           },
@@ -4493,11 +4519,11 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Invalid export options",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -4510,8 +4536,8 @@
         "tags": [
           "export"
         ],
-        "summary": "Export Notes",
-        "description": "Download the current notes of an accessible meeting as Markdown. Requires existing notes; external share access does not authorize exports.",
+        "summary": "Download current notes",
+        "description": "Download the latest saved notes and context provenance as UTF-8 Markdown. Requires meeting access, not an external share. No notes returns 409 NO_NOTES.",
         "operationId": "export_notes_api_v1_meetings__meeting_id__notes_export_get",
         "security": [
           {
@@ -4539,8 +4565,10 @@
           "200": {
             "description": "Successful Response",
             "content": {
-              "application/json": {
-                "schema": {}
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           },
@@ -4575,11 +4603,11 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Invalid export options",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -5078,6 +5106,249 @@
         }
       }
     },
+    "/api/v1/admin/jobs": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List operational jobs",
+        "description": "Administrator-only metadata, newest enqueue time then job ID descending. One as_of timestamp per page. Filters are bound into the cursor. Counts and jobs disappear with their meetings; no content, names or raw failures are exposed.",
+        "operationId": "jobs_api_v1_admin_jobs_get",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of items to return",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Maximum number of items to return"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque `next_cursor` from the previous page; omit for the first page",
+              "title": "Cursor"
+            },
+            "description": "Opaque `next_cursor` from the previous page; omit for the first page"
+          },
+          {
+            "name": "workspace_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by workspace ID",
+              "title": "Workspace Id"
+            },
+            "description": "Filter by workspace ID"
+          },
+          {
+            "name": "job_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/JobType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by transcription or notes",
+              "title": "Job Type"
+            },
+            "description": "Filter by transcription or notes"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/JobStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by logical-job state",
+              "title": "Status"
+            },
+            "description": "Filter by logical-job state"
+          },
+          {
+            "name": "created_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive original enqueue-time lower bound",
+              "title": "Created From"
+            },
+            "description": "Inclusive original enqueue-time lower bound"
+          },
+          {
+            "name": "created_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive original enqueue-time upper bound",
+              "title": "Created To"
+            },
+            "description": "Inclusive original enqueue-time upper bound"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_JobSnapshot_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Browser session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "INSUFFICIENT_ROLE: administrator permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid filter or cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/metrics": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Read operational metrics",
+        "description": "Administrator-only logical-job aggregates read from PostgreSQL. Unknown queue waiting times remain null. No host or model telemetry is required or returned.",
+        "operationId": "metrics_api_v1_admin_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Browser session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "INSUFFICIENT_ROLE: administrator permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid filter or cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -5534,6 +5805,22 @@
         "title": "ErrorResponse",
         "description": "The single error envelope returned for every 4xx and 5xx response."
       },
+      "ExportFormat": {
+        "type": "string",
+        "enum": [
+          "markdown",
+          "vtt"
+        ],
+        "title": "ExportFormat"
+      },
+      "ExportVersion": {
+        "type": "string",
+        "enum": [
+          "current",
+          "original"
+        ],
+        "title": "ExportVersion"
+      },
       "FolderInput": {
         "properties": {
           "name": {
@@ -5640,6 +5927,264 @@
           "status"
         ],
         "title": "Health"
+      },
+      "JobCounts": {
+        "properties": {
+          "job_type": {
+            "$ref": "#/components/schemas/JobType",
+            "description": "Job type"
+          },
+          "queued": {
+            "type": "integer",
+            "title": "Queued",
+            "description": "Distinct retained queued jobs"
+          },
+          "running": {
+            "type": "integer",
+            "title": "Running",
+            "description": "Distinct retained running jobs"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed",
+            "description": "Distinct retained failed jobs, not lifetime failures"
+          },
+          "unpublished": {
+            "type": "integer",
+            "title": "Unpublished",
+            "description": "Queued jobs not yet published"
+          },
+          "oldest_queue_wait_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Queue Wait Seconds",
+            "description": "Oldest known current queue wait; null when none is known"
+          },
+          "unknown_queue_waits": {
+            "type": "integer",
+            "title": "Unknown Queue Waits",
+            "description": "Queued historical jobs whose current queue-entry time is unknown"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_type",
+          "queued",
+          "running",
+          "failed",
+          "unpublished",
+          "oldest_queue_wait_seconds",
+          "unknown_queue_waits"
+        ],
+        "title": "JobCounts"
+      },
+      "JobSnapshot": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id",
+            "description": "Logical job identifier; grants no content access"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id",
+            "description": "Workspace identifier without its potentially sensitive name"
+          },
+          "job_type": {
+            "$ref": "#/components/schemas/JobType",
+            "description": "Transcription or notes"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus",
+            "description": "Persisted logical-job state"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "Original enqueue time in UTC"
+          },
+          "queued_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queued At",
+            "description": "Entry into current queued period; null for unknown historical retries"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At",
+            "description": "Current or final attempt start, null before start"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At",
+            "description": "Final completion time, null until terminal"
+          },
+          "attempts_started": {
+            "type": "integer",
+            "title": "Attempts Started",
+            "description": "Number of accepted attempt starts, including the first"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date-time",
+            "title": "As Of",
+            "description": "Common observation time used for duration calculations"
+          },
+          "queue_wait_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue Wait Seconds",
+            "description": "Current queue wait; null outside queued state or if unknown"
+          },
+          "running_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Running Seconds",
+            "description": "Current attempt running time; null outside running state"
+          },
+          "last_queue_wait_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Queue Wait Seconds",
+            "description": "Wait preceding the started attempt, when known"
+          },
+          "last_attempt_duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt Duration Seconds",
+            "description": "Final attempt duration for a terminal started job"
+          },
+          "total_elapsed_seconds": {
+            "type": "number",
+            "title": "Total Elapsed Seconds",
+            "description": "Logical-job age including all waits/retries, frozen at completion"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code",
+            "description": "Allowlisted failure code; no raw exception or provider text"
+          },
+          "failure_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Description",
+            "description": "Fixed safe explanation of the failure"
+          },
+          "timing_anomaly": {
+            "type": "boolean",
+            "title": "Timing Anomaly",
+            "description": "A clock-skew duration was bounded at zero"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "workspace_id",
+          "job_type",
+          "status",
+          "created_at",
+          "queued_at",
+          "started_at",
+          "finished_at",
+          "attempts_started",
+          "as_of",
+          "queue_wait_seconds",
+          "running_seconds",
+          "last_queue_wait_seconds",
+          "last_attempt_duration_seconds",
+          "total_elapsed_seconds",
+          "failure_code",
+          "failure_description",
+          "timing_anomaly"
+        ],
+        "title": "JobSnapshot"
+      },
+      "JobStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed"
+        ],
+        "title": "JobStatus"
+      },
+      "JobType": {
+        "type": "string",
+        "enum": [
+          "transcription",
+          "notes"
+        ],
+        "title": "JobType"
       },
       "JsonValue": {},
       "McpKeyCreate": {
@@ -6062,6 +6607,37 @@
         "type": "object",
         "title": "MeetingUpdate"
       },
+      "MetricsRead": {
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At",
+            "description": "UTC assembly time for the job counts"
+          },
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status",
+            "description": "Job counts were read successfully"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobCounts"
+            },
+            "type": "array",
+            "title": "Jobs",
+            "description": "Logical-job aggregates from PostgreSQL"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generated_at",
+          "status",
+          "jobs"
+        ],
+        "title": "MetricsRead"
+      },
       "NoteRead": {
         "properties": {
           "id": {
@@ -6221,6 +6797,27 @@
           "pagination"
         ],
         "title": "Page[FolderRead]"
+      },
+      "Page_JobSnapshot_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JobSnapshot"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Items of this page, in the documented order"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "pagination"
+        ],
+        "title": "Page[JobSnapshot]"
       },
       "Page_McpKeyRead_": {
         "properties": {
@@ -7085,14 +7682,6 @@
         ],
         "title": "TermRead"
       },
-      "TranscriptFormat": {
-        "type": "string",
-        "enum": [
-          "markdown",
-          "vtt"
-        ],
-        "title": "TranscriptFormat"
-      },
       "TranscriptRead": {
         "properties": {
           "meeting_id": {
@@ -7485,6 +8074,10 @@
     {
       "name": "capture",
       "description": "Recording from the Chrome extension in chunks"
+    },
+    {
+      "name": "admin",
+      "description": "Operational job metadata without meeting content"
     },
     {
       "name": "meta",

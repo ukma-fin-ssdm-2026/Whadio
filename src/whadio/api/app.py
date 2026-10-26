@@ -9,11 +9,14 @@ from ..shared.database import Database
 from . import meta
 from .access_policy import routes as access_routes
 from .accounts import routes_mcp_keys, routes_sessions, routes_workspaces
+from .admin import routes as admin_routes
 from .capture import routes as capture_routes
 from .composition import (
     CompositionRoot,
     RuntimeIntegrations,
     connect_integrations,
+    export_api_public_url,
+    export_public_url,
     runtime_database,
     transaction,
 )
@@ -58,6 +61,7 @@ TAGS = [
     {"name": "access", "description": "Restrictions and external shares"},
     {"name": "export", "description": "Authorized transcript and notes downloads"},
     {"name": "capture", "description": "Recording from the Chrome extension in chunks"},
+    {"name": "admin", "description": "Operational job metadata without meeting content"},
     {"name": "meta", "description": "Operational endpoints"},
 ]
 
@@ -94,12 +98,15 @@ def create_app(
         access_routes.router,
         export_routes.router,
         capture_routes.router,
+        admin_routes.router,
     ):
         v1.include_router(router)
     app.include_router(v1)
     app.include_router(meta.router)
     app.mount("/mcp", mcp_app)
     register_error_handlers(app)
+    app.dependency_overrides[export_public_url] = lambda: composition.public_url
+    app.dependency_overrides[export_api_public_url] = lambda: composition.api_public_url
     app.dependency_overrides[transaction] = composition.transaction
     app.dependency_overrides[runtime_database] = composition.database
     connect_integrations(

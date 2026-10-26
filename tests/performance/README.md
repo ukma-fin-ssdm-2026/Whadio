@@ -10,9 +10,9 @@ It implements TC-NFR-02 with two isolated stages against one uvicorn worker:
 
 The one-second pause between iterations models repeated page reads without adding time to the HTTP
 latency metric. Sign-in and workspace discovery happen once in `setup()` and are excluded from the
-endpoint thresholds. Measured list requests time out after four seconds, before the five-second
-scenario grace period ends, so a hanging request is recorded as a failure instead of disappearing
-from the result. Use a dedicated local account and non-sensitive seed data.
+endpoint thresholds. Requests time out after four seconds, before the five-second scenario grace
+period ends, so a hanging request is recorded as a failure instead of disappearing from the result.
+Use a dedicated local account and non-sensitive seed data.
 
 ## Prepare Whadio
 
@@ -36,23 +36,20 @@ In another PowerShell terminal, set credentials without placing the password in 
 ```powershell
 $env:WHADIO_EMAIL = "performance@whadio.dev"
 $env:WHADIO_PASSWORD = Read-Host "Whadio password"
-$scriptDir = (Resolve-Path ".\tests\performance").Path
 
 docker run --rm `
   --add-host host.docker.internal:host-gateway `
   -e BASE_URL=http://host.docker.internal:3000 `
   -e WHADIO_EMAIL `
   -e WHADIO_PASSWORD `
-  --mount "type=bind,source=$scriptDir,target=/scripts,readonly" `
+  -v "${PWD}/tests/performance:/scripts:ro" `
   grafana/k6:0.54.0 run /scripts/test_lists.js
 
 Remove-Item Env:WHADIO_PASSWORD
 ```
 
-Run the command from the repository root. Resolving the directory before starting Docker makes a
-missing local script fail in PowerShell instead of appearing as a missing `/scripts/test_lists.js`
-module inside k6. `host.docker.internal` lets the container reach the API on the host;
-`--add-host` also supplies that name on Linux Docker Engine.
+Run the command from the repository root. `host.docker.internal` lets the k6 container reach the
+API on the host; `--add-host` also supplies that name on Linux Docker Engine.
 
 ## Record the result
 
