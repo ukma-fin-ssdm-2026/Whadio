@@ -131,7 +131,7 @@ function formatDate(value) {
   }).format(new Date(value));
 }
 
-function App() {
+export function App() {
   const [authStatus, setAuthStatus] = useState("loading");
   const [user, setUser] = useState(() => {
     try {
