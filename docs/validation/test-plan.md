@@ -2,7 +2,7 @@
 
 **Test planner:** Andrii
 
-**Baseline:** `main` at `fb5cbc6`, October 2026
+**Baseline:** `main` at `69d178d`, October 2026
 
 **Builds on:** [Testing Strategy](../testing/testing-strategy.md) (levels, coverage gate, merge and release gates)
 
@@ -125,4 +125,4 @@ runs, and record each run in [Results](#results).
 ## AI Usage
 
 Drafted with Claude Code (Claude Opus 5.5) from Zlata's initial draft (OpenAI Codex) and the GPU
-machine runs, and checked against the code at `fb5cbc6`. The team reviews it before merging.
+machine runs, and checked against the code at `69d178d`. The team reviews it before merging.
