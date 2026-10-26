@@ -77,6 +77,7 @@ speakers, preset sections, time). A pass in one never stands in for the other.
 | TC-ASR-02 | ASR worker: glossary with Whisper | System | Positive | A glossary term Parakeet misspelled appears in its preferred form in a Whisper transcript of the same clip. | Andrii | US-012 (Test-02) | GPU machine, manual |
 | TC-NOTES-01 | Notes worker: real Ollama limits | Integration | Negative | A prompt longer than the context window and an answer that runs out of it fail as `transcript_too_long`; an answer cut by the answer limit fails as `invalid_output`; a short answer succeeds. | Andrii | US-006 | GPU machine, `pytest -m slow` with Ollama |
 | TC-NFR-03 | Transcription time | System | Positive | A 60-minute public Ukrainian recording, alone in the queue, has its transcript ready within 900 s of being queued in each of three runs; one miss fails. The three runs are a smoke check of NFR-002's budget: they cannot show its 90%, which the 20-recording benchmark in the [traceability matrix](../architecture/traceability-matrix.md) verifies. | Andrii | NFR-002 | GPU machine, manual |
+| TC-NFR-05 | ASR pipeline: transcription time | Integration | Positive | The ASR pipeline (download, decoding, diarization, recognition) transcribes a 50–60 minute recording within 900 s in each of three runs; one miss fails. Queueing and the upload are left out, which TC-NFR-03 times. | Andrii | NFR-002 | GPU machine, `pytest -m models` |
 
 ## Entry criteria
 
@@ -127,3 +128,24 @@ runs, and record each run in [Results](#results).
 
 Drafted with Claude Code (Claude Opus 5.5) from Zlata's initial draft (OpenAI Codex) and the GPU
 machine runs, and checked against the code at `69d178d`. The team reviews it before merging.
+
+## Бонуси
+
+### 4. Executable non-functional test
+
+`workers/asr/test_slot.py::test_hour_recording_is_transcribed_within_the_nfr_002_budget` is
+TC-NFR-05, a test of NFR-002's threshold. The ASR pipeline must transcribe a 50–60 minute
+recording within 900 s, in each of three runs. The models load before the timed part, as they do
+once per worker in production.
+
+- **Threshold:** 900 s, NFR-002's 15 minutes for a recording of up to one hour.
+- **Measured:** the time of each run, in [Results](#results), row TC-NFR-05.
+- **Run** on the GPU machine, with the `cuda` extra installed and diarization on the GPU:
+
+  ```bash
+  WHADIO_TEST_HOUR_RECORDING=<a 50-60 minute recording> WHADIO_ASR__DIARIZATION__DEVICE=cuda \
+    uv run pytest -m models src/whadio/workers/asr/test_slot.py -k nfr_002 --durations=3
+  ```
+
+  `--durations` prints each run's time. Without the variable the test skips; a recording outside
+  50–60 minutes fails it before the timing starts.
