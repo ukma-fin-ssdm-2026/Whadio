@@ -544,6 +544,25 @@ def test_member_cannot_delete_someone_elses_meeting(async_database: AsyncDatabas
 
 
 @pytest.mark.slow
+def test_meeting_deletion_is_audited(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[list[tuple[AuditAction, UUID]], UUID]:
+        unit = await team(session)
+        await unit.service.delete(unit.owner, unit.meeting, NOW)
+        events = await session.execute(
+            select(AuditEvent.action, AuditEvent.actor_user_id).where(
+                AuditEvent.meeting_id == unit.meeting
+            )
+        )
+        return [(action, actor) for action, actor in events], unit.owner
+
+    # Act
+    events, owner = async_database.run(scenario)
+    # Assert
+    assert events == [(AuditAction.MEETING_DELETED, owner)]
+
+
+@pytest.mark.slow
 def test_update_without_changes_is_invalid(async_database: AsyncDatabase) -> None:
     # Arrange
     async def scenario(session: AsyncSession) -> Failure | None:
@@ -781,6 +800,45 @@ def test_edit_without_changes_is_invalid(async_database: AsyncDatabase) -> None:
     failure = async_database.run(scenario)
     # Assert
     assert failure is Failure.VALIDATION_ERROR
+
+
+type EditAudit = tuple[AuditAction, UUID, UUID | None]
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    ("change", "action"),
+    [("text", AuditAction.TRANSCRIPT_EDITED), ("speaker", AuditAction.SPEAKER_RENAMED)],
+)
+def test_transcript_edit_is_audited_by_kind_of_change(
+    async_database: AsyncDatabase, change: str, action: AuditAction
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[list[EditAudit], EditAudit]:
+        unit = await team(session)
+        original = await unit.service.save_initial_transcript(unit.meeting, ALICE, NOW)
+        text_changes, speaker_changes = {
+            "text": ({original.segments[0].segment_id: "Fixed"}, {}),
+            "speaker": ({}, {original.speakers[0].speaker_id: "Bob"}),
+        }[change]
+        edited = await unit.service.edit_transcript(
+            unit.member,
+            unit.meeting,
+            TranscriptEdit(original.revision.revision_id, text_changes, speaker_changes),
+            NOW + timedelta(minutes=1),
+        )
+        events = await session.execute(
+            select(AuditEvent.action, AuditEvent.actor_user_id, AuditEvent.subject_id).where(
+                AuditEvent.meeting_id == unit.meeting
+            )
+        )
+        found = [(kind, actor, subject) for kind, actor, subject in events]
+        return found, (action, unit.member, edited.revision.revision_id)
+
+    # Act
+    events, expected = async_database.run(scenario)
+    # Assert
+    assert events == [expected]
 
 
 @pytest.mark.slow
