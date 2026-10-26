@@ -3,6 +3,7 @@ import { check, fail, sleep } from "k6";
 
 const BASE_URL = __ENV.BASE_URL || "http://host.docker.internal:3000";
 const PAGE_LIMIT = 100;
+const REQUEST_TIMEOUT = "4s";
 
 export const options = {
   scenarios: {
@@ -49,6 +50,7 @@ function requestParams(session, endpoint) {
       Cookie: `whadio_session=${session}`,
     },
     tags: { endpoint },
+    timeout: REQUEST_TIMEOUT,
   };
 }
 
