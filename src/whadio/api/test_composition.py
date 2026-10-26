@@ -1,18 +1,19 @@
 import asyncio
 import hashlib
 import wave
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from functools import partial
 from io import BytesIO
 from uuid import UUID, uuid4
 
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
-from httpx import ASGITransport, AsyncClient
+from httpx import ASGITransport, AsyncClient, Response
 from pydantic import JsonValue
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -999,6 +1000,43 @@ def test_http_self_exclusion_commits_restriction(database_settings: DatabaseSett
             hidden = await client.get(f"/api/v1/meetings/{unit.meeting}")
             # Assert
             assert (changed.status_code, hidden.status_code) == (200, 404)
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+type Call = Callable[[], Awaitable[Response]]
+
+
+def test_core_features_answer_95_percent_of_requests_without_processing(
+    database_settings: DatabaseSettings,
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            password = uuid4().hex
+            account = await AsyncDatabase.add_account(unit.session, password)
+            async with client_fixture(unit, unit.owner) as client:
+                meeting = f"/api/v1/meetings/{unit.meeting}"
+                credentials = {"email": account.email, "password": password}
+                functions: dict[str, tuple[Call, ...]] = {
+                    "sign-in": (partial(client.post, "/api/v1/sessions", json=credentials),),
+                    "workspace list": (partial(client.get, "/api/v1/workspaces"),),
+                    "meeting list": (
+                        partial(client.get, f"/api/v1/workspaces/{unit.workspace}/meetings"),
+                    ),
+                    "transcript": (partial(client.get, f"{meeting}/transcript"),),
+                    "sharing settings": (
+                        partial(client.get, f"{meeting}/access"),
+                        partial(client.get, f"{meeting}/shares"),
+                    ),
+                }
+                # Act
+                shares: dict[str, float] = {}
+                for name, calls in functions.items():
+                    responses = [await call() for _ in range(20) for call in calls]
+                    shares[name] = sum(r.is_success for r in responses) / len(responses)
+                # Assert
+                assert [name for name, share in shares.items() if share < 0.95] == []
 
     asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
 
