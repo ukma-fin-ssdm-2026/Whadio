@@ -701,12 +701,24 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /meetings/{meeting_id}/transcript/export` · Download the transcript
 
-- **Status:** Designed · **Caller:** any member who can read it · **Success:** `200`, a
+- **Status:** Implemented · **Caller:** any member who can read it · **Success:** `200`, a
   Markdown or WebVTT attachment
 - **Rules:**
   - `format` is `markdown` (the default) or `vtt`. `timestamps=false` drops timestamps from
     Markdown; VTT always has them.
-  - The current revision, split by speaker labels (FR-040, FR-041).
+  - `version=current` (default) selects corrected content; `version=original` selects immutable
+    original text/speaker labels. The selected version is labelled truthfully (FR-028, FR-040,
+    FR-041, NFR-011). Files and Link headers carry absolute authenticated original-view/download
+    URLs from configured canonical bases, never from the request Host header. Original-view
+    links use `WHADIO_PUBLIC_URL`; download links use `WHADIO_API_PUBLIC_URL`, falling back to
+    the web base when omitted. The API base excludes `/api/v1`; both bases preserve optional
+    deployment path prefixes. The original-view URL opens `/meetings/{id}?revision_id={original_id}`
+    in the SPA's transcript tab and returns there after sign-in. Download URLs remain API routes.
+    Without a configured URL, exports use `http://localhost:3000` for development; SMTP still
+    requires an explicit public URL. Invalid values are refused when the app is built.
+  - Markdown preserves speaker labels and optional timestamps; VTT is always timed.
+  - Files are UTF-8 attachments with `Cache-Control: no-store`; shares and administrator
+    status alone confer no export permission. Original retrieval still requires current access.
   - The file opens with a notice not to share it without the participants' permission and
     ends with an attribution (FR-042). An edited transcript says so.
 - **Errors:**
@@ -715,10 +727,11 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /meetings/{meeting_id}/notes/export` · Download the notes
 
-- **Status:** Designed · **Caller:** any member who can read it · **Success:** `200`, a
+- **Status:** Implemented · **Caller:** any member who can read it · **Success:** `200`, a
   Markdown attachment
 - **Rules:** the current notes, with their context meetings, the notice and the attribution
-  (FR-040, FR-042).
+  (FR-040, FR-042). Only the latest saved note is read; pending/failed regeneration does not
+  discard it. Context snapshots survive deletion of context meetings.
 - **Errors:**
   - `404 NOT_FOUND`: no such meeting, or the caller cannot read it.
   - `409 NO_NOTES`: the meeting has no notes yet.
@@ -879,14 +892,25 @@ All capture operations accept the extension's bearer token as well as the browse
 
 ### 4.8 Administration and operations
 
-#### `GET /admin/jobs`, `GET /admin/metrics` · Operational dashboard
+#### `GET /admin/jobs`, `GET /admin/metrics` · Operational job monitoring
 
-- **Status:** Designed · **Caller:** administrator · **Success:** `200`, a page of jobs, or
-  the current metrics
-- **Rules:** queue depth, waiting times, failures and load (FR-045). Never any recording,
-  transcript or notes content.
-- **Errors:**
-  - `403 INSUFFICIENT_ROLE`: the caller is not an administrator.
+- **Status:** Implemented backend. The dashboard and host/model telemetry remain pending under
+  #139; these APIs do not complete US-019/FR-045 by themselves.
+- **Caller:** signed-in instance administrator; workspace roles alone grant no access.
+- **Jobs:** workspace UUID, job type/state, stored attempt counter and safe failure descriptions.
+  Times distinguish original creation, entry into the current queue period and attempt start/end.
+  Unknown historical queue waits are null. Results sort by creation time then job UUID descending;
+  filters cover workspace, job type, state and inclusive creation interval. Cursors are bound
+  to filters. Meeting names, meeting IDs, content, context payloads and raw failures are omitted.
+- **Metrics:** logical-job counts from PostgreSQL and the oldest known current queue wait, with
+  unknown queue waits counted separately. `generated_at` is the assembly time and `status=ok`
+  means the database query succeeded. No source, host or model measurements are included or
+  required. Counts describe retained jobs; deleting a meeting removes its jobs from the counts.
+- **Rules:** `Cache-Control: no-store`. Administrator revocation applies on the next request
+  without sign-out. Administrator status confers no meeting-content access. These APIs do not
+  change Processing's attempt counting or retry limits.
+- **Errors:** `401 UNAUTHENTICATED`, `403 INSUFFICIENT_ROLE`, `422 VALIDATION_ERROR`, and the
+  shared error envelope for unexpected failures. There is no route-specific database handler.
 
 #### `GET /health` · Liveness probe
 
@@ -1271,3 +1295,8 @@ checker and with scripted requests against every implemented operation. The auth
 and edited the content, and the document is reviewed through a pull request before merging.
 
 These PR #63 review revisions were assisted by OpenAI Codex. Everything was reviewed by me.
+
+The Export implementation and review changes were assisted by OpenAI Codex.
+
+
+Later revisions were assisted by OpenAI Codex and verified by author.

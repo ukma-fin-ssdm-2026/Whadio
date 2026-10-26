@@ -1,6 +1,7 @@
 import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import KeyOutlinedIcon from "@mui/icons-material/KeyOutlined";
@@ -31,6 +32,8 @@ import {
   IconButton,
   InputLabel,
   MenuItem,
+  MenuList,
+  Paper,
   Select,
   Stack,
   Switch,
@@ -41,9 +44,10 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ApiError, api } from "./api";
+import { meetingLibraryPath, meetingPath, readMeetingLink } from "./meeting-link";
 import "./styles.css";
 import { formatDuration } from "./format-duration";
 
@@ -127,7 +131,7 @@ function formatDate(value) {
   }).format(new Date(value));
 }
 
-function App() {
+export function App() {
   const [authStatus, setAuthStatus] = useState("loading");
   const [user, setUser] = useState(() => {
     try {
@@ -146,6 +150,7 @@ function App() {
   const [view, setView] = useState("home");
   const [workspaceId, setWorkspaceId] = useState("");
   const [meetingId, setMeetingId] = useState("");
+  const [meetingLink, setMeetingLink] = useState(() => readMeetingLink(window.location.href));
   const [workspacesOpen, setWorkspacesOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState("all");
@@ -166,14 +171,21 @@ function App() {
     const meetingPages = await Promise.all(nextWorkspaces.map((item) => api.listMeetings(item.id)));
     setWorkspaces(nextWorkspaces);
     const nextMeetings = meetingPages.flatMap((page) => page.items.map(mapMeeting));
-    setMeetings((current) =>
-      nextMeetings.map((meeting) => {
+    setMeetings((current) => {
+      const linked = current.find(
+        (item) => item.id === readMeetingLink(window.location.href)?.meetingId,
+      );
+      const listed =
+        linked && !nextMeetings.some((item) => item.id === linked.id)
+          ? [...nextMeetings, linked]
+          : nextMeetings;
+      return listed.map((meeting) => {
         const previous = current.find((item) => item.id === meeting.id);
         return previous?.recordingAvailable
           ? { ...meeting, recordingAvailable: true, failureReason: previous.failureReason }
           : meeting;
-      }),
-    );
+      });
+    });
     setWorkspaceId((current) => current || nextWorkspaces[0]?.id || "");
     setAuthStatus("signedIn");
   }, []);
@@ -218,34 +230,73 @@ function App() {
       .sort((left, right) => new Date(right.date) - new Date(left.date));
   }, [meetings, query, stateFilter, view, workspaceId]);
 
-  const loadMeetingContent = useCallback(async (id) => {
-    requestedMeetingId.current = id;
+  const loadMeetingContent = useCallback(async (id, revisionId = null) => {
+    const request = {};
+    requestedMeetingId.current = request;
     setContentLoading(true);
+    setError("");
     setNotes(null);
     setTranscript(null);
     setRecordingUrl("");
     try {
       const detail = await api.getMeeting(id);
-      if (requestedMeetingId.current !== id) return;
+      if (requestedMeetingId.current !== request) return;
       const mapped = mapMeeting(detail);
-      setMeetings((items) => items.map((item) => (item.id === id ? mapped : item)));
-      if (detail.processing_state === "processed") {
-        const [notesPage, transcriptResult] = await Promise.all([
-          api.listNotes(id),
-          api.getTranscript(id),
-        ]);
-        if (requestedMeetingId.current !== id) return;
-        setNotes(notesPage.items[0] ?? null);
-        setTranscript(transcriptResult);
+      setWorkspaceId(mapped.workspaceId);
+      setMeetings((items) => [mapped, ...items.filter((item) => item.id !== id)]);
+      const [notesResult, transcriptResult] = await Promise.allSettled([
+        api.listNotes(id),
+        api.getTranscript(id, revisionId),
+      ]);
+      if (requestedMeetingId.current !== request) return;
+      if (notesResult.status === "fulfilled") setNotes(notesResult.value.items[0] ?? null);
+      if (transcriptResult.status === "fulfilled") {
+        setTranscript(transcriptResult.value);
+      } else if (transcriptResult.reason.code !== "NOT_TRANSCRIBED" || revisionId) {
+        setError(transcriptResult.reason.message);
       }
+      if (notesResult.status === "rejected") setError(notesResult.reason.message);
     } catch (caught) {
-      if (requestedMeetingId.current === id) setError(caught.message);
+      if (requestedMeetingId.current === request) {
+        setMeetings((items) => items.filter((item) => item.id !== id));
+        setError(caught.message);
+      }
     } finally {
-      if (requestedMeetingId.current === id) setContentLoading(false);
+      if (requestedMeetingId.current === request) setContentLoading(false);
     }
   }, []);
 
+  useEffect(() => {
+    const followHistory = (event) => {
+      const linked = readMeetingLink(window.location.href);
+      setMeetingLink(linked ? { ...linked, tab: event.state?.tab } : null);
+      setView("meetings");
+    };
+    window.addEventListener("popstate", followHistory);
+    return () => window.removeEventListener("popstate", followHistory);
+  }, []);
+
+  useEffect(() => {
+    if (authStatus !== "signedIn" || !meetingLink) return;
+    setMeetingId(meetingLink.meetingId);
+    setMeetingTab(meetingLink.tab ?? (meetingLink.revisionId ? "transcript" : "notes"));
+    setTranscriptQuery("");
+    setSettingsOpen(false);
+    setView("meeting");
+    loadMeetingContent(meetingLink.meetingId, meetingLink.revisionId);
+    return () => {
+      requestedMeetingId.current = "";
+    };
+  }, [authStatus, meetingLink, loadMeetingContent]);
+
+  const clearMeetingLink = () => {
+    window.history.pushState(null, "", meetingLibraryPath(window.location.href));
+    setMeetingLink(null);
+    requestedMeetingId.current = "";
+  };
+
   const openWorkspace = (id) => {
+    clearMeetingLink();
     requestedMeetingId.current = "";
     setWorkspaceId(id);
     setMeetingId("");
@@ -256,17 +307,10 @@ function App() {
     setView("workspace");
   };
 
-  const openMeeting = (id) => {
-    const meeting = meetings.find((item) => item.id === id);
-    if (!meeting) return;
-    setWorkspaceId(meeting.workspaceId);
-    setMeetingId(id);
-    setMeetingTab("notes");
-    setTranscriptQuery("");
+  const openMeeting = (id, revisionId = null, tab = null) => {
+    window.history.pushState({ tab }, "", meetingPath(window.location.href, id, revisionId));
+    setMeetingLink({ ...readMeetingLink(window.location.href), tab });
     setWorkspacesOpen(true);
-    setSettingsOpen(false);
-    setView("meeting");
-    loadMeetingContent(id);
   };
 
   const showRecording = async () => {
@@ -282,6 +326,7 @@ function App() {
   };
 
   const showMeetings = () => {
+    clearMeetingLink();
     requestedMeetingId.current = "";
     setView("meetings");
     setMeetingId("");
@@ -337,7 +382,7 @@ function App() {
     setWorkspacesOpen(true);
     setSettingsOpen(false);
     setView("meeting");
-    loadMeetingContent(mapped.id);
+    openMeeting(mapped.id);
   };
 
   if (authStatus !== "signedIn") {
@@ -367,6 +412,7 @@ function App() {
           open={workspacesOpen}
           onToggleWorkspaces={() => setWorkspacesOpen((value) => !value)}
           onHome={() => {
+            clearMeetingLink();
             setSettingsOpen(false);
             setView("home");
           }}
@@ -384,7 +430,10 @@ function App() {
             view={view}
             workspace={workspace}
             meeting={selectedMeeting}
-            onHome={() => setView("home")}
+            onHome={() => {
+              clearMeetingLink();
+              setView("home");
+            }}
             onWorkspace={openWorkspace}
           />
 
@@ -468,6 +517,7 @@ function App() {
               onTab={(value) => (value === "recording" ? showRecording() : setMeetingTab(value))}
               notes={notes}
               transcript={transcript}
+              onRevision={(revisionId) => openMeeting(selectedMeeting.id, revisionId, "transcript")}
               recordingUrl={recordingUrl}
               loading={contentLoading}
               paused={pausedMeetingIds.includes(selectedMeeting.id)}
@@ -1233,6 +1283,7 @@ function MeetingDetail({
   onTranscriptQuery,
   notes,
   transcript,
+  onRevision,
   recordingUrl,
   loading,
   paused,
@@ -1252,37 +1303,50 @@ function MeetingDetail({
         item.speaker.toLowerCase().includes(transcriptQuery.toLowerCase()),
     );
 
+  const header = (
+    <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={2}>
+      <Box>
+        <Typography variant="h1" fontSize={{ xs: 34, md: 48 }}>
+          {meeting.title}
+        </Typography>
+        <Typography className="meeting-date" color="text.secondary">
+          {formatDate(meeting.date)}
+        </Typography>
+      </Box>
+      <Stack className="meeting-meta-actions" direction="row" gap={0.75} alignItems="center">
+        <ExportControls
+          key={`${meeting.id}-${tab}-${transcript?.revision.revision_id}`}
+          meetingId={meeting.id}
+          tab={tab}
+          transcript={transcript}
+          notes={notes}
+          loading={loading}
+        />
+        <MetaIcon title={`Source: ${meeting.source}`}>
+          {meeting.source === "Google Meet" ? (
+            <VideoCameraFrontOutlinedIcon fontSize="small" />
+          ) : (
+            <CloudUploadOutlinedIcon fontSize="small" />
+          )}
+        </MetaIcon>
+        <MetaIcon title="Workspace access">
+          <GroupsOutlinedIcon fontSize="small" />
+        </MetaIcon>
+      </Stack>
+    </Stack>
+  );
+
   return (
     <Stack gap={1.5}>
       <Tabs value={tab} onChange={(_, value) => onTab(value)} className="meeting-tabs">
         <Tab value="notes" label="Notes" />
+        <Tab value="transcript" label="Transcript" />
         <Tab value="recording" label="Recording" />
       </Tabs>
 
       {tab === "notes" ? (
-        <Card className="notes-panel">
-          <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={2}>
-            <Box>
-              <Typography variant="h1" fontSize={{ xs: 34, md: 48 }}>
-                {meeting.title}
-              </Typography>
-              <Typography className="meeting-date" color="text.secondary">
-                {formatDate(meeting.date)}
-              </Typography>
-            </Box>
-            <Stack className="meeting-meta-actions" direction="row" gap={0.75} alignItems="center">
-              <MetaIcon title={`Source: ${meeting.source}`}>
-                {meeting.source === "Google Meet" ? (
-                  <VideoCameraFrontOutlinedIcon fontSize="small" />
-                ) : (
-                  <CloudUploadOutlinedIcon fontSize="small" />
-                )}
-              </MetaIcon>
-              <MetaIcon title="Workspace access">
-                <GroupsOutlinedIcon fontSize="small" />
-              </MetaIcon>
-            </Stack>
-          </Stack>
+        <Card className="notes-panel" sx={{ overflow: "visible" }}>
+          {header}
           <Divider sx={{ my: 2.5 }} />
           {isProcessing(meeting) ? (
             <Stack className="processing-panel" direction="row" gap={1.5} alignItems="center">
@@ -1316,33 +1380,62 @@ function MeetingDetail({
         </Card>
       ) : (
         <Box className="recording-grid">
-          <Card className="notes-panel">
-            {recordingUrl ? (
-              <Box className="player player-ready">
-                <video controls src={recordingUrl} aria-label={`${meeting.title} recording`} />
-              </Box>
-            ) : (
-              <Box className="player">
-                <Box className="play-circle">
-                  <PlayArrowRoundedIcon fontSize="large" />
+          {tab === "recording" && (
+            <Card className="notes-panel">
+              {header}
+              <Divider sx={{ my: 2.5 }} />
+              {recordingUrl ? (
+                <Box className="player player-ready">
+                  <video controls src={recordingUrl} aria-label={`${meeting.title} recording`} />
                 </Box>
-                <Typography fontWeight={650}>{meeting.title}</Typography>
-                <Typography>
-                  {meeting.recordingAvailable
-                    ? "Loading recording..."
-                    : "Recording is not available"}
-                </Typography>
-              </Box>
+              ) : (
+                <Box className="player">
+                  <Box className="play-circle">
+                    <PlayArrowRoundedIcon fontSize="large" />
+                  </Box>
+                  <Typography fontWeight={650}>{meeting.title}</Typography>
+                  <Typography>
+                    {meeting.recordingAvailable
+                      ? "Loading recording..."
+                      : "Recording is not available"}
+                  </Typography>
+                </Box>
+              )}
+            </Card>
+          )}
+          <Card className="transcript-panel" sx={{ overflow: "visible" }}>
+            {tab === "transcript" && (
+              <>
+                {header}
+                <Divider sx={{ my: 2.5 }} />
+              </>
             )}
-          </Card>
-          <Card className="transcript-panel">
             <Stack gap={1.5}>
               <Stack direction="row" justifyContent="space-between" alignItems="center">
                 <Typography variant="h2" fontSize={22}>
-                  Transcript
+                  {transcript?.revision.revision_type === "original"
+                    ? "Original transcript"
+                    : transcript
+                      ? "Edited transcript"
+                      : "Transcript"}
                 </Typography>
                 <Chip label={transcript?.segments.length ?? 0} size="small" />
               </Stack>
+              {transcript?.is_edited && (
+                <Button
+                  onClick={() =>
+                    onRevision(
+                      transcript.revision.revision_type === "original"
+                        ? null
+                        : transcript.original_revision_id,
+                    )
+                  }
+                >
+                  {transcript.revision.revision_type === "original"
+                    ? "View current transcript"
+                    : "View original transcript"}
+                </Button>
+              )}
               <TextField
                 size="small"
                 placeholder="Search transcript"
@@ -1376,6 +1469,102 @@ function MeetingDetail({
   );
 }
 
+export function ExportDownloadMenu({ meetingId, tab, transcript, onDownload }) {
+  if (tab === "notes") {
+    return (
+      <MenuList aria-label="Notes download formats">
+        <MenuItem component="a" href={api.notesExportUrl(meetingId)} onClick={onDownload}>
+          Markdown (.md)
+        </MenuItem>
+      </MenuList>
+    );
+  }
+  const version = transcript.revision.revision_type === "original" ? "original" : "current";
+  return (
+    <MenuList
+      aria-label={`${version === "original" ? "Original" : "Current"} transcript download formats`}
+    >
+      <MenuItem
+        component="a"
+        href={api.transcriptExportUrl(meetingId, { version, timestamps: false })}
+        onClick={onDownload}
+      >
+        Markdown (.md)
+      </MenuItem>
+      <MenuItem
+        component="a"
+        href={api.transcriptExportUrl(meetingId, { version })}
+        onClick={onDownload}
+      >
+        Markdown with timestamps (.md)
+      </MenuItem>
+
+      <MenuItem
+        component="a"
+        href={api.transcriptExportUrl(meetingId, { version, format: "vtt" })}
+        onClick={onDownload}
+      >
+        WebVTT (.vtt)
+      </MenuItem>
+    </MenuList>
+  );
+}
+
+export function ExportControls({ meetingId, tab, transcript, notes, loading }) {
+  const [open, setOpen] = useState(false);
+  const button = useRef(null);
+  const menuId = useId();
+  if (loading || (tab === "notes" ? !notes : tab !== "transcript" || !transcript)) return null;
+  return (
+    <Box
+      sx={{ position: "relative" }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={(event) => {
+        if (!event.currentTarget.contains(document.activeElement)) setOpen(false);
+      }}
+      onFocus={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(true);
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          setOpen(false);
+          button.current?.focus();
+        }
+      }}
+    >
+      <IconButton
+        ref={button}
+        className="meta-icon-button"
+        size="small"
+        aria-label={tab === "notes" ? "Download notes" : "Download transcript"}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        onClick={() => setOpen(true)}
+      >
+        <DownloadOutlinedIcon fontSize="small" />
+      </IconButton>
+      {open && (
+        <Paper
+          id={menuId}
+          elevation={3}
+          sx={{ position: "absolute", top: "100%", right: 0, zIndex: 10, minWidth: 220 }}
+        >
+          <ExportDownloadMenu
+            meetingId={meetingId}
+            tab={tab}
+            transcript={transcript}
+            onDownload={() => setOpen(false)}
+          />
+        </Paper>
+      )}
+    </Box>
+  );
+}
+
 function MetaIcon({ title, children }) {
   return (
     <Tooltip title={title} arrow>
@@ -1386,4 +1575,6 @@ function MetaIcon({ title, children }) {
   );
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+if (!import.meta.env.SSR) {
+  createRoot(document.getElementById("root")).render(<App />);
+}
