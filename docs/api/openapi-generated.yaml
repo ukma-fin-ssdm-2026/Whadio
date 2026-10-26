@@ -2866,9 +2866,11 @@ paths:
     get:
       tags:
       - export
-      summary: Export Transcript
-      description: Download the current transcript of an accessible meeting as Markdown
-        or WebVTT. External share access does not authorize exports.
+      summary: Download a transcript
+      description: Download the current or immutable original transcript as UTF-8
+        Markdown or WebVTT. Requires meeting membership/access; share grants and administrator
+        status confer no export rights. Link headers and the file identify the original.
+        VTT is always timed.
       operationId: export_transcript_api_v1_meetings__meeting_id__transcript_export_get
       security:
       - sessionCookie: []
@@ -2888,25 +2890,42 @@ paths:
         in: query
         required: false
         schema:
-          $ref: '#/components/schemas/TranscriptFormat'
+          $ref: '#/components/schemas/ExportFormat'
           description: Attachment format
           default: markdown
         description: Attachment format
+      - name: version
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/ExportVersion'
+          description: Current revision or immutable original
+          default: current
+        description: Current revision or immutable original
       - name: timestamps
         in: query
         required: false
         schema:
           type: boolean
-          description: Include timestamps in Markdown
+          description: Include timestamps in Markdown; VTT is always timed
           default: true
           title: Timestamps
-        description: Include timestamps in Markdown
+        description: Include timestamps in Markdown; VTT is always timed
       responses:
         '200':
           description: Successful Response
           content:
-            application/json:
-              schema: {}
+            text/markdown:
+              schema:
+                type: string
+            text/vtt:
+              schema:
+                type: string
+          headers:
+            Link:
+              description: Authenticated original view and download URLs
+              schema:
+                type: string
         '401':
           description: Authentication required
           content:
@@ -2926,18 +2945,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: Validation Error
+          description: Invalid export options
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                $ref: '#/components/schemas/ErrorResponse'
   /api/v1/meetings/{meeting_id}/notes/export:
     get:
       tags:
       - export
-      summary: Export Notes
-      description: Download the current notes of an accessible meeting as Markdown.
-        Requires existing notes; external share access does not authorize exports.
+      summary: Download current notes
+      description: Download the latest saved notes and context provenance as UTF-8
+        Markdown. Requires meeting access, not an external share. No notes returns
+        409 NO_NOTES.
       operationId: export_notes_api_v1_meetings__meeting_id__notes_export_get
       security:
       - sessionCookie: []
@@ -2957,8 +2977,9 @@ paths:
         '200':
           description: Successful Response
           content:
-            application/json:
-              schema: {}
+            text/markdown:
+              schema:
+                type: string
         '401':
           description: Authentication required
           content:
@@ -2978,11 +2999,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: Validation Error
+          description: Invalid export options
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                $ref: '#/components/schemas/ErrorResponse'
   /api/v1/captures/destinations:
     get:
       tags:
@@ -3796,6 +3817,18 @@ components:
       - error
       title: ErrorResponse
       description: The single error envelope returned for every 4xx and 5xx response.
+    ExportFormat:
+      type: string
+      enum:
+      - markdown
+      - vtt
+      title: ExportFormat
+    ExportVersion:
+      type: string
+      enum:
+      - current
+      - original
+      title: ExportVersion
     FolderInput:
       properties:
         name:
@@ -5142,12 +5175,6 @@ components:
       - source_meeting_id
       - created_by_user_id
       title: TermRead
-    TranscriptFormat:
-      type: string
-      enum:
-      - markdown
-      - vtt
-      title: TranscriptFormat
     TranscriptRead:
       properties:
         meeting_id:

@@ -46,6 +46,7 @@ from ..capture.services import (
     CaptureSpeakerTimeline,
     IChunkStorage,
 )
+from ..export.services import ExportService
 from ..meetings.contracts import EvictionNotice, IEvictionNotifier, QueuedNotes
 from ..meetings.monitoring import MeetingMetadata
 from ..meetings.persistence import MeetingPersistence, PersistenceDependencies
@@ -69,6 +70,7 @@ from ..processing.repositories import JobRepository
 from ..processing.services import ProcessingCollaborators, ProcessingService
 from ..shared.database import Database, DatabaseSettings, IUseCaseTransactions
 from ..shared.errors import Failure, UseCaseError
+from ..shared.settings import PublicUrlSettings
 from ..shared.storage import IObjectStorage, connect_s3_storage
 from .settings import WebSettings
 
@@ -76,7 +78,14 @@ logger = logging.getLogger(__name__)
 
 
 class CompositionRoot:
-    def __init__(self, database: Database | None = None) -> None:
+    def __init__(
+        self, database: Database | None = None, *, public_settings: PublicUrlSettings | None = None
+    ) -> None:
+        settings = (
+            public_settings if public_settings is not None else PublicUrlSettings.model_validate({})
+        )
+        self.public_url: str = str(settings.public_url or "http://localhost:3000")
+        self.api_public_url: str = str(settings.api_public_url or self.public_url)
         self._database: Database | None = database
         self._storage: IObjectStorage | None = None
         # Present while jobs are being published; setting it publishes the ones just committed.
@@ -446,6 +455,25 @@ def connect_integrations(app: FastAPI, integrations: RuntimeIntegrations) -> Non
         return UnavailableMeetingProcessing() if factory is None else factory(session)
 
     app.dependency_overrides[meeting_processing] = processing
+
+
+def export_public_url() -> str:
+    raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+
+
+def export_api_public_url() -> str:
+    raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+
+
+def export_service(
+    meetings: Meetings,
+    public_url: Annotated[str, Depends(export_public_url)],
+    api_public_url: Annotated[str, Depends(export_api_public_url)],
+) -> ExportService:
+    return ExportService(meetings, public_url, api_public_url)
+
+
+Exports = Annotated[ExportService, Depends(export_service)]
 
 
 def administrator_service(session: Session) -> AdministratorService:

@@ -15,6 +15,8 @@ from .composition import (
     CompositionRoot,
     RuntimeIntegrations,
     connect_integrations,
+    export_api_public_url,
+    export_public_url,
     runtime_database,
     transaction,
 )
@@ -103,6 +105,8 @@ def create_app(
     app.include_router(meta.router)
     app.mount("/mcp", mcp_app)
     register_error_handlers(app)
+    app.dependency_overrides[export_public_url] = lambda: composition.public_url
+    app.dependency_overrides[export_api_public_url] = lambda: composition.api_public_url
     app.dependency_overrides[transaction] = composition.transaction
     app.dependency_overrides[runtime_database] = composition.database
     connect_integrations(
