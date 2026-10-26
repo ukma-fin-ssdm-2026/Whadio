@@ -318,6 +318,35 @@ def test_share_creation_is_audited(async_database: AsyncDatabase) -> None:
     assert events == [(AuditAction.SHARE_CREATED, share_id)]
 
 
+type DecisionAudit = tuple[AuditAction, UUID, UUID | None, UUID | None]
+
+
+@pytest.mark.parametrize(
+    ("approve", "action"),
+    [(True, AuditAction.SHARE_ACCESS_APPROVED), (False, AuditAction.SHARE_ACCESS_DECLINED)],
+)
+def test_share_request_decision_is_audited(
+    async_database: AsyncDatabase, *, approve: bool, action: AuditAction
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[DecisionAudit, DecisionAudit]:
+        unit = await world(session)
+        created = await unit.access.create_share(unit.owner, unit.meeting, NOW, redact=False)
+        share_id = created.share.share_id
+        request = await unit.access.request_access(unit.outsider, share_id, created.token, NOW)
+        await unit.access.decide(unit.owner, request.share_access_request_id, NOW, approve=approve)
+        event = unit.audit.events[-1]
+        return (
+            (event.action, event.actor_id, event.subject_id, event.requester_id),
+            (action, unit.owner, share_id, unit.outsider),
+        )
+
+    # Act
+    event, expected = async_database.run(scenario)
+    # Assert
+    assert event == expected
+
+
 def test_wrong_token_is_an_invalid_link(async_database: AsyncDatabase) -> None:
     # Arrange
     async def scenario(session: AsyncSession) -> Failure | None:
