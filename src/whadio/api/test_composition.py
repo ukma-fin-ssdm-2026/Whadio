@@ -934,7 +934,16 @@ async def client_fixture(
 
 
 @pytest.mark.parametrize(
-    "suffix", ["", "/transcript", "/notes", "/transcript/export", "/notes/export"]
+    "suffix",
+    [
+        "",
+        "/transcript",
+        "/transcript/revisions",
+        "/notes",
+        "/recording",
+        "/transcript/export",
+        "/notes/export",
+    ],
 )
 def test_http_and_export_paths_hide_restricted_meetings(
     database_settings: DatabaseSettings, suffix: str
@@ -945,7 +954,7 @@ def test_http_and_export_paths_hide_restricted_meetings(
             await unit.access.replace_access(
                 unit.owner, unit.meeting, {unit.owner}, datetime.now(UTC), restricted=True
             )
-            async with client_fixture(unit, unit.member) as client:
+            async with client_fixture(unit, unit.member, storage=InMemoryObjectStorage()) as client:
                 # Act
                 response = await client.get(f"/api/v1/meetings/{unit.meeting}{suffix}")
                 # Assert
