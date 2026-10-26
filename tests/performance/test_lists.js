@@ -44,14 +44,22 @@ function credentials() {
   };
 }
 
-function requestParams(session, endpoint) {
+function sessionParams(session, endpoint) {
   return {
     headers: {
       Cookie: `whadio_session=${session}`,
     },
     tags: { endpoint },
-    timeout: REQUEST_TIMEOUT,
   };
+}
+
+function loadRequestParams(session, endpoint) {
+  return { ...sessionParams(session, endpoint), timeout: REQUEST_TIMEOUT };
+}
+
+function failResponse(label, response) {
+  const reason = response.error ? `: ${response.error}` : "";
+  fail(`${label} failed with HTTP ${response.status}${reason}`);
 }
 
 export function setup() {
@@ -60,7 +68,7 @@ export function setup() {
     tags: { setup: "sign-in" },
   });
   if (signIn.status !== 201) {
-    fail(`Sign-in failed with HTTP ${signIn.status}`);
+    failResponse("Sign-in", signIn);
   }
 
   const session = signIn.cookies.whadio_session?.[0]?.value;
@@ -70,10 +78,10 @@ export function setup() {
 
   const workspaces = http.get(
     `${BASE_URL}/api/v1/workspaces?limit=${PAGE_LIMIT}`,
-    requestParams(session, "setup"),
+    sessionParams(session, "setup"),
   );
   if (workspaces.status !== 200) {
-    fail(`Workspace discovery failed with HTTP ${workspaces.status}`);
+    failResponse("Workspace discovery", workspaces);
   }
 
   const workspaceId = workspaces.json("items.0.id");
@@ -87,7 +95,7 @@ export function testWorkspaceList(data) {
   const endpoint = "workspace-list";
   const response = http.get(
     `${BASE_URL}/api/v1/workspaces?limit=${PAGE_LIMIT}`,
-    requestParams(data.session, endpoint),
+    loadRequestParams(data.session, endpoint),
   );
   check(
     response,
@@ -101,7 +109,7 @@ export function testMeetingList(data) {
   const endpoint = "meeting-list";
   const response = http.get(
     `${BASE_URL}/api/v1/workspaces/${data.workspaceId}/meetings?limit=${PAGE_LIMIT}`,
-    requestParams(data.session, endpoint),
+    loadRequestParams(data.session, endpoint),
   );
   check(
     response,

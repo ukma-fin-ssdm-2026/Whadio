@@ -10,9 +10,9 @@ It implements TC-NFR-02 with two isolated stages against one uvicorn worker:
 
 The one-second pause between iterations models repeated page reads without adding time to the HTTP
 latency metric. Sign-in and workspace discovery happen once in `setup()` and are excluded from the
-endpoint thresholds. Requests time out after four seconds, before the five-second scenario grace
-period ends, so a hanging request is recorded as a failure instead of disappearing from the result.
-Use a dedicated local account and non-sensitive seed data.
+endpoint thresholds. Measured list requests time out after four seconds, before the five-second
+scenario grace period ends, so a hanging request is recorded as a failure instead of disappearing
+from the result. Use a dedicated local account and non-sensitive seed data.
 
 ## Prepare Whadio
 
