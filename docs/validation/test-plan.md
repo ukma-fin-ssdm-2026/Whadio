@@ -55,7 +55,7 @@ speakers, preset sections, time). A pass in one never stands in for the other.
 | TC-PROC-01 | Processing: repeated results | Unit | Negative | A duplicate or late result of a finished job queues nothing more and leaves the meeting unchanged. | Denys | NFR-014, US-004 | CI, exists |
 | TC-PROC-02 | Processing: retry limit | Unit | Negative | A retryable failure past the attempt limit fails the meeting with its reason; the job is not published again. | Denys | US-004 (Test-03) | CI, exists |
 | TC-MTG-02 | Meetings: accepting an upload | Integration | Positive | A supported file creates one `queued` meeting, a privately stored recording and one transcription job in the outbox; nothing is published inside the request. | Valeriia | US-004 (Test-01), NFR-014 | CI, exists |
-| TC-NFR-04 | Core features during a processing outage | System | Positive | With both workers and the LLM runtime stopped, sign-in, the workspace and meeting lists, a processed meeting's transcript, access and shares all respond (NFR-015: at least 95%); a new upload stays `queued` and reaches `processed` after the restart. | Andrii | NFR-015, NFR-014 | GPU machine, manual |
+| TC-NFR-04 | Core features during a processing outage | Integration | Positive | The API runs with no processing integration and no storage, which is how it sees a stopped worker, broker or LLM runtime. 20 requests go to each function NFR-015 names: sign-in, the workspace list, the meeting list, a processed meeting's transcript, and the sharing settings (its access and its shares). At least 95% of each function's requests succeed; any response but `2xx` counts as a failure. Recovery after the restart is TC-PIPE-01 and TC-NFR-01. | Andrii | NFR-015 | CI, exists |
 | TC-AUD-01 | Audit: a change and its record | Unit | Positive | Renaming a meeting writes one audit event with the actor, the action and the meeting. | Denys | US-013, NFR-010 | CI, exists |
 | TC-AUD-02 | Audit: every NFR-010 change the API offers | Integration | Positive | Meeting creation, renames, moves, deletions and evictions, transcript edits and speaker renames, notes regeneration, restrictions and grants, shares, share-request decisions, workspace deletion and MCP key changes each write exactly one record (actor, action type, target, time) in the same transaction, which a failed write rolls back; `details` holds no transcript, notes or recording content. Membership changes and provider configuration have no API yet. | Denys | NFR-010 | CI, exists |
 | TC-AUD-03 | Audit: history cannot change | Integration | Negative | The application's database role cannot delete, update or truncate audit events, and an event survives its workspace's deletion. | Denys | NFR-010 | CI, exists |
@@ -105,9 +105,6 @@ runs, and record each run in [Results](#results).
 - **TC-NFR-03.** Upload the 60-minute recording into an empty queue and time `queued` to transcript
   ready; three runs, one at a time. Also note how its notes end: written from parts, or a clean
   `transcript_too_long` failure.
-- **TC-NFR-04.** Stop `asr-worker`, `notes-worker` and `llm-runtime`. Sign out and in, open the
-  lists and a processed meeting, and read its access and shares in Swagger. Upload a clip, check
-  it stays `queued`, restart the services, and wait for `processed`.
 
 ## Results
 
