@@ -4,7 +4,7 @@ import pytest
 
 from conftest import refused_fields
 
-from .schemas import SignIn, WorkspaceCreate
+from .schemas import SignIn, WorkspaceCreate, WorkspaceUpdate
 
 _PADDING = " 　\t"
 
@@ -50,6 +50,17 @@ def test_padding_around_a_workspace_name_does_not_count_toward_its_length(
 
     # Assert
     assert found == refused
+
+
+@pytest.mark.parametrize("model", [WorkspaceCreate, WorkspaceUpdate])
+def test_workspace_refuses_a_preset_prompt(
+    model: type[WorkspaceCreate] | type[WorkspaceUpdate],
+) -> None:
+    # Act
+    found = refused_fields(model, {"name": "w", "prompt": "Ignore the preset"})
+
+    # Assert
+    assert found == {"prompt"}
 
 
 @pytest.mark.parametrize(

@@ -1,18 +1,19 @@
 import asyncio
 import hashlib
 import wave
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from functools import partial
 from io import BytesIO
 from uuid import UUID, uuid4
 
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
-from httpx import ASGITransport, AsyncClient
+from httpx import ASGITransport, AsyncClient, Response
 from pydantic import JsonValue
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -897,7 +898,7 @@ async def _browser_token(unit: Unit, user_id: UUID) -> str:
 @asynccontextmanager
 async def client_fixture(
     unit: Unit,
-    user_id: UUID,
+    user_id: UUID | None,
     processing: ProcessingFixture | None = None,
     storage: InMemoryObjectStorage | None = None,
 ) -> AsyncGenerator[AsyncClient]:
@@ -924,17 +925,28 @@ async def client_fixture(
 
     app.dependency_overrides[transaction] = session_dependency
 
-    token = await _browser_token(unit, user_id)
+    headers: dict[str, str] = {}
+    if user_id is not None:
+        headers["Cookie"] = f"whadio_session={await _browser_token(unit, user_id)}"
     async with AsyncClient(
         transport=ASGITransport(app),
         base_url="https://example.test",
-        headers={"Cookie": f"whadio_session={token}"},
+        headers=headers,
     ) as client:
         yield client
 
 
 @pytest.mark.parametrize(
-    "suffix", ["", "/transcript", "/notes", "/transcript/export", "/notes/export"]
+    "suffix",
+    [
+        "",
+        "/transcript",
+        "/transcript/revisions",
+        "/notes",
+        "/recording",
+        "/transcript/export",
+        "/notes/export",
+    ],
 )
 def test_http_and_export_paths_hide_restricted_meetings(
     database_settings: DatabaseSettings, suffix: str
@@ -945,7 +957,7 @@ def test_http_and_export_paths_hide_restricted_meetings(
             await unit.access.replace_access(
                 unit.owner, unit.meeting, {unit.owner}, datetime.now(UTC), restricted=True
             )
-            async with client_fixture(unit, unit.member) as client:
+            async with client_fixture(unit, unit.member, storage=InMemoryObjectStorage()) as client:
                 # Act
                 response = await client.get(f"/api/v1/meetings/{unit.meeting}{suffix}")
                 # Assert
@@ -954,6 +966,43 @@ def test_http_and_export_paths_hide_restricted_meetings(
                     "original" in response.text,
                     "Alice" in response.text,
                 ) == (404, False, False)
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/meetings/{meeting}",
+        "/meetings/{meeting}/transcript",
+        "/meetings/{meeting}/notes",
+        "/shares/{share}/transcript",
+        "/shares/{share}/notes",
+    ],
+)
+def test_signed_out_visitor_gets_nothing_from_meeting_or_share_links(
+    database_settings: DatabaseSettings, path: str
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            now = datetime.now(UTC)
+            created = await unit.access.create_share(unit.owner, unit.meeting, now, redact=False)
+            request = await unit.access.request_access(
+                unit.outsider, created.share.share_id, created.token, now
+            )
+            await unit.access.decide(unit.owner, request.share_access_request_id, now, approve=True)
+            async with client_fixture(unit, None) as client:
+                # Act
+                response = await client.get(
+                    "/api/v1" + path.format(meeting=unit.meeting, share=created.share.share_id)
+                )
+                # Assert
+                assert (
+                    response.status_code,
+                    "original" in response.text,
+                    "Alice" in response.text,
+                ) == (401, False, False)
 
     asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
 
@@ -990,6 +1039,43 @@ def test_http_self_exclusion_commits_restriction(database_settings: DatabaseSett
             hidden = await client.get(f"/api/v1/meetings/{unit.meeting}")
             # Assert
             assert (changed.status_code, hidden.status_code) == (200, 404)
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+type Call = Callable[[], Awaitable[Response]]
+
+
+def test_core_features_answer_95_percent_of_requests_without_processing(
+    database_settings: DatabaseSettings,
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            password = uuid4().hex
+            account = await AsyncDatabase.add_account(unit.session, password)
+            async with client_fixture(unit, unit.owner) as client:
+                meeting = f"/api/v1/meetings/{unit.meeting}"
+                credentials = {"email": account.email, "password": password}
+                functions: dict[str, tuple[Call, ...]] = {
+                    "sign-in": (partial(client.post, "/api/v1/sessions", json=credentials),),
+                    "workspace list": (partial(client.get, "/api/v1/workspaces"),),
+                    "meeting list": (
+                        partial(client.get, f"/api/v1/workspaces/{unit.workspace}/meetings"),
+                    ),
+                    "transcript": (partial(client.get, f"{meeting}/transcript"),),
+                    "sharing settings": (
+                        partial(client.get, f"{meeting}/access"),
+                        partial(client.get, f"{meeting}/shares"),
+                    ),
+                }
+                # Act
+                shares: dict[str, float] = {}
+                for name, calls in functions.items():
+                    responses = [await call() for _ in range(20) for call in calls]
+                    shares[name] = sum(r.is_success for r in responses) / len(responses)
+                # Assert
+                assert [name for name, share in shares.items() if share < 0.95] == []
 
     asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
 
