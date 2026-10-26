@@ -2,7 +2,7 @@
 
 **Test planner:** Andrii
 
-**Baseline:** `main` at `e8e9c1b`, October 2026
+**Baseline:** `main` at `fb5cbc6`, October 2026
 
 **Builds on:** [Testing Strategy](../testing/testing-strategy.md) (levels, coverage gate, merge and release gates)
 
@@ -10,10 +10,11 @@ This plan states when the recording-to-notes path of Whadio counts as verified.
 
 **Scope.** In scope: sign-in, uploading a recording, the processing pipeline from the queued job to
 the stored transcript and notes, access to restricted meetings over every content path, the audit
-log, and reading results in the web app. Not tested here: features with no API yet (registration,
-invitations and password reset in US-001, US-002 and US-020; notes regeneration, US-010; a
-workspace's own model provider, US-008; processing e-mails, US-009; the admin dashboard, US-019, not on `main` yet); screens the web app does not
-have yet (folders, transcript edits, shares, the glossary), so those are tested through the API
+log, exports, job monitoring, and reading results in the web app. Not tested here: features with
+no API yet (registration, invitations, membership changes and password reset in US-001, US-002 and
+US-020; notes regeneration, US-010; a workspace's own model provider, US-008; processing e-mails,
+US-009; server load and model usage on the admin dashboard, US-019 Test-03); screens the web app
+does not have yet (folders, transcript edits, shares, the glossary), so those are tested through the API
 and the user-action limits of NFR-005 and NFR-006 are not measured; the Chrome extension capture
 (US-003, NFR-004); recognition quality scores (WER needs a reference corpus we do not have); real
 models or paid services in CI.
@@ -47,6 +48,8 @@ speakers, preset sections, time). A pass in one never stands in for the other.
 | TC-ACL-02 | Every path that returns meeting content | Integration | Negative | For a meeting restricted to its Owner, a member gets `404` and no content from the meeting, transcript, notes, both exports, the recording link and the transcript revisions; the meeting list, the MCP tools and other meetings' notes context omit it. Zero content on 100% of the paths (NFR-007, NFR-009). | Valeriia | US-015 (Test-02, Test-03), US-007 (Test-03), US-018 (Test-04), NFR-007, NFR-009 | CI; exists except the recording link and revisions |
 | TC-ACC-01 | Accounts: signing in | Integration | Negative | A wrong password and an unknown address are refused the same way and start no session; a session token is stored only as its hash. | Denys | US-001 (Test-02), NFR-012 | CI, exists |
 | TC-ACC-02 | Sessions and MCP keys over HTTP | Integration | Negative | A wrong password gets `401 INVALID_CREDENTIALS`; a request without a session, with a signed-out cookie or with a revoked or expired MCP key is refused; an MCP key is shown once and stored only as its hash. | Denys | US-001 (Test-02, Test-03), US-018 (Test-01, Test-03), NFR-012 | CI, exists |
+| TC-EXP-01 | Export: transcript and notes files | Unit | Positive | The current transcript exports with its corrections and says it was edited, the original never does; Markdown can leave out timestamps; a notes export exists only once notes do; every file carries the sharing notice and the Whadio attribution. | Valeriia | US-017 (Test-01 to Test-05), US-011 (Test-04), NFR-011 | CI, exists |
+| TC-ADM-01 | Admin & Monitoring: job monitoring | Integration | Negative | An administrator reads each job's state, waiting time and known failure reason, and nothing from a recording, transcript or notes; a workspace role grants no admin access, and a revoked administrator is refused at once. | Valeriia | US-019 (Test-01, Test-02, Test-04) | CI, exists |
 | TC-PIPE-01 | Processing pipeline, upload to notes | Integration | Positive | Real PostgreSQL, RabbitMQ and SeaweedFS, stub ASR and notes models: a recording uploaded while no worker runs stays `queued`; once the workers start, the meeting reaches `processed` and the API returns one transcript and one set of notes. | Andrii | US-004 (Test-01), US-005 (Test-02), US-006 (Test-02), NFR-014 | CI, planned |
 | TC-PIPE-02 | Processing pipeline, notes provider failure | Integration | Negative | A provider that refuses the key or the request: the meeting ends `failed` with `provider_rejected`, the transcript stays readable, no further notes job is queued. A provider unavailable on every attempt: at most 5 attempts (`MAX_ATTEMPTS`), then `failed` with `provider_unavailable`. | Andrii | US-004 (Test-03), NFR-014 | CI, planned |
 | TC-NFR-01 | Processing pipeline, worker crash | Integration | Negative | The ASR worker is killed after it reports `job_started`; after a restart the meeting reaches `processed` with exactly one transcript (NFR-014: 100% of received meetings stay stored, visible and processable). | Andrii | NFR-014, US-004 | CI, planned; also on the GPU machine |
@@ -58,7 +61,7 @@ speakers, preset sections, time). A pass in one never stands in for the other.
 | TC-AUD-02 | Audit: every implemented NFR-010 action | Integration | Positive | Each auditable change the API offers writes exactly one record (actor, action type, target, time) in the same transaction; `details` holds no transcript, notes or recording content. | Denys | NFR-010 | CI; exists except transcript edits and share-request decisions |
 | TC-AUD-03 | Audit: history cannot change | Integration | Negative | The application's database role cannot delete, update or truncate audit events, and an event survives its workspace's deletion. | Denys | NFR-010 | CI, exists |
 | TC-MTG-01 | Meetings: upload validation | Unit | Negative | Bytes that do not decode as audio are refused with `415`, and no meeting is created. | Valeriia | US-004 (Test-02) | CI, exists |
-| TC-NFR-02 | Meeting and workspace lists under load | System | Positive | k6, 50 virtual users for 30 s per list endpoint, one uvicorn worker: p95 at most 200 ms, the API's share of NFR-001's 2-second page budget (QA-1). | Zlata | NFR-001, US-013 | Planned; k6 from its Docker image |
+| TC-NFR-02 | Meeting and workspace lists under load | System | Positive | k6, 50 virtual users for 30 s per list endpoint, one uvicorn worker: p95 at most 200 ms, the API's share of NFR-001's 2-second page budget (QA-1). | Zlata | NFR-001, US-013 | Manual, `tests/performance/test_lists.js` with k6 from its Docker image |
 | TC-PIPE-03 | Whole stack with real models | System | Positive | A 10-minute Ukrainian recording with several speakers, uploaded in the web app, reaches `processed`; the transcript is in `uk` with at least two speakers (Speaker 1, Speaker 2…); the notes have the workspace's default preset sections and name the configured model; the list, transcript, notes and playback show in the web app. Once with Claude, once with Ollama. | Andrii | US-004 (Test-01), US-005 (Test-02), US-006 (Test-01, Test-02), US-013 (Test-02) | GPU machine, manual |
 | TC-ASR-01 | ASR worker: real models | Integration | Positive | The `models` tests pass: Parakeet and Whisper recognize their reference clips, and the diarizing slot tells two speakers apart. | Andrii | US-005 (Test-02) | GPU machine, `pytest -m models` |
 | TC-ASR-02 | ASR worker: glossary with Whisper | System | Positive | A glossary term Parakeet misspelled appears in its preferred form in a Whisper transcript of the same clip. | Andrii | US-012 (Test-02) | GPU machine, manual |
@@ -106,4 +109,4 @@ runs, and record each run in [Results](#results).
 ## AI Usage
 
 Drafted with Claude Code (Claude Opus 5.5) from Zlata's initial draft (OpenAI Codex) and the GPU
-machine runs, and checked against the code at `e8e9c1b`. The team reviews it before merging.
+machine runs, and checked against the code at `fb5cbc6`. The team reviews it before merging.
