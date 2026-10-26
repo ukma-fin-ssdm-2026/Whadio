@@ -898,7 +898,7 @@ async def _browser_token(unit: Unit, user_id: UUID) -> str:
 @asynccontextmanager
 async def client_fixture(
     unit: Unit,
-    user_id: UUID,
+    user_id: UUID | None,
     processing: ProcessingFixture | None = None,
     storage: InMemoryObjectStorage | None = None,
 ) -> AsyncGenerator[AsyncClient]:
@@ -925,11 +925,13 @@ async def client_fixture(
 
     app.dependency_overrides[transaction] = session_dependency
 
-    token = await _browser_token(unit, user_id)
+    headers: dict[str, str] = {}
+    if user_id is not None:
+        headers["Cookie"] = f"whadio_session={await _browser_token(unit, user_id)}"
     async with AsyncClient(
         transport=ASGITransport(app),
         base_url="https://example.test",
-        headers={"Cookie": f"whadio_session={token}"},
+        headers=headers,
     ) as client:
         yield client
 
@@ -964,6 +966,43 @@ def test_http_and_export_paths_hide_restricted_meetings(
                     "original" in response.text,
                     "Alice" in response.text,
                 ) == (404, False, False)
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/meetings/{meeting}",
+        "/meetings/{meeting}/transcript",
+        "/meetings/{meeting}/notes",
+        "/shares/{share}/transcript",
+        "/shares/{share}/notes",
+    ],
+)
+def test_signed_out_visitor_gets_nothing_from_meeting_or_share_links(
+    database_settings: DatabaseSettings, path: str
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            now = datetime.now(UTC)
+            created = await unit.access.create_share(unit.owner, unit.meeting, now, redact=False)
+            request = await unit.access.request_access(
+                unit.outsider, created.share.share_id, created.token, now
+            )
+            await unit.access.decide(unit.owner, request.share_access_request_id, now, approve=True)
+            async with client_fixture(unit, None) as client:
+                # Act
+                response = await client.get(
+                    "/api/v1" + path.format(meeting=unit.meeting, share=created.share.share_id)
+                )
+                # Assert
+                assert (
+                    response.status_code,
+                    "original" in response.text,
+                    "Alice" in response.text,
+                ) == (401, False, False)
 
     asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
 
