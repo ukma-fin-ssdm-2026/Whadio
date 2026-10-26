@@ -36,20 +36,23 @@ In another PowerShell terminal, set credentials without placing the password in 
 ```powershell
 $env:WHADIO_EMAIL = "performance@whadio.dev"
 $env:WHADIO_PASSWORD = Read-Host "Whadio password"
+$scriptDir = (Resolve-Path ".\tests\performance").Path
 
 docker run --rm `
   --add-host host.docker.internal:host-gateway `
   -e BASE_URL=http://host.docker.internal:3000 `
   -e WHADIO_EMAIL `
   -e WHADIO_PASSWORD `
-  -v "${PWD}/tests/performance:/scripts:ro" `
+  --mount "type=bind,source=$scriptDir,target=/scripts,readonly" `
   grafana/k6:0.54.0 run /scripts/test_lists.js
 
 Remove-Item Env:WHADIO_PASSWORD
 ```
 
-Run the command from the repository root. `host.docker.internal` lets the k6 container reach the
-API on the host; `--add-host` also supplies that name on Linux Docker Engine.
+Run the command from the repository root. Resolving the directory before starting Docker makes a
+missing local script fail in PowerShell instead of appearing as a missing `/scripts/test_lists.js`
+module inside k6. `host.docker.internal` lets the container reach the API on the host;
+`--add-host` also supplies that name on Linux Docker Engine.
 
 ## Record the result
 
