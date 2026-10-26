@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from ...contracts.common import LanguageCode
 from ...shared.broker import BrokerSettings
 from ...shared.logs import LogLevel
+from .diarization.device import DiarizationDevice
 from .recognition import RecognizerKind
 
 
@@ -43,6 +44,11 @@ class DiarizationSettings(BaseModel):
     )
     embedding_batch_size: int = Field(
         default=8, ge=1, description="Speaker embeddings computed in one batch"
+    )
+    device: DiarizationDevice = Field(
+        default="cpu",
+        description="Where the model runs: cpu, or cuda on an NVIDIA GPU, which needs torch "
+        "from the cuda extra",
     )
 
 

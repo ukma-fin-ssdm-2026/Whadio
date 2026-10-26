@@ -23,6 +23,14 @@ def test_settings_default_to_the_parakeet_recognizer() -> None:
     assert settings.asr.recognizer is RecognizerKind.PARAKEET
 
 
+def test_settings_default_to_diarization_on_the_cpu() -> None:
+    # Act
+    settings = load_asr_worker_settings()
+
+    # Assert
+    assert settings.asr.diarization.device == "cpu"
+
+
 def test_settings_read_nested_model_variables_from_the_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -85,6 +93,17 @@ def test_settings_with_an_unknown_recognizer_are_refused(monkeypatch: pytest.Mon
 
     # Act / Assert
     with pytest.raises(ValidationError, match="recognizer"):
+        load_asr_worker_settings()
+
+
+def test_settings_with_an_unknown_diarization_device_are_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    monkeypatch.setenv("WHADIO_ASR__DIARIZATION__DEVICE", "mps")
+
+    # Act / Assert
+    with pytest.raises(ValidationError, match="device"):
         load_asr_worker_settings()
 
 
