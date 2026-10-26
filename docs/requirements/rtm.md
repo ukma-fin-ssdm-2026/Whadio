@@ -33,7 +33,7 @@
 | NFR-011 | NFR | An edited transcript is never labelled original, and the original stays retrievable | US-011, US-017 | — | TC-EDIT-01, TC-EXP-01 |
 | NFR-012 | NFR | Wrong passwords, revoked MCP keys and missing sessions are rejected; passwords are hashed | US-001, US-018, US-020 | — | TC-ACC-01, TC-ACC-02 |
 | NFR-013 | NFR | Provider keys are encrypted at rest and never returned after creation | US-008 | — | Out of scope (test plan) |
-| NFR-014 | NFR | Meetings survive a processing component stopping, and are processed after its restart | US-004 | — | TC-MTG-02, TC-PROC-01, TC-PROC-03, TC-PIPE-01, TC-PIPE-02, TC-NFR-01 |
+| NFR-014 | NFR | Meetings survive a processing component stopping, and are processed after its restart | US-004 | — | TC-MTG-02, TC-PROC-01, TC-PIPE-01, TC-PIPE-02, TC-NFR-01 |
 | NFR-015 | NFR | Unrelated features stay at least 95% available while a worker or the LLM runtime is down | US-008, US-019 | — | TC-NFR-04 |
 | NFR-016 | NFR | One Compose configuration serves the single-host and the two-host layouts | — | — | Not covered |
 | NFR-017 | NFR | A first-time operator brings up the development deployment within 30 minutes | — | — | Not covered |
