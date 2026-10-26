@@ -112,7 +112,8 @@ runs, and record each run in [Results](#results).
 
 | Case | Date | Commit | Configuration | Result | Measured | Defects |
 |---|---|---|---|---|---|---|
-| TC-ASR-01 | 2026-10-25 | `0a7db9f` | GPU machine (i5-10400F, RTX 4070 12 GB, WSL2), all models on the CPU | Pass | — | None |
+| TC-ASR-01, CPU | 2026-10-25 | `0a7db9f` | GPU machine (i5-10400F, RTX 4070 12 GB, WSL2), all models on the CPU | Pass | — | None |
+| TC-ASR-01, CUDA | 2026-10-26 | #151 at `813db7e`, which contains `main` at `fd016a4` | GPU machine (i5-10400F, RTX 4070 12 GB, WSL2), driver 595.97 (CUDA 13.2), `cuda` extra with torch 2.14.1+cu130; Parakeet TDT 0.6B v3 int8 and Whisper large-v2 int8 on the CPU, pyannote community-1 on the GPU in the `[cuda]` case | Pass, 5 of 5 | The `[cuda]` speaker case took 8.4 s against 18.0 s for `[cpu]`; GPU memory peaked at 848 MiB | None |
 | TC-NOTES-01 | 2026-10-25 | `0a7db9f` | Ollama in Compose, `gemma4:12b-it-qat` | Pass, 4 of 4 | 138 s, mostly model loading | None |
 | TC-PIPE-03 | 2026-10-25 | `0a7db9f` | GPU machine, ASR on the CPU; a 10-minute team meeting; Claude, then `gemma4:12b-it-qat` in Compose | Pass, both | Transcript in 420 s and 443 s; notes in 13 s (Claude) and 21 s (gemma4, 8.5 GB of GPU memory at a 32k context) | None |
 | TC-PIPE-03, model comparison | 2026-10-25, 2026-10-26 | #151 at `a8eb270`; its later commits add only a test, CI and documentation | GPU machine, diarization on the GPU; a 19.5-minute team meeting with 4 speakers, `summary` and `detailed` presets; Claude, `gemma4:12b-it-qat`, `gemma4:12b-it-q4_K_M`, `qwen3:8b` | Pass, 8 of 8 valid at the first try, in Ukrainian with the preset's sections | Notes in s (summary / detailed): Claude 8 / 17, qat 18 / 18, q4_K_M 33 / 12, qwen3 33 / 18; peak GPU memory with the ASR worker 9.7, 10.3 and 10.6 GB | None. Diarization found 3 of the 4 speakers; Claude invented nothing, the local models added tasks or dates nobody said |
