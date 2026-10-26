@@ -1074,49 +1074,73 @@ _FAILED_PERMANENTLY: Final = partial(_failed, reason=TranscriptionFailure.UNSUPP
 _FAILED_AT_LIMIT: Final = partial(_failed, reason=TranscriptionFailure.STORAGE_UNAVAILABLE)
 _DEAD_LETTERED: Final = partial(_failed, reason=DEAD_LETTERED)
 
-_QUEUED: Final = (JobStatus.QUEUED, 0)
-_RUNNING: Final = (JobStatus.RUNNING, 1)
-_LAST_ATTEMPT: Final = (JobStatus.RUNNING, MAX_ATTEMPTS)
-_SUCCEEDED: Final = (JobStatus.SUCCEEDED, 1)
-_FAILED: Final = (JobStatus.FAILED, 1)
+type JobState = Callable[[Pipeline], UUID]
+
+
+def _queued_job(pipeline: Pipeline, attempts: int = 0) -> UUID:
+    return add_job(pipeline, JobType.TRANSCRIPTION, status=JobStatus.QUEUED, attempts=attempts)
+
+
+def _running_job(pipeline: Pipeline) -> UUID:
+    job_id = _queued_job(pipeline)
+    _start(pipeline, job_id)
+    return job_id
+
+
+def _last_attempt_job(pipeline: Pipeline) -> UUID:
+    job_id = _queued_job(pipeline, attempts=MAX_ATTEMPTS - 1)
+    _start(pipeline, job_id)
+    return job_id
+
+
+def _succeeded_job(pipeline: Pipeline) -> UUID:
+    job_id = _running_job(pipeline)
+    _finish(pipeline, job_id)
+    return job_id
+
+
+def _failed_job(pipeline: Pipeline) -> UUID:
+    job_id = _running_job(pipeline)
+    _fail_permanently(pipeline, job_id)
+    return job_id
+
 
 _STATE_TABLE: Final = (
-    pytest.param(_QUEUED, _start, _running, id="ST-01"),
-    pytest.param(_QUEUED, _finish, _succeeded, id="ST-02"),
-    pytest.param(_QUEUED, _fail_retryably, _unchanged, id="ST-03"),
-    pytest.param(_QUEUED, _fail_permanently, _unchanged, id="ST-04"),
-    pytest.param(_QUEUED, _dead_letter, _DEAD_LETTERED, id="ST-05"),
-    pytest.param(_RUNNING, _start, _unchanged, id="ST-06"),
-    pytest.param(_RUNNING, _finish, _succeeded, id="ST-07"),
-    pytest.param(_RUNNING, _fail_retryably, _requeued, id="ST-08"),
-    pytest.param(_RUNNING, _fail_permanently, _FAILED_PERMANENTLY, id="ST-09"),
-    pytest.param(_RUNNING, _dead_letter, _DEAD_LETTERED, id="ST-10"),
-    pytest.param(_LAST_ATTEMPT, _start, _unchanged, id="ST-11"),
-    pytest.param(_LAST_ATTEMPT, _finish, _succeeded, id="ST-12"),
-    pytest.param(_LAST_ATTEMPT, _fail_retryably, _FAILED_AT_LIMIT, id="ST-13"),
-    pytest.param(_LAST_ATTEMPT, _fail_permanently, _FAILED_PERMANENTLY, id="ST-14"),
-    pytest.param(_LAST_ATTEMPT, _dead_letter, _DEAD_LETTERED, id="ST-15"),
-    pytest.param(_SUCCEEDED, _start, _unchanged, id="ST-16"),
-    pytest.param(_SUCCEEDED, _finish, _unchanged, id="ST-17"),
-    pytest.param(_SUCCEEDED, _fail_retryably, _unchanged, id="ST-18"),
-    pytest.param(_SUCCEEDED, _fail_permanently, _unchanged, id="ST-19"),
-    pytest.param(_SUCCEEDED, _dead_letter, _unchanged, id="ST-20"),
-    pytest.param(_FAILED, _start, _unchanged, id="ST-21"),
-    pytest.param(_FAILED, _finish, _unchanged, id="ST-22"),
-    pytest.param(_FAILED, _fail_retryably, _unchanged, id="ST-23"),
-    pytest.param(_FAILED, _fail_permanently, _unchanged, id="ST-24"),
-    pytest.param(_FAILED, _dead_letter, _unchanged, id="ST-25"),
+    pytest.param(_queued_job, _start, _running, id="ST-01"),
+    pytest.param(_queued_job, _finish, _succeeded, id="ST-02"),
+    pytest.param(_queued_job, _fail_retryably, _unchanged, id="ST-03"),
+    pytest.param(_queued_job, _fail_permanently, _unchanged, id="ST-04"),
+    pytest.param(_queued_job, _dead_letter, _DEAD_LETTERED, id="ST-05"),
+    pytest.param(_running_job, _start, _unchanged, id="ST-06"),
+    pytest.param(_running_job, _finish, _succeeded, id="ST-07"),
+    pytest.param(_running_job, _fail_retryably, _requeued, id="ST-08"),
+    pytest.param(_running_job, _fail_permanently, _FAILED_PERMANENTLY, id="ST-09"),
+    pytest.param(_running_job, _dead_letter, _DEAD_LETTERED, id="ST-10"),
+    pytest.param(_last_attempt_job, _start, _unchanged, id="ST-11"),
+    pytest.param(_last_attempt_job, _finish, _succeeded, id="ST-12"),
+    pytest.param(_last_attempt_job, _fail_retryably, _FAILED_AT_LIMIT, id="ST-13"),
+    pytest.param(_last_attempt_job, _fail_permanently, _FAILED_PERMANENTLY, id="ST-14"),
+    pytest.param(_last_attempt_job, _dead_letter, _DEAD_LETTERED, id="ST-15"),
+    pytest.param(_succeeded_job, _start, _unchanged, id="ST-16"),
+    pytest.param(_succeeded_job, _finish, _unchanged, id="ST-17"),
+    pytest.param(_succeeded_job, _fail_retryably, _unchanged, id="ST-18"),
+    pytest.param(_succeeded_job, _fail_permanently, _unchanged, id="ST-19"),
+    pytest.param(_succeeded_job, _dead_letter, _unchanged, id="ST-20"),
+    pytest.param(_failed_job, _start, _unchanged, id="ST-21"),
+    pytest.param(_failed_job, _finish, _unchanged, id="ST-22"),
+    pytest.param(_failed_job, _fail_retryably, _unchanged, id="ST-23"),
+    pytest.param(_failed_job, _fail_permanently, _unchanged, id="ST-24"),
+    pytest.param(_failed_job, _dead_letter, _unchanged, id="ST-25"),
 )
 
 
 @pytest.mark.parametrize(("state", "event", "transition"), _STATE_TABLE)
 def test_transcription_job_follows_the_state_table(
-    state: tuple[JobStatus, int], event: JobEvent, transition: Transition
+    state: JobState, event: JobEvent, transition: Transition
 ) -> None:
     # Arrange
     pipeline = make_pipeline()
-    status, attempts = state
-    job_id = add_job(pipeline, JobType.TRANSCRIPTION, status=status, attempts=attempts)
+    job_id = state(pipeline)
     before = _observe(pipeline, job_id)
     # Act
     event(pipeline, job_id)
