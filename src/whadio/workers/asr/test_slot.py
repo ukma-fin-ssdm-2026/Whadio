@@ -23,7 +23,7 @@ from .slot import build_pipeline
 
 _TESTDATA = Path(__file__).parent / "testdata"
 _NFR_002_BUDGET: Final = timedelta(minutes=15)
-_HOUR_RECORDING_MINUTES: Final = (50, 60)
+_HOUR_RECORDING_MINUTES: Final = (59, 61)
 
 
 def _two_speakers() -> bytes:
@@ -90,7 +90,7 @@ class HourRecordingTestSettings(BaseSettings):
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_prefix="WHADIO_TEST_")
 
     hour_recording: FilePath | None = Field(
-        default=None, description="A 50 to 60 minute recording for the NFR-002 timing test"
+        default=None, description="A 59 to 61 minute recording for the NFR-002 timing test"
     )
 
 
@@ -104,12 +104,12 @@ class HourRecording:
 def hour_recording() -> Iterator[HourRecording]:
     path = HourRecordingTestSettings().hour_recording
     if path is None:
-        pytest.skip("Set WHADIO_TEST_HOUR_RECORDING to a 50 to 60 minute recording")
+        pytest.skip("Set WHADIO_TEST_HOUR_RECORDING to a 59 to 61 minute recording")
     recording = path.read_bytes()
     decoder = AudioDecoder(max_duration=timedelta(minutes=_HOUR_RECORDING_MINUTES[1]))
     minutes = decoder.decode(io.BytesIO(recording)).duration_seconds / 60
     if not _HOUR_RECORDING_MINUTES[0] <= minutes <= _HOUR_RECORDING_MINUTES[1]:
-        pytest.fail(f"WHADIO_TEST_HOUR_RECORDING lasts {minutes:.1f} min, not 50 to 60")
+        pytest.fail(f"WHADIO_TEST_HOUR_RECORDING lasts {minutes:.1f} min, not 59 to 61")
     job = TranscriptionRequested(
         job_id=uuid4(),
         meeting_id=uuid4(),
@@ -127,6 +127,8 @@ def hour_recording() -> Iterator[HourRecording]:
     with pytest.MonkeyPatch.context() as patch:
         patch.setenv("WHADIO_BROKER__URL", "amqp://unused:unused@localhost:5672/whadio")
         settings = load_asr_worker_settings().asr
+    if settings.diarization.device != "cuda":
+        pytest.fail("Set WHADIO_ASR__DIARIZATION__DEVICE=cuda: NFR-002 is timed on the GPU host")
     with httpx2.Client(transport=httpx2.MockTransport(serve)) as client:
         # The models load here, in setup, so the test's call phase times only the transcription.
         yield HourRecording(build_pipeline(settings, client), job)
