@@ -84,6 +84,8 @@ def test_share_recipient_may_only_read(async_database: AsyncDatabase, path: Cont
 
 We used coverage.py through pytest-cov. Tests and migration files are left out of the numbers. The 4 tests that need downloaded ML models were not run.
 
+The tests that need the models run with `uv run pytest -m models`, on a machine that has them. The NFR-002 timing test also needs `WHADIO_TEST_HOUR_RECORDING`, the path of a recording of about 60 minutes that is never committed; it is read from the environment only and skips without it. The [test plan](../validation/test-plan.md#бонуси) gives its command and results.
+
 The integration tests need a migrated PostgreSQL database. Without `WHADIO_TEST_DATABASE_URL` they are skipped, and the report still comes out, only with different numbers. The setting is read from the environment only, not from `.env`, so export it in the shell that runs the tests ([database tests](../architecture/database.md) has the details):
 
 ```bash
