@@ -24,9 +24,10 @@ every row marked GPU machine has a recorded run in [Results](#results) at a stat
 defect labelled Blocking is open against a row.
 
 **Risks, most expensive first.** (1) A restricted meeting's content reaches someone outside its
-audience. (2) A meeting is lost, processed twice or stuck in `processing` after a worker fails.
-(3) An auditable change leaves no record, or a record carries meeting content. (4) Invalid input
-reaches the workers. (5) Meeting lists get slow. The table follows this order and ends with the
+audience. (2) Someone gets in without valid credentials, or a revoked MCP key or ended session
+still works. (3) A meeting is lost, processed twice or stuck in `processing` after a worker fails.
+(4) An auditable change leaves no record, or a record carries meeting content. (5) Invalid input
+reaches the workers. (6) Meeting lists get slow. The table follows this order and ends with the
 checks that need the real models.
 
 ## Test cases
@@ -44,6 +45,8 @@ speakers, preset sections, time). A pass in one never stands in for the other.
 |---|---|---|---|---|---|---|---|
 | TC-ACL-01 | Access Policy: reading a restricted meeting | Unit | Negative | A member without a grant is told the restricted meeting is missing, as if it did not exist. | Valeriia | US-015 (Test-01, Test-02), NFR-007 | CI, exists |
 | TC-ACL-02 | Every path that returns meeting content | Integration | Negative | For a meeting restricted to its Owner, a member gets `404` and no content from the meeting, transcript, notes, both exports, the recording link and the transcript revisions; the meeting list, the MCP tools and other meetings' notes context omit it. Zero content on 100% of the paths (NFR-007, NFR-009). | Valeriia | US-015 (Test-02, Test-03), US-007 (Test-03), US-018 (Test-04), NFR-007, NFR-009 | CI; exists except the recording link and revisions |
+| TC-ACC-01 | Accounts: signing in | Integration | Negative | A wrong password and an unknown address are refused the same way and start no session; a session token is stored only as its hash. | Denys | US-001 (Test-02), NFR-012 | CI, exists |
+| TC-ACC-02 | Sessions and MCP keys over HTTP | Integration | Negative | A wrong password gets `401 INVALID_CREDENTIALS`; a request without a session, with a signed-out cookie or with a revoked or expired MCP key is refused; an MCP key is shown once and stored only as its hash. | Denys | US-001 (Test-02, Test-03), US-018 (Test-01, Test-03), NFR-012 | CI, exists |
 | TC-PIPE-01 | Processing pipeline, upload to notes | Integration | Positive | Real PostgreSQL, RabbitMQ and SeaweedFS, stub ASR and notes models: a recording uploaded while no worker runs stays `queued`; once the workers start, the meeting reaches `processed` and the API returns one transcript and one set of notes. | Andrii | US-004 (Test-01), US-005 (Test-02), US-006 (Test-02), NFR-014 | CI, planned |
 | TC-PIPE-02 | Processing pipeline, notes provider failure | Integration | Negative | A provider that refuses the key or the request: the meeting ends `failed` with `provider_rejected`, the transcript stays readable, no further notes job is queued. A provider unavailable on every attempt: at most 5 attempts (`MAX_ATTEMPTS`), then `failed` with `provider_unavailable`. | Andrii | US-004 (Test-03), NFR-014 | CI, planned |
 | TC-NFR-01 | Processing pipeline, worker crash | Integration | Negative | The ASR worker is killed after it reports `job_started`; after a restart the meeting reaches `processed` with exactly one transcript (NFR-014: 100% of received meetings stay stored, visible and processable). | Andrii | NFR-014, US-004 | CI, planned; also on the GPU machine |
