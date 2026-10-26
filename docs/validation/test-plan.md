@@ -60,7 +60,7 @@ speakers, preset sections, time). A pass in one never stands in for the other.
 | TC-AUD-02 | Audit: every NFR-010 change the API offers | Integration | Positive | Meeting creation, renames, moves, deletions and evictions, transcript edits and speaker renames, notes regeneration, restrictions and grants, shares, share-request decisions, workspace deletion and MCP key changes each write exactly one record (actor, action type, target, time) in the same transaction, which a failed write rolls back; `details` holds no transcript, notes or recording content. Membership changes and provider configuration have no API yet. | Denys | NFR-010 | CI, exists |
 | TC-AUD-03 | Audit: history cannot change | Integration | Negative | The application's database role cannot delete, update or truncate audit events, and an event survives its workspace's deletion. | Denys | NFR-010 | CI, exists |
 | TC-MTG-01 | Meetings: upload validation | Unit | Negative | Bytes that do not decode as audio are refused with `415`, and no meeting is created. | Valeriia | US-004 (Test-02) | CI, exists |
-| TC-NFR-02 | Meeting and workspace lists under load | System | Positive | k6, 50 virtual users for 30 s per list endpoint, one uvicorn worker: p95 at most 200 ms, the API's share of NFR-001's 2-second page budget (QA-1). | Zlata | NFR-001, US-013 | Manual, `tests/performance/test_lists.js` with k6 from its Docker image |
+| TC-NFR-02 | Meeting and workspace lists under load | System | Positive | k6, 50 virtual users for 30 s per list endpoint, one uvicorn worker: p95 at most 200 ms and no failed request, the API's share of NFR-001's 2-second page budget (QA-1). It does not time a page in the browser, so NFR-001 is covered only in part. | Zlata | NFR-001, US-013 | Manual, `tests/performance/test_lists.js` with k6 from its Docker image |
 | TC-WS-01 | Accounts: creating and deleting a workspace | Integration | Positive | A new workspace has its creator as Owner and a default folder; a Member cannot delete a workspace, and nobody can delete a personal one. | Denys | US-002 (Test-01, Test-04) | CI, exists |
 | TC-ACL-03 | Access Policy: who may restrict | Unit | Negative | A Member cannot restrict a meeting or change its access list, and access cannot be granted to someone outside the workspace. | Valeriia | US-015 (Test-04) | CI, exists |
 | TC-SHR-01 | Access Policy: external shares | Integration | Negative | A share only reads: no export, recording, MCP or edit. It binds to the one approved account, the creator gets the access request, and a declined or revoked share reads nothing; a redacted share names the speakers Speaker 1, Speaker 2. | Valeriia | US-016 (Test-01, Test-03 to Test-06), NFR-008 | CI, exists |
@@ -76,15 +76,17 @@ speakers, preset sections, time). A pass in one never stands in for the other.
 | TC-ASR-01 | ASR worker: real models | Integration | Positive | The `models` tests pass: Parakeet and Whisper recognize their reference clips, and the diarizing slot tells two speakers apart. | Andrii | US-005 (Test-02) | GPU machine, `pytest -m models` |
 | TC-ASR-02 | ASR worker: glossary with Whisper | System | Positive | A glossary term Parakeet misspelled appears in its preferred form in a Whisper transcript of the same clip. | Andrii | US-012 (Test-02) | GPU machine, manual |
 | TC-NOTES-01 | Notes worker: real Ollama limits | Integration | Negative | A prompt longer than the context window and an answer that runs out of it fail as `transcript_too_long`; an answer cut by the answer limit fails as `invalid_output`; a short answer succeeds. | Andrii | US-006 | GPU machine, `pytest -m slow` with Ollama |
-| TC-NFR-03 | Transcription time | System | Positive | A 60-minute public Ukrainian recording, alone in the queue, has its transcript ready within 900 s of being queued in each of three runs (NFR-002: 15 minutes in at least 90% of runs; three runs cannot show 90%, so one miss fails). | Andrii | NFR-002 | GPU machine, manual |
+| TC-NFR-03 | Transcription time | System | Positive | A 60-minute public Ukrainian recording, alone in the queue, has its transcript ready within 900 s of being queued in each of three runs; one miss fails. The three runs are a smoke check of NFR-002's budget: they cannot show its 90%, which the 20-recording benchmark in the [traceability matrix](../architecture/traceability-matrix.md) verifies. | Andrii | NFR-002 | GPU machine, manual |
 
 ## Entry criteria
 
 - The case's feature is on `main`, and its requirement has an ID in `rtm.md`.
 - The Compose services run with migrations applied, and `WHADIO_TEST_DATABASE_URL` is set.
-- GPU machine runs: a team member's machine with a 12 GB NVIDIA GPU and both Compose profiles;
-  models downloaded, nothing else transcribing, and the commit, models and configuration noted
-  before the run.
+- GPU machine runs: a team member's machine with a 12 GB NVIDIA GPU, both Compose profiles, and
+  `COMPOSE_FILE=compose.yaml:compose.cuda.yaml` with `WHADIO_ASR__DIARIZATION__DEVICE=cuda`, which
+  put diarization on the GPU; recognition stays on the CPU. Models downloaded, nothing else
+  transcribing, and the commit, GPU, driver, CUDA version, models and configuration noted before
+  the run.
 - Recordings are never committed. A transcript goes to Anthropic only if everyone recorded agreed;
   otherwise the run uses the public recording.
 
