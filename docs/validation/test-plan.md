@@ -159,14 +159,14 @@ Run it with `uv run pytest src/whadio/processing/test_services.py -k state_table
 The processing e-mails of FR-024 (US-009, TC-PROC-04 and TC-PROC-05) were specified as tests
 before any code sent them, and an AI agent then wrote the code from those tests alone.
 
-1. `8333215`, `test(#87): [RED] specify the processing notices`. Eleven service tests and six
+1. `8ed4d71`, `test(#87): [RED] specify the processing notices`. Eleven service tests and six
    adapter cases, written by hand. The 13 that describe missing behaviour are strict xfails, which
    pass the commit hook without bypassing it; the 4 refusals already held and pass. It also adds
    the two Protocols and adapters that raise `NotImplementedError`, so the tests can run.
-2. `88a5159`, `feat(#87): send processing notices from the outbox`. The implementation, with the
+2. `761a0c2`, `feat(#87): send processing notices from the outbox`. The implementation, with the
    xfail marks removed and no test changed.
 
-**Використання ШІ.** A Claude Code agent (Claude Opus 5.5) wrote `88a5159`, given only the red
+**Використання ШІ.** A Claude Code agent (Claude Opus 5.5) wrote `761a0c2`, given only the red
 tests and `AGENTS.md`. The tests were green on its first run, with every static check passing; no
 code was fixed by hand. It also merged the three final-failure paths into `_finally_failed`, and
 reported three points: a second failure of a re-queued meeting would not be mailed (no path
