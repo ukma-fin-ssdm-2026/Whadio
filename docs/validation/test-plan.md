@@ -115,6 +115,7 @@ runs, and record each run in [Results](#results).
 
 | Case | Date | Commit | Configuration | Result | Measured | Defects |
 |---|---|---|---|---|---|---|
+| Every row marked CI, exists | 2026-10-27 | `main` at `07c55e4` | GitHub Actions, [CI/CD run 40464159113](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/40464159113): `uv run task test:cov` with PostgreSQL, RabbitMQ and SeaweedFS from `task infra:up`, without the `models` tests | Pass | 1386 passed, 4 skipped; line and branch coverage 91.09% against the 85% gate | None. TC-PIPE-01, TC-PIPE-02 and TC-NFR-01 are marked CI, planned: they have no test yet, so no run |
 | TC-ASR-01, CPU | 2026-10-25 | `0a7db9f` | GPU machine (i5-10400F, RTX 4070 12 GB, WSL2), all models on the CPU | Pass | — | None |
 | TC-ASR-01, CUDA | 2026-10-26 | #151 at `813db7e`, which contains `main` at `fd016a4` | GPU machine (i5-10400F, RTX 4070 12 GB, WSL2), driver 595.97 (CUDA 13.2), `cuda` extra with torch 2.14.1+cu130; Parakeet TDT 0.6B v3 int8 and Whisper large-v2 int8 on the CPU, pyannote community-1 on the GPU in the `[cuda]` case | Pass, 5 of 5 | The `[cuda]` speaker case took 8.4 s against 18.0 s for `[cpu]`; GPU memory peaked at 848 MiB | None |
 | TC-NOTES-01 | 2026-10-25 | `0a7db9f` | Ollama in Compose, `gemma4:12b-it-qat` | Pass, 4 of 4 | 138 s, mostly model loading | None |
