@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import json
 import wave
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
@@ -72,6 +73,7 @@ from ..notifications.models import NotificationOutbox
 from ..notifications.repositories import NotificationOutboxRepository, notice_payload
 from ..notifications.templates import NoticeKind, ProcessingFailed, ProcessingFinished
 from ..notifications.templates import ShareAccessRequest as ShareAccessNotice
+from ..processing.consumer import WorkerUsers, handle_delivery
 from ..processing.enums import JobStatus, JobType, ProcessingOutcome
 from ..processing.models import ProcessingJob
 from ..processing.repositories import JobRepository
@@ -89,6 +91,7 @@ from .composition import (
     RuntimeIntegrations,
     folder_service,
     meeting_processing,
+    processing_service,
     recording_objects,
     share_notifications,
     transaction,
@@ -1312,6 +1315,139 @@ def test_meeting_readers_follow_the_access_policy(
     readable = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
     # Assert
     assert readable is expected
+
+
+@dataclass
+class WorkerDelivery:
+    body: bytes
+    user_id: str | None = "notes-worker"
+
+    async def ack(self) -> None:
+        pass
+
+    async def reject(self, *, requeue: bool = False) -> None:
+        del requeue
+        raise AssertionError
+
+
+def _notes_result(job_id: UUID, meeting_id: UUID, *, failed: bool) -> bytes:
+    outcome: dict[str, JsonValue] = (
+        {"type": "notes_failed", "reason": "provider_auth_failed"}
+        if failed
+        else {
+            "type": "notes_ready",
+            "preset": "summary",
+            "provider": "anthropic",
+            "model_name": "claude",
+            "content": "## Summary",
+            "proposed_name": "Sprint planning",
+            "context_meeting_ids": [],
+        }
+    )
+    return json.dumps(
+        {
+            "job_id": str(job_id),
+            "meeting_id": str(meeting_id),
+            "finished_at": datetime.now(UTC).isoformat(),
+            **outcome,
+        }
+    ).encode()
+
+
+async def _running_notes_job(unit: Unit) -> UUID:
+    meeting = await unit.meetings.get(unit.owner, unit.meeting)
+    meeting.processing_state = ProcessingState.PROCESSING
+    jobs = JobRepository(unit.session)
+    job_id = await jobs.add(unit.meeting, JobType.NOTES)
+    await jobs.mark_running(job_id, datetime.now(UTC))
+    return job_id
+
+
+async def _deliver(unit: Unit, body: bytes) -> None:
+    # The savepoint stands in for the transaction `ProcessingTransactions.handle` opens per result.
+    async with unit.session.begin_nested():
+        await handle_delivery(
+            WorkerDelivery(body),
+            processing_service(unit.session, InMemoryObjectStorage()).handle,
+            WorkerUsers(transcription="asr-worker", notes="notes-worker"),
+        )
+
+
+@pytest.mark.parametrize(
+    ("failed", "status", "state", "template"),
+    [
+        pytest.param(
+            False, JobStatus.SUCCEEDED, ProcessingState.PROCESSED, ProcessingFinished, id="finished"
+        ),
+        pytest.param(True, JobStatus.FAILED, ProcessingState.FAILED, ProcessingFailed, id="failed"),
+    ],
+)
+def test_processing_result_commits_its_notice_with_the_outcome(
+    database_settings: DatabaseSettings,
+    *,
+    failed: bool,
+    status: JobStatus,
+    state: ProcessingState,
+    template: type[ProcessingFinished | ProcessingFailed],
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            job_id = await _running_notes_job(unit)
+            # Act
+            await _deliver(unit, _notes_result(job_id, unit.meeting, failed=failed))
+            outcome = (
+                await unit.session.scalar(
+                    select(ProcessingJob.status).where(ProcessingJob.processing_job_id == job_id)
+                ),
+                await unit.session.scalar(
+                    select(Meeting.processing_state).where(Meeting.meeting_id == unit.meeting)
+                ),
+            )
+            notices = await unit.session.execute(
+                select(
+                    NotificationOutbox.recipient_user_id,
+                    NotificationOutbox.kind,
+                    NotificationOutbox.dedupe_key,
+                    NotificationOutbox.payload,
+                ).where(NotificationOutbox.dedupe_key.contains(str(unit.meeting)))
+            )
+            # Assert
+            notice = template(meeting_id=unit.meeting, meeting_name="test")
+            assert (outcome, [tuple(row) for row in notices]) == (
+                (status, state),
+                [
+                    (
+                        unit.owner,
+                        notice.kind,
+                        f"{notice.kind}:{unit.meeting}:{unit.owner}",
+                        notice_payload(notice),
+                    )
+                ],
+            )
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+def test_replayed_processing_result_reserves_no_second_notice(
+    database_settings: DatabaseSettings,
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            body = _notes_result(await _running_notes_job(unit), unit.meeting, failed=False)
+            await _deliver(unit, body)
+            # Act
+            await _deliver(unit, body)
+            notices = await unit.session.scalars(
+                select(NotificationOutbox.notice_id).where(
+                    NotificationOutbox.dedupe_key.contains(str(unit.meeting))
+                )
+            )
+            # Assert
+            assert len(list(notices)) == 1
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
 
 
 async def _failed_update(unit: Unit) -> None:
