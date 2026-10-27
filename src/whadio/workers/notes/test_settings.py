@@ -22,12 +22,16 @@ _MICROSECOND: Final = 1e-6
 def _environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("WHADIO_BROKER__URL", "amqp://notes:secret@localhost:5672/whadio")
+
+
+@pytest.fixture
+def anthropic(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WHADIO_NOTES__LLM__PROVIDER", "anthropic")
     monkeypatch.setenv("WHADIO_NOTES__LLM__API_KEY", "sk-ant-test")
 
 
 @pytest.fixture
 def ollama(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("WHADIO_NOTES__LLM__API_KEY")
     monkeypatch.setenv("WHADIO_NOTES__LLM__PROVIDER", "ollama")
     monkeypatch.setenv("WHADIO_NOTES__LLM__MODEL", "gemma3:12b")
 
@@ -45,13 +49,11 @@ def test_settings_read_nested_variables_from_the_environment(
     assert settings.notes.job_timeout == timedelta(minutes=20)
 
 
-def test_settings_read_the_dotenv_file_of_the_working_directory(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_settings_read_the_dotenv_file_of_the_working_directory(tmp_path: Path) -> None:
     # Arrange
-    monkeypatch.delenv("WHADIO_NOTES__LLM__API_KEY")
     (tmp_path / ".env").write_text(
-        "WHADIO_NOTES__LLM__API_KEY=sk-ant-from-file\n", encoding="utf-8"
+        "WHADIO_NOTES__LLM__PROVIDER=anthropic\nWHADIO_NOTES__LLM__API_KEY=sk-ant-from-file\n",
+        encoding="utf-8",
     )
 
     # Act
@@ -69,12 +71,33 @@ def test_broker_user_comes_from_the_broker_url() -> None:
     assert settings.broker.user == "notes"
 
 
-def test_anthropic_is_the_provider_when_none_is_named() -> None:
+def test_ollama_is_the_provider_when_none_is_named() -> None:
     # Act
     settings = load_notes_worker_settings()
 
     # Assert
-    assert isinstance(settings.notes.llm, AnthropicSettings)
+    assert isinstance(settings.notes.llm, OllamaSettings)
+
+
+def test_ollama_model_defaults_to_gemma4_12b_qat() -> None:
+    # Act
+    settings = load_notes_worker_settings()
+
+    # Assert
+    assert settings.notes.llm == OllamaSettings(model="gemma4:12b-it-qat")
+
+
+def test_an_api_key_without_a_provider_keeps_the_built_in_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    monkeypatch.setenv("WHADIO_NOTES__LLM__API_KEY", "sk-ant-test")
+
+    # Act
+    settings = load_notes_worker_settings()
+
+    # Assert
+    assert isinstance(settings.notes.llm, OllamaSettings)
 
 
 @pytest.mark.usefixtures("ollama")
@@ -95,6 +118,7 @@ def test_settings_with_an_unknown_provider_are_refused(monkeypatch: pytest.Monke
         load_notes_worker_settings()
 
 
+@pytest.mark.usefixtures("anthropic")
 def test_settings_with_an_empty_api_key_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
     monkeypatch.setenv("WHADIO_NOTES__LLM__API_KEY", "")
@@ -108,7 +132,6 @@ def test_anthropic_settings_without_an_api_key_are_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Arrange
-    monkeypatch.delenv("WHADIO_NOTES__LLM__API_KEY")
     monkeypatch.setenv("WHADIO_NOTES__LLM__PROVIDER", "anthropic")
 
     # Act / Assert
@@ -117,9 +140,9 @@ def test_anthropic_settings_without_an_api_key_are_refused(
 
 
 @pytest.mark.usefixtures("ollama")
-def test_ollama_settings_without_a_model_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ollama_settings_with_an_empty_model_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
-    monkeypatch.delenv("WHADIO_NOTES__LLM__MODEL")
+    monkeypatch.setenv("WHADIO_NOTES__LLM__MODEL", "")
 
     # Act / Assert
     with pytest.raises(ValidationError, match="model"):
@@ -154,6 +177,7 @@ def test_ollama_window_with_the_least_room_for_a_prompt_is_accepted(
     assert settings.notes.max_prompt_tokens == 1_000
 
 
+@pytest.mark.usefixtures("anthropic")
 def test_anthropic_prompt_budget_is_the_input_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
     monkeypatch.setenv("WHADIO_NOTES__MAX_INPUT_TOKENS", "120000")
@@ -219,7 +243,7 @@ def test_notes_limit_is_refused_only_below_its_floor(
     field: str, value: float, *, refused: bool
 ) -> None:
     # Act
-    found = refused_fields(NotesSettings, {"llm": {"api_key": "sk-ant-test"}, field: value})
+    found = refused_fields(NotesSettings, {field: value})
 
     # Assert
     assert found == ({field} if refused else set[str]())
@@ -227,9 +251,7 @@ def test_notes_limit_is_refused_only_below_its_floor(
 
 def test_infinite_chars_per_token_is_refused() -> None:
     # Act
-    found = refused_fields(
-        NotesSettings, {"llm": {"api_key": "sk-ant-test"}, "chars_per_token": math.inf}
-    )
+    found = refused_fields(NotesSettings, {"chars_per_token": math.inf})
 
     # Assert
     assert found == {"chars_per_token"}

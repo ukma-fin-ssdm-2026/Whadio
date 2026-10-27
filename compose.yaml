@@ -170,7 +170,8 @@ services:
         condition: service_healthy
     environment:
       OLLAMA_HOST: http://llm-runtime:11434
-      LLM_MODEL: ${WHADIO_NOTES__LLM__MODEL:-}
+      # The notes worker's default model (OllamaSettings.model); change both together.
+      LLM_MODEL: ${WHADIO_NOTES__LLM__MODEL:-gemma4:12b-it-qat}
     volumes:
       - ./infra/ollama/pull.sh:/pull.sh:ro
 
