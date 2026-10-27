@@ -166,7 +166,8 @@ once per worker in production.
 
   ```bash
   WHADIO_TEST_HOUR_RECORDING=<a 59-61 minute recording> WHADIO_ASR__DIARIZATION__DEVICE=cuda \
-    uv run pytest -m models src/whadio/workers/asr/test_slot.py -k nfr_002 --durations=3
+    uv run --extra asr --extra cuda pytest -m models src/whadio/workers/asr/test_slot.py -k nfr_002 \
+    --durations=3
   ```
 
   `--durations` prints each run's time. Without the recording the test skips; a recording outside
