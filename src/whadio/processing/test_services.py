@@ -4,6 +4,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 from functools import partial
+from typing import Final
 from uuid import UUID, uuid4
 
 import pytest
@@ -975,6 +976,176 @@ def test_dead_letter_of_a_finished_job_changes_nothing() -> None:
     asyncio.run(pipeline.service.dead_lettered(job_id, NOW))
     # Assert
     assert pipeline.meetings.update.state is ProcessingState.QUEUED
+
+
+# --- Transcription job state transitions ---
+
+
+type JobEvent = Callable[[Pipeline, UUID], None]
+
+
+def _start(pipeline: Pipeline, job_id: UUID) -> None:
+    handle(pipeline, started(pipeline, job_id))
+
+
+def _finish(pipeline: Pipeline, job_id: UUID) -> None:
+    handle(pipeline, transcript_ready(pipeline, job_id))
+
+
+def _fail_retryably(pipeline: Pipeline, job_id: UUID) -> None:
+    failure = TranscriptionFailure.STORAGE_UNAVAILABLE
+    handle(pipeline, transcription_failed(pipeline, job_id, failure))
+
+
+def _fail_permanently(pipeline: Pipeline, job_id: UUID) -> None:
+    failure = TranscriptionFailure.UNSUPPORTED_AUDIO
+    handle(pipeline, transcription_failed(pipeline, job_id, failure))
+
+
+def _dead_letter(pipeline: Pipeline, job_id: UUID) -> None:
+    asyncio.run(pipeline.service.dead_lettered(job_id, NOW))
+
+
+@dataclass(frozen=True, slots=True)
+class JobOutcome:
+    status: JobStatus
+    attempts: int
+    published: bool
+    failure_reason: str | None
+    meeting: tuple[ProcessingState, ProcessingFailure | None]
+    transcript_saved: bool
+    other_jobs: tuple[JobType, ...]
+
+
+def _observe(pipeline: Pipeline, job_id: UUID) -> JobOutcome:
+    job = pipeline.jobs.jobs[job_id]
+    update = pipeline.meetings.update
+    return JobOutcome(
+        job.status,
+        job.attempts,
+        job_id in pipeline.jobs.published,
+        pipeline.jobs.failure_reasons.get(job_id),
+        (update.state, update.failure),
+        pipeline.meetings.saved is not None,
+        tuple(other.job_type for other in pipeline.jobs.jobs.values() if other.job_id != job_id),
+    )
+
+
+type Transition = Callable[[JobOutcome], JobOutcome]
+
+
+def _unchanged(before: JobOutcome) -> JobOutcome:
+    return before
+
+
+def _running(before: JobOutcome) -> JobOutcome:
+    return replace(
+        before,
+        status=JobStatus.RUNNING,
+        attempts=before.attempts + 1,
+        meeting=(ProcessingState.PROCESSING, None),
+    )
+
+
+def _succeeded(before: JobOutcome) -> JobOutcome:
+    return replace(
+        before,
+        status=JobStatus.SUCCEEDED,
+        meeting=(ProcessingState.PROCESSING, None),
+        transcript_saved=True,
+        other_jobs=(*before.other_jobs, JobType.NOTES),
+    )
+
+
+def _requeued(before: JobOutcome) -> JobOutcome:
+    return replace(before, status=JobStatus.QUEUED, published=False)
+
+
+def _failed(before: JobOutcome, reason: str) -> JobOutcome:
+    return replace(
+        before,
+        status=JobStatus.FAILED,
+        failure_reason=reason,
+        meeting=(ProcessingState.FAILED, ProcessingFailure.TRANSCRIPTION_FAILED),
+    )
+
+
+_FAILED_PERMANENTLY: Final = partial(_failed, reason=TranscriptionFailure.UNSUPPORTED_AUDIO)
+_FAILED_AT_LIMIT: Final = partial(_failed, reason=TranscriptionFailure.STORAGE_UNAVAILABLE)
+_DEAD_LETTERED: Final = partial(_failed, reason=DEAD_LETTERED)
+
+type JobState = Callable[[Pipeline], UUID]
+
+
+def _queued_job(pipeline: Pipeline, attempts: int = 0) -> UUID:
+    return add_job(pipeline, JobType.TRANSCRIPTION, status=JobStatus.QUEUED, attempts=attempts)
+
+
+def _running_job(pipeline: Pipeline) -> UUID:
+    job_id = _queued_job(pipeline)
+    _start(pipeline, job_id)
+    return job_id
+
+
+def _last_attempt_job(pipeline: Pipeline) -> UUID:
+    job_id = _queued_job(pipeline, attempts=MAX_ATTEMPTS - 1)
+    _start(pipeline, job_id)
+    return job_id
+
+
+def _succeeded_job(pipeline: Pipeline) -> UUID:
+    job_id = _running_job(pipeline)
+    _finish(pipeline, job_id)
+    return job_id
+
+
+def _failed_job(pipeline: Pipeline) -> UUID:
+    job_id = _running_job(pipeline)
+    _fail_permanently(pipeline, job_id)
+    return job_id
+
+
+_STATE_TABLE: Final = (
+    pytest.param(_queued_job, _start, _running, id="ST-01"),
+    pytest.param(_queued_job, _finish, _succeeded, id="ST-02"),
+    pytest.param(_queued_job, _fail_retryably, _unchanged, id="ST-03"),
+    pytest.param(_queued_job, _fail_permanently, _unchanged, id="ST-04"),
+    pytest.param(_queued_job, _dead_letter, _DEAD_LETTERED, id="ST-05"),
+    pytest.param(_running_job, _start, _unchanged, id="ST-06"),
+    pytest.param(_running_job, _finish, _succeeded, id="ST-07"),
+    pytest.param(_running_job, _fail_retryably, _requeued, id="ST-08"),
+    pytest.param(_running_job, _fail_permanently, _FAILED_PERMANENTLY, id="ST-09"),
+    pytest.param(_running_job, _dead_letter, _DEAD_LETTERED, id="ST-10"),
+    pytest.param(_last_attempt_job, _start, _unchanged, id="ST-11"),
+    pytest.param(_last_attempt_job, _finish, _succeeded, id="ST-12"),
+    pytest.param(_last_attempt_job, _fail_retryably, _FAILED_AT_LIMIT, id="ST-13"),
+    pytest.param(_last_attempt_job, _fail_permanently, _FAILED_PERMANENTLY, id="ST-14"),
+    pytest.param(_last_attempt_job, _dead_letter, _DEAD_LETTERED, id="ST-15"),
+    pytest.param(_succeeded_job, _start, _unchanged, id="ST-16"),
+    pytest.param(_succeeded_job, _finish, _unchanged, id="ST-17"),
+    pytest.param(_succeeded_job, _fail_retryably, _unchanged, id="ST-18"),
+    pytest.param(_succeeded_job, _fail_permanently, _unchanged, id="ST-19"),
+    pytest.param(_succeeded_job, _dead_letter, _unchanged, id="ST-20"),
+    pytest.param(_failed_job, _start, _unchanged, id="ST-21"),
+    pytest.param(_failed_job, _finish, _unchanged, id="ST-22"),
+    pytest.param(_failed_job, _fail_retryably, _unchanged, id="ST-23"),
+    pytest.param(_failed_job, _fail_permanently, _unchanged, id="ST-24"),
+    pytest.param(_failed_job, _dead_letter, _unchanged, id="ST-25"),
+)
+
+
+@pytest.mark.parametrize(("state", "event", "transition"), _STATE_TABLE)
+def test_transcription_job_follows_the_state_table(
+    state: JobState, event: JobEvent, transition: Transition
+) -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = state(pipeline)
+    before = _observe(pipeline, job_id)
+    # Act
+    event(pipeline, job_id)
+    # Assert
+    assert _observe(pipeline, job_id) == transition(before)
 
 
 # --- Recording storage ---
