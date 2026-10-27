@@ -78,6 +78,9 @@ All four findings were fixed in #152 before it merged.
 - **Reviewer:** Zlata Tsepkalo (`t-zlata`), the team's AI code reviewer, on 2026-10-25, assisted by
   Codex, as she disclosed.
 
+Her checklist as she submitted it, for #155 before the review's changes; the table after it says
+what changed.
+
 | # | Criterion | Yes/No | Comment |
 |:-:|---|:-:|---|
 | 1 | Every imported package is real and used | Yes | The implementation adds no dependency. Its standard-library, FastAPI, Pydantic, SQLAlchemy and internal imports resolve in the project, and Ruff reports no unused imports. |
