@@ -64,7 +64,7 @@ All four findings were fixed in #152 before it merged.
 | 6 | The GPU instructions do not make the ASR worker use the GPU | The entry criteria require the CUDA Compose file and diarization on `cuda`, and each run records the GPU, driver and CUDA version |
 | 7 | TC-NFR-04 does not measure the 95% | Same change as the peer review's TC-NFR-04 finding |
 | 8 | TC-NFR-02 times the API, not the page NFR-001 names | The row says it is a proxy for QA-1's 200 ms share of the page budget; the RTM marks NFR-001 as partial |
-| 9 | Results does not meet the plan's own exit criteria | Every GPU-machine case has a Results row. The CI run links on `main` are still to be added |
+| 9 | Results does not meet the plan's own exit criteria | Every GPU-machine case has a Results row, and Results links a CI run on `main` that passes every existing CI row. TC-PIPE-01, TC-PIPE-02 and TC-NFR-01 are still planned for CI, so the exit criteria are not met for those three |
 | 10 | The baseline does not contain [#151](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/151), which the GPU criteria need | #151 merged first and the baseline moved to `main` at `69d178d` |
 | 11 | TC-ASR-01 ran only on the CPU | Results keeps the CPU row and adds a CUDA row with the GPU, driver and timings |
 | 12 | NFR-009 does not trace to the share tests, and US-016 Test-02 has no test | NFR-009 traces to TC-SHR-01 too; a test shows that a signed-out visitor gets `401` and no content from a share |
