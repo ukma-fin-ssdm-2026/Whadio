@@ -122,31 +122,7 @@ class CompositionRoot:
     def _processing_service(self, session: AsyncSession) -> ProcessingService:
         if self._storage is None:
             raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
-        meetings = meeting_service(session, AuditWriter(session))
-        memberships = WorkspaceMembershipService(MembershipRepository(session))
-        return ProcessingService(
-            ProcessingCollaborators(
-                JobRepository(session),
-                meetings,
-                MeetingPersistence(
-                    PersistenceDependencies(
-                        meetings,
-                        MeetingRepository(session),
-                        memberships,
-                        AuditWriter(session),
-                        AccessPolicy(AccessRepository(session), memberships),
-                        OutboxEvictionNotices(NotificationOutboxRepository(session)),
-                    )
-                ),
-                WorkspaceSettingsService(WorkspaceSettingsRepository(session)),
-                self._storage,
-                CaptureSpeakerTimeline(CaptureRepository(session)),
-                OutboxProcessingNotices(NotificationOutboxRepository(session)),
-                PolicyMeetingReaders(
-                    MeetingRepository(session), AccessPolicy(AccessRepository(session), memberships)
-                ),
-            )
-        )
+        return processing_service(session, self._storage)
 
     @asynccontextmanager
     async def lifespan(self, _app: FastAPI) -> AsyncGenerator[None]:
@@ -310,6 +286,34 @@ class PolicyMeetingReaders:
 
 def eviction_notifications(session: Session) -> IEvictionNotifier:
     return OutboxEvictionNotices(NotificationOutboxRepository(session))
+
+
+def processing_service(session: AsyncSession, storage: IObjectStorage) -> ProcessingService:
+    meetings = meeting_service(session, AuditWriter(session))
+    memberships = WorkspaceMembershipService(MembershipRepository(session))
+    return ProcessingService(
+        ProcessingCollaborators(
+            JobRepository(session),
+            meetings,
+            MeetingPersistence(
+                PersistenceDependencies(
+                    meetings,
+                    MeetingRepository(session),
+                    memberships,
+                    AuditWriter(session),
+                    AccessPolicy(AccessRepository(session), memberships),
+                    OutboxEvictionNotices(NotificationOutboxRepository(session)),
+                )
+            ),
+            WorkspaceSettingsService(WorkspaceSettingsRepository(session)),
+            storage,
+            CaptureSpeakerTimeline(CaptureRepository(session)),
+            OutboxProcessingNotices(NotificationOutboxRepository(session)),
+            PolicyMeetingReaders(
+                MeetingRepository(session), AccessPolicy(AccessRepository(session), memberships)
+            ),
+        )
+    )
 
 
 def meeting_persistence(
