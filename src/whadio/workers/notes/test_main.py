@@ -114,6 +114,7 @@ async def _run_one_job(broker: BrokerSettings, job: NotesRequested) -> list[str]
 @pytest.mark.slow
 def test_notes_worker_publishes_start_and_notes_of_a_job(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
+    monkeypatch.setenv("WHADIO_NOTES__LLM__PROVIDER", "anthropic")
     monkeypatch.setenv("WHADIO_NOTES__LLM__API_KEY", "not-used-by-the-fixed-model")
     broker = load_notes_worker_settings().broker
     job = NotesRequested(

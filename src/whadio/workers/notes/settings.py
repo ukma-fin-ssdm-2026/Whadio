@@ -1,24 +1,13 @@
-from collections.abc import Mapping
 from datetime import timedelta
 from typing import Annotated, ClassVar, Final, Literal, Self
 
-from pydantic import (
-    BaseModel,
-    Discriminator,
-    Field,
-    HttpUrl,
-    JsonValue,
-    SecretStr,
-    Tag,
-    model_validator,
-)
+from pydantic import BaseModel, Field, HttpUrl, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ...shared.broker import BrokerSettings
 from ...shared.logs import LogLevel
 from .claude import Effort
 
-_DEFAULT_PROVIDER: Final = "ollama"
 _MIN_PROMPT_TOKENS: Final = 1_000
 
 
@@ -32,16 +21,11 @@ class AnthropicSettings(BaseModel):
 
 
 class OllamaSettings(BaseModel):
-    provider: Literal["ollama"] = Field(
-        default="ollama", description="A model served by a self-hosted Ollama"
-    )
+    provider: Literal["ollama"] = Field(description="A model served by a self-hosted Ollama")
     base_url: HttpUrl = Field(
         default=HttpUrl("http://localhost:11434"), description="Address of the Ollama server"
     )
-    # compose.yaml's llm-pull repeats this default; change both together.
-    model: str = Field(
-        default="gemma4:12b-it-qat", min_length=1, description="Tag of a pulled model"
-    )
+    model: str = Field(min_length=1, description="Tag of a pulled model, such as gemma3:12b")
     num_ctx: int = Field(
         default=32_768,
         ge=2_048,
@@ -55,27 +39,11 @@ class OllamaSettings(BaseModel):
     )
 
 
-# A callable discriminator lets an unset provider mean Ollama, the built-in model (FR-022);
-# `discriminator="provider"` would demand the tag.
-def _provider_of(
-    settings: Mapping[str, JsonValue] | AnthropicSettings | OllamaSettings,
-) -> str | None:
-    if isinstance(settings, AnthropicSettings | OllamaSettings):
-        return settings.provider
-    provider = settings.get("provider", _DEFAULT_PROVIDER)
-    return provider if isinstance(provider, str) else None
-
-
-type LlmSettings = Annotated[
-    Annotated[AnthropicSettings, Tag("anthropic")] | Annotated[OllamaSettings, Tag("ollama")],
-    Discriminator(_provider_of),
-]
+type LlmSettings = Annotated[AnthropicSettings | OllamaSettings, Field(discriminator="provider")]
 
 
 class NotesSettings(BaseModel):
-    llm: LlmSettings = Field(
-        default_factory=OllamaSettings, description="The language model that writes notes"
-    )
+    llm: LlmSettings = Field(description="The language model that writes notes")
     max_output_tokens: int = Field(
         default=16_000, ge=1_024, description="Upper bound of one answer, thinking included"
     )
@@ -129,9 +97,7 @@ class NotesWorkerSettings(BaseSettings):
 
     log_level: LogLevel = Field(default="INFO", description="Lowest level of logged records")
     broker: BrokerSettings = Field(description="Connection to RabbitMQ")
-    notes: NotesSettings = Field(
-        default_factory=NotesSettings, description="The language model and the job limits"
-    )
+    notes: NotesSettings = Field(description="The language model and the job limits")
 
 
 def load_notes_worker_settings() -> NotesWorkerSettings:

@@ -82,19 +82,19 @@ take jobs from RabbitMQ and publish their results to `processing.results`.
   follows them and `task workers:down` stops them.
 - The ASR worker needs `WHADIO_ASR__DIARIZATION__HF_TOKEN` in `.env`, from a Hugging Face account
   that accepted the conditions of `pyannote/speaker-diarization-community-1`.
-- The notes worker writes notes with the built-in model, `gemma4:12b-it-qat` served by Ollama, by
-  default. Run `uv run task llm:up` before `task workers:up`. It starts Ollama in Compose on an
-  NVIDIA GPU (the NVIDIA Container Toolkit is required) at `127.0.0.1:11434` and pulls the model
-  into the `llm-models` volume; `task llm:logs` follows it. `WHADIO_NOTES__LLM__MODEL` in `.env`
-  picks another Ollama tag. The notes worker in Compose reaches it as
+- The notes worker refuses to start without `WHADIO_NOTES__LLM__PROVIDER`. `.env.example` sets the
+  built-in model: `ollama` with `WHADIO_NOTES__LLM__MODEL=gemma4:12b-it-qat`. Run
+  `uv run task llm:up` before `task workers:up`. It starts Ollama in Compose on an NVIDIA GPU (the
+  NVIDIA Container Toolkit is required) at `127.0.0.1:11434` and pulls the model `.env` names into
+  the `llm-models` volume; `task llm:logs` follows it. The notes worker in Compose reaches it as
   `http://llm-runtime:11434`; a worker run with `uv run whadio notes-worker` uses
   `WHADIO_NOTES__LLM__BASE_URL`, `http://localhost:11434` by default. With Ollama on a separate
   GPU host, set `OLLAMA_ADDRESS` there to its private-network address, and `LLM_RUNTIME_URL` on
   the main host to `http://<that address>:11434`. See
   [ADR-007](docs/architecture/decisions/ADR-007.md).
-- Without an NVIDIA GPU, write notes with Claude instead: set `WHADIO_NOTES__LLM__PROVIDER=anthropic`
-  and `WHADIO_NOTES__LLM__API_KEY` in `.env`. Transcripts then leave the deployment for the
-  Anthropic API.
+- Without an NVIDIA GPU, write notes with Claude instead: switch to the Anthropic lines of
+  `.env.example`, with `WHADIO_NOTES__LLM__PROVIDER=anthropic`, a Claude model and
+  `WHADIO_NOTES__LLM__API_KEY`. Transcripts then leave the deployment for the Anthropic API.
 - The ASR worker's first start downloads its models into the `asr-models` volume, which takes a
   few minutes.
 - Diarization runs on the CPU by default, which is enough for development, but transcription then
