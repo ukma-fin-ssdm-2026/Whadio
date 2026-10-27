@@ -115,6 +115,7 @@ runs, and record each run in [Results](#results).
 
 | Case | Date | Commit | Configuration | Result | Measured | Defects |
 |---|---|---|---|---|---|---|
+| Every row marked CI, exists | 2026-10-27 | `main` at `07c55e4` | GitHub Actions, [CI/CD run 40464159113](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/40464159113): `uv run task test:cov` with PostgreSQL, RabbitMQ and SeaweedFS from `task infra:up`, without the `models` tests | Pass | 1386 passed, 4 skipped; line and branch coverage 91.09% against the 85% gate | None. TC-PIPE-01, TC-PIPE-02 and TC-NFR-01 are marked CI, planned: they have no test yet, so no run |
 | TC-ASR-01, CPU | 2026-10-25 | `0a7db9f` | GPU machine (i5-10400F, RTX 4070 12 GB, WSL2), all models on the CPU | Pass | — | None |
 | TC-ASR-01, CUDA | 2026-10-26 | #151 at `813db7e`, which contains `main` at `fd016a4` | GPU machine (i5-10400F, RTX 4070 12 GB, WSL2), driver 595.97 (CUDA 13.2), `cuda` extra with torch 2.14.1+cu130; Parakeet TDT 0.6B v3 int8 and Whisper large-v2 int8 on the CPU, pyannote community-1 on the GPU in the `[cuda]` case | Pass, 5 of 5 | The `[cuda]` speaker case took 8.4 s against 18.0 s for `[cpu]`; GPU memory peaked at 848 MiB | None |
 | TC-NOTES-01 | 2026-10-25 | `0a7db9f` | Ollama in Compose, `gemma4:12b-it-qat` | Pass, 4 of 4 | 138 s, mostly model loading | None |
@@ -159,14 +160,14 @@ Run it with `uv run pytest src/whadio/processing/test_services.py -k state_table
 The processing e-mails of FR-024 (US-009, TC-PROC-04 and TC-PROC-05) were specified as tests
 before any code sent them, and an AI agent then wrote the code from those tests alone.
 
-1. `8333215`, `test(#87): [RED] specify the processing notices`. Eleven service tests and six
+1. `8ed4d71`, `test(#87): [RED] specify the processing notices`. Eleven service tests and six
    adapter cases, written by hand. The 13 that describe missing behaviour are strict xfails, which
    pass the commit hook without bypassing it; the 4 refusals already held and pass. It also adds
    the two Protocols and adapters that raise `NotImplementedError`, so the tests can run.
-2. `88a5159`, `feat(#87): send processing notices from the outbox`. The implementation, with the
+2. `761a0c2`, `feat(#87): send processing notices from the outbox`. The implementation, with the
    xfail marks removed and no test changed.
 
-**Використання ШІ.** A Claude Code agent (Claude Opus 5.5) wrote `88a5159`, given only the red
+**Використання ШІ.** A Claude Code agent (Claude Opus 5.5) wrote `761a0c2`, given only the red
 tests and `AGENTS.md`. The tests were green on its first run, with every static check passing; no
 code was fixed by hand. It also merged the three final-failure paths into `_finally_failed`, and
 reported three points: a second failure of a re-queued meeting would not be mailed (no path
