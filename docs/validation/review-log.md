@@ -103,10 +103,11 @@ Every criterion passed, but the review still requested changes, and her notes we
   on whole stories that one case touched, and two cases promised thresholds (90%, 95%) they could
   not measure. Where a test was cheap we added it; otherwise we narrowed the claim to "partial" and
   named what would verify it.
-- **The AI code looked right and passed all five checklist items.** Its gap was elsewhere: every
-  test used fakes, so nothing showed that the production wiring sent the notice in the processing
-  transaction. Checking where generated code is called from, and not only what it does, is the
-  part of the review the checklist does not prompt for.
+- **The AI code looked right and passed all five checklist items.** Its gap was elsewhere: when
+  Zlata reviewed it, every test used fakes, so nothing showed that the production wiring sent the
+  notice in the processing transaction. Her change request led #155 to add a test through the
+  production composition. Checking where generated code is called from, and not only what it does,
+  is the part of the review the checklist does not prompt for.
 - **Findings tied to a baseline commit and a line were quick to check.** All of the external
   review's references could be verified in minutes, and none was wrong.
 
