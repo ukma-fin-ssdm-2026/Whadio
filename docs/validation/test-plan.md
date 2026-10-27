@@ -12,8 +12,7 @@ This plan states when the recording-to-notes path of Whadio counts as verified.
 the stored transcript and notes, access to restricted meetings over every content path, the audit
 log, exports, job monitoring, and reading results in the web app. Not tested here: features with
 no API yet (registration, invitations, membership changes and password reset in US-001, US-002 and
-US-020; notes regeneration, US-010; a workspace's own model provider, US-008; processing e-mails,
-US-009; server load and model usage on the admin dashboard, US-019 Test-03); screens the web app
+US-020; notes regeneration, US-010; a workspace's own model provider, US-008; server load and model usage on the admin dashboard, US-019 Test-03); screens the web app
 does not have yet (folders, transcript edits, shares, the glossary), so those are tested through the API
 and the user-action limits of NFR-005 and NFR-006 are not measured; the Chrome extension capture
 (US-003, NFR-004); recognition quality scores (WER needs a reference corpus we do not have); real
@@ -55,6 +54,8 @@ speakers, preset sections, time). A pass in one never stands in for the other.
 | TC-PROC-01 | Processing: repeated results | Unit | Negative | A duplicate or late result of a finished job queues nothing more and leaves the meeting unchanged. | Denys | NFR-014, US-004 | CI, exists |
 | TC-PROC-02 | Processing: retry limit | Unit | Negative | A retryable failure past the attempt limit fails the meeting with its reason; the job is not published again. | Denys | US-004 (Test-03) | CI, exists |
 | TC-PROC-03 | Processing: the transcription job's state table | Unit | Negative | Each of the 25 state and event pairs in [Бонуси](#бонуси) leaves the job in the state the table names; an event the state does not accept changes nothing. | Andrii | US-004 (Test-03) | CI, exists |
+| TC-PROC-04 | Processing: notices of a meeting's outcome | Unit | Positive | The uploader is notified once when the meeting is processed and once when its processing finally fails (a permanent failure, a retryable one at the attempt limit, a dead letter, a job that cannot be published); nobody is notified for a retry below the limit, a transcript still waiting for notes, a late result, or an uploader who can no longer read the meeting. | Andrii | US-009 (Test-01, Test-03) | CI, exists |
+| TC-PROC-05 | Processing notices in the outbox | Integration | Negative | A notice is reserved for its recipient as `processing_finished` or `processing_failed` with only the meeting's ID and name, and a repeated outcome is reserved once; the readers check follows the access policy, so a member left out of a restricted meeting and an outsider are refused, and passes on any failure but a missing meeting. A worker's result, handled through the production composition, commits the job, the meeting state and the notice together; a replay reserves nothing more. | Andrii | US-009 (Test-02), NFR-007 | CI, exists |
 | TC-MTG-02 | Meetings: accepting an upload | Integration | Positive | A supported file creates one `queued` meeting, a privately stored recording and one transcription job in the outbox; nothing is published inside the request. | Valeriia | US-004 (Test-01), NFR-014 | CI, exists |
 | TC-NFR-04 | Core features during a processing outage | Integration | Positive | The API runs with no processing integration and no storage, which is how it sees a stopped worker, broker or LLM runtime. 20 requests go to each function NFR-015 names: sign-in, the workspace list, the meeting list, a processed meeting's transcript, and the sharing settings (its access and its shares). At least 95% of each function's requests succeed; any response but `2xx` counts as a failure. Recovery after the restart is TC-PIPE-01 and TC-NFR-01. | Andrii | NFR-015 | CI, exists |
 | TC-AUD-01 | Audit: a change and its record | Unit | Positive | Renaming a meeting writes one audit event with the actor, the action and the meeting. | Denys | US-013, NFR-010 | CI, exists |
@@ -78,7 +79,7 @@ speakers, preset sections, time). A pass in one never stands in for the other.
 | TC-ASR-02 | ASR worker: glossary with Whisper | System | Positive | A glossary term Parakeet misspelled appears in its preferred form in a Whisper transcript of the same clip. | Andrii | US-012 (Test-02) | GPU machine, manual |
 | TC-NOTES-01 | Notes worker: real Ollama limits | Integration | Negative | A prompt longer than the context window and an answer that runs out of it fail as `transcript_too_long`; an answer cut by the answer limit fails as `invalid_output`; a short answer succeeds. | Andrii | US-006 | GPU machine, `pytest -m slow` with Ollama |
 | TC-NFR-03 | Transcription time | System | Positive | A 60-minute public Ukrainian recording, alone in the queue, has its transcript ready within 900 s of being queued in each of three runs; one miss fails. The three runs are a smoke check of NFR-002's budget: they cannot show its 90%, which the 20-recording benchmark in the [traceability matrix](../architecture/traceability-matrix.md) verifies. | Andrii | NFR-002 | GPU machine, manual |
-| TC-NFR-05 | ASR pipeline: transcription time | Integration | Positive | The ASR pipeline (download, decoding, diarization, recognition) transcribes a 59–61 minute recording within 900 s, with diarization on CUDA, in each of three runs; one miss fails. The three runs are a smoke check: like TC-NFR-03's, they cannot show NFR-002's 90%. Queueing and the upload are left out, which TC-NFR-03 times. | Andrii | NFR-002 | GPU machine, `pytest -m models`; not run yet |
+| TC-NFR-05 | ASR pipeline: transcription time | Integration | Positive | The ASR pipeline (download, decoding, diarization, recognition) transcribes a 59–61 minute recording within 900 s, with diarization on CUDA, in each of three runs; one miss fails. The three runs are a smoke check: like TC-NFR-03's, they cannot show NFR-002's 90%. Queueing and the upload are left out, which TC-NFR-03 times. | Andrii | NFR-002 | GPU machine, `pytest -m models` |
 
 ## Entry criteria
 
@@ -124,6 +125,7 @@ runs, and record each run in [Results](#results).
 | TC-NFR-04, system run | 2026-10-25 | #151 at `a8eb270` | GPU machine, Compose with `asr-worker`, `notes-worker` and `llm-runtime` stopped | Pass | Sign-out and sign-in, both lists, transcript, notes, access, shares, the recording link and the web app all answered `200`; an upload stayed `queued` and was processed 50 s after the restart | None |
 | TC-ASR-02 | 2026-10-26 | #151 at `39b46b3` | Whisper large-v2 int8 on the CPU; a 3-minute team clip | Pass | Parakeet and Whisper without the glossary misspelled "Ollama"; with the term in the glossary Whisper spelled it right; Whisper took 88–110 s for 180 s | None |
 | TC-NFR-03 | 2026-10-25 | #151 at `a8eb270`; the first run on an earlier revision of #151 | GPU machine (i5-10400F, RTX 4070 12 GB, WSL2), Compose with `compose.cuda.yaml`: pyannote community-1 on the GPU, Parakeet TDT 0.6B v3 int8 on the CPU, 1 slot | Pass, 3 of 3 | Queued to transcript ready in 434 s, 425 s and 437 s, against 900 s. The first run spent 67 s in pyannote and 351 s in Parakeet. Notes came from 1 part at `num_ctx` 32768 and from 4 parts at 20480; at 17800 a team meeting failed cleanly as `transcript_too_long` at the reduce step, with its transcript kept | Without a GPU it misses: transcription takes 0.70–0.74 of the recording's length (#150) |
+| TC-NFR-05 | 2026-10-27 | #153 at `37afed5`, whose tree equals `main` at `6bc9a84` | GPU machine (i5-10400F, RTX 4070 12 GB, WSL2), driver 595.97 (CUDA 13.2), `cuda` extra with torch 2.14.1+cu130, `WHADIO_ASR__DIARIZATION__DEVICE=cuda`: pyannote community-1 on the GPU, Parakeet TDT 0.6B v3 int8 on the CPU; the 60.1-minute recording behind TC-NFR-03 | Pass, 3 of 3 | 390 s, 388 s and 382 s against 900 s, with the models loaded beforehand (about 22 s, not timed); GPU memory peaked at 1.0 GiB | None |
 
 ## AI Usage
 
@@ -152,6 +154,26 @@ change exactly what it names, such as ST-08 queueing the job to be published aga
 
 Run it with `uv run pytest src/whadio/processing/test_services.py -k state_table -v`.
 
+### 3. Tests as a specification for an agent
+
+The processing e-mails of FR-024 (US-009, TC-PROC-04 and TC-PROC-05) were specified as tests
+before any code sent them, and an AI agent then wrote the code from those tests alone.
+
+1. `8333215`, `test(#87): [RED] specify the processing notices`. Eleven service tests and six
+   adapter cases, written by hand. The 13 that describe missing behaviour are strict xfails, which
+   pass the commit hook without bypassing it; the 4 refusals already held and pass. It also adds
+   the two Protocols and adapters that raise `NotImplementedError`, so the tests can run.
+2. `88a5159`, `feat(#87): send processing notices from the outbox`. The implementation, with the
+   xfail marks removed and no test changed.
+
+**Використання ШІ.** A Claude Code agent (Claude Opus 5.5) wrote `88a5159`, given only the red
+tests and `AGENTS.md`. The tests were green on its first run, with every static check passing; no
+code was fixed by hand. It also merged the three final-failure paths into `_finally_failed`, and
+reported three points: a second failure of a re-queued meeting would not be mailed (no path
+re-queues a failed meeting today), `database.md` still called the notices unfinished (now
+updated), and one untested re-raise in `PolicyMeetingReaders.can_read` (tested since the review). Its review against the AI-code
+checklist goes into `review-log.md`.
+
 ### 4. Executable non-functional test
 
 `workers/asr/test_slot.py::test_hour_recording_is_transcribed_within_the_nfr_002_budget` is
@@ -165,7 +187,8 @@ once per worker in production.
 
   ```bash
   WHADIO_TEST_HOUR_RECORDING=<a 59-61 minute recording> WHADIO_ASR__DIARIZATION__DEVICE=cuda \
-    uv run pytest -m models src/whadio/workers/asr/test_slot.py -k nfr_002 --durations=3
+    uv run --extra asr --extra cuda pytest -m models src/whadio/workers/asr/test_slot.py -k nfr_002 \
+    --durations=3
   ```
 
   `--durations` prints each run's time. Without the recording the test skips; a recording outside

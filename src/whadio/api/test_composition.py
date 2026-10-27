@@ -1,7 +1,8 @@
 import asyncio
 import hashlib
+import json
 import wave
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -21,13 +22,14 @@ from starlette.requests import Request
 
 from conftest import AsyncDatabase
 
+from ..access_policy.contracts import MeetingScope
 from ..access_policy.repositories import AccessRepository
 from ..access_policy.services import AccessCollaborators, AccessPolicy, AccessService, ContentPath
 from ..accounts.contracts import UserProfile
 from ..accounts.enums import LlmProvider, NotesTemplate, SessionKind, WorkspaceRole
 from ..accounts.models import McpKey, Session, User, Workspace, WorkspaceMembership
 from ..accounts.repositories import MembershipRepository, WorkspaceSettingsRepository
-from ..accounts.services import WorkspaceSettingsService
+from ..accounts.services import WorkspaceMembershipService, WorkspaceSettingsService
 from ..audit.contracts import ContentEvent
 from ..audit.models import AuditEvent
 from ..audit.services import AuditWriter
@@ -69,13 +71,14 @@ from ..meetings.retention import IRetentionMeetings, RetentionMeetings
 from ..meetings.services import MeetingService, RecordingInput, TranscriptEdit
 from ..notifications.fakes import InMemoryNotificationOutbox
 from ..notifications.models import NotificationOutbox
-from ..notifications.repositories import notice_payload
-from ..notifications.templates import NoticeKind
+from ..notifications.repositories import NotificationOutboxRepository, notice_payload
+from ..notifications.templates import NoticeKind, ProcessingFailed, ProcessingFinished
 from ..notifications.templates import ShareAccessRequest as ShareAccessNotice
-from ..processing.enums import JobStatus, JobType
+from ..processing.consumer import WorkerUsers, handle_delivery
+from ..processing.enums import JobStatus, JobType, ProcessingOutcome
 from ..processing.models import ProcessingJob
 from ..processing.repositories import JobRepository
-from ..processing.services import ProcessingCollaborators, ProcessingService
+from ..processing.services import ProcessingCollaborators, ProcessingNotice, ProcessingService
 from ..retention.services import RetentionService, StorageUnavailableError
 from ..shared.database import Database, DatabaseSettings
 from ..shared.errors import Failure, UseCaseError
@@ -83,10 +86,13 @@ from ..shared.fakes import InMemoryObjectStorage
 from .app import create_app
 from .composition import (
     CompositionRoot,
+    OutboxProcessingNotices,
     OutboxShareNotices,
+    PolicyMeetingReaders,
     RuntimeIntegrations,
     folder_service,
     meeting_processing,
+    processing_service,
     recording_objects,
     share_notifications,
     transaction,
@@ -1204,6 +1210,277 @@ def test_share_notice_for_a_requester_without_an_account_is_refused() -> None:
     assert (failure.value.code, outbox.notices) == (Failure.NOT_FOUND, {})
 
 
+# --- Processing notices ---
+
+
+def meeting_readers(unit: Unit) -> PolicyMeetingReaders:
+    memberships = WorkspaceMembershipService(MembershipRepository(unit.session))
+    return PolicyMeetingReaders(
+        MeetingRepository(unit.session), AccessPolicy(AccessRepository(unit.session), memberships)
+    )
+
+
+def reserved(
+    outbox: InMemoryNotificationOutbox,
+) -> list[tuple[UUID, NoticeKind, Mapping[str, JsonValue]]]:
+    return [
+        (stored.recipient_id, stored.kind, stored.payload) for stored in outbox.notices.values()
+    ]
+
+
+def test_finished_processing_is_reserved_as_a_finished_notice() -> None:
+    # Arrange
+    outbox = InMemoryNotificationOutbox(lambda: datetime.now(UTC))
+    notice = ProcessingNotice(uuid4(), uuid4(), "Sprint planning", ProcessingOutcome.FINISHED)
+    # Act
+    asyncio.run(OutboxProcessingNotices(outbox).notify(notice))
+    # Assert
+    assert reserved(outbox) == [
+        (
+            notice.recipient_id,
+            NoticeKind.PROCESSING_FINISHED,
+            notice_payload(
+                ProcessingFinished(meeting_id=notice.meeting_id, meeting_name="Sprint planning")
+            ),
+        )
+    ]
+
+
+def test_failed_processing_is_reserved_as_a_failed_notice() -> None:
+    # Arrange
+    outbox = InMemoryNotificationOutbox(lambda: datetime.now(UTC))
+    notice = ProcessingNotice(uuid4(), uuid4(), "Sprint planning", ProcessingOutcome.FAILED)
+    # Act
+    asyncio.run(OutboxProcessingNotices(outbox).notify(notice))
+    # Assert
+    assert reserved(outbox) == [
+        (
+            notice.recipient_id,
+            NoticeKind.PROCESSING_FAILED,
+            notice_payload(
+                ProcessingFailed(meeting_id=notice.meeting_id, meeting_name="Sprint planning")
+            ),
+        )
+    ]
+
+
+def test_repeated_processing_outcome_is_reserved_once() -> None:
+    # Arrange
+    outbox = InMemoryNotificationOutbox(lambda: datetime.now(UTC))
+    notices = OutboxProcessingNotices(outbox)
+    notice = ProcessingNotice(uuid4(), uuid4(), "Sprint planning", ProcessingOutcome.FINISHED)
+
+    async def notify_twice() -> None:
+        await notices.notify(notice)
+        await notices.notify(notice)
+
+    # Act
+    asyncio.run(notify_twice())
+    # Assert
+    assert len(outbox.notices) == 1
+
+
+def _member(unit: Unit) -> UUID:
+    return unit.member
+
+
+def _outsider(unit: Unit) -> UUID:
+    return unit.outsider
+
+
+@pytest.mark.parametrize(
+    ("restricted", "reader", "expected"),
+    [
+        pytest.param(False, _member, True, id="member-open-meeting"),
+        pytest.param(True, _member, False, id="member-left-out-of-restriction"),
+        pytest.param(False, _outsider, False, id="outsider"),
+    ],
+)
+def test_meeting_readers_follow_the_access_policy(
+    database_settings: DatabaseSettings,
+    *,
+    restricted: bool,
+    reader: Callable[[Unit], UUID],
+    expected: bool,
+) -> None:
+    # Arrange
+    async def scenario() -> bool:
+        async with unit_fixture(database_settings) as unit:
+            if restricted:
+                await unit.access.replace_access(
+                    unit.owner, unit.meeting, {unit.owner}, datetime.now(UTC), restricted=True
+                )
+            return await meeting_readers(unit).can_read(reader(unit), unit.meeting)
+
+    # Act
+    readable = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+    # Assert
+    assert readable is expected
+
+
+class UnavailableMeetingSource:
+    async def scope(self, meeting_id: UUID, *, lock: bool = False) -> MeetingScope:
+        del meeting_id, lock
+        raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+
+    async def set_restricted(self, meeting_id: UUID, *, restricted: bool) -> None:
+        del meeting_id, restricted
+        raise AssertionError
+
+
+def test_meeting_readers_pass_on_failures_other_than_a_missing_meeting(
+    database_settings: DatabaseSettings,
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            memberships = WorkspaceMembershipService(MembershipRepository(unit.session))
+            readers = PolicyMeetingReaders(
+                UnavailableMeetingSource(),
+                AccessPolicy(AccessRepository(unit.session), memberships),
+            )
+            # Act
+            with pytest.raises(UseCaseError) as failure:
+                await readers.can_read(unit.owner, unit.meeting)
+            # Assert
+            assert failure.value.code is Failure.INTEGRATION_UNAVAILABLE
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+@dataclass
+class WorkerDelivery:
+    body: bytes
+    user_id: str | None = "notes-worker"
+
+    async def ack(self) -> None:
+        pass
+
+    async def reject(self, *, requeue: bool = False) -> None:
+        del requeue
+        raise AssertionError
+
+
+def _notes_result(job_id: UUID, meeting_id: UUID, *, failed: bool) -> bytes:
+    outcome: dict[str, JsonValue] = (
+        {"type": "notes_failed", "reason": "provider_auth_failed"}
+        if failed
+        else {
+            "type": "notes_ready",
+            "preset": "summary",
+            "provider": "anthropic",
+            "model_name": "claude",
+            "content": "## Summary",
+            "proposed_name": "Sprint planning",
+            "context_meeting_ids": [],
+        }
+    )
+    return json.dumps(
+        {
+            "job_id": str(job_id),
+            "meeting_id": str(meeting_id),
+            "finished_at": datetime.now(UTC).isoformat(),
+            **outcome,
+        }
+    ).encode()
+
+
+async def _running_notes_job(unit: Unit) -> UUID:
+    meeting = await unit.meetings.get(unit.owner, unit.meeting)
+    meeting.processing_state = ProcessingState.PROCESSING
+    jobs = JobRepository(unit.session)
+    job_id = await jobs.add(unit.meeting, JobType.NOTES)
+    await jobs.mark_running(job_id, datetime.now(UTC))
+    return job_id
+
+
+async def _deliver(unit: Unit, body: bytes) -> None:
+    # The savepoint stands in for the transaction `ProcessingTransactions.handle` opens per result.
+    async with unit.session.begin_nested():
+        await handle_delivery(
+            WorkerDelivery(body),
+            processing_service(unit.session, InMemoryObjectStorage()).handle,
+            WorkerUsers(transcription="asr-worker", notes="notes-worker"),
+        )
+
+
+@pytest.mark.parametrize(
+    ("failed", "status", "state", "template"),
+    [
+        pytest.param(
+            False, JobStatus.SUCCEEDED, ProcessingState.PROCESSED, ProcessingFinished, id="finished"
+        ),
+        pytest.param(True, JobStatus.FAILED, ProcessingState.FAILED, ProcessingFailed, id="failed"),
+    ],
+)
+def test_processing_result_commits_its_notice_with_the_outcome(
+    database_settings: DatabaseSettings,
+    *,
+    failed: bool,
+    status: JobStatus,
+    state: ProcessingState,
+    template: type[ProcessingFinished | ProcessingFailed],
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            job_id = await _running_notes_job(unit)
+            # Act
+            await _deliver(unit, _notes_result(job_id, unit.meeting, failed=failed))
+            outcome = (
+                await unit.session.scalar(
+                    select(ProcessingJob.status).where(ProcessingJob.processing_job_id == job_id)
+                ),
+                await unit.session.scalar(
+                    select(Meeting.processing_state).where(Meeting.meeting_id == unit.meeting)
+                ),
+            )
+            notices = await unit.session.execute(
+                select(
+                    NotificationOutbox.recipient_user_id,
+                    NotificationOutbox.kind,
+                    NotificationOutbox.dedupe_key,
+                    NotificationOutbox.payload,
+                ).where(NotificationOutbox.dedupe_key.contains(str(unit.meeting)))
+            )
+            # Assert
+            notice = template(meeting_id=unit.meeting, meeting_name="test")
+            assert (outcome, [tuple(row) for row in notices]) == (
+                (status, state),
+                [
+                    (
+                        unit.owner,
+                        notice.kind,
+                        f"{notice.kind}:{unit.meeting}:{unit.owner}",
+                        notice_payload(notice),
+                    )
+                ],
+            )
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+def test_replayed_processing_result_reserves_no_second_notice(
+    database_settings: DatabaseSettings,
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            body = _notes_result(await _running_notes_job(unit), unit.meeting, failed=False)
+            await _deliver(unit, body)
+            # Act
+            await _deliver(unit, body)
+            notices = await unit.session.scalars(
+                select(NotificationOutbox.notice_id).where(
+                    NotificationOutbox.dedupe_key.contains(str(unit.meeting))
+                )
+            )
+            # Assert
+            assert len(list(notices)) == 1
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
 async def _failed_update(unit: Unit) -> None:
     async with unit.session.begin_nested():
         await unit.meetings.update(unit.member, unit.meeting, datetime.now(UTC), name="changed")
@@ -1760,6 +2037,8 @@ def test_upload_queues_a_transcription_job_to_publish(database_settings: Databas
                                 WorkspaceSettingsService(WorkspaceSettingsRepository(unit.session)),
                                 storage,
                                 CaptureSpeakerTimeline(CaptureRepository(unit.session)),
+                                OutboxProcessingNotices(NotificationOutboxRepository(unit.session)),
+                                meeting_readers(unit),
                             )
                         )
                     ),

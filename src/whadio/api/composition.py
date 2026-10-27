@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..access_policy.contracts import IMeetingAccessSource
 from ..access_policy.repositories import AccessRepository
 from ..access_policy.services import (
     AccessCollaborators,
@@ -56,7 +57,13 @@ from ..meetings.repositories import FolderRepository, MeetingRepository
 from ..meetings.services import FolderService, MeetingService, WorkspaceContent
 from ..meetings.settings import MeetingSettings
 from ..notifications.repositories import INotificationOutbox, NotificationOutboxRepository
-from ..notifications.templates import HostedEviction, NoticeKind, ShareAccessRequest
+from ..notifications.templates import (
+    HostedEviction,
+    NoticeKind,
+    ProcessingFailed,
+    ProcessingFinished,
+    ShareAccessRequest,
+)
 from ..processing.consumer import (
     ProcessingTransactions,
     ResultSource,
@@ -65,9 +72,10 @@ from ..processing.consumer import (
     serve_publishing,
     serve_results,
 )
+from ..processing.enums import ProcessingOutcome
 from ..processing.monitoring import IJobMonitoring, JobMonitoring
 from ..processing.repositories import JobRepository
-from ..processing.services import ProcessingCollaborators, ProcessingService
+from ..processing.services import ProcessingCollaborators, ProcessingNotice, ProcessingService
 from ..shared.database import Database, DatabaseSettings, IUseCaseTransactions
 from ..shared.errors import Failure, UseCaseError
 from ..shared.settings import PublicUrlSettings
@@ -114,27 +122,7 @@ class CompositionRoot:
     def _processing_service(self, session: AsyncSession) -> ProcessingService:
         if self._storage is None:
             raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
-        meetings = meeting_service(session, AuditWriter(session))
-        memberships = WorkspaceMembershipService(MembershipRepository(session))
-        return ProcessingService(
-            ProcessingCollaborators(
-                JobRepository(session),
-                meetings,
-                MeetingPersistence(
-                    PersistenceDependencies(
-                        meetings,
-                        MeetingRepository(session),
-                        memberships,
-                        AuditWriter(session),
-                        AccessPolicy(AccessRepository(session), memberships),
-                        OutboxEvictionNotices(NotificationOutboxRepository(session)),
-                    )
-                ),
-                WorkspaceSettingsService(WorkspaceSettingsRepository(session)),
-                self._storage,
-                CaptureSpeakerTimeline(CaptureRepository(session)),
-            )
-        )
+        return processing_service(session, self._storage)
 
     @asynccontextmanager
     async def lifespan(self, _app: FastAPI) -> AsyncGenerator[None]:
@@ -258,8 +246,74 @@ class OutboxEvictionNotices:
         )
 
 
+class OutboxProcessingNotices:
+    """Processing's `IProcessingNotifier`, answered by the notification outbox."""
+
+    def __init__(self, outbox: INotificationOutbox) -> None:
+        self._outbox: INotificationOutbox = outbox
+
+    async def notify(self, notice: ProcessingNotice) -> None:
+        match notice.outcome:
+            case ProcessingOutcome.FINISHED:
+                model = ProcessingFinished(
+                    meeting_id=notice.meeting_id, meeting_name=notice.meeting_name
+                )
+            case ProcessingOutcome.FAILED:
+                model = ProcessingFailed(
+                    meeting_id=notice.meeting_id, meeting_name=notice.meeting_name
+                )
+        await self._outbox.reserve(
+            notice.recipient_id, f"{model.kind}:{notice.meeting_id}:{notice.recipient_id}", model
+        )
+
+
+class PolicyMeetingReaders:
+    """Processing's `IMeetingReaders`, answered by Access Policy."""
+
+    def __init__(self, meetings: IMeetingAccessSource, policy: AccessPolicy) -> None:
+        self._meetings: IMeetingAccessSource = meetings
+        self._policy: AccessPolicy = policy
+
+    async def can_read(self, user_id: UUID, meeting_id: UUID) -> bool:
+        try:
+            await self._policy.authorize(await self._meetings.scope(meeting_id), user_id)
+        except UseCaseError as error:
+            if error.code == Failure.NOT_FOUND:
+                return False
+            raise
+        return True
+
+
 def eviction_notifications(session: Session) -> IEvictionNotifier:
     return OutboxEvictionNotices(NotificationOutboxRepository(session))
+
+
+def processing_service(session: AsyncSession, storage: IObjectStorage) -> ProcessingService:
+    meetings = meeting_service(session, AuditWriter(session))
+    memberships = WorkspaceMembershipService(MembershipRepository(session))
+    return ProcessingService(
+        ProcessingCollaborators(
+            JobRepository(session),
+            meetings,
+            MeetingPersistence(
+                PersistenceDependencies(
+                    meetings,
+                    MeetingRepository(session),
+                    memberships,
+                    AuditWriter(session),
+                    AccessPolicy(AccessRepository(session), memberships),
+                    OutboxEvictionNotices(NotificationOutboxRepository(session)),
+                )
+            ),
+            WorkspaceSettingsService(WorkspaceSettingsRepository(session)),
+            storage,
+            CaptureSpeakerTimeline(CaptureRepository(session)),
+            OutboxProcessingNotices(NotificationOutboxRepository(session)),
+            PolicyMeetingReaders(
+                MeetingRepository(session), AccessPolicy(AccessRepository(session), memberships)
+            ),
+        )
+    )
 
 
 def meeting_persistence(

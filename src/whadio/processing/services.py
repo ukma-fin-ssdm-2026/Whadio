@@ -42,7 +42,7 @@ from ..meetings.models import GlossaryTerm, Meeting
 from ..meetings.persistence import GeneratedNotes
 from ..shared.errors import Failure, UseCaseError
 from ..shared.storage import IObjectStorage
-from .enums import JobStatus, JobType
+from .enums import JobStatus, JobType, ProcessingOutcome
 from .repositories import IJobRepository, Job
 from .speakers import ISpeakerTimeline, resolve_speaker_names
 
@@ -113,6 +113,24 @@ class IGeneratedNotes(Protocol):
     ) -> None: ...
 
 
+@dataclass(frozen=True, slots=True)
+class ProcessingNotice:
+    recipient_id: UUID
+    meeting_id: UUID
+    meeting_name: str
+    outcome: ProcessingOutcome
+
+
+class IProcessingNotifier(Protocol):
+    async def notify(self, notice: ProcessingNotice, /) -> None:
+        """Add the notice in the caller's transaction; a meeting's repeated outcome is dropped."""
+        ...
+
+
+class IMeetingReaders(Protocol):
+    async def can_read(self, user_id: UUID, meeting_id: UUID, /) -> bool: ...
+
+
 @dataclass(frozen=True)
 class ProcessingCollaborators:
     jobs: IJobRepository
@@ -121,6 +139,8 @@ class ProcessingCollaborators:
     workspaces: IWorkspaceSettings
     storage: IObjectStorage
     speaker_timeline: ISpeakerTimeline
+    notices: IProcessingNotifier
+    readers: IMeetingReaders
 
 
 class ProcessingService:
@@ -138,6 +158,8 @@ class ProcessingService:
         self._workspaces: IWorkspaceSettings = collaborators.workspaces
         self._storage: IObjectStorage = collaborators.storage
         self._speaker_timeline: ISpeakerTimeline = collaborators.speaker_timeline
+        self._notices: IProcessingNotifier = collaborators.notices
+        self._readers: IMeetingReaders = collaborators.readers
 
     async def queue_transcription(self, meeting_id: UUID) -> None:
         # The lock serializes two submissions of the same meeting, so only one finds no job.
@@ -178,11 +200,7 @@ class ProcessingService:
             request, context = await self._request(job)
         except UseCaseError:
             # The recording or the transcript is gone, which no retry brings back.
-            await self._jobs.finish(job.job_id, JobStatus.FAILED, now, UNPUBLISHABLE)
-            await self._meetings.save_processing_state(
-                job.meeting_id,
-                ProcessingUpdate(ProcessingState.FAILED, _GENERAL_FAILURES[job.job_type]),
-            )
+            await self._finally_failed(job, now, UNPUBLISHABLE, _GENERAL_FAILURES[job.job_type])
             return True
         await publisher.publish(request)
         await self._jobs.mark_published(job.job_id, now, context)
@@ -216,11 +234,7 @@ class ProcessingService:
         job = await self._jobs.lock(job_id)
         if job is None or job.status not in (JobStatus.QUEUED, JobStatus.RUNNING):
             return
-        await self._jobs.finish(job.job_id, JobStatus.FAILED, now, DEAD_LETTERED)
-        await self._meetings.save_processing_state(
-            job.meeting_id,
-            ProcessingUpdate(ProcessingState.FAILED, _GENERAL_FAILURES[job.job_type]),
-        )
+        await self._finally_failed(job, now, DEAD_LETTERED, _GENERAL_FAILURES[job.job_type])
 
     async def _transcript_ready(self, job: Job, result: TranscriptReady) -> None:
         if await self._meetings.pipeline_meeting(job.meeting_id, lock=True) is None:
@@ -296,18 +310,38 @@ class ProcessingService:
         await self._meetings.save_processing_state(
             job.meeting_id, ProcessingUpdate(ProcessingState.PROCESSED)
         )
+        await self._notify_uploader(job.meeting_id, ProcessingOutcome.FINISHED)
 
     async def _failed(self, job: Job, result: TranscriptionFailed | NotesFailed) -> None:
         if result.reason.retryable and job.attempts < MAX_ATTEMPTS:
             await self._jobs.requeue(job.job_id)
             return
-        await self._jobs.finish(job.job_id, JobStatus.FAILED, result.finished_at, result.reason)
+        await self._finally_failed(
+            job,
+            result.finished_at,
+            result.reason,
+            _FAILURES.get(result.reason, _GENERAL_FAILURES[job.job_type]),
+        )
+
+    async def _finally_failed(
+        self, job: Job, finished_at: datetime, reason: str, failure: ProcessingFailure
+    ) -> None:
+        await self._jobs.finish(job.job_id, JobStatus.FAILED, finished_at, reason)
         await self._meetings.save_processing_state(
-            job.meeting_id,
-            ProcessingUpdate(
-                ProcessingState.FAILED,
-                _FAILURES.get(result.reason, _GENERAL_FAILURES[job.job_type]),
-            ),
+            job.meeting_id, ProcessingUpdate(ProcessingState.FAILED, failure)
+        )
+        await self._notify_uploader(job.meeting_id, ProcessingOutcome.FAILED)
+
+    async def _notify_uploader(self, meeting_id: UUID, outcome: ProcessingOutcome) -> None:
+        # Read after the save: generated notes may have renamed the meeting.
+        found = await self._meetings.pipeline_meeting(meeting_id)
+        if found is None or not await self._readers.can_read(
+            found.meeting.created_by_user_id, meeting_id
+        ):
+            return
+        meeting = found.meeting
+        await self._notices.notify(
+            ProcessingNotice(meeting.created_by_user_id, meeting_id, meeting.name, outcome)
         )
 
     async def _request(self, job: Job) -> tuple[JobRequest, tuple[ContextReference, ...]]:
