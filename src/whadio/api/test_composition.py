@@ -22,6 +22,7 @@ from starlette.requests import Request
 
 from conftest import AsyncDatabase
 
+from ..access_policy.contracts import MeetingScope
 from ..access_policy.repositories import AccessRepository
 from ..access_policy.services import AccessCollaborators, AccessPolicy, AccessService, ContentPath
 from ..accounts.contracts import UserProfile
@@ -1315,6 +1316,36 @@ def test_meeting_readers_follow_the_access_policy(
     readable = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
     # Assert
     assert readable is expected
+
+
+class UnavailableMeetingSource:
+    async def scope(self, meeting_id: UUID, *, lock: bool = False) -> MeetingScope:
+        del meeting_id, lock
+        raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+
+    async def set_restricted(self, meeting_id: UUID, *, restricted: bool) -> None:
+        del meeting_id, restricted
+        raise AssertionError
+
+
+def test_meeting_readers_pass_on_failures_other_than_a_missing_meeting(
+    database_settings: DatabaseSettings,
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            memberships = WorkspaceMembershipService(MembershipRepository(unit.session))
+            readers = PolicyMeetingReaders(
+                UnavailableMeetingSource(),
+                AccessPolicy(AccessRepository(unit.session), memberships),
+            )
+            # Act
+            with pytest.raises(UseCaseError) as failure:
+                await readers.can_read(unit.owner, unit.meeting)
+            # Assert
+            assert failure.value.code is Failure.INTEGRATION_UNAVAILABLE
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
 
 
 @dataclass
