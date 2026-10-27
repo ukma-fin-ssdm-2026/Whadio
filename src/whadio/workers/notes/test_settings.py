@@ -22,6 +22,7 @@ _MICROSECOND: Final = 1e-6
 def _environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("WHADIO_BROKER__URL", "amqp://notes:secret@localhost:5672/whadio")
+    monkeypatch.setenv("WHADIO_NOTES__LLM__PROVIDER", "anthropic")
     monkeypatch.setenv("WHADIO_NOTES__LLM__API_KEY", "sk-ant-test")
 
 
@@ -69,12 +70,13 @@ def test_broker_user_comes_from_the_broker_url() -> None:
     assert settings.broker.user == "notes"
 
 
-def test_anthropic_is_the_provider_when_none_is_named() -> None:
-    # Act
-    settings = load_notes_worker_settings()
+def test_settings_without_a_provider_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    monkeypatch.delenv("WHADIO_NOTES__LLM__PROVIDER")
 
-    # Assert
-    assert isinstance(settings.notes.llm, AnthropicSettings)
+    # Act / Assert
+    with pytest.raises(ValidationError, match="union_tag_not_found"):
+        load_notes_worker_settings()
 
 
 @pytest.mark.usefixtures("ollama")
@@ -219,7 +221,9 @@ def test_notes_limit_is_refused_only_below_its_floor(
     field: str, value: float, *, refused: bool
 ) -> None:
     # Act
-    found = refused_fields(NotesSettings, {"llm": {"api_key": "sk-ant-test"}, field: value})
+    found = refused_fields(
+        NotesSettings, {"llm": {"provider": "anthropic", "api_key": "sk-ant-test"}, field: value}
+    )
 
     # Assert
     assert found == ({field} if refused else set[str]())
@@ -228,7 +232,8 @@ def test_notes_limit_is_refused_only_below_its_floor(
 def test_infinite_chars_per_token_is_refused() -> None:
     # Act
     found = refused_fields(
-        NotesSettings, {"llm": {"api_key": "sk-ant-test"}, "chars_per_token": math.inf}
+        NotesSettings,
+        {"llm": {"provider": "anthropic", "api_key": "sk-ant-test"}, "chars_per_token": math.inf},
     )
 
     # Assert

@@ -1,24 +1,13 @@
-from collections.abc import Mapping
 from datetime import timedelta
 from typing import Annotated, ClassVar, Final, Literal, Self
 
-from pydantic import (
-    BaseModel,
-    Discriminator,
-    Field,
-    HttpUrl,
-    JsonValue,
-    SecretStr,
-    Tag,
-    model_validator,
-)
+from pydantic import BaseModel, Field, HttpUrl, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ...shared.broker import BrokerSettings
 from ...shared.logs import LogLevel
 from .claude import Effort
 
-_DEFAULT_PROVIDER: Final = "anthropic"
 _MIN_PROMPT_TOKENS: Final = 1_000
 
 
@@ -50,21 +39,7 @@ class OllamaSettings(BaseModel):
     )
 
 
-# A callable discriminator lets an unset provider mean Anthropic; `discriminator="provider"`
-# would demand the tag.
-def _provider_of(
-    settings: Mapping[str, JsonValue] | AnthropicSettings | OllamaSettings,
-) -> str | None:
-    if isinstance(settings, AnthropicSettings | OllamaSettings):
-        return settings.provider
-    provider = settings.get("provider", _DEFAULT_PROVIDER)
-    return provider if isinstance(provider, str) else None
-
-
-type LlmSettings = Annotated[
-    Annotated[AnthropicSettings, Tag("anthropic")] | Annotated[OllamaSettings, Tag("ollama")],
-    Discriminator(_provider_of),
-]
+type LlmSettings = Annotated[AnthropicSettings | OllamaSettings, Field(discriminator="provider")]
 
 
 class NotesSettings(BaseModel):
