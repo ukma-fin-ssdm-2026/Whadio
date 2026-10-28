@@ -144,10 +144,6 @@ button {
   text-transform: none !important;
 }
 
-.nav-processing.paused {
-  color: #9a6218;
-}
-
 .transcript-link:hover,
 .transcript-link.active {
   background: #dcefeb;
@@ -375,48 +371,6 @@ button {
   font-size: 0.82rem;
   font-weight: 600;
   white-space: nowrap;
-}
-
-.processing-toggle {
-  display: inline-flex;
-  position: relative;
-  align-items: center;
-  justify-content: center;
-  width: calc(var(--spinner-size) + 8px);
-  height: calc(var(--spinner-size) + 8px);
-  border-radius: 999px;
-  color: #0f766e;
-  cursor: pointer;
-}
-
-.processing-toggle:hover,
-.processing-toggle:focus-visible,
-.processing-toggle.paused {
-  background: #dcefeb;
-}
-
-.processing-toggle:focus-visible {
-  outline: 3px solid rgb(15 118 110 / 24%);
-  outline-offset: 2px;
-}
-
-.processing-toggle-icon {
-  position: absolute;
-}
-
-.pause-icon {
-  opacity: 0;
-}
-
-.processing-toggle:hover .processing-spinner,
-.processing-toggle:focus-visible .processing-spinner {
-  opacity: 0;
-}
-
-.processing-toggle:hover .pause-icon,
-.processing-toggle:focus-visible .pause-icon,
-.processing-toggle.paused .resume-icon {
-  opacity: 1;
 }
 
 .processing-panel {
