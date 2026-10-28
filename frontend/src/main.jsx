@@ -1,6 +1,6 @@
 import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
@@ -440,16 +440,14 @@ export function App() {
           {view !== "meeting" && (
             <Stack
               direction="row"
-              justifyContent="space-between"
-              alignItems="flex-end"
-              gap={2}
               className="page-header"
+              sx={{ justifyContent: "space-between", alignItems: "flex-end", gap: 2 }}
             >
               <Box>
                 {view === "workspace" && (
                   <Typography className="eyebrow">{workspace.role} workspace</Typography>
                 )}
-                <Typography variant="h1" fontSize={{ xs: 36, md: 52 }}>
+                <Typography variant="h1" sx={{ fontSize: { xs: 36, md: 52 } }}>
                   {title}
                 </Typography>
               </Box>
@@ -554,12 +552,10 @@ function SignIn({ onSubmit, externalError }) {
       <Card component="form" className="auth-card" onSubmit={submit}>
         <Typography className="brand">Whadio</Typography>
         <Box>
-          <Typography variant="h1" fontSize={32}>
+          <Typography variant="h1" sx={{ fontSize: 32 }}>
             Sign in
           </Typography>
-          <Typography color="text.secondary">
-            Open your meetings, notes, and transcripts.
-          </Typography>
+          <Typography color="textSecondary">Open your meetings, notes, and transcripts.</Typography>
         </Box>
         <TextField
           label="Email"
@@ -618,11 +614,11 @@ function Sidebar({
 
       <Card className="profile-card">
         <Box className="avatar">{initials}</Box>
-        <Box minWidth={0}>
-          <Typography fontWeight={650} noWrap>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography noWrap sx={{ fontWeight: 650 }}>
             {user?.name ?? "Signed in"}
           </Typography>
-          <Typography color="text.secondary" noWrap>
+          <Typography color="textSecondary" noWrap>
             {user?.email}
           </Typography>
         </Box>
@@ -633,7 +629,7 @@ function Sidebar({
         </Tooltip>
       </Card>
 
-      <Stack component="nav" gap={0.5}>
+      <Stack component="nav" sx={{ gap: 0.5 }}>
         <NavButton active={activeView === "home"} icon={<HomeOutlinedIcon />} onClick={onHome}>
           Home
         </NavButton>
@@ -649,7 +645,7 @@ function Sidebar({
         </NavButton>
 
         {open && (
-          <Stack gap={0.5} className="workspace-tree">
+          <Stack className="workspace-tree" sx={{ gap: 0.5 }}>
             {workspaces.map((workspace) => {
               const workspaceMeetings = meetings.filter(
                 (item) => item.workspaceId === workspace.id,
@@ -729,7 +725,7 @@ function NavButton({ active, icon, onClick, children }) {
 function Breadcrumbs({ view, workspace, meeting, onHome, onWorkspace }) {
   if (view === "home") return <Box className="breadcrumbs" />;
   return (
-    <Stack direction="row" alignItems="center" gap={1} className="breadcrumbs">
+    <Stack direction="row" className="breadcrumbs" sx={{ alignItems: "center", gap: 1 }}>
       <button type="button" onClick={onHome}>
         Home
       </button>
@@ -753,16 +749,16 @@ function Breadcrumbs({ view, workspace, meeting, onHome, onWorkspace }) {
 
 function HomeView({ workspaces, meetings, onWorkspace }) {
   return (
-    <Stack gap={2}>
+    <Stack sx={{ gap: 2 }}>
       <Card className="quiet-panel">
-        <Typography variant="h2" fontSize={24}>
+        <Typography variant="h2" sx={{ fontSize: 24 }}>
           Choose a workspace
         </Typography>
-        <Typography color="text.secondary">
+        <Typography color="textSecondary">
           Upload recordings and review processed meetings.
         </Typography>
       </Card>
-      <Stack gap={1.5}>
+      <Stack sx={{ gap: 1.5 }}>
         {workspaces.map((workspace) => {
           const workspaceMeetings = meetings.filter((item) => item.workspaceId === workspace.id);
           const active = workspaceMeetings.filter((item) => item.state !== "processed").length;
@@ -770,13 +766,13 @@ function HomeView({ workspaces, meetings, onWorkspace }) {
             <Card key={workspace.id}>
               <CardActionArea className="workspace-card" onClick={() => onWorkspace(workspace.id)}>
                 <Box className="workspace-icon">{workspace.name.charAt(0)}</Box>
-                <Box minWidth={0}>
-                  <Typography fontWeight={650}>{workspace.name}</Typography>
-                  <Typography color="text.secondary">
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography sx={{ fontWeight: 650 }}>{workspace.name}</Typography>
+                  <Typography color="textSecondary">
                     {workspace.role} · {workspace.members} members
                   </Typography>
                 </Box>
-                <Typography color="text.secondary" fontWeight={650}>
+                <Typography color="textSecondary" sx={{ fontWeight: 650 }}>
                   {workspaceMeetings.length} meetings, {active} active
                 </Typography>
               </CardActionArea>
@@ -818,15 +814,17 @@ function UploadPanel({ workspace, onUpload }) {
     <Card className="upload-panel">
       <Stack
         direction={{ xs: "column", sm: "row" }}
-        gap={1.5}
-        justifyContent="space-between"
-        alignItems={{ xs: "stretch", sm: "center" }}
+        sx={{
+          gap: 1.5,
+          justifyContent: "space-between",
+          alignItems: { xs: "stretch", sm: "center" },
+        }}
       >
         <Box>
-          <Typography variant="h2" fontSize={18} fontWeight={650}>
+          <Typography variant="h2" sx={{ fontSize: 18, fontWeight: 650 }}>
             Upload recording
           </Typography>
-          <Typography color="text.secondary" fontSize={14}>
+          <Typography color="textSecondary" sx={{ fontSize: 14 }}>
             Queue audio or video for processing.
           </Typography>
         </Box>
@@ -842,7 +840,7 @@ function UploadPanel({ workspace, onUpload }) {
       <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="xs">
         <DialogTitle>Upload recording</DialogTitle>
         <DialogContent>
-          <Stack gap={2} pt={0.5}>
+          <Stack sx={{ gap: 2, pt: 0.5 }}>
             <TextField
               label="Meeting name"
               placeholder="Lab 3 architecture planning"
@@ -914,21 +912,24 @@ function WorkspaceSettings({ workspace }) {
       </Box>
 
       {section === "workspace" ? (
-        <Stack className="settings-options" gap={1.25}>
+        <Stack className="settings-options" sx={{ gap: 1.25 }}>
           <Box>
-            <Typography variant="h2" fontSize={24}>
+            <Typography variant="h2" sx={{ fontSize: 24 }}>
               Workspace settings
             </Typography>
-            <Typography color="text.secondary">
+            <Typography color="textSecondary">
               Configure processing defaults for {workspace.name}.
             </Typography>
           </Box>
 
           <Card className="settings-option-card">
-            <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={2}>
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              sx={{ justifyContent: "space-between", gap: 2 }}
+            >
               <Box>
-                <Typography fontWeight={650}>Notes provider</Typography>
-                <Typography color="text.secondary">
+                <Typography sx={{ fontWeight: 650 }}>Notes provider</Typography>
+                <Typography color="textSecondary">
                   Whadio gemma-3-12b-it is used for generated notes.
                 </Typography>
               </Box>
@@ -937,10 +938,13 @@ function WorkspaceSettings({ workspace }) {
           </Card>
 
           <Card className="settings-option-card">
-            <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={2}>
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              sx={{ justifyContent: "space-between", gap: 2 }}
+            >
               <Box>
-                <Typography fontWeight={650}>Workspace access</Typography>
-                <Typography color="text.secondary">
+                <Typography sx={{ fontWeight: 650 }}>Workspace access</Typography>
+                <Typography color="textSecondary">
                   Members of this workspace can open processed meetings.
                 </Typography>
               </Box>
@@ -949,10 +953,13 @@ function WorkspaceSettings({ workspace }) {
           </Card>
 
           <Card className="settings-option-card">
-            <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={2}>
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              sx={{ justifyContent: "space-between", gap: 2 }}
+            >
               <Box>
-                <Typography fontWeight={650}>Default notes preset</Typography>
-                <Typography color="text.secondary">
+                <Typography sx={{ fontWeight: 650 }}>Default notes preset</Typography>
+                <Typography color="textSecondary">
                   New uploads use the workspace notes preset.
                 </Typography>
               </Box>
@@ -1018,18 +1025,21 @@ function McpKeySettings() {
   };
 
   return (
-    <Stack className="settings-options" gap={1.25}>
+    <Stack className="settings-options" sx={{ gap: 1.25 }}>
       <Box>
-        <Typography variant="h2" fontSize={24}>
+        <Typography variant="h2" sx={{ fontSize: 24 }}>
           AI assistant access
         </Typography>
-        <Typography color="text.secondary">
+        <Typography color="textSecondary">
           Use a personal key to connect an assistant to meetings you can access.
         </Typography>
       </Box>
 
       <Card className="settings-option-card">
-        <Stack direction={{ xs: "column", sm: "row" }} alignItems={{ sm: "center" }} gap={1.25}>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          sx={{ alignItems: { sm: "center" }, gap: 1.25 }}
+        >
           <FormControl size="small" sx={{ minWidth: 180 }}>
             <InputLabel>Expires</InputLabel>
             <Select
@@ -1062,16 +1072,16 @@ function McpKeySettings() {
       {loading ? (
         <CircularProgress size={24} />
       ) : (
-        <Stack gap={1}>
+        <Stack sx={{ gap: 1 }}>
           {keys.length === 0 && (
-            <Typography color="text.secondary">No assistant keys yet.</Typography>
+            <Typography color="textSecondary">No assistant keys yet.</Typography>
           )}
           {keys.map((key) => (
             <Box className="mcp-key-row" key={key.id}>
               <KeyOutlinedIcon color={key.is_active ? "primary" : "disabled"} />
-              <Box minWidth={0}>
-                <Typography fontWeight={600}>Key {key.id.slice(0, 8)}</Typography>
-                <Typography color="text.secondary" fontSize={14}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography sx={{ fontWeight: 600 }}>Key {key.id.slice(0, 8)}</Typography>
+                <Typography color="textSecondary" sx={{ fontSize: 14 }}>
                   Created {formatDate(key.created_at)} ·{" "}
                   {key.expires_at ? `Expires ${formatDate(key.expires_at)}` : "Never expires"}
                 </Typography>
@@ -1085,7 +1095,7 @@ function McpKeySettings() {
               {key.is_active && (
                 <Tooltip title="Revoke key" arrow>
                   <IconButton aria-label="Revoke key" onClick={() => revokeKey(key.id)}>
-                    <DeleteOutlineIcon />
+                    <DeleteOutlineOutlinedIcon />
                   </IconButton>
                 </Tooltip>
               )}
@@ -1097,24 +1107,26 @@ function McpKeySettings() {
       <Dialog open={Boolean(secret)} onClose={() => setSecret("")} fullWidth maxWidth="sm">
         <DialogTitle>Save your MCP key</DialogTitle>
         <DialogContent>
-          <Stack gap={2} sx={{ pt: 1 }}>
-            <Typography color="text.secondary">
+          <Stack sx={{ gap: 2, pt: 1 }}>
+            <Typography color="textSecondary">
               This secret is shown once. Store it securely before closing this window.
             </Typography>
             <TextField
               value={secret}
-              inputProps={{ readOnly: true, "aria-label": "MCP key secret" }}
-              InputProps={{
-                endAdornment: (
-                  <Tooltip title="Copy key" arrow>
-                    <IconButton
-                      aria-label="Copy key"
-                      onClick={() => navigator.clipboard.writeText(secret)}
-                    >
-                      <ContentCopyOutlinedIcon />
-                    </IconButton>
-                  </Tooltip>
-                ),
+              slotProps={{
+                htmlInput: { readOnly: true, "aria-label": "MCP key secret" },
+                input: {
+                  endAdornment: (
+                    <Tooltip title="Copy key" arrow>
+                      <IconButton
+                        aria-label="Copy key"
+                        onClick={() => navigator.clipboard.writeText(secret)}
+                      >
+                        <ContentCopyOutlinedIcon />
+                      </IconButton>
+                    </Tooltip>
+                  ),
+                },
               }}
             />
           </Stack>
@@ -1142,23 +1154,27 @@ function MeetingLibrary({
   onToggleProcessing,
 }) {
   return (
-    <Stack gap={1.5}>
+    <Stack sx={{ gap: 1.5 }}>
       <Stack
         direction={{ xs: "column", md: "row" }}
-        justifyContent="space-between"
-        alignItems={{ xs: "stretch", md: "center" }}
-        gap={1.5}
+        sx={{
+          justifyContent: "space-between",
+          alignItems: { xs: "stretch", md: "center" },
+          gap: 1.5,
+        }}
       >
-        <Typography variant="h2" fontSize={22}>
+        <Typography variant="h2" sx={{ fontSize: 22 }}>
           {title}
         </Typography>
-        <Stack direction="row" gap={1}>
+        <Stack direction="row" sx={{ gap: 1 }}>
           <TextField
             size="small"
             placeholder="Filter by name"
             value={query}
             onChange={(event) => onQuery(event.target.value)}
-            InputProps={{ startAdornment: <SearchRoundedIcon color="disabled" sx={{ mr: 1 }} /> }}
+            slotProps={{
+              input: { startAdornment: <SearchRoundedIcon color="disabled" sx={{ mr: 1 }} /> },
+            }}
           />
           <FormControl size="small" sx={{ minWidth: 140 }}>
             <InputLabel>State</InputLabel>
@@ -1178,7 +1194,7 @@ function MeetingLibrary({
         </Stack>
       </Stack>
 
-      <Stack gap={1}>
+      <Stack sx={{ gap: 1 }}>
         {meetings.map((meeting) => (
           <Card
             key={meeting.id}
@@ -1197,11 +1213,11 @@ function MeetingLibrary({
               ) : (
                 <Box className="state-dot" />
               )}
-              <Box minWidth={0}>
-                <Typography fontWeight={650} noWrap>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography noWrap sx={{ fontWeight: 650 }}>
                   {meeting.title}
                 </Typography>
-                <Typography color="text.secondary" noWrap>
+                <Typography color="textSecondary" noWrap>
                   {formatDate(meeting.date)} · {meeting.source}
                   {!isProcessing(meeting) && ` · ${meeting.duration}`}
                 </Typography>
@@ -1226,10 +1242,8 @@ function MeetingLibrary({
         ))}
         {meetings.length === 0 && (
           <Card className="empty-state">
-            <Typography fontWeight={650}>No meetings found</Typography>
-            <Typography color="text.secondary">
-              Try another filter or upload a recording.
-            </Typography>
+            <Typography sx={{ fontWeight: 650 }}>No meetings found</Typography>
+            <Typography color="textSecondary">Try another filter or upload a recording.</Typography>
           </Card>
         )}
       </Stack>
@@ -1304,16 +1318,20 @@ function MeetingDetail({
     );
 
   const header = (
-    <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={2}>
+    <Stack direction={{ xs: "column", md: "row" }} sx={{ justifyContent: "space-between", gap: 2 }}>
       <Box>
-        <Typography variant="h1" fontSize={{ xs: 34, md: 48 }}>
+        <Typography variant="h1" sx={{ fontSize: { xs: 34, md: 48 } }}>
           {meeting.title}
         </Typography>
-        <Typography className="meeting-date" color="text.secondary">
+        <Typography className="meeting-date" color="textSecondary">
           {formatDate(meeting.date)}
         </Typography>
       </Box>
-      <Stack className="meeting-meta-actions" direction="row" gap={0.75} alignItems="center">
+      <Stack
+        className="meeting-meta-actions"
+        direction="row"
+        sx={{ gap: 0.75, alignItems: "center" }}
+      >
         <ExportControls
           key={`${meeting.id}-${tab}-${transcript?.revision.revision_id}`}
           meetingId={meeting.id}
@@ -1337,7 +1355,7 @@ function MeetingDetail({
   );
 
   return (
-    <Stack gap={1.5}>
+    <Stack sx={{ gap: 1.5 }}>
       <Tabs value={tab} onChange={(_, value) => onTab(value)} className="meeting-tabs">
         <Tab value="notes" label="Notes" />
         <Tab value="transcript" label="Transcript" />
@@ -1349,13 +1367,17 @@ function MeetingDetail({
           {header}
           <Divider sx={{ my: 2.5 }} />
           {isProcessing(meeting) ? (
-            <Stack className="processing-panel" direction="row" gap={1.5} alignItems="center">
+            <Stack
+              className="processing-panel"
+              direction="row"
+              sx={{ gap: 1.5, alignItems: "center" }}
+            >
               <ProcessingToggle paused={paused} onToggle={onToggleProcessing} size={22} />
               <Box>
-                <Typography fontWeight={650}>
+                <Typography sx={{ fontWeight: 650 }}>
                   {paused ? "Processing paused" : "Processing recording"}
                 </Typography>
-                <Typography color="text.secondary">
+                <Typography color="textSecondary">
                   {paused
                     ? "Resume when you are ready to continue transcript and notes generation."
                     : `Transcript and notes will appear in ${meeting.processingEta}.`}
@@ -1375,7 +1397,7 @@ function MeetingDetail({
               {notes.content}
             </Typography>
           ) : (
-            <Typography color="text.secondary">No generated notes are available yet.</Typography>
+            <Typography color="textSecondary">No generated notes are available yet.</Typography>
           )}
         </Card>
       ) : (
@@ -1393,7 +1415,7 @@ function MeetingDetail({
                   <Box className="play-circle">
                     <PlayArrowRoundedIcon fontSize="large" />
                   </Box>
-                  <Typography fontWeight={650}>{meeting.title}</Typography>
+                  <Typography sx={{ fontWeight: 650 }}>{meeting.title}</Typography>
                   <Typography>
                     {meeting.recordingAvailable
                       ? "Loading recording..."
@@ -1410,9 +1432,9 @@ function MeetingDetail({
                 <Divider sx={{ my: 2.5 }} />
               </>
             )}
-            <Stack gap={1.5}>
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Typography variant="h2" fontSize={22}>
+            <Stack sx={{ gap: 1.5 }}>
+              <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
+                <Typography variant="h2" sx={{ fontSize: 22 }}>
                   {transcript?.revision.revision_type === "original"
                     ? "Original transcript"
                     : transcript
@@ -1442,19 +1464,19 @@ function MeetingDetail({
                 value={transcriptQuery}
                 onChange={(event) => onTranscriptQuery(event.target.value)}
               />
-              <Stack gap={1.5}>
+              <Stack sx={{ gap: 1.5 }}>
                 {segments.map((item) => (
                   <Box key={item.id} className="transcript-item">
-                    <Stack direction="row" gap={1} alignItems="center">
+                    <Stack direction="row" sx={{ gap: 1, alignItems: "center" }}>
                       <Box className="speaker-avatar">{item.speaker.slice(-2)}</Box>
-                      <Typography fontWeight={650}>{item.speaker}</Typography>
+                      <Typography sx={{ fontWeight: 650 }}>{item.speaker}</Typography>
                       <Typography color="primary">{formatTimestamp(item.start_seconds)}</Typography>
                     </Stack>
-                    <Typography color="text.secondary">{item.text}</Typography>
+                    <Typography color="textSecondary">{item.text}</Typography>
                   </Box>
                 ))}
                 {!loading && segments.length === 0 && (
-                  <Typography color="text.secondary">
+                  <Typography color="textSecondary">
                     {transcript
                       ? "No transcript matches your search."
                       : "Transcript is not available yet."}
