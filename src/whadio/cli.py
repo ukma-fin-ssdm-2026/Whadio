@@ -166,3 +166,53 @@ def grant(user_id: Annotated[UUID, typer.Option(help="Existing account UUID.")])
 @admin_app.command(help="Revoke administrator permission; existing sessions remain signed in.")
 def revoke(user_id: Annotated[UUID, typer.Option(help="Existing account UUID.")]) -> None:
     _administrator(user_id, enabled=False)
+
+
+links_app = typer.Typer(help="Operator-only account links; requires deployment database access.")
+app.add_typer(links_app, name="links")
+
+
+@links_app.command(help="Issue a registration link; a new link invalidates the earlier one.")
+def registration(email: Annotated[str, typer.Option(help="Address of the new account.")]) -> None:
+    import asyncio
+    from datetime import UTC, datetime
+
+    from pydantic import EmailStr, TypeAdapter, ValidationError
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from .accounts.repositories import RegistrationRepository, SessionRepository
+    from .accounts.services import AccountAlreadyExistsError, RegistrationIssuer
+    from .shared.database import Database, DatabaseSettings
+    from .shared.settings import PublicUrlSettings
+
+    try:
+        address = TypeAdapter(EmailStr).validate_python(email.strip())
+    except ValidationError:
+        raise typer.BadParameter("must be an email address", param_hint="--email") from None
+
+    async def issue() -> str:
+        settings = PublicUrlSettings.model_validate({})
+        if settings.public_url is None:
+            raise ValueError("Set WHADIO_PUBLIC_URL before issuing links.")
+        database = Database(DatabaseSettings.model_validate({}))
+        try:
+            async with database.transaction() as session:
+                link = await RegistrationIssuer(
+                    RegistrationRepository(session), SessionRepository(session)
+                ).issue(address, datetime.now(UTC))
+            return link.url(str(settings.public_url))
+        finally:
+            await database.close()
+
+    try:
+        link = asyncio.run(issue(), loop_factory=asyncio.SelectorEventLoop)
+    except AccountAlreadyExistsError:
+        typer.echo("Account already exists; issue a password-reset link instead.", err=True)
+        raise typer.Exit(code=1) from None
+    except (SQLAlchemyError, ValidationError):
+        typer.echo("Registration database or configuration unavailable.", err=True)
+        raise typer.Exit(code=1) from None
+    except ValueError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo(link)
