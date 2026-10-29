@@ -163,3 +163,15 @@ class RegistrationComplete(Input):
 class InstanceRead(Output):
     registration_mode: RegistrationMode = Field(description="How this instance admits accounts")
     api_version: str = Field(description="Version of the Web API")
+
+
+class PasswordResetComplete(Input):
+    # Per-field StringConstraints cannot preserve whitespace on SecretStr in both validation modes.
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    token: SecretStr = Field(description="Secret from the password-reset link fragment")
+    password: SecretStr = Field(
+        min_length=12,
+        max_length=128,
+        description="12 to 128 characters, a digit and an uppercase letter",
+    )

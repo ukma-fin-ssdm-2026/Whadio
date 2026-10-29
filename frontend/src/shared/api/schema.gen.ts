@@ -44,6 +44,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/password-resets/{reset_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set a new password from a reset link
+         * @description Public in either registration mode. Consumes the single-use link, changes the password and ends every browser and extension session atomically. MCP keys remain active.
+         */
+        post: operations["complete_api_v1_password_resets__reset_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+     };
     "/api/v1/sessions": {
         parameters: {
             query?: never;
@@ -1676,6 +1696,21 @@ export interface components {
             items: components["schemas"]["WorkspaceSummary"][];
             pagination: components["schemas"]["PageInfo"];
         };
+        /** PasswordResetComplete */
+        PasswordResetComplete: {
+            /**
+             * Token
+             * Format: password
+             * @description Secret from the password-reset link fragment
+             */
+            token: string;
+            /**
+             * Password
+             * Format: password
+             * @description 12 to 128 characters, a digit and an uppercase letter
+             */
+            password: string;
+        };
         /** PlaybackLink */
         PlaybackLink: {
             /**
@@ -2377,6 +2412,58 @@ export interface operations {
             };
         };
     };
+    complete_api_v1_password_resets__reset_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Password-reset identifier from the link */
+                reset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetComplete"];
+            };
+        };
+        responses: {
+            /** @description Password changed; sign in again with the new password */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description LINK_INVALID: unknown, expired, replaced or used link */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+     };
     sign_in_api_v1_sessions_post: {
         parameters: {
             query?: never;
