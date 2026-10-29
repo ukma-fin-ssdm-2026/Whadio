@@ -11,6 +11,7 @@ import {
 } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api } from "@/api";
+import { theme } from "@/app/theme";
 import { McpKeySettings } from "@/features/accounts/components/McpKeySettings";
 import { SignIn } from "@/features/accounts/components/SignIn";
 import { ExportControls } from "@/features/export/components/ExportControls";
@@ -24,7 +25,6 @@ import { mapWorkspace } from "@/features/workspaces/model";
 import { Breadcrumbs } from "./layout/Breadcrumbs";
 import { Sidebar } from "./layout/Sidebar";
 import { meetingLibraryPath, meetingPath, readMeetingLink } from "./navigation/meeting-link";
-import { theme } from "./theme";
 import "@/styles.css";
 
 const USER_STORAGE_KEY = "whadio-user";
@@ -275,7 +275,7 @@ export function App() {
   if (authStatus !== "signedIn") {
     return (
       <ThemeProvider theme={theme}>
-        <CssBaseline />
+        <CssBaseline enableColorScheme />
         {authStatus === "loading" ? (
           <Box className="auth-screen">
             <CircularProgress />
@@ -289,7 +289,7 @@ export function App() {
 
   return (
     <ThemeProvider theme={theme}>
-      <CssBaseline />
+      <CssBaseline enableColorScheme />
       <Box className="app-shell">
         <Sidebar
           user={user}
