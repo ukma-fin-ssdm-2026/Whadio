@@ -331,7 +331,10 @@ extend_exclude = ["src/.*/test_[^/]*\\.py"]
 per_rule_ignores = { DEP002 = ["torchaudio", "torchcodec"] } # declared to pin them to torch's index
 
 [tool.typos.files]
-extend-exclude = ["*.svg"] # PlantUML embeds its compressed source in every SVG
+extend-exclude = [
+  "*.svg", # PlantUML embeds its compressed source in every SVG
+  "*.gen.ts",
+]
 
 [tool.typos.default.extend-words]
 thr = "thr" # threat IDs of the team reviewed in docs/code-quality/review-report.md

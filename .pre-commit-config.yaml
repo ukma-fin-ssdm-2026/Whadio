@@ -163,6 +163,13 @@ repos:
         files: ^(src/|docs/api/)
         pass_filenames: false
 
+      - id: frontend-api-types
+        name: frontend API types match the specification
+        language: unsupported
+        entry: npm --prefix frontend run gen:api
+        files: ^(docs/api/openapi-generated\.json|frontend/)
+        pass_filenames: false
+
       - id: pytest
         name: pytest (fast)
         entry: uv run --frozen pytest -q -m "not slow"

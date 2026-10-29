@@ -136,7 +136,8 @@ On a pull request, CI checks the title and every commit message against the comm
   change, stage it and commit again.
 - Ruff's and Biome's fixes conflict with a partly staged file: run `uv run task fix` and stage the
   whole file.
-- Changing a route or a schema regenerates `docs/api/openapi-generated.*`; commit them with it.
+- Changing a route or a schema regenerates `docs/api/openapi-generated.*` and
+  `frontend/src/shared/api/schema.gen.ts`; commit them with it.
 
 ## Code standards
 
