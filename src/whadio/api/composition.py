@@ -21,17 +21,19 @@ from ..access_policy.services import (
 )
 from ..accounts.administrators import AdministratorRepository, AdministratorService
 from ..accounts.contracts import UserProfile
-from ..accounts.enums import NotesTemplate
+from ..accounts.enums import NotesTemplate, RegistrationMode
 from ..accounts.passwords import Argon2PasswordHasher
 from ..accounts.repositories import (
     McpKeyRepository,
     MembershipRepository,
+    RegistrationRepository,
     SessionRepository,
     WorkspaceRepository,
     WorkspaceSettingsRepository,
 )
 from ..accounts.services import (
     McpKeyService,
+    RegistrationService,
     SignInService,
     WorkspaceMembershipService,
     WorkspaceService,
@@ -57,6 +59,7 @@ from ..meetings.repositories import FolderRepository, MeetingRepository
 from ..meetings.services import FolderService, MeetingService, WorkspaceContent
 from ..meetings.settings import MeetingSettings
 from ..notifications.repositories import INotificationOutbox, NotificationOutboxRepository
+from ..notifications.settings import load_notification_settings
 from ..notifications.templates import (
     HostedEviction,
     NoticeKind,
@@ -83,6 +86,16 @@ from ..shared.storage import IObjectStorage, connect_s3_storage
 from .settings import WebSettings
 
 logger = logging.getLogger(__name__)
+
+
+def api_version() -> str:
+    raise RuntimeError("API version dependency has not been configured")
+
+
+def validate_registration_startup(settings: WebSettings) -> None:
+    notifications = load_notification_settings()
+    if settings.registration_mode is RegistrationMode.VERIFIED and notifications.smtp is None:
+        raise ValueError("verified registration requires an SMTP relay")
 
 
 class CompositionRoot:
@@ -127,6 +140,7 @@ class CompositionRoot:
     @asynccontextmanager
     async def lifespan(self, _app: FastAPI) -> AsyncGenerator[None]:
         settings, storage = WebSettings(), MeetingSettings().storage
+        validate_registration_startup(settings)
         stop = asyncio.Event()
         tasks: list[asyncio.Task[None]] = []
         try:
@@ -445,6 +459,18 @@ def sign_in_service(session: Session) -> SignInService:
 
 
 SignIns = Annotated[SignInService, Depends(sign_in_service)]
+
+
+def registration_service(session: Session) -> RegistrationService:
+    return RegistrationService(
+        RegistrationRepository(session),
+        SessionRepository(session),
+        Argon2PasswordHasher(),
+        WorkspaceContent(MeetingRepository(session)),
+    )
+
+
+Registrations = Annotated[RegistrationService, Depends(registration_service)]
 
 
 def mcp_key_service(session: Session) -> McpKeyService:

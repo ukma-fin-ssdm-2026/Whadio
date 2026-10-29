@@ -229,7 +229,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /instance` · Describe this instance
 
-- **Status:** Designed · **Caller:** public · **Success:** `200`, the registration mode and
+- **Status:** Implemented · **Caller:** public · **Success:** `200`, the registration mode and
   the API version
 - **Rules:** tells the web app whether to offer registration and password reset.
 - **Errors:** none.
@@ -250,7 +250,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /registrations/{registration_id}/complete` · Create the account from a link
 
-- **Status:** Designed · **Caller:** public · **Success:** `201`, the new user; the session
+- **Status:** Implemented · **Caller:** public · **Success:** `201`, the new user; the session
   cookie is set
 - **Rules:**
   - Works in both modes, because operator-issued links work on invite-only instances.

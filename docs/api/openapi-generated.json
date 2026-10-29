@@ -6,6 +6,101 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/v1/instance": {
+      "get": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Describe this instance",
+        "operationId": "instance_api_v1_instance_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceRead"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/registrations/{registration_id}/complete": {
+      "post": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Create the account from a registration link",
+        "description": "Works in either registration mode. Creates the account and its personal workspace atomically, consumes the link, and sets the browser session cookie.",
+        "operationId": "complete_api_v1_registrations__registration_id__complete_post",
+        "parameters": [
+          {
+            "name": "registration_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Registration Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationComplete"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LINK_INVALID: unknown, expired, replaced or used link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/sessions": {
       "post": {
         "tags": [
@@ -5928,6 +6023,25 @@
         ],
         "title": "Health"
       },
+      "InstanceRead": {
+        "properties": {
+          "registration_mode": {
+            "$ref": "#/components/schemas/RegistrationMode",
+            "description": "How this instance admits accounts"
+          },
+          "api_version": {
+            "type": "string",
+            "title": "Api Version",
+            "description": "Version of the Web API"
+          }
+        },
+        "type": "object",
+        "required": [
+          "registration_mode",
+          "api_version"
+        ],
+        "title": "InstanceRead"
+      },
       "JobCounts": {
         "properties": {
           "job_type": {
@@ -7045,6 +7159,53 @@
           "partial"
         ],
         "title": "RecordingStatus"
+      },
+      "RegistrationComplete": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "format": "password",
+            "title": "Token",
+            "description": "Secret from the registration link fragment",
+            "writeOnly": true
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "description": "Account display name"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "title": "Password",
+            "description": "12 to 128 characters, a digit and an uppercase letter",
+            "writeOnly": true
+          },
+          "accept_terms": {
+            "type": "boolean",
+            "title": "Accept Terms",
+            "description": "Explicit acceptance of the instance Terms"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "token",
+          "name",
+          "password",
+          "accept_terms"
+        ],
+        "title": "RegistrationComplete"
+      },
+      "RegistrationMode": {
+        "type": "string",
+        "enum": [
+          "invite-only",
+          "verified"
+        ],
+        "title": "RegistrationMode"
       },
       "RequestInput": {
         "properties": {

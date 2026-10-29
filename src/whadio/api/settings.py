@@ -3,12 +3,17 @@ from typing import ClassVar
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from ..accounts.enums import RegistrationMode
 from ..shared.broker import BrokerSettings
 
 
 class WebSettings(BaseSettings):
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_prefix="WHADIO_", env_nested_delimiter="__", env_file=".env", extra="ignore"
+    )
+
+    registration_mode: RegistrationMode = Field(
+        default=RegistrationMode.INVITE_ONLY, description="How this instance admits accounts"
     )
 
     broker: BrokerSettings | None = Field(

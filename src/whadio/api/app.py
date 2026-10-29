@@ -8,12 +8,19 @@ from fastmcp.utilities.lifespan import combine_lifespans
 from ..shared.database import Database
 from . import meta
 from .access_policy import routes as access_routes
-from .accounts import routes_mcp_keys, routes_sessions, routes_workspaces
+from .accounts import (
+    routes_instance,
+    routes_mcp_keys,
+    routes_registration,
+    routes_sessions,
+    routes_workspaces,
+)
 from .admin import routes as admin_routes
 from .capture import routes as capture_routes
 from .composition import (
     CompositionRoot,
     RuntimeIntegrations,
+    api_version,
     connect_integrations,
     export_api_public_url,
     export_public_url,
@@ -90,6 +97,8 @@ def create_app(
     )
     v1 = APIRouter(prefix="/api/v1")
     for router in (
+        routes_instance.router,
+        routes_registration.router,
         routes_sessions.router,
         routes_mcp_keys.router,
         routes_workspaces.router,
@@ -105,6 +114,7 @@ def create_app(
     app.include_router(meta.router)
     app.mount("/mcp", mcp_app)
     register_error_handlers(app)
+    app.dependency_overrides[api_version] = lambda: app.version
     app.dependency_overrides[export_public_url] = lambda: composition.public_url
     app.dependency_overrides[export_api_public_url] = lambda: composition.api_public_url
     app.dependency_overrides[transaction] = composition.transaction
