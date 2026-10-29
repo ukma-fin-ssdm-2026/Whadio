@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { api, recordingForm } from "./api";
 import type { Schemas } from "./shared/api/types";
 import { http, server } from "./shared/testing/server";
@@ -215,4 +215,18 @@ test("notes download uses the current notes endpoint and encodes the meeting ide
 
   // Assert
   expect(url).toBe("/api/v1/meetings/meeting%2Fother%3Fquery%3Dyes/notes/export");
+});
+
+test("downloads from a configured origin with a trailing slash have no double slash", async () => {
+  // Arrange
+  vi.stubEnv("VITE_API_ORIGIN", "https://example.com/whadio/");
+  vi.resetModules();
+  const { api: configuredApi } = await import("./api");
+  vi.unstubAllEnvs();
+
+  // Act
+  const url = configuredApi.notesExportUrl("meeting");
+
+  // Assert
+  expect(url).toBe("https://example.com/whadio/api/v1/meetings/meeting/notes/export");
 });
