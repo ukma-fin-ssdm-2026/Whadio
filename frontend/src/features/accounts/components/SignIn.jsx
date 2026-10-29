@@ -23,7 +23,9 @@ export function SignIn({ onSubmit, externalError }) {
   return (
     <Box className="auth-screen">
       <Card component="form" className="auth-card" onSubmit={submit}>
-        <Typography className="brand">Whadio</Typography>
+        <Typography variant="h3" component="p">
+          Whadio
+        </Typography>
         <Box>
           <Typography variant="h1">Sign in</Typography>
           <Typography color="textSecondary">Open your meetings, notes, and transcripts.</Typography>

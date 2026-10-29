@@ -32,3 +32,16 @@ test("renders the actions", () => {
   // Assert
   expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
 });
+
+test("shows the description below the title", () => {
+  // Arrange
+  render(<PageHeader title="Weekly sync" description="Oct 25, 2026 · Upload" />);
+
+  // Act
+  const description = screen.getByText("Oct 25, 2026 · Upload");
+
+  // Assert
+  expect(screen.getByRole("heading").compareDocumentPosition(description)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+});
