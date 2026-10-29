@@ -216,3 +216,53 @@ def registration(email: Annotated[str, typer.Option(help="Address of the new acc
         typer.echo(str(error), err=True)
         raise typer.Exit(code=1) from None
     typer.echo(link)
+
+
+@links_app.command(help="Issue a password-reset link; a new link invalidates the earlier one.")
+def password_reset(
+    email: Annotated[str, typer.Option(help="Address of the existing account.")],
+) -> None:
+    import asyncio
+    from datetime import UTC, datetime
+
+    from pydantic import EmailStr, TypeAdapter, ValidationError
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from .accounts.password_resets import PasswordResetService
+    from .accounts.passwords import Argon2PasswordHasher
+    from .accounts.reset_repository import PasswordResetRepository
+    from .shared.database import Database, DatabaseSettings
+    from .shared.errors import UseCaseError
+    from .shared.settings import PublicUrlSettings
+
+    try:
+        address = TypeAdapter(EmailStr).validate_python(email.strip())
+    except ValidationError:
+        raise typer.BadParameter("must be an email address", param_hint="--email") from None
+
+    async def issue() -> str:
+        settings = PublicUrlSettings.model_validate({})
+        if settings.public_url is None:
+            raise ValueError("Set WHADIO_PUBLIC_URL before issuing links.")
+        database = Database(DatabaseSettings.model_validate({}))
+        try:
+            async with database.transaction() as session:
+                link = await PasswordResetService(
+                    PasswordResetRepository(session), Argon2PasswordHasher()
+                ).issue(address, datetime.now(UTC))
+            return link.url(str(settings.public_url))
+        finally:
+            await database.close()
+
+    try:
+        link = asyncio.run(issue(), loop_factory=asyncio.SelectorEventLoop)
+    except UseCaseError:
+        typer.echo("Account not found; a reset requires an existing account.", err=True)
+        raise typer.Exit(code=1) from None
+    except (SQLAlchemyError, ValidationError):
+        typer.echo("Password-reset database or configuration unavailable.", err=True)
+        raise typer.Exit(code=1) from None
+    except ValueError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo(link)
