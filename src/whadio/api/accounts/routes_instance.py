@@ -9,7 +9,13 @@ from .schemas import InstanceRead
 router = APIRouter(tags=["accounts"])
 
 
-@router.get("/instance", summary="Describe this instance")
+@router.get(
+    "/instance",
+    summary="Describe this instance",
+    description="Public. Returns the registration mode and API version so the web app can "
+    "decide whether to offer registration and password reset.",
+    openapi_extra={"security": []},
+)
 async def instance(version: Annotated[str, Depends(api_version)]) -> InstanceRead:
     return InstanceRead(
         registration_mode=WebSettings.model_validate({}).registration_mode,

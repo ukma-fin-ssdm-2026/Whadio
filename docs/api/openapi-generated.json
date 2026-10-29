@@ -12,6 +12,7 @@
           "accounts"
         ],
         "summary": "Describe this instance",
+        "description": "Public. Returns the registration mode and API version so the web app can decide whether to offer registration and password reset.",
         "operationId": "instance_api_v1_instance_get",
         "responses": {
           "200": {
@@ -24,7 +25,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     },
     "/api/v1/registrations/{registration_id}/complete": {
@@ -43,8 +45,10 @@
             "schema": {
               "type": "string",
               "format": "uuid",
+              "description": "Registration identifier from the link",
               "title": "Registration Id"
-            }
+            },
+            "description": "Registration identifier from the link"
           }
         ],
         "requestBody": {
@@ -98,7 +102,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     },
     "/api/v1/sessions": {
