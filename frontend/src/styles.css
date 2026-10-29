@@ -15,8 +15,7 @@ button {
   letter-spacing: 0 !important;
 }
 
-.speaker-avatar,
-.workspace-icon {
+.speaker-avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -24,8 +23,10 @@ button {
   border-radius: 50%;
   background: var(--mui-palette-tint-main);
   color: var(--mui-palette-tint-contrastText);
-  font: var(--mui-font-subtitle1);
+  font: var(--mui-font-caption);
   line-height: 1;
+  width: 1.8rem;
+  height: 1.8rem;
 }
 
 .auth-screen {
@@ -57,45 +58,16 @@ button {
   place-items: center;
 }
 
-.empty-state {
-  padding: 1.25rem;
-  text-align: center;
-}
-
 .eyebrow {
   display: block;
   margin-bottom: 0.35rem;
   color: var(--mui-palette-text-secondary);
 }
 
-.quiet-panel,
 .upload-panel,
 .notes-panel,
 .transcript-panel {
   padding: 1.25rem;
-}
-
-.quiet-panel {
-  background: linear-gradient(
-    100deg,
-    rgb(var(--mui-palette-background-paperChannel) / 78%),
-    rgb(var(--mui-palette-warning-mainChannel) / 5%)
-  ) !important;
-}
-
-.workspace-card {
-  display: grid !important;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 1rem;
-  align-items: center;
-  min-height: 5.1rem;
-  padding: 0.95rem 1.1rem !important;
-}
-
-.workspace-icon {
-  width: 2.65rem;
-  height: 2.65rem;
-  border-radius: 0.55rem;
 }
 
 .upload-panel {
@@ -178,37 +150,6 @@ button {
     opacity: 1;
     transform: translateX(0);
   }
-}
-
-.meeting-row.active,
-.meeting-row:hover {
-  border-color: var(--mui-palette-primary-main);
-}
-
-.meeting-row-content {
-  display: grid !important;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 0.9rem;
-  align-items: center;
-  min-height: 4.85rem;
-  padding: 0.9rem 1rem !important;
-}
-
-.state-dot {
-  width: 0.7rem;
-  height: 0.7rem;
-  border-radius: 999px;
-  background: var(--mui-palette-success-main);
-}
-
-.processing-status {
-  display: inline-flex;
-  gap: 0.45rem;
-  align-items: center;
-  justify-self: end;
-  color: var(--mui-palette-text-secondary);
-  font: var(--mui-font-caption);
-  white-space: nowrap;
 }
 
 .processing-panel {
@@ -313,12 +254,6 @@ button {
   background: color-mix(in srgb, var(--mui-palette-common-white) 16%, transparent);
 }
 
-.speaker-avatar {
-  width: 1.8rem;
-  height: 1.8rem;
-  font: var(--mui-font-caption);
-}
-
 .transcript-item {
   display: grid;
   gap: 0.55rem;
@@ -329,11 +264,6 @@ button {
 @media (max-width: 980px) {
   .recording-grid {
     grid-template-columns: 1fr;
-  }
-
-  .workspace-card,
-  .meeting-row-content {
-    grid-template-columns: auto minmax(0, 1fr);
   }
 
   .settings-panel {

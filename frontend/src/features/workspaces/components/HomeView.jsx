@@ -1,36 +1,46 @@
-import { Box, Card, CardActionArea, Stack, Typography } from "@mui/material";
+import {
+  Avatar,
+  ListItem,
+  ListItemAvatar,
+  ListItemButton,
+  ListItemText,
+  Stack,
+} from "@mui/material";
+import { ListPanel } from "@/shared/ui/ListPanel";
+import { SectionHeader } from "@/shared/ui/SectionHeader";
 
 export function HomeView({ workspaces, meetings, onWorkspace }) {
   return (
-    <Stack sx={{ gap: 2 }}>
-      <Card className="quiet-panel">
-        <Typography variant="h2">Choose a workspace</Typography>
-        <Typography color="textSecondary">
-          Upload recordings and review processed meetings.
-        </Typography>
-      </Card>
-      <Stack sx={{ gap: 1.5 }}>
+    <Stack sx={{ gap: 1.5 }}>
+      <SectionHeader
+        title="Choose a workspace"
+        description="Upload recordings and review processed meetings."
+      />
+      <ListPanel>
         {workspaces.map((workspace) => {
           const workspaceMeetings = meetings.filter((item) => item.workspaceId === workspace.id);
           const active = workspaceMeetings.filter((item) => item.state !== "processed").length;
           return (
-            <Card key={workspace.id}>
-              <CardActionArea className="workspace-card" onClick={() => onWorkspace(workspace.id)}>
-                <Box className="workspace-icon">{workspace.name.charAt(0)}</Box>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="subtitle1">{workspace.name}</Typography>
-                  <Typography color="textSecondary">
-                    {workspace.role} · {workspace.members} members
-                  </Typography>
-                </Box>
-                <Typography variant="body2" color="textSecondary">
-                  {workspaceMeetings.length} meetings, {active} active
-                </Typography>
-              </CardActionArea>
-            </Card>
+            <ListItem key={workspace.id} disablePadding>
+              <ListItemButton onClick={() => onWorkspace(workspace.id)} sx={{ py: 1.5 }}>
+                <ListItemAvatar>
+                  <Avatar
+                    variant="rounded"
+                    sx={{ bgcolor: "tint.main", color: "tint.contrastText" }}
+                  >
+                    {workspace.name.charAt(0)}
+                  </Avatar>
+                </ListItemAvatar>
+                <ListItemText
+                  primary={workspace.name}
+                  secondary={`${workspace.role} · ${workspace.members} members · ${workspaceMeetings.length} meetings, ${active} active`}
+                  slotProps={{ primary: { variant: "subtitle1" } }}
+                />
+              </ListItemButton>
+            </ListItem>
           );
         })}
-      </Stack>
+      </ListPanel>
     </Stack>
   );
 }

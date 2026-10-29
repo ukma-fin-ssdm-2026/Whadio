@@ -55,7 +55,7 @@ test.for([
   const { container } = renderLibrary(meeting({ state }));
 
   // Act
-  const status = container.querySelector(".processing-status");
+  const status = container.querySelector(".MuiChip-label");
 
   // Assert
   expect(status).toHaveTextContent(new RegExp(`^${label}$`));
@@ -93,10 +93,10 @@ test("choosing Processing in the state filter selects the processing state", asy
 
 test("in-progress library row offers no control besides opening the meeting", () => {
   // Arrange
-  const { container } = renderLibrary(meeting({ state: "queued" }));
+  renderLibrary(meeting({ state: "queued" }));
 
   // Act
-  const controls = container.querySelectorAll(`.meeting-row :is(${interactive})`);
+  const controls = screen.getByRole("listitem").querySelectorAll(`:is(${interactive})`);
 
   // Assert
   expect(controls).toHaveLength(1);
@@ -116,4 +116,23 @@ test("processed library row shows no progress indicator", () => {
 
   // Assert
   expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+});
+
+test("failed library row is marked with an error chip", () => {
+  // Arrange
+  const { container } = renderLibrary(meeting({ state: "failed" }));
+
+  // Act
+  const chip = container.querySelector(".MuiChip-root");
+
+  // Assert
+  expect(chip).toHaveClass("MuiChip-colorError");
+});
+
+test("library without meetings says none were found", () => {
+  // Act
+  renderLibrary(meeting(), { meetings: [] });
+
+  // Assert
+  expect(screen.getByText("No meetings found")).toBeInTheDocument();
 });
