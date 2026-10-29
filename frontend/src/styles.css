@@ -171,40 +171,6 @@ button {
   text-align: center;
 }
 
-.breadcrumbs {
-  min-height: 1.8rem;
-  margin-bottom: 0.8rem;
-  color: var(--mui-palette-text-secondary);
-  font: var(--mui-font-body2);
-}
-
-.breadcrumbs button {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--mui-palette-primary-main);
-  font: var(--mui-font-subtitle2);
-}
-
-.page-header {
-  margin-bottom: 1.2rem;
-}
-
-.settings-button {
-  width: 2.5rem;
-  height: 2.5rem;
-  border: 1px solid var(--mui-palette-divider) !important;
-  border-radius: 0.55rem !important;
-  background: var(--mui-palette-background-paper) !important;
-  color: var(--mui-palette-text-secondary) !important;
-}
-
-.settings-button:hover,
-.settings-button.active {
-  background: var(--mui-palette-tint-main) !important;
-  color: var(--mui-palette-tint-contrastText) !important;
-}
-
 .eyebrow {
   display: block;
   margin-bottom: 0.35rem;
