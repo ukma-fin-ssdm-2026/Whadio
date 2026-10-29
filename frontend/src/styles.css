@@ -1,10 +1,8 @@
-:root {
-  color-scheme: light;
-}
-
 body {
   min-width: 320px;
-  background: linear-gradient(135deg, rgb(15 118 110 / 7%), transparent 34rem), #f6f4ef;
+  background:
+    linear-gradient(135deg, rgb(var(--mui-palette-primary-mainChannel) / 7%), transparent 34rem),
+    var(--mui-palette-background-default);
 }
 
 button {
@@ -22,8 +20,8 @@ button {
   flex-direction: column;
   gap: 0.9rem;
   padding: 1.25rem;
-  border-right: 1px solid #dde2dc;
-  background: rgb(255 255 255 / 80%);
+  border-right: 1px solid var(--mui-palette-divider);
+  background: rgb(var(--mui-palette-background-paperChannel) / 80%);
 }
 
 .brand {
@@ -40,7 +38,7 @@ button {
   margin-top: auto;
   padding: 1rem 0 0;
   border: 0 !important;
-  border-top: 1px solid #dde2dc !important;
+  border-top: 1px solid var(--mui-palette-divider) !important;
   border-radius: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
@@ -54,8 +52,8 @@ button {
   justify-content: center;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: #dcefeb;
-  color: #115e59;
+  background: var(--mui-palette-tint-main);
+  color: var(--mui-palette-tint-contrastText);
   font: var(--mui-font-subtitle1);
   line-height: 1;
 }
@@ -69,7 +67,7 @@ button {
 .nav-button,
 .workspace-node {
   justify-content: flex-start !important;
-  color: #202522 !important;
+  color: var(--mui-palette-text-primary) !important;
   min-height: 2.45rem !important;
   font: var(--mui-font-subtitle1) !important;
 }
@@ -83,7 +81,7 @@ button {
 }
 
 .workspace-count {
-  color: #64706a;
+  color: var(--mui-palette-text-secondary);
 }
 
 .workspace-node .MuiButton-endIcon > .workspace-count {
@@ -93,7 +91,7 @@ button {
 
 .nav-button.active,
 .workspace-node.active {
-  background: #f3f7f4 !important;
+  background: var(--mui-palette-background-subtle) !important;
 }
 
 .workspace-tree {
@@ -103,7 +101,7 @@ button {
 .transcript-links {
   margin-left: 0.75rem;
   padding-left: 0.6rem;
-  border-left: 1px solid #dde2dc;
+  border-left: 1px solid var(--mui-palette-divider);
 }
 
 .transcript-link {
@@ -116,7 +114,7 @@ button {
   border: 0;
   border-radius: 0.35rem;
   background: transparent;
-  color: #202522;
+  color: var(--mui-palette-text-primary);
   text-align: left;
   font: var(--mui-font-body2);
 }
@@ -128,7 +126,7 @@ button {
 }
 
 .transcript-link small {
-  color: #64706a;
+  color: var(--mui-palette-text-secondary);
   text-transform: capitalize;
 }
 
@@ -136,14 +134,14 @@ button {
   display: inline-flex;
   gap: 0.35rem;
   align-items: center;
-  color: #64706a;
+  color: var(--mui-palette-text-secondary);
   text-transform: none !important;
 }
 
 .transcript-link:hover,
 .transcript-link.active {
-  background: #dcefeb;
-  color: #115e59;
+  background: var(--mui-palette-tint-main);
+  color: var(--mui-palette-tint-contrastText);
 }
 
 .main {
@@ -168,10 +166,10 @@ button {
 .error-banner {
   margin-bottom: 1rem;
   padding: 0.8rem 1rem;
-  border: 1px solid #d6a6a1;
+  border: 1px solid rgb(var(--mui-palette-error-mainChannel) / 40%);
   border-radius: 0.5rem;
-  background: #fff5f3;
-  color: #8a332b;
+  background: rgb(var(--mui-palette-error-mainChannel) / 6%);
+  color: var(--mui-palette-error-main);
 }
 
 .content-loading {
@@ -188,7 +186,7 @@ button {
 .breadcrumbs {
   min-height: 1.8rem;
   margin-bottom: 0.8rem;
-  color: #64706a;
+  color: var(--mui-palette-text-secondary);
   font: var(--mui-font-body2);
 }
 
@@ -196,7 +194,7 @@ button {
   padding: 0;
   border: 0;
   background: transparent;
-  color: #0f766e;
+  color: var(--mui-palette-primary-main);
   font: var(--mui-font-subtitle2);
 }
 
@@ -207,22 +205,22 @@ button {
 .settings-button {
   width: 2.5rem;
   height: 2.5rem;
-  border: 1px solid #dde2dc !important;
+  border: 1px solid var(--mui-palette-divider) !important;
   border-radius: 0.55rem !important;
-  background: #fff !important;
-  color: #64706a !important;
+  background: var(--mui-palette-background-paper) !important;
+  color: var(--mui-palette-text-secondary) !important;
 }
 
 .settings-button:hover,
 .settings-button.active {
-  background: #dcefeb !important;
-  color: #115e59 !important;
+  background: var(--mui-palette-tint-main) !important;
+  color: var(--mui-palette-tint-contrastText) !important;
 }
 
 .eyebrow {
   display: block;
   margin-bottom: 0.35rem;
-  color: #64706a;
+  color: var(--mui-palette-text-secondary);
 }
 
 .quiet-panel,
@@ -233,7 +231,11 @@ button {
 }
 
 .quiet-panel {
-  background: linear-gradient(100deg, rgb(255 255 255 / 78%), rgb(255 247 240 / 72%)) !important;
+  background: linear-gradient(
+    100deg,
+    rgb(var(--mui-palette-background-paperChannel) / 78%),
+    rgb(var(--mui-palette-warning-mainChannel) / 5%)
+  ) !important;
 }
 
 .workspace-card {
@@ -254,7 +256,7 @@ button {
 .upload-panel {
   margin-bottom: 0.75rem;
   padding: 0.75rem 0.9rem;
-  background: #f8fbf9 !important;
+  background: var(--mui-palette-background-subtle) !important;
 }
 
 .upload-panel .MuiButton-root {
@@ -266,7 +268,7 @@ button {
   min-height: 3.25rem !important;
   justify-content: center !important;
   border-style: dashed !important;
-  background: #f8fbf9 !important;
+  background: var(--mui-palette-background-subtle) !important;
 }
 
 .settings-panel {
@@ -282,7 +284,7 @@ button {
   align-content: start;
   gap: 0.35rem;
   padding-right: 1rem;
-  border-right: 1px solid #dde2dc;
+  border-right: 1px solid var(--mui-palette-divider);
 }
 
 .settings-nav-item {
@@ -291,14 +293,14 @@ button {
   border: 0;
   border-radius: 0.45rem;
   background: transparent;
-  color: #202522;
+  color: var(--mui-palette-text-primary);
   text-align: left;
 }
 
 .settings-nav-item.active,
 .settings-nav-item:hover {
-  background: #f3f7f4;
-  color: #115e59;
+  background: var(--mui-palette-background-subtle);
+  color: var(--mui-palette-tint-contrastText);
 }
 
 .settings-options {
@@ -307,7 +309,7 @@ button {
 
 .settings-option-card {
   padding: 1rem;
-  background: #fbfcfb !important;
+  background: var(--mui-palette-background-subtle) !important;
 }
 
 .mcp-key-row {
@@ -316,9 +318,9 @@ button {
   gap: 0.85rem;
   align-items: center;
   padding: 0.85rem 1rem;
-  border: 1px solid #dde2dc;
+  border: 1px solid var(--mui-palette-divider);
   border-radius: 0.5rem;
-  background: #fbfcfb;
+  background: var(--mui-palette-background-subtle);
 }
 
 @keyframes settings-slide {
@@ -335,7 +337,7 @@ button {
 
 .meeting-row.active,
 .meeting-row:hover {
-  border-color: #0f766e;
+  border-color: var(--mui-palette-primary-main);
 }
 
 .meeting-row-content {
@@ -351,7 +353,7 @@ button {
   width: 0.7rem;
   height: 0.7rem;
   border-radius: 999px;
-  background: #317451;
+  background: var(--mui-palette-success-main);
 }
 
 .processing-status {
@@ -359,7 +361,7 @@ button {
   gap: 0.45rem;
   align-items: center;
   justify-self: end;
-  color: #64706a;
+  color: var(--mui-palette-text-secondary);
   font: var(--mui-font-caption);
   white-space: nowrap;
 }
@@ -367,7 +369,7 @@ button {
 .processing-panel {
   padding: 1rem;
   border-radius: 0.5rem;
-  background: #f8faf8;
+  background: var(--mui-palette-background-subtle);
 }
 
 .meeting-tabs {
@@ -377,16 +379,16 @@ button {
   width: fit-content;
   min-height: 0;
   margin: 0 auto 0.25rem;
-  border: 1px solid #dde2dc;
+  border: 1px solid var(--mui-palette-divider);
   border-radius: 0.55rem;
-  background: rgb(255 255 255 / 92%);
-  box-shadow: 0 8px 24px rgb(31 37 35 / 8%);
+  background: rgb(var(--mui-palette-background-paperChannel) / 92%);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--mui-palette-common-black) 8%, transparent);
   backdrop-filter: blur(10px);
 }
 
 .notes-text,
 .action-list {
-  color: #3f4944;
+  color: var(--mui-palette-text-primary);
   line-height: 1.75;
 }
 
@@ -406,15 +408,15 @@ button {
 .meta-icon-button {
   width: 2.15rem;
   height: 2.15rem;
-  border: 1px solid #dde2dc !important;
+  border: 1px solid var(--mui-palette-divider) !important;
   border-radius: 0.5rem !important;
-  background: #f8faf8 !important;
-  color: #64706a !important;
+  background: var(--mui-palette-background-subtle) !important;
+  color: var(--mui-palette-text-secondary) !important;
 }
 
 .meta-icon-button:hover {
-  background: #dcefeb !important;
-  color: #115e59 !important;
+  background: var(--mui-palette-tint-main) !important;
+  color: var(--mui-palette-tint-contrastText) !important;
 }
 
 .action-list {
@@ -436,15 +438,20 @@ button {
   gap: 0.75rem;
   border-radius: 0.65rem;
   background:
-    radial-gradient(circle at center, rgb(15 118 110 / 34%), transparent 10rem),
-    linear-gradient(135deg, #111827, #0f172a 48%, #143f3b);
-  color: #fff;
+    radial-gradient(
+      circle at center,
+      rgb(var(--mui-palette-primary-mainChannel) / 34%),
+      transparent 10rem
+    ),
+    linear-gradient(135deg, transparent 48%, rgb(var(--mui-palette-primary-darkChannel) / 45%)),
+    var(--mui-palette-grey-900);
+  color: var(--mui-palette-common-white);
   text-align: center;
 }
 
 .player-ready {
   min-height: 27rem;
-  background: #101715;
+  background: var(--mui-palette-common-black);
 }
 
 .player-ready video {
@@ -458,7 +465,7 @@ button {
   height: 4.5rem;
   place-items: center;
   border-radius: 999px;
-  background: rgb(255 255 255 / 16%);
+  background: color-mix(in srgb, var(--mui-palette-common-white) 16%, transparent);
 }
 
 .speaker-avatar {
@@ -471,7 +478,7 @@ button {
   display: grid;
   gap: 0.55rem;
   padding-bottom: 1rem;
-  border-bottom: 1px solid #dde2dc;
+  border-bottom: 1px solid var(--mui-palette-divider);
 }
 
 @media (max-width: 980px) {
@@ -482,7 +489,7 @@ button {
 
   .sidebar {
     border-right: 0;
-    border-bottom: 1px solid #dde2dc;
+    border-bottom: 1px solid var(--mui-palette-divider);
   }
 
   .workspace-card,
@@ -498,7 +505,7 @@ button {
     padding-right: 0;
     padding-bottom: 0.75rem;
     border-right: 0;
-    border-bottom: 1px solid #dde2dc;
+    border-bottom: 1px solid var(--mui-palette-divider);
   }
 
   .mcp-key-row {
