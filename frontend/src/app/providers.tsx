@@ -1,6 +1,7 @@
 import { CssBaseline, ThemeProvider } from "@mui/material";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { lazy, type ReactNode, Suspense, useLayoutEffect, useRef, useState } from "react";
+import { NotifyProvider } from "@/shared/ui/NotifyProvider";
 import { createQueryClient } from "./query-client";
 import { theme } from "./theme";
 
@@ -31,7 +32,7 @@ export function AppProviders({ onUnauthorized, children }: AppProvidersProps) {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider theme={theme}>
         <CssBaseline enableColorScheme />
-        {children}
+        <NotifyProvider>{children}</NotifyProvider>
       </ThemeProvider>
       {ReactQueryDevtools && (
         <Suspense>
