@@ -43,7 +43,7 @@ export function Sidebar({
       <Card className="profile-card">
         <Box className="avatar">{initials}</Box>
         <Box sx={{ minWidth: 0 }}>
-          <Typography noWrap sx={{ fontWeight: 650 }}>
+          <Typography variant="subtitle1" noWrap>
             {user?.name ?? "Signed in"}
           </Typography>
           <Typography color="textSecondary" noWrap>

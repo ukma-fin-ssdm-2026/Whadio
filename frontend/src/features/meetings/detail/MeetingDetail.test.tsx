@@ -96,7 +96,7 @@ test("queued meeting notes panel is headed Queued", () => {
   const { container } = renderDetail({ meeting: meeting({ state: "queued" }), notes: null });
 
   // Act
-  const heading = container.querySelector(".processing-panel p");
+  const heading = container.querySelector(".processing-panel .MuiTypography-subtitle1");
 
   // Assert
   expect(heading).toHaveTextContent(/^Queued$/);

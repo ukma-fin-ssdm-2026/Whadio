@@ -55,10 +55,10 @@ export function UploadPanel({ workspace, onUpload }) {
         }}
       >
         <Box>
-          <Typography variant="h2" sx={{ fontSize: 18, fontWeight: 650 }}>
+          <Typography variant="h4" component="h2">
             Upload recording
           </Typography>
-          <Typography color="textSecondary" sx={{ fontSize: 14 }}>
+          <Typography variant="body2" color="textSecondary">
             Queue audio or video for processing.
           </Typography>
         </Box>

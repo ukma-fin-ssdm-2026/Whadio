@@ -78,9 +78,7 @@ export function McpKeySettings() {
   return (
     <Stack className="settings-options" sx={{ gap: 1.25 }}>
       <Box>
-        <Typography variant="h2" sx={{ fontSize: 24 }}>
-          AI assistant access
-        </Typography>
+        <Typography variant="h2">AI assistant access</Typography>
         <Typography color="textSecondary">
           Use a personal key to connect an assistant to meetings you can access.
         </Typography>
@@ -131,8 +129,8 @@ export function McpKeySettings() {
             <Box className="mcp-key-row" key={key.id}>
               <KeyOutlinedIcon color={key.is_active ? "primary" : "disabled"} />
               <Box sx={{ minWidth: 0 }}>
-                <Typography sx={{ fontWeight: 600 }}>Key {key.id.slice(0, 8)}</Typography>
-                <Typography color="textSecondary" sx={{ fontSize: 14 }}>
+                <Typography variant="subtitle1">Key {key.id.slice(0, 8)}</Typography>
+                <Typography variant="body2" color="textSecondary">
                   Created {formatDate(key.created_at)} ·{" "}
                   {key.expires_at ? `Expires ${formatDate(key.expires_at)}` : "Never expires"}
                 </Typography>
