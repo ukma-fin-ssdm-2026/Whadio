@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from conftest import AsyncDatabase
 
 from ..accounts.contracts import UserProfile
+from ..accounts.models import PendingRegistration
+from ..accounts.repositories import RegistrationRepository
 from ..meetings.models import Meeting
 from ..notifications.fakes import InMemoryNotificationOutbox
 from ..notifications.models import NotificationOutbox
@@ -22,6 +24,7 @@ from ..retention.services import RetentionService
 from .composition import (
     AccountRecipients,
     OutboxRetentionNotices,
+    RegistrationCleanupJobs,
     RetentionTransactions,
     notification_drainer,
 )
@@ -136,6 +139,23 @@ class SavepointTransactions:
     async def transaction(self) -> AsyncGenerator[AsyncSession]:
         async with self._session.begin_nested():
             yield self._session
+
+
+@pytest.mark.slow
+def test_scheduler_registration_job_deletes_expired_links(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> bool:
+        now = datetime.now(UTC)
+        registration_id = await RegistrationRepository(session).issue(
+            f"{uuid4()}@example.com", uuid4().hex, now - timedelta(days=2), now
+        )
+        jobs = RegistrationCleanupJobs(SavepointTransactions(session))
+        # Act
+        await jobs.remove_expired(now)
+        return await session.get(PendingRegistration, registration_id) is None
+
+    # Assert
+    assert async_database.run(scenario)
 
 
 class KeptRecordings:

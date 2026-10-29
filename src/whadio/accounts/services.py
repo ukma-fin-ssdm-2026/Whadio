@@ -2,7 +2,7 @@ import asyncio
 import hashlib
 import secrets
 from collections.abc import Collection
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Final, Protocol
 from uuid import UUID
@@ -16,14 +16,16 @@ from ..audit.services import (
 )
 from ..shared.errors import Failure, UseCaseError
 from ..shared.pagination import ListWindow
+from ..shared.text import display_text
 from .contracts import UserProfile
 from .enums import NotesTemplate, SessionKind, WorkspaceRole
 from .models import User
-from .passwords import IPasswordHasher
+from .passwords import IPasswordHasher, is_password_strong
 from .repositories import (
     IIdentityRepository,
     IMcpKeyRepository,
     IMembershipRepository,
+    IRegistrationRepository,
     ISessionRepository,
     IWorkspaceRepository,
     IWorkspaceSettingsRepository,
@@ -242,3 +244,122 @@ class WorkspaceService:
         if role is not WorkspaceRole.OWNER:
             raise UseCaseError(Failure.INSUFFICIENT_ROLE)
         return await self.get(user_id, workspace_id)
+
+
+# --- Registration ---
+
+
+REGISTRATION_LIFETIME: Final = timedelta(hours=24)
+
+
+class AccountAlreadyExistsError(Exception):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class RegistrationDetails:
+    name: str
+    password: str = field(repr=False)
+    accept_terms: bool
+
+
+class RegistrationValidationError(Exception):
+    def __init__(self, field_name: str, message: str) -> None:
+        self.field_name: str = field_name
+        super().__init__(message)
+
+
+@dataclass(frozen=True, slots=True)
+class RegistrationLink:
+    registration_id: UUID
+    token: str = field(repr=False)
+
+    def url(self, public_url: str) -> str:
+        return f"{public_url.rstrip('/')}/registrations/{self.registration_id}#token={self.token}"
+
+
+class RegistrationIssuer:
+    def __init__(
+        self, registrations: IRegistrationRepository, sessions: ISessionRepository
+    ) -> None:
+        self._registrations: IRegistrationRepository = registrations
+        self._sessions: ISessionRepository = sessions
+
+    async def issue(self, email: str, now: datetime) -> RegistrationLink:
+        await self._registrations.lock_email(email)
+        if await self._sessions.by_email(email) is not None:
+            raise AccountAlreadyExistsError
+        token = secrets.token_urlsafe(32)
+        registration_id = await self._registrations.issue(
+            email, hashlib.sha256(token.encode()).hexdigest(), now, now + REGISTRATION_LIFETIME
+        )
+        return RegistrationLink(registration_id, token)
+
+
+class RegistrationService:
+    def __init__(
+        self,
+        registrations: IRegistrationRepository,
+        sessions: ISessionRepository,
+        passwords: IPasswordHasher,
+        content: IWorkspaceContent,
+        workspaces: IWorkspaceRepository,
+    ) -> None:
+        self._registrations: IRegistrationRepository = registrations
+        self._sessions: ISessionRepository = sessions
+        self._passwords: IPasswordHasher = passwords
+        self._content: IWorkspaceContent = content
+        self._workspaces: IWorkspaceRepository = workspaces
+
+    async def complete(
+        self,
+        registration_id: UUID,
+        token: str,
+        details: RegistrationDetails,
+        now: datetime,
+    ) -> SignedIn:
+        pending = await self._registrations.pending(registration_id)
+        if pending is None:
+            raise UseCaseError(Failure.LINK_INVALID)
+        await self._registrations.lock_email(pending.email)
+        # Re-read after locking: another request may have used or replaced the link while we waited.
+        pending = await self._registrations.pending(registration_id)
+        if (
+            pending is None
+            or pending.expires_at <= now
+            or not secrets.compare_digest(
+                pending.token_hash, hashlib.sha256(token.encode()).hexdigest()
+            )
+            or await self._sessions.by_email(pending.email) is not None
+        ):
+            raise UseCaseError(Failure.LINK_INVALID)
+        if not is_password_strong(details.password):
+            raise RegistrationValidationError(
+                "password", "Use 12 to 128 characters, at least one digit and one uppercase letter"
+            )
+        if not details.accept_terms:
+            raise RegistrationValidationError("accept_terms", "Accept the Terms and Conditions")
+        try:
+            name = display_text(details.name)
+        except ValueError as error:
+            raise RegistrationValidationError("name", str(error)) from None
+        password_hash = await asyncio.to_thread(self._passwords.hash, details.password)
+        user = await self._registrations.create_account(pending.email, name, password_hash, now)
+        workspace_id = await self._workspaces.add(
+            name, NotesTemplate.DETAILED, user.user_id, now, personal=True
+        )
+        await self._content.add_default_folder(workspace_id, now)
+        session_token = secrets.token_urlsafe(32)
+        expires_at = now + SESSION_LIFETIMES[SessionKind.BROWSER]
+        await self._sessions.add_session(
+            user.user_id, SessionKind.BROWSER, session_token, expires_at, now
+        )
+        return SignedIn(session_token, expires_at, user)
+
+
+class RegistrationCleanupService:
+    def __init__(self, registrations: IRegistrationRepository) -> None:
+        self._registrations: IRegistrationRepository = registrations
+
+    async def remove_expired(self, now: datetime) -> int:
+        return await self._registrations.delete_expired(now)

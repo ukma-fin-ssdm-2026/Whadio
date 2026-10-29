@@ -7,7 +7,7 @@ from ..retention.services import RetentionService
 from ..retention.storage import RecordingStorage
 from ..shared.database import Database, DatabaseSettings
 from ..shared.storage import connect_s3_storage
-from .composition import RetentionTransactions, notification_drainer
+from .composition import RegistrationCleanupJobs, RetentionTransactions, notification_drainer
 from .services import RetentionScheduler
 from .settings import SchedulerSettings
 
@@ -27,7 +27,10 @@ async def run(*, once: bool = False) -> int:
         if drainer is None:
             logger.info("No SMTP relay is configured; notifications are kept unsent")
         scheduler = RetentionScheduler(
-            retention, settings.retention_interval_seconds, notifications=drainer
+            retention,
+            settings.retention_interval_seconds,
+            notifications=drainer,
+            registrations=RegistrationCleanupJobs(database),
         )
         if once:
             return await scheduler.tick()

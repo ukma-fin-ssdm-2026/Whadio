@@ -7,8 +7,8 @@ from uuid import UUID
 from ..access_policy.repositories import AccessRepository
 from ..access_policy.services import AccessPolicy
 from ..accounts.contracts import UserProfile
-from ..accounts.repositories import MembershipRepository
-from ..accounts.services import WorkspaceMembershipService
+from ..accounts.repositories import MembershipRepository, RegistrationRepository
+from ..accounts.services import RegistrationCleanupService, WorkspaceMembershipService
 from ..meetings.models import Meeting
 from ..meetings.repositories import MeetingRepository
 from ..meetings.retention import IRetentionMeetings, RetentionMeetings
@@ -86,6 +86,17 @@ class DeliveryTransactions:
             yield DeliveryUnit(
                 NotificationOutboxRepository(session),
                 AccountRecipients(WorkspaceMembershipService(MembershipRepository(session))),
+            )
+
+
+class RegistrationCleanupJobs:
+    def __init__(self, database: IUseCaseTransactions) -> None:
+        self._database: IUseCaseTransactions = database
+
+    async def remove_expired(self, now: datetime) -> int:
+        async with self._database.transaction() as session:
+            return await RegistrationCleanupService(RegistrationRepository(session)).remove_expired(
+                now
             )
 
 

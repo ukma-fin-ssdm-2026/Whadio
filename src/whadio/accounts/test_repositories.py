@@ -1,15 +1,19 @@
 import asyncio
 from dataclasses import dataclass
-from uuid import UUID
+from datetime import UTC, datetime, timedelta
+from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from conftest import AsyncDatabase
+
 from ..shared.database import DatabaseSettings
 from .enums import WorkspaceRole
-from .repositories import MembershipRepository
+from .models import PendingRegistration
+from .repositories import MembershipRepository, RegistrationRepository
 
 
 @dataclass(frozen=True)
@@ -97,3 +101,51 @@ def test_folder_permission_lock_blocks_workspace_key_share_and_membership_change
     assert observed == MembershipLocks(
         role=WorkspaceRole.OWNER, workspace_available=False, membership_available=False
     )
+
+
+@pytest.mark.slow
+def test_registration_cleanup_removes_only_expired_links_including_the_boundary(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, bool]:
+        now = datetime.now(UTC)
+        repository = RegistrationRepository(session)
+        await repository.delete_expired(now)
+        ids = [
+            await repository.issue(
+                f"{uuid4()}@example.com",
+                uuid4().hex,
+                now - timedelta(days=2),
+                now + timedelta(microseconds=offset),
+            )
+            for offset in (-1, 0, 1)
+        ]
+        # Act
+        removed = await repository.delete_expired(now)
+        remaining = set(
+            await session.scalars(
+                select(PendingRegistration.pending_registration_id).where(
+                    PendingRegistration.pending_registration_id.in_(ids)
+                )
+            )
+        )
+        return removed, remaining == {ids[-1]}
+
+    # Assert
+    assert async_database.run(scenario) == (2, True)
+
+
+@pytest.mark.slow
+def test_registration_cleanup_is_idempotent(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> int:
+        now = datetime.now(UTC)
+        repository = RegistrationRepository(session)
+        await repository.issue(f"{uuid4()}@example.com", uuid4().hex, now - timedelta(days=2), now)
+        await repository.delete_expired(now)
+        # Act
+        return await repository.delete_expired(now)
+
+    # Assert
+    assert async_database.run(scenario) == 0

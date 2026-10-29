@@ -21,17 +21,19 @@ from ..access_policy.services import (
 )
 from ..accounts.administrators import AdministratorRepository, AdministratorService
 from ..accounts.contracts import UserProfile
-from ..accounts.enums import NotesTemplate
+from ..accounts.enums import NotesTemplate, RegistrationMode
 from ..accounts.passwords import Argon2PasswordHasher
 from ..accounts.repositories import (
     McpKeyRepository,
     MembershipRepository,
+    RegistrationRepository,
     SessionRepository,
     WorkspaceRepository,
     WorkspaceSettingsRepository,
 )
 from ..accounts.services import (
     McpKeyService,
+    RegistrationService,
     SignInService,
     WorkspaceMembershipService,
     WorkspaceService,
@@ -57,6 +59,7 @@ from ..meetings.repositories import FolderRepository, MeetingRepository
 from ..meetings.services import FolderService, MeetingService, WorkspaceContent
 from ..meetings.settings import MeetingSettings
 from ..notifications.repositories import INotificationOutbox, NotificationOutboxRepository
+from ..notifications.settings import NotificationSettings, load_notification_settings
 from ..notifications.templates import (
     HostedEviction,
     NoticeKind,
@@ -85,15 +88,38 @@ from .settings import WebSettings
 logger = logging.getLogger(__name__)
 
 
+def api_version() -> str:
+    raise RuntimeError("API version dependency has not been configured")
+
+
+def registration_mode() -> RegistrationMode:
+    raise RuntimeError("Registration mode dependency has not been configured")
+
+
+def validate_registration_startup(
+    settings: WebSettings, notifications: NotificationSettings
+) -> None:
+    if settings.registration_mode is RegistrationMode.VERIFIED and notifications.smtp is None:
+        raise ValueError("verified registration requires an SMTP relay")
+
+
 class CompositionRoot:
     def __init__(
-        self, database: Database | None = None, *, public_settings: PublicUrlSettings | None = None
+        self,
+        database: Database | None = None,
+        *,
+        public_settings: PublicUrlSettings | None = None,
+        web_settings: WebSettings | None = None,
     ) -> None:
         settings = (
             public_settings if public_settings is not None else PublicUrlSettings.model_validate({})
         )
         self.public_url: str = str(settings.public_url or "http://localhost:3000")
         self.api_public_url: str = str(settings.api_public_url or self.public_url)
+        self._web_settings: WebSettings = (
+            web_settings if web_settings is not None else WebSettings.model_validate({})
+        )
+        self.registration_mode: RegistrationMode = self._web_settings.registration_mode
         self._database: Database | None = database
         self._storage: IObjectStorage | None = None
         # Present while jobs are being published; setting it publishes the ones just committed.
@@ -126,7 +152,8 @@ class CompositionRoot:
 
     @asynccontextmanager
     async def lifespan(self, _app: FastAPI) -> AsyncGenerator[None]:
-        settings, storage = WebSettings(), MeetingSettings().storage
+        settings, storage = self._web_settings, MeetingSettings().storage
+        validate_registration_startup(settings, load_notification_settings())
         stop = asyncio.Event()
         tasks: list[asyncio.Task[None]] = []
         try:
@@ -445,6 +472,19 @@ def sign_in_service(session: Session) -> SignInService:
 
 
 SignIns = Annotated[SignInService, Depends(sign_in_service)]
+
+
+def registration_service(session: Session) -> RegistrationService:
+    return RegistrationService(
+        RegistrationRepository(session),
+        SessionRepository(session),
+        Argon2PasswordHasher(),
+        WorkspaceContent(MeetingRepository(session)),
+        WorkspaceRepository(session),
+    )
+
+
+Registrations = Annotated[RegistrationService, Depends(registration_service)]
 
 
 def mcp_key_service(session: Session) -> McpKeyService:

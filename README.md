@@ -42,7 +42,7 @@ including what each error means, is in [`docs/api/api-design.md`](docs/api/api-d
 - Swagger UI: <http://localhost:3000/api-docs> (ReDoc: <http://localhost:3000/redoc>; the
   specification: <http://localhost:3000/openapi.json>)
 - Sign in with `POST /api/v1/sessions`; the browser keeps the session cookie for the other
-  calls. Accounts cannot be created through the API yet.
+  calls. Operator-issued links create accounts through the registration completion endpoint.
 - Starting the server writes the OpenAPI specification to `docs/api/openapi-generated.yaml`
   and `.json`; to regenerate it without a server, run `uv run whadio openapi`.
 
@@ -69,7 +69,31 @@ Open <http://localhost:5173>. Vite proxies `/api` requests to the local API, so 
 and uploads use the backend without a separate CORS setup. Set `VITE_API_BASE_URL` only when the
 API is hosted at a different origin.
 
-Create or reset a local login after applying the database migrations:
+After applying the database migrations, set `WHADIO_PUBLIC_URL` to the application's public base
+URL and issue the first account's registration link:
+
+```bash
+uv run whadio links registration --email person@example.com
+```
+
+The command prints a single-use link valid for 24 hours. Hand it to its intended recipient
+privately; issuing another link for the same address invalidates the earlier one. Only the token's
+hash is stored. An existing account is refused; password-reset support is a separate milestone.
+
+The registration page is not available yet. To redeem the link through the API, take the
+registration ID from `/registrations/<id>` and the token from `#token=<token>`, then send:
+
+```bash
+curl -i -X POST 'http://localhost:3000/api/v1/registrations/<id>/complete' \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"<token>","name":"Alice","password":"<your-password>","accept_terms":true}'
+```
+
+Replace the placeholders and use a password of 12 to 128 characters with a digit and an uppercase
+letter. A successful request returns `201` and sets the browser session cookie. The scheduler
+removes unused registration links once their 24-hour lifetime expires.
+
+`whadio dev-user` remains a local development shortcut:
 
 ```bash
 uv run whadio dev-user --email margaret@whadio.dev
@@ -168,4 +192,4 @@ Testing policy and evidence are maintained in [`/docs/testing/`](docs/testing/).
 - [Coverage Report](htmlcov/index.html) — browsable line coverage for the current baseline
 
 ## AI usage
-The document was prepared with the help of Claude Code (Claude Opus 5 model) based on the team's decisions; the content was manually checked and edited, and the document is reviewed via a pull request before merging.
+The document was prepared with the help of Claude Code (Claude Opus 5 model) and OpenAI Codex based on the team's decisions; the content was manually checked and edited, and the document is reviewed via a pull request before merging.

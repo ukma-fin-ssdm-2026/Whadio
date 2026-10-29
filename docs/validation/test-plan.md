@@ -8,12 +8,12 @@
 
 This plan states when the recording-to-notes path of Whadio counts as verified.
 
-**Scope.** In scope: sign-in, uploading a recording, the processing pipeline from the queued job to
+**Scope.** In scope: sign-in, operator-issued registration links and their completion through the API, uploading a recording, the processing pipeline from the queued job to
 the stored transcript and notes, access to restricted meetings over every content path, the audit
 log, exports, job monitoring, and reading results in the web app. Not tested here: features with
-no API yet (registration, invitations, membership changes and password reset in US-001, US-002 and
+no API yet (self-service email registration, invitations, membership changes and password reset in US-001, US-002 and
 US-020; notes regeneration, US-010; a workspace's own model provider, US-008; server load and model usage on the admin dashboard, US-019 Test-03); screens the web app
-does not have yet (folders, transcript edits, shares, the glossary), so those are tested through the API
+does not have yet (registration, folders, transcript edits, shares, the glossary), so those are tested through the API
 and the user-action limits of NFR-005 and NFR-006 are not measured; the Chrome extension capture
 (US-003, NFR-004); recognition quality scores (WER needs a reference corpus we do not have); real
 models or paid services in CI.
@@ -47,6 +47,10 @@ speakers, preset sections, time). A pass in one never stands in for the other.
 | TC-ACL-02 | Every path that returns meeting content | Integration | Negative | For a meeting restricted to its Owner, a member gets `404` and no content from the meeting, transcript, notes, both exports, the recording link and the transcript revisions; the meeting list, the MCP tools and other meetings' notes context omit it. Zero content on 100% of the paths (NFR-007, NFR-009). | Valeriia | US-015 (Test-02, Test-03), US-007 (Test-03), US-018 (Test-04), NFR-007, NFR-009 | CI, exists |
 | TC-ACC-01 | Accounts: signing in | Integration | Negative | A wrong password and an unknown address are refused the same way and start no session; a session token is stored only as its hash. | Denys | US-001 (Test-02), NFR-012 | CI, exists |
 | TC-ACC-02 | Sessions and MCP keys over HTTP | Integration | Negative | A wrong password gets `401 INVALID_CREDENTIALS`; a request without a session, with a signed-out cookie or with a revoked or expired MCP key is refused, and a signed-out visitor opening a meeting link gets `401` and none of its content; an MCP key is shown once and stored only as its hash. | Denys | US-001 (Test-02, Test-03), US-018 (Test-01, Test-03), NFR-012 | CI, exists |
+| TC-ACC-03 | Accounts: operator-issued registration | Integration | Positive | The CLI issues a 24-hour link with only its token hash stored, and refuses an existing account with exit code 1 and an error on stderr. Completing a link through the API with a name, strong password and Terms acceptance atomically creates the account, personal workspace, Owner membership, default folder and browser session. Email delivery and SPA completion are pending. | Valeriia | US-001 (Test-01 completion only, Test-08), NFR-012 | CI, exists |
+| TC-ACC-04 | Accounts: registration link lifecycle | Unit, Integration | Negative | Unknown, wrong-token, expired, used and replaced links, and links whose address has since acquired an account, return the same `404 LINK_INVALID`. Expiry includes the exact 24-hour boundary; a link works just before it. The scheduler deletes expired pending registrations, preserves valid ones, and continues other jobs after a cleanup failure. Repeated cleanup is harmless. Reissue replaces the previous token case-insensitively. Concurrent redemption has one winner, and failure creating the default folder rolls back the account and restores the pending registration. | Valeriia | US-001 (Test-04, Test-08), NFR-012 | CI, exists |
+| TC-ACC-05 | Accounts: registration validation | Unit, Integration | Negative | A weak password or Terms acceptance other than explicit true returns `422 VALIDATION_ERROR`; the offending field is named and the link remains unconsumed. The password schema publishes and enforces the 12-128 length bounds. Accepted passwords retain surrounding spaces, including at the bounds. The registration form remains pending. | Valeriia | US-001 (Test-09), NFR-012 | CI, exists |
+| TC-ACC-06 | Accounts: instance admission mode | Unit, Integration | Negative | The default is invite-only. Public `GET /instance` reports the injected mode and application API version without reloading configuration. The composition root shares its cached web settings with startup validation. Unit tests cover both admission modes with and without SMTP: only verified mode without SMTP is refused. An isolated startup test checks that the guard is wired in without connecting to external services. Hiding registration controls in the SPA is not covered yet. | Valeriia | US-001 (Test-06 backend only) | CI, exists |
 | TC-ADM-01 | Admin & Monitoring: job monitoring | Integration | Negative | An administrator reads each job's state, waiting time and known failure reason, and nothing from a recording, transcript or notes; a workspace role grants no admin access, and a revoked administrator is refused at once. | Valeriia | US-019 (Test-01, Test-02, Test-04) | CI, exists |
 | TC-PIPE-01 | Processing pipeline, upload to notes | Integration | Positive | Real PostgreSQL, RabbitMQ and SeaweedFS, stub ASR and notes models: a recording uploaded while no worker runs stays `queued`; once the workers start, the meeting reaches `processed` and the API returns one transcript and one set of notes. | Andrii | US-004 (Test-01), US-005 (Test-02), US-006 (Test-02), NFR-014 | CI, planned |
 | TC-PIPE-02 | Processing pipeline, notes provider failure | Integration | Negative | A provider that refuses the key or the request: the meeting ends `failed` with `provider_rejected`, the transcript stays readable, no further notes job is queued. A provider unavailable on every attempt: at most 5 attempts (`MAX_ATTEMPTS`), then `failed` with `provider_unavailable`. | Andrii | US-004 (Test-03), NFR-014 | CI, planned |
@@ -132,6 +136,8 @@ runs, and record each run in [Results](#results).
 
 Drafted with Claude Code (Claude Opus 5.5) from Zlata's initial draft (OpenAI Codex) and the GPU
 machine runs, and checked against the code at `69d178d`. The team reviews it before merging.
+
+The registration scope and TC-ACC-03 through TC-ACC-06 were drafted by Valeriia with OpenAI Codex.
 
 ## Бонуси
 
