@@ -17,7 +17,7 @@ function renderSidebar(changes: Partial<ComponentProps<typeof Sidebar>> = {}) {
       onHome={() => {}}
       onMeetings={() => {}}
       onWorkspace={() => {}}
-      onSignOut={() => {}}
+      signOutAction={null}
       onNavigate={() => {}}
       {...changes}
     />,
