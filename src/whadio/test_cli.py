@@ -1,12 +1,13 @@
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import create_engine, delete
+from sqlalchemy import create_engine, delete, insert, select
 from typer.testing import CliRunner
 
-from .accounts.models import PendingRegistration
+from .accounts.models import PendingRegistration, User
 from .cli import app
 from .shared.database import DatabaseSettings
 
@@ -33,6 +34,50 @@ def test_registration_command_requires_a_public_url(monkeypatch: pytest.MonkeyPa
     result = CliRunner().invoke(app, ["links", "registration", "--email", "alice@example.com"])
     # Assert
     assert (result.exit_code, "WHADIO_PUBLIC_URL" in result.output) == (1, True)
+
+
+@pytest.mark.slow
+def test_registration_command_refuses_an_existing_account(
+    database_settings: DatabaseSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange
+    monkeypatch.setenv("WHADIO_DB_HOST", database_settings.host)
+    monkeypatch.setenv("WHADIO_DB_PORT", str(database_settings.port))
+    monkeypatch.setenv("WHADIO_DB_NAME", database_settings.name)
+    monkeypatch.setenv("WHADIO_DB_APP_PASSWORD", database_settings.app_password.get_secret_value())
+    email = f"{uuid4()}@example.com"
+    engine = create_engine(database_settings.application_url(), hide_parameters=True)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                insert(User).values(
+                    user_id=uuid4(),
+                    email=email,
+                    name="Alice",
+                    password_hash=uuid4().hex,
+                    terms_accepted_at=datetime.now(UTC),
+                )
+            )
+        # Act
+        result = CliRunner().invoke(app, ["links", "registration", "--email", email.upper()])
+        with engine.connect() as connection:
+            pending = connection.scalar(
+                select(PendingRegistration.email).where(PendingRegistration.email == email)
+            )
+        # Assert
+        assert (result.exit_code, result.stdout, result.stderr.strip(), pending) == (
+            1,
+            "",
+            "An account already exists for this address.",
+            None,
+        )
+    finally:
+        with engine.begin() as connection:
+            connection.execute(
+                delete(PendingRegistration).where(PendingRegistration.email == email)
+            )
+            connection.execute(delete(User).where(User.email == email))
+        engine.dispose()
 
 
 @pytest.mark.slow

@@ -1,10 +1,10 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, ClassVar, Self
+from typing import Annotated, Self
 from uuid import UUID
 
 from fastapi import Path
-from pydantic import ConfigDict, EmailStr, Field, SecretStr, StringConstraints, model_validator
+from pydantic import BeforeValidator, EmailStr, Field, SecretStr, StringConstraints, model_validator
 
 from ...accounts.enums import RegistrationMode
 from ..core.schemas import DisplayText, Input, Output
@@ -146,12 +146,18 @@ class WorkspaceRead(WorkspaceSummary):
     default_preset: Preset = Field(description="Notes preset used when none is chosen")
 
 
-class RegistrationComplete(Input):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", str_strip_whitespace=False)
+def _preserve_secret_whitespace(value: str | SecretStr) -> SecretStr:
+    return value if isinstance(value, SecretStr) else SecretStr(value)
 
+
+class RegistrationComplete(Input):
     token: SecretStr = Field(description="Secret from the registration link fragment")
     name: DisplayText = Field(min_length=1, max_length=100, description="Account display name")
-    password: SecretStr = Field(description="12 to 128 characters, a digit and an uppercase letter")
+    password: Annotated[SecretStr, BeforeValidator(_preserve_secret_whitespace)] = Field(
+        min_length=12,
+        max_length=128,
+        description="12 to 128 characters, a digit and an uppercase letter",
+    )
     accept_terms: bool = Field(strict=True, description="Explicit acceptance of the instance Terms")
 
 

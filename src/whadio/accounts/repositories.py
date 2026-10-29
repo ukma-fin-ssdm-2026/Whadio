@@ -316,7 +316,14 @@ class IWorkspaceRepository(Protocol):
     ) -> list[MemberWorkspace]: ...
 
     async def add(
-        self, name: str, template: NotesTemplate, owner_id: UUID, now: datetime, /
+        self,
+        name: str,
+        template: NotesTemplate,
+        owner_id: UUID,
+        now: datetime,
+        /,
+        *,
+        personal: bool = False,
     ) -> UUID: ...
 
     async def update(
@@ -359,9 +366,17 @@ class WorkspaceRepository:
             for workspace, role, count in await self._session.execute(statement)
         ]
 
-    async def add(self, name: str, template: NotesTemplate, owner_id: UUID, now: datetime) -> UUID:
+    async def add(
+        self,
+        name: str,
+        template: NotesTemplate,
+        owner_id: UUID,
+        now: datetime,
+        *,
+        personal: bool = False,
+    ) -> UUID:
         workspace = Workspace(
-            name=name, default_template=template, is_personal=False, created_at=now
+            name=name, default_template=template, is_personal=personal, created_at=now
         )
         self._session.add(workspace)
         await self._session.flush()
@@ -407,7 +422,9 @@ class IRegistrationRepository(Protocol):
 
     async def create_account(
         self, email: str, name: str, password_hash: str, now: datetime, /
-    ) -> tuple[User, UUID]: ...
+    ) -> User: ...
+
+    async def delete_expired(self, now: datetime, /) -> int: ...
 
 
 class RegistrationRepository:
@@ -445,7 +462,7 @@ class RegistrationRepository:
 
     async def create_account(
         self, email: str, name: str, password_hash: str, now: datetime
-    ) -> tuple[User, UUID]:
+    ) -> User:
         await self._session.execute(
             delete(PendingRegistration).where(
                 func.lower(PendingRegistration.email) == email.lower()
@@ -460,18 +477,12 @@ class RegistrationRepository:
         )
         self._session.add(user)
         await self._session.flush()
-        workspace = Workspace(
-            name=name, default_template=NotesTemplate.DETAILED, is_personal=True, created_at=now
+        return user
+
+    async def delete_expired(self, now: datetime) -> int:
+        deleted = await self._session.scalars(
+            delete(PendingRegistration)
+            .where(PendingRegistration.expires_at <= now)
+            .returning(PendingRegistration.pending_registration_id)
         )
-        self._session.add(workspace)
-        await self._session.flush()
-        self._session.add(
-            WorkspaceMembership(
-                workspace_id=workspace.workspace_id,
-                user_id=user.user_id,
-                role=WorkspaceRole.OWNER,
-                joined_at=now,
-            )
-        )
-        await self._session.flush()
-        return user, workspace.workspace_id
+        return len(deleted.all())

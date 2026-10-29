@@ -4,7 +4,7 @@ import pytest
 
 from conftest import refused_fields
 
-from .schemas import SignIn, WorkspaceCreate, WorkspaceUpdate
+from .schemas import RegistrationComplete, SignIn, WorkspaceCreate, WorkspaceUpdate
 
 _PADDING = " 　\t"
 
@@ -77,3 +77,31 @@ def test_sign_in_email_is_accepted_up_to_254_characters(length: int, refused: se
 
     # Assert
     assert found == refused
+
+
+@pytest.mark.parametrize("length", [11, 12, 13, 127, 128, 129])
+def test_registration_password_accepts_only_12_to_128_characters(length: int) -> None:
+    # Act
+    found = refused_fields(
+        RegistrationComplete,
+        {
+            "token": uuid4().hex,
+            "name": "Alice",
+            "password": "A1" + "x" * (length - 2),
+            "accept_terms": True,
+        },
+    )
+    # Assert
+    assert found == (set[str]() if 12 <= length <= 128 else {"password"})
+
+
+@pytest.mark.parametrize("length", [12, 128])
+def test_registration_password_keeps_surrounding_spaces(length: int) -> None:
+    # Arrange
+    password = " A1" + "x" * (length - 4) + " "
+    # Act
+    payload = RegistrationComplete.model_validate(
+        {"token": uuid4().hex, "name": "Alice", "password": password, "accept_terms": True}
+    )
+    # Assert
+    assert payload.password.get_secret_value() == password

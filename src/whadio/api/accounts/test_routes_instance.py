@@ -1,5 +1,5 @@
 import asyncio
-import os
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
@@ -8,28 +8,30 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from ...accounts.enums import RegistrationMode
+from ...notifications.settings import NotificationSettings, SmtpSettings
+from .. import composition
 from ..app import create_app
-from ..composition import CompositionRoot
+from ..composition import CompositionRoot, validate_registration_startup
 from ..settings import WebSettings
 from .schemas import InstanceRead
 
 
-@pytest.fixture(autouse=True)
-def _environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.chdir(tmp_path)
-    for key in tuple(os.environ):
-        if key == "WHADIO_REGISTRATION_MODE" or key.startswith("WHADIO_SMTP"):
-            monkeypatch.delenv(key)
+def web_settings(mode: RegistrationMode = RegistrationMode.INVITE_ONLY) -> WebSettings:
+    return WebSettings.model_validate({"registration_mode": mode, "broker": None})
 
 
-async def start_web() -> None:
-    async with CompositionRoot().lifespan(FastAPI()):
-        pass
+def notification_settings(*, smtp: bool) -> NotificationSettings:
+    relay = SmtpSettings(host="localhost", from_address="noreply@example.com") if smtp else None
+    return NotificationSettings.model_validate({"smtp": relay, "public_url": "https://example.com"})
 
 
-def test_instance_is_public_and_defaults_to_invite_only() -> None:
+def test_instance_is_public_and_defaults_to_invite_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     # Arrange
-    app = create_app()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("WHADIO_REGISTRATION_MODE", raising=False)
+    app = create_app(web_settings=WebSettings.model_validate({"broker": None}))
     client = TestClient(app)
     # Act
     response = client.get("/api/v1/instance")
@@ -40,19 +42,33 @@ def test_instance_is_public_and_defaults_to_invite_only() -> None:
     )
 
 
-def test_instance_reports_the_configured_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("mode", list(RegistrationMode))
+def test_instance_reports_the_injected_mode(mode: RegistrationMode) -> None:
     # Arrange
-    monkeypatch.setenv("WHADIO_REGISTRATION_MODE", "verified")
-    client = TestClient(create_app())
+    client = TestClient(create_app(web_settings=web_settings(mode)))
     # Act
     response = client.get("/api/v1/instance")
     # Assert
-    assert InstanceRead.model_validate_json(response.content).registration_mode == "verified"
+    assert InstanceRead.model_validate_json(response.content).registration_mode is mode
+
+
+def test_instance_does_not_reload_web_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    client = TestClient(create_app(web_settings=web_settings(RegistrationMode.VERIFIED)))
+    monkeypatch.setenv("WHADIO_REGISTRATION_MODE", "invalid")
+    monkeypatch.setenv("WHADIO_BROKER__URL", "invalid")
+    # Act
+    response = client.get("/api/v1/instance")
+    # Assert
+    assert (
+        InstanceRead.model_validate_json(response.content).registration_mode
+        is RegistrationMode.VERIFIED
+    )
 
 
 def test_instance_reports_the_application_version() -> None:
     # Arrange
-    app = create_app()
+    app = create_app(web_settings=web_settings())
     app.version = "0.2.0"
     client = TestClient(app)
     # Act
@@ -61,40 +77,45 @@ def test_instance_reports_the_application_version() -> None:
     assert InstanceRead.model_validate_json(response.content).api_version == app.version
 
 
-def test_invalid_registration_mode_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Arrange
-    monkeypatch.setenv("WHADIO_REGISTRATION_MODE", "open")
+def test_invalid_registration_mode_is_refused() -> None:
     # Act
     with pytest.raises(ValidationError) as failure:
-        WebSettings.model_validate({})
+        WebSettings.model_validate({"registration_mode": "open", "broker": None})
     # Assert
     assert failure.value.errors()[0]["loc"] == ("registration_mode",)
 
 
-def test_verified_web_requires_an_smtp_relay(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("mode", list(RegistrationMode))
+@pytest.mark.parametrize("smtp", [False, True])
+def test_registration_startup_requires_smtp_only_for_verified_mode(
+    mode: RegistrationMode, *, smtp: bool
+) -> None:
     # Arrange
-    monkeypatch.setenv("WHADIO_REGISTRATION_MODE", "verified")
+    settings, notifications = web_settings(mode), notification_settings(smtp=smtp)
+    expectation = (
+        pytest.raises(ValueError, match="requires an SMTP relay")
+        if mode is RegistrationMode.VERIFIED and not smtp
+        else nullcontext()
+    )
+    # Act
+    with expectation:
+        validate_registration_startup(settings, notifications)
+
+
+def test_web_startup_validates_the_cached_registration_mode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Arrange
+    monkeypatch.chdir(tmp_path)
+    root = CompositionRoot(web_settings=web_settings(RegistrationMode.VERIFIED))
+    monkeypatch.setenv("WHADIO_REGISTRATION_MODE", "invite-only")
+    notifications = notification_settings(smtp=False)
+    monkeypatch.setattr(composition, "load_notification_settings", lambda: notifications)
+
+    async def start() -> None:
+        async with root.lifespan(FastAPI()):
+            pytest.fail("Web startup accepted verified mode without SMTP")
+
     # Act
     with pytest.raises(ValueError, match="requires an SMTP relay"):
-        asyncio.run(start_web(), loop_factory=asyncio.SelectorEventLoop)
-
-
-def test_verified_web_accepts_a_configured_smtp_relay(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Arrange
-    monkeypatch.setenv("WHADIO_REGISTRATION_MODE", "verified")
-    monkeypatch.setenv("WHADIO_PUBLIC_URL", "https://example.com")
-    monkeypatch.setenv("WHADIO_SMTP__HOST", "localhost")
-    monkeypatch.setenv("WHADIO_SMTP__FROM_ADDRESS", "noreply@example.com")
-    # Act
-    result = asyncio.run(start_web(), loop_factory=asyncio.SelectorEventLoop)
-    # Assert
-    assert result is None
-
-
-def test_invite_only_web_needs_no_smtp_relay() -> None:
-    # Arrange
-    settings = WebSettings.model_validate({})
-    # Act
-    asyncio.run(start_web(), loop_factory=asyncio.SelectorEventLoop)
-    # Assert
-    assert settings.registration_mode is RegistrationMode.INVITE_ONLY
+        asyncio.run(start(), loop_factory=asyncio.SelectorEventLoop)

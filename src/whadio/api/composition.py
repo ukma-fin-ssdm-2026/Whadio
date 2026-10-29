@@ -59,7 +59,7 @@ from ..meetings.repositories import FolderRepository, MeetingRepository
 from ..meetings.services import FolderService, MeetingService, WorkspaceContent
 from ..meetings.settings import MeetingSettings
 from ..notifications.repositories import INotificationOutbox, NotificationOutboxRepository
-from ..notifications.settings import load_notification_settings
+from ..notifications.settings import NotificationSettings, load_notification_settings
 from ..notifications.templates import (
     HostedEviction,
     NoticeKind,
@@ -92,21 +92,34 @@ def api_version() -> str:
     raise RuntimeError("API version dependency has not been configured")
 
 
-def validate_registration_startup(settings: WebSettings) -> None:
-    notifications = load_notification_settings()
+def registration_mode() -> RegistrationMode:
+    raise RuntimeError("Registration mode dependency has not been configured")
+
+
+def validate_registration_startup(
+    settings: WebSettings, notifications: NotificationSettings
+) -> None:
     if settings.registration_mode is RegistrationMode.VERIFIED and notifications.smtp is None:
         raise ValueError("verified registration requires an SMTP relay")
 
 
 class CompositionRoot:
     def __init__(
-        self, database: Database | None = None, *, public_settings: PublicUrlSettings | None = None
+        self,
+        database: Database | None = None,
+        *,
+        public_settings: PublicUrlSettings | None = None,
+        web_settings: WebSettings | None = None,
     ) -> None:
         settings = (
             public_settings if public_settings is not None else PublicUrlSettings.model_validate({})
         )
         self.public_url: str = str(settings.public_url or "http://localhost:3000")
         self.api_public_url: str = str(settings.api_public_url or self.public_url)
+        self._web_settings: WebSettings = (
+            web_settings if web_settings is not None else WebSettings.model_validate({})
+        )
+        self.registration_mode: RegistrationMode = self._web_settings.registration_mode
         self._database: Database | None = database
         self._storage: IObjectStorage | None = None
         # Present while jobs are being published; setting it publishes the ones just committed.
@@ -139,8 +152,8 @@ class CompositionRoot:
 
     @asynccontextmanager
     async def lifespan(self, _app: FastAPI) -> AsyncGenerator[None]:
-        settings, storage = WebSettings(), MeetingSettings().storage
-        validate_registration_startup(settings)
+        settings, storage = self._web_settings, MeetingSettings().storage
+        validate_registration_startup(settings, load_notification_settings())
         stop = asyncio.Event()
         tasks: list[asyncio.Task[None]] = []
         try:
@@ -467,6 +480,7 @@ def registration_service(session: Session) -> RegistrationService:
         SessionRepository(session),
         Argon2PasswordHasher(),
         WorkspaceContent(MeetingRepository(session)),
+        WorkspaceRepository(session),
     )
 
 

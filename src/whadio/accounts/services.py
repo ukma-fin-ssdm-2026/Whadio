@@ -303,11 +303,13 @@ class RegistrationService:
         sessions: ISessionRepository,
         passwords: IPasswordHasher,
         content: IWorkspaceContent,
+        workspaces: IWorkspaceRepository,
     ) -> None:
         self._registrations: IRegistrationRepository = registrations
         self._sessions: ISessionRepository = sessions
         self._passwords: IPasswordHasher = passwords
         self._content: IWorkspaceContent = content
+        self._workspaces: IWorkspaceRepository = workspaces
 
     async def complete(
         self,
@@ -342,8 +344,9 @@ class RegistrationService:
         except ValueError as error:
             raise RegistrationValidationError("name", str(error)) from None
         password_hash = await asyncio.to_thread(self._passwords.hash, details.password)
-        user, workspace_id = await self._registrations.create_account(
-            pending.email, name, password_hash, now
+        user = await self._registrations.create_account(pending.email, name, password_hash, now)
+        workspace_id = await self._workspaces.add(
+            name, NotesTemplate.DETAILED, user.user_id, now, personal=True
         )
         await self._content.add_default_folder(workspace_id, now)
         session_token = secrets.token_urlsafe(32)
@@ -352,3 +355,11 @@ class RegistrationService:
             user.user_id, SessionKind.BROWSER, session_token, expires_at, now
         )
         return SignedIn(session_token, expires_at, user)
+
+
+class RegistrationCleanupService:
+    def __init__(self, registrations: IRegistrationRepository) -> None:
+        self._registrations: IRegistrationRepository = registrations
+
+    async def remove_expired(self, now: datetime) -> int:
+        return await self._registrations.delete_expired(now)

@@ -207,7 +207,7 @@ def registration(email: Annotated[str, typer.Option(help="Address of the new acc
     try:
         link = asyncio.run(issue(), loop_factory=asyncio.SelectorEventLoop)
     except AccountAlreadyExistsError:
-        typer.echo("Account already exists; issue a password-reset link instead.", err=True)
+        typer.echo("An account already exists for this address.", err=True)
         raise typer.Exit(code=1) from None
     except (SQLAlchemyError, ValidationError):
         typer.echo("Registration database or configuration unavailable.", err=True)

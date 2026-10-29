@@ -7183,6 +7183,8 @@
           },
           "password": {
             "type": "string",
+            "maxLength": 128,
+            "minLength": 12,
             "format": "password",
             "title": "Password",
             "description": "12 to 128 characters, a digit and an uppercase letter",

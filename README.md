@@ -74,6 +74,20 @@ uv run whadio links registration --email person@example.com
 The command prints a single-use link valid for 24 hours. Hand it to its intended recipient
 privately; issuing another link for the same address invalidates the earlier one. Only the token's
 hash is stored. An existing account is refused; password-reset support is a separate milestone.
+
+The registration page is not available yet. To redeem the link through the API, take the
+registration ID from `/registrations/<id>` and the token from `#token=<token>`, then send:
+
+```bash
+curl -i -X POST 'http://localhost:3000/api/v1/registrations/<id>/complete' \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"<token>","name":"Alice","password":"<your-password>","accept_terms":true}'
+```
+
+Replace the placeholders and use a password of 12 to 128 characters with a digit and an uppercase
+letter. A successful request returns `201` and sets the browser session cookie. The scheduler
+removes unused registration links once their 24-hour lifetime expires.
+
 `whadio dev-user` remains a local development shortcut:
 
 ```bash

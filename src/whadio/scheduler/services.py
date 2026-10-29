@@ -25,6 +25,10 @@ class INotificationJobs(Protocol):
     async def remove_finished(self) -> int: ...
 
 
+class IRegistrationJobs(Protocol):
+    async def remove_expired(self, now: datetime) -> int: ...
+
+
 def utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -36,6 +40,7 @@ class RetentionScheduler:
         interval_seconds: float,
         now: Callable[[], datetime] = utc_now,
         notifications: INotificationJobs | None = None,
+        registrations: IRegistrationJobs | None = None,
     ) -> None:
         if interval_seconds <= 0:
             raise ValueError("The retention interval must be positive")
@@ -43,16 +48,25 @@ class RetentionScheduler:
         self._interval_seconds: float = interval_seconds
         self._now: Callable[[], datetime] = now
         self._notifications: INotificationJobs | None = notifications
+        self._registrations: IRegistrationJobs | None = registrations
 
     async def tick(self) -> int:
         failed = 0
+        now = self._now()
+        if self._registrations is not None:
+            try:
+                removed = await self._registrations.remove_expired(now)
+                logger.info("Registration cleanup: %d expired links deleted", removed)
+            except SQLAlchemyError:
+                failed += 1
+                logger.warning("Registration cleanup could not access the database")
         try:
             failed += len(await self._retention.remove_deleted_meeting_recordings())
         except SQLAlchemyError:
             failed += 1
             logger.warning("Recording cleanup could not access the database")
         try:
-            result = await self._retention.run(self._now())
+            result = await self._retention.run(now)
             failed += len(result.failed)
             logger.info(
                 "Retention pass: %d warned, %d deleted, %d failed",

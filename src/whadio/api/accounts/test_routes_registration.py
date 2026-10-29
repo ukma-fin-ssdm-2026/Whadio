@@ -123,7 +123,9 @@ def test_registration_creates_a_personal_workspace_and_signs_in(
     assert async_database.run(scenario) == (201, True, True, True, 200)
 
 
-@pytest.mark.parametrize("reason", ["unknown", "wrong", "expired", "replaced", "used"])
+@pytest.mark.parametrize(
+    "reason", ["unknown", "wrong", "expired", "replaced", "used", "registered"]
+)
 def test_unusable_links_have_one_error(async_database: AsyncDatabase, reason: str) -> None:
     # Arrange
     async def scenario(session: AsyncSession) -> tuple[int, str]:
@@ -140,6 +142,10 @@ def test_unusable_links_have_one_error(async_database: AsyncDatabase, reason: st
             await RegistrationIssuer(
                 RegistrationRepository(session), SessionRepository(session)
             ).issue(pending.email, now)
+        elif reason == "registered":
+            pending = await session.get(PendingRegistration, registration_id)
+            assert pending is not None
+            await AsyncDatabase.add_account(session, PASSWORD, email=pending.email.upper())
         async with AsyncDatabase.api_client(session) as client:
             payload = {"token": token, "name": "Alice", "password": PASSWORD, "accept_terms": True}
             if reason == "used":

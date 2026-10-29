@@ -24,6 +24,7 @@ from .composition import (
     connect_integrations,
     export_api_public_url,
     export_public_url,
+    registration_mode,
     runtime_database,
     transaction,
 )
@@ -33,6 +34,7 @@ from .mcp_server import build_mcp_server
 from .meetings import routes as meeting_routes
 from .meetings import routes_content
 from .openapi_export import export_openapi
+from .settings import WebSettings
 
 API_VERSION = "0.1.0"
 
@@ -83,9 +85,12 @@ async def _export_spec(app: FastAPI) -> AsyncGenerator[None]:
 
 
 def create_app(
-    database: Database | None = None, *, integrations: RuntimeIntegrations | None = None
+    database: Database | None = None,
+    *,
+    integrations: RuntimeIntegrations | None = None,
+    web_settings: WebSettings | None = None,
 ) -> FastAPI:
-    composition = CompositionRoot(database)
+    composition = CompositionRoot(database, web_settings=web_settings)
     mcp_app = build_mcp_server(composition.database).http_app(path="/")
     app = FastAPI(
         title="Whadio API",
@@ -115,6 +120,7 @@ def create_app(
     app.mount("/mcp", mcp_app)
     register_error_handlers(app)
     app.dependency_overrides[api_version] = lambda: app.version
+    app.dependency_overrides[registration_mode] = lambda: composition.registration_mode
     app.dependency_overrides[export_public_url] = lambda: composition.public_url
     app.dependency_overrides[export_api_public_url] = lambda: composition.api_public_url
     app.dependency_overrides[transaction] = composition.transaction
