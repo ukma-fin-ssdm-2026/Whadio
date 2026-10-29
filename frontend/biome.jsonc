@@ -69,6 +69,87 @@
           }
         }
       }
+    },
+    {
+      "includes": ["src/features/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@/features/**", "@/app/**", "../../**"],
+                    "message": "A feature imports its own files relatively and never another feature or the app; the app composes features."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/features/*/*"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@/features/**", "@/app/**", "../**"],
+                    "message": "A feature imports its own files relatively and never another feature or the app; the app composes features."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/features/meetings/detail/MeetingDetail.test.tsx"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    // The test fills the export slot the way app/App.jsx does, to check it resets per revision.
+                    "group": ["@/features/**", "!@/features/export/**", "@/app/**", "../../**"],
+                    "message": "A feature imports its own files relatively and never another feature or the app; the app composes features."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/shared/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@/features/**", "@/app/**", "../../**"],
+                    "message": "Shared code never imports a feature or the app."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }
