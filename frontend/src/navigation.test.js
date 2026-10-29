@@ -1,53 +1,23 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { JSDOM } from "jsdom";
-import { createServer } from "vite";
+import { openAppEnvironment } from "./app-test-environment.js";
 
-let dom;
-let server;
+let environment;
 let App;
 let act;
 let createElement;
 let createRoot;
-const savedGlobals = new Map();
 
 before(async () => {
-  dom = new JSDOM('<div id="root"></div>', {
-    url: "https://app.example/whadio/meetings/meeting?revision_id=original",
-    pretendToBeVisual: true,
-  });
-  const globals = {
-    window: dom.window,
-    document: dom.window.document,
-    navigator: dom.window.navigator,
-    HTMLElement: dom.window.HTMLElement,
-    Node: dom.window.Node,
-    sessionStorage: dom.window.sessionStorage,
-    getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
-    IS_REACT_ACT_ENVIRONMENT: true,
-  };
-  for (const [name, value] of Object.entries(globals)) {
-    savedGlobals.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
-    Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
-  }
-  ({ act, createElement } = await import("react"));
-  ({ createRoot } = await import("react-dom/client"));
-  server = await createServer({
-    server: { middlewareMode: true, watch: null, ws: false },
-    appType: "custom",
-    optimizeDeps: { noDiscovery: true },
-    ssr: { noExternal: ["@mui/icons-material"] },
-  });
-  ({ App } = await server.ssrLoadModule("/src/main.jsx"));
+  environment = await openAppEnvironment(
+    "https://app.example/whadio/meetings/meeting?revision_id=original",
+  );
+  ({ act, createElement, createRoot } = environment);
+  ({ App } = environment.app);
 });
 
 after(async () => {
-  await server?.close();
-  dom?.window.close();
-  for (const [name, descriptor] of savedGlobals) {
-    if (descriptor) Object.defineProperty(globalThis, name, descriptor);
-    else Reflect.deleteProperty(globalThis, name);
-  }
+  await environment?.close();
 });
 
 function apiResponses(initiallyAuthenticated) {
@@ -168,11 +138,11 @@ for (const authenticated of [true, false]) {
           ]) {
             const input = document.querySelector(`input[type="${type}"]`);
             const setter = Object.getOwnPropertyDescriptor(
-              dom.window.HTMLInputElement.prototype,
+              window.HTMLInputElement.prototype,
               "value",
             ).set;
             setter.call(input, value);
-            input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+            input.dispatchEvent(new window.Event("input", { bubbles: true }));
           }
         });
         await act(async () => {

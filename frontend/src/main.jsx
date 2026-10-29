@@ -2,17 +2,13 @@ import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
-import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import KeyOutlinedIcon from "@mui/icons-material/KeyOutlined";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import NotesOutlinedIcon from "@mui/icons-material/NotesOutlined";
-import PauseRoundedIcon from "@mui/icons-material/PauseRounded";
 import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
-import StopCircleOutlinedIcon from "@mui/icons-material/StopCircleOutlined";
-import VideoCameraFrontOutlinedIcon from "@mui/icons-material/VideoCameraFrontOutlined";
 import WorkspacesOutlinedIcon from "@mui/icons-material/WorkspacesOutlined";
 import {
   Box,
@@ -36,7 +32,6 @@ import {
   Paper,
   Select,
   Stack,
-  Switch,
   Tab,
   Tabs,
   TextField,
@@ -82,15 +77,20 @@ function mapMeeting(item) {
     date: item.recorded_at,
     state: item.processing_state,
     duration: formatDuration(item.duration_seconds),
-    processingEta: item.processing_state === "recording" ? "Recording" : "Processing",
     source: item.source_type === "extension" ? "Google Meet" : "Upload",
     recordingAvailable: item.recording_available ?? false,
     failureReason: item.failure_reason,
   };
 }
 
+const IN_PROGRESS_LABELS = { recording: "Recording", queued: "Queued", processing: "Processing" };
+
 function isProcessing(meeting) {
-  return ["recording", "queued", "processing"].includes(meeting.state);
+  return Object.hasOwn(IN_PROGRESS_LABELS, meeting.state);
+}
+
+export function matchesStateFilter(meeting, stateFilter) {
+  return stateFilter === "all" || meeting.state === stateFilter;
 }
 
 const theme = createTheme({
@@ -157,7 +157,6 @@ export function App() {
   const [meetingTab, setMeetingTab] = useState("notes");
   const [transcriptQuery, setTranscriptQuery] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [pausedMeetingIds, setPausedMeetingIds] = useState([]);
   const requestedMeetingId = useRef("");
 
   const loadData = useCallback(async () => {
@@ -222,11 +221,7 @@ export function App() {
 
     return source
       .filter((item) => item.title.toLowerCase().includes(query.toLowerCase()))
-      .filter(
-        (item) =>
-          stateFilter === "all" ||
-          (stateFilter === "queued" ? isProcessing(item) : item.state === stateFilter),
-      )
+      .filter((item) => matchesStateFilter(item, stateFilter))
       .sort((left, right) => new Date(right.date) - new Date(left.date));
   }, [meetings, query, stateFilter, view, workspaceId]);
 
@@ -335,12 +330,6 @@ export function App() {
     setSettingsOpen(false);
   };
 
-  const toggleProcessing = (id) => {
-    setPausedMeetingIds((ids) =>
-      ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id],
-    );
-  };
-
   const title =
     view === "home"
       ? "Workspaces"
@@ -421,7 +410,6 @@ export function App() {
           onMeeting={openMeeting}
           selectedMeetingId={meetingId}
           workspaceId={workspaceId}
-          pausedMeetingIds={pausedMeetingIds}
           onSignOut={handleSignOut}
         />
 
@@ -486,8 +474,6 @@ export function App() {
                 onStateFilter={setStateFilter}
                 onMeeting={openMeeting}
                 selectedMeetingId={meetingId}
-                pausedMeetingIds={pausedMeetingIds}
-                onToggleProcessing={toggleProcessing}
               />
             </>
           )}
@@ -501,8 +487,6 @@ export function App() {
               onStateFilter={setStateFilter}
               onMeeting={openMeeting}
               selectedMeetingId={meetingId}
-              pausedMeetingIds={pausedMeetingIds}
-              onToggleProcessing={toggleProcessing}
             />
           )}
           {view === "meeting" && selectedMeeting && (
@@ -518,8 +502,6 @@ export function App() {
               onRevision={(revisionId) => openMeeting(selectedMeeting.id, revisionId, "transcript")}
               recordingUrl={recordingUrl}
               loading={contentLoading}
-              paused={pausedMeetingIds.includes(selectedMeeting.id)}
-              onToggleProcessing={() => toggleProcessing(selectedMeeting.id)}
             />
           )}
         </Box>
@@ -599,7 +581,6 @@ function Sidebar({
   onMeeting,
   selectedMeetingId,
   workspaceId,
-  pausedMeetingIds,
   onSignOut,
 }) {
   const initials = (user?.name ?? "User")
@@ -675,25 +656,10 @@ function Sidebar({
                         onClick={() => onMeeting(meeting.id)}
                       >
                         <span>{meeting.title}</span>
-                        {["recording", "queued", "processing"].includes(meeting.state) && (
-                          <small
-                            className={
-                              pausedMeetingIds.includes(meeting.id)
-                                ? "nav-processing paused"
-                                : "nav-processing"
-                            }
-                          >
-                            {pausedMeetingIds.includes(meeting.id) ? (
-                              <>
-                                <StopCircleOutlinedIcon sx={{ fontSize: 14 }} />
-                                Paused
-                              </>
-                            ) : (
-                              <>
-                                <CircularProgress size={11} thickness={5} />
-                                {meeting.processingEta}
-                              </>
-                            )}
+                        {isProcessing(meeting) && (
+                          <small className="nav-processing">
+                            <CircularProgress size={11} thickness={5} />
+                            {IN_PROGRESS_LABELS[meeting.state]}
                           </small>
                         )}
                       </button>
@@ -943,21 +909,6 @@ function WorkspaceSettings({ workspace }) {
               sx={{ justifyContent: "space-between", gap: 2 }}
             >
               <Box>
-                <Typography sx={{ fontWeight: 650 }}>Workspace access</Typography>
-                <Typography color="textSecondary">
-                  Members of this workspace can open processed meetings.
-                </Typography>
-              </Box>
-              <Switch defaultChecked color="primary" />
-            </Stack>
-          </Card>
-
-          <Card className="settings-option-card">
-            <Stack
-              direction={{ xs: "column", md: "row" }}
-              sx={{ justifyContent: "space-between", gap: 2 }}
-            >
-              <Box>
                 <Typography sx={{ fontWeight: 650 }}>Default notes preset</Typography>
                 <Typography color="textSecondary">
                   New uploads use the workspace notes preset.
@@ -1141,7 +1092,7 @@ function McpKeySettings() {
   );
 }
 
-function MeetingLibrary({
+export function MeetingLibrary({
   title,
   meetings,
   query,
@@ -1150,8 +1101,6 @@ function MeetingLibrary({
   onStateFilter,
   onMeeting,
   selectedMeetingId,
-  pausedMeetingIds,
-  onToggleProcessing,
 }) {
   return (
     <Stack sx={{ gap: 1.5 }}>
@@ -1184,10 +1133,12 @@ function MeetingLibrary({
               onChange={(event) => onStateFilter(event.target.value)}
             >
               <MenuItem value="all">All states</MenuItem>
+              {Object.entries(IN_PROGRESS_LABELS).map(([state, label]) => (
+                <MenuItem key={state} value={state}>
+                  {label}
+                </MenuItem>
+              ))}
               <MenuItem value="processed">Processed</MenuItem>
-              <MenuItem value="queued">Processing</MenuItem>
-              <MenuItem value="processing">Transcribing</MenuItem>
-              <MenuItem value="recording">Recording</MenuItem>
               <MenuItem value="failed">Failed</MenuItem>
             </Select>
           </FormControl>
@@ -1202,14 +1153,7 @@ function MeetingLibrary({
           >
             <CardActionArea className="meeting-row-content" onClick={() => onMeeting(meeting.id)}>
               {isProcessing(meeting) ? (
-                <ProcessingToggle
-                  paused={pausedMeetingIds.includes(meeting.id)}
-                  onToggle={(event) => {
-                    event.stopPropagation();
-                    onToggleProcessing(meeting.id);
-                  }}
-                  size={16}
-                />
+                <CircularProgress size={16} thickness={5} />
               ) : (
                 <Box className="state-dot" />
               )}
@@ -1223,19 +1167,7 @@ function MeetingLibrary({
                 </Typography>
               </Box>
               {isProcessing(meeting) && (
-                <Box className="processing-status">
-                  <ProcessingToggle
-                    paused={pausedMeetingIds.includes(meeting.id)}
-                    onToggle={(event) => {
-                      event.stopPropagation();
-                      onToggleProcessing(meeting.id);
-                    }}
-                    size={14}
-                  />
-                  <span>
-                    {pausedMeetingIds.includes(meeting.id) ? "Paused" : meeting.processingEta}
-                  </span>
-                </Box>
+                <Box className="processing-status">{IN_PROGRESS_LABELS[meeting.state]}</Box>
               )}
             </CardActionArea>
           </Card>
@@ -1251,45 +1183,7 @@ function MeetingLibrary({
   );
 }
 
-function ProcessingToggle({ paused, onToggle, size = 16 }) {
-  const title = paused ? "Resume processing" : "Pause processing";
-  return (
-    <Tooltip title={title} arrow>
-      <Box
-        component="span"
-        role="button"
-        tabIndex={0}
-        className={paused ? "processing-toggle paused" : "processing-toggle"}
-        aria-label={title}
-        onClick={onToggle}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            onToggle(event);
-          }
-        }}
-        style={{ "--spinner-size": `${size}px` }}
-      >
-        {paused ? (
-          <PlayArrowRoundedIcon
-            className="processing-toggle-icon resume-icon"
-            sx={{ fontSize: size + 4 }}
-          />
-        ) : (
-          <>
-            <CircularProgress className="processing-spinner" size={size} thickness={5} />
-            <PauseRoundedIcon
-              className="processing-toggle-icon pause-icon"
-              sx={{ fontSize: size + 4 }}
-            />
-          </>
-        )}
-      </Box>
-    </Tooltip>
-  );
-}
-
-function MeetingDetail({
+export function MeetingDetail({
   meeting,
   tab,
   transcriptQuery,
@@ -1300,8 +1194,6 @@ function MeetingDetail({
   onRevision,
   recordingUrl,
   loading,
-  paused,
-  onToggleProcessing,
 }) {
   const speakers = new Map(
     (transcript?.speakers ?? []).map((item) => [item.id, item.display_name]),
@@ -1324,7 +1216,7 @@ function MeetingDetail({
           {meeting.title}
         </Typography>
         <Typography className="meeting-date" color="textSecondary">
-          {formatDate(meeting.date)}
+          {formatDate(meeting.date)} · {meeting.source}
         </Typography>
       </Box>
       <Stack
@@ -1333,23 +1225,13 @@ function MeetingDetail({
         sx={{ gap: 0.75, alignItems: "center" }}
       >
         <ExportControls
-          key={`${meeting.id}-${tab}-${transcript?.revision.revision_id}`}
+          key={`${meeting.id}-${tab}-${transcript?.revision.id}`}
           meetingId={meeting.id}
           tab={tab}
           transcript={transcript}
           notes={notes}
           loading={loading}
         />
-        <MetaIcon title={`Source: ${meeting.source}`}>
-          {meeting.source === "Google Meet" ? (
-            <VideoCameraFrontOutlinedIcon fontSize="small" />
-          ) : (
-            <CloudUploadOutlinedIcon fontSize="small" />
-          )}
-        </MetaIcon>
-        <MetaIcon title="Workspace access">
-          <GroupsOutlinedIcon fontSize="small" />
-        </MetaIcon>
       </Stack>
     </Stack>
   );
@@ -1372,15 +1254,13 @@ function MeetingDetail({
               direction="row"
               sx={{ gap: 1.5, alignItems: "center" }}
             >
-              <ProcessingToggle paused={paused} onToggle={onToggleProcessing} size={22} />
+              <CircularProgress size={22} thickness={5} />
               <Box>
                 <Typography sx={{ fontWeight: 650 }}>
-                  {paused ? "Processing paused" : "Processing recording"}
+                  {IN_PROGRESS_LABELS[meeting.state]}
                 </Typography>
                 <Typography color="textSecondary">
-                  {paused
-                    ? "Resume when you are ready to continue transcript and notes generation."
-                    : `Transcript and notes will appear in ${meeting.processingEta}.`}
+                  Transcript and notes appear here when processing finishes.
                 </Typography>
               </Box>
             </Stack>
@@ -1584,16 +1464,6 @@ export function ExportControls({ meetingId, tab, transcript, notes, loading }) {
         </Paper>
       )}
     </Box>
-  );
-}
-
-function MetaIcon({ title, children }) {
-  return (
-    <Tooltip title={title} arrow>
-      <IconButton className="meta-icon-button" size="small" aria-label={title}>
-        {children}
-      </IconButton>
-    </Tooltip>
   );
 }
 
