@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { ApiError } from "./errors";
+import { ApiError, NETWORK_ERROR } from "./errors";
 import { expectNoContent, unwrap } from "./unwrap";
 
 const NOT_FOUND = {
@@ -35,6 +35,14 @@ describe("unwrap", () => {
 
     // Assert
     await expect(request).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("throws a network ApiError when the request never gets a response", async () => {
+    // Act
+    const request = unwrap(Promise.reject(new TypeError("Failed to fetch")));
+
+    // Assert
+    await expect(request).rejects.toMatchObject({ status: 0, code: NETWORK_ERROR });
   });
 });
 

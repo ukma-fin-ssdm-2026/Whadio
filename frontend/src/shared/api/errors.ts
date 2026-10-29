@@ -4,8 +4,12 @@ import { type components, errorCodeValues } from "./schema.gen";
 type ErrorDetail = components["schemas"]["ErrorDetail"];
 
 export const UNEXPECTED_RESPONSE = "UNEXPECTED_RESPONSE";
+export const NETWORK_ERROR = "NETWORK_ERROR";
 
-export type ApiErrorCode = components["schemas"]["ErrorCode"] | typeof UNEXPECTED_RESPONSE;
+export type ApiErrorCode =
+  | components["schemas"]["ErrorCode"]
+  | typeof UNEXPECTED_RESPONSE
+  | typeof NETWORK_ERROR;
 
 const errorDetail: z.ZodType<ErrorDetail> = z.object({
   field: z.string().nullable(),
@@ -28,6 +32,7 @@ type ApiErrorInit = {
   message: string;
   details?: readonly ErrorDetail[];
   requestId?: string;
+  cause?: unknown;
 };
 
 export class ApiError extends Error {
@@ -37,8 +42,8 @@ export class ApiError extends Error {
   readonly details: readonly ErrorDetail[];
   readonly requestId: string | undefined;
 
-  constructor({ status, code, message, details = [], requestId }: ApiErrorInit) {
-    super(message);
+  constructor({ status, code, message, details = [], requestId, cause }: ApiErrorInit) {
+    super(message, { cause });
     this.status = status;
     this.code = code;
     this.details = details;
