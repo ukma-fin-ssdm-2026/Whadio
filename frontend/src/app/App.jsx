@@ -22,6 +22,7 @@ import { UploadPanel } from "@/features/meetings/upload/UploadPanel";
 import { HomeView } from "@/features/workspaces/components/HomeView";
 import { WorkspaceSettings } from "@/features/workspaces/components/WorkspaceSettings";
 import { mapWorkspace } from "@/features/workspaces/model";
+import { AppShell } from "./layout/AppShell";
 import { Breadcrumbs } from "./layout/Breadcrumbs";
 import { Sidebar } from "./layout/Sidebar";
 import { meetingLibraryPath, meetingPath, readMeetingLink } from "./navigation/meeting-link";
@@ -290,28 +291,40 @@ export function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline enableColorScheme />
-      <Box className="app-shell">
-        <Sidebar
-          user={user}
-          workspaces={workspaces}
-          meetings={meetings}
-          activeView={view}
-          open={workspacesOpen}
-          onToggleWorkspaces={() => setWorkspacesOpen((value) => !value)}
-          onHome={() => {
-            clearMeetingLink();
-            setSettingsOpen(false);
-            setView("home");
-          }}
-          onMeetings={showMeetings}
-          onWorkspace={openWorkspace}
-          onMeeting={openMeeting}
-          selectedMeetingId={meetingId}
-          workspaceId={workspaceId}
-          onSignOut={handleSignOut}
-        />
-
-        <Box component="main" className="main">
+      <AppShell
+        renderSidebar={(onNavigate) => (
+          <Sidebar
+            user={user}
+            workspaces={workspaces}
+            meetings={meetings}
+            activeView={view}
+            open={workspacesOpen}
+            onToggleWorkspaces={() => setWorkspacesOpen((value) => !value)}
+            onHome={() => {
+              clearMeetingLink();
+              setSettingsOpen(false);
+              setView("home");
+              onNavigate();
+            }}
+            onMeetings={() => {
+              showMeetings();
+              onNavigate();
+            }}
+            onWorkspace={(id) => {
+              openWorkspace(id);
+              onNavigate();
+            }}
+            onMeeting={(id) => {
+              openMeeting(id);
+              onNavigate();
+            }}
+            selectedMeetingId={meetingId}
+            workspaceId={workspaceId}
+            onSignOut={handleSignOut}
+          />
+        )}
+      >
+        <Stack sx={{ gap: 2 }}>
           <Breadcrumbs
             view={view}
             workspace={workspace}
@@ -413,8 +426,8 @@ export function App() {
               }
             />
           )}
-        </Box>
-      </Box>
+        </Stack>
+      </AppShell>
     </ThemeProvider>
   );
 }
