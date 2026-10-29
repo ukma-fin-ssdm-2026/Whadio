@@ -2,7 +2,7 @@ import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import { Box, CircularProgress, IconButton, Stack, Tooltip } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api } from "@/api";
-import { McpKeySettings } from "@/features/accounts/components/McpKeySettings";
+import { McpKeyPanel } from "@/features/accounts/components/McpKeyPanel";
 import { SignInForm } from "@/features/accounts/components/SignInForm";
 import { SignOutButton } from "@/features/accounts/components/SignOutButton";
 import { clearSignedInUser, readSignedInUser } from "@/features/accounts/session-storage";
@@ -328,7 +328,7 @@ export function App() {
             <HomeView workspaces={workspaces} meetings={meetings} onWorkspace={openWorkspace} />
           )}
           {view === "workspace" && settingsOpen && (
-            <WorkspaceSettings workspace={workspace} assistantSettings={<McpKeySettings />} />
+            <WorkspaceSettings workspace={workspace} assistantSettings={<McpKeyPanel />} />
           )}
           {view === "workspace" && !settingsOpen && (
             <>
