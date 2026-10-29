@@ -175,7 +175,10 @@ class SessionRepository:
     async def by_email(self, email: str) -> User | None:
         # The unique index is on lower(email), so this finds the address whatever its case.
         return await self._session.scalar(
-            select(User).where(func.lower(User.email) == email.lower())
+            select(User)
+            .where(func.lower(User.email) == email.lower())
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
         )
 
     async def add_session(
