@@ -7,7 +7,6 @@ import {
   Stack,
   ThemeProvider,
   Tooltip,
-  Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api } from "@/api";
@@ -22,6 +21,7 @@ import { UploadPanel } from "@/features/meetings/upload/UploadPanel";
 import { HomeView } from "@/features/workspaces/components/HomeView";
 import { WorkspaceSettings } from "@/features/workspaces/components/WorkspaceSettings";
 import { mapWorkspace } from "@/features/workspaces/model";
+import { PageHeader } from "@/shared/ui/PageHeader";
 import { AppShell } from "./layout/AppShell";
 import { Breadcrumbs } from "./layout/Breadcrumbs";
 import { Sidebar } from "./layout/Sidebar";
@@ -326,7 +326,7 @@ export function App() {
       >
         <Stack sx={{ gap: 2 }}>
           <Breadcrumbs
-            view={view}
+            page={view}
             workspace={workspace}
             meeting={selectedMeeting}
             onHome={() => {
@@ -337,31 +337,24 @@ export function App() {
           />
 
           {view !== "meeting" && (
-            <Stack
-              direction="row"
-              className="page-header"
-              sx={{ justifyContent: "space-between", alignItems: "flex-end", gap: 2 }}
-            >
-              <Box>
-                {view === "workspace" && (
-                  <Typography variant="overline" className="eyebrow">
-                    {workspace.role} workspace
-                  </Typography>
-                )}
-                <Typography variant="h1">{title}</Typography>
-              </Box>
-              {view === "workspace" && (
-                <Tooltip title="Workspace settings" arrow>
-                  <IconButton
-                    className={settingsOpen ? "settings-button active" : "settings-button"}
-                    aria-label="Workspace settings"
-                    onClick={() => setSettingsOpen((value) => !value)}
-                  >
-                    <SettingsOutlinedIcon />
-                  </IconButton>
-                </Tooltip>
-              )}
-            </Stack>
+            <PageHeader
+              title={title}
+              overline={view === "workspace" ? `${workspace.role} workspace` : undefined}
+              actions={
+                view === "workspace" && (
+                  <Tooltip title="Workspace settings" arrow>
+                    <IconButton
+                      aria-label="Workspace settings"
+                      aria-pressed={settingsOpen}
+                      color={settingsOpen ? "primary" : "default"}
+                      onClick={() => setSettingsOpen((value) => !value)}
+                    >
+                      <SettingsOutlinedIcon />
+                    </IconButton>
+                  </Tooltip>
+                )
+              }
+            />
           )}
 
           {error && (
