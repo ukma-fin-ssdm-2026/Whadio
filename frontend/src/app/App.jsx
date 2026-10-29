@@ -50,7 +50,6 @@ export function App() {
   const [workspaceId, setWorkspaceId] = useState("");
   const [meetingId, setMeetingId] = useState("");
   const [meetingLink, setMeetingLink] = useState(() => readMeetingLink(window.location.href));
-  const [workspacesOpen, setWorkspacesOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState("all");
   const [meetingTab, setMeetingTab] = useState("notes");
@@ -196,7 +195,6 @@ export function App() {
     setMeetingId("");
     setQuery("");
     setStateFilter("all");
-    setWorkspacesOpen(true);
     setSettingsOpen(false);
     setView("workspace");
   };
@@ -204,7 +202,6 @@ export function App() {
   const openMeeting = (id, revisionId = null, tab = null) => {
     window.history.pushState({ tab }, "", meetingPath(window.location.href, id, revisionId));
     setMeetingLink({ ...readMeetingLink(window.location.href), tab });
-    setWorkspacesOpen(true);
   };
 
   const showRecording = async () => {
@@ -267,7 +264,6 @@ export function App() {
     setMeetingId(mapped.id);
     setMeetingTab("notes");
     setTranscriptQuery("");
-    setWorkspacesOpen(true);
     setSettingsOpen(false);
     setView("meeting");
     openMeeting(mapped.id);
@@ -295,32 +291,21 @@ export function App() {
         renderSidebar={(onNavigate) => (
           <Sidebar
             user={user}
-            workspaces={workspaces}
-            meetings={meetings}
-            activeView={view}
-            open={workspacesOpen}
-            onToggleWorkspaces={() => setWorkspacesOpen((value) => !value)}
+            workspaces={workspaces.map((item) => ({
+              ...item,
+              meetingCount: meetings.filter((meeting) => meeting.workspaceId === item.id).length,
+            }))}
+            page={view}
+            workspaceId={workspaceId}
             onHome={() => {
               clearMeetingLink();
               setSettingsOpen(false);
               setView("home");
-              onNavigate();
             }}
-            onMeetings={() => {
-              showMeetings();
-              onNavigate();
-            }}
-            onWorkspace={(id) => {
-              openWorkspace(id);
-              onNavigate();
-            }}
-            onMeeting={(id) => {
-              openMeeting(id);
-              onNavigate();
-            }}
-            selectedMeetingId={meetingId}
-            workspaceId={workspaceId}
+            onMeetings={showMeetings}
+            onWorkspace={openWorkspace}
             onSignOut={handleSignOut}
+            onNavigate={onNavigate}
           />
         )}
       >

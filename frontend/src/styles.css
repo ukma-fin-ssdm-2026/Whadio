@@ -9,35 +9,12 @@ button {
   font: inherit;
 }
 
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
-  height: 100%;
-  padding: 1.25rem;
-}
-
 .brand {
   font-size: 1.28rem !important;
   font-weight: 900 !important;
   letter-spacing: 0 !important;
 }
 
-.profile-card {
-  display: flex;
-  order: 3;
-  gap: 0.8rem;
-  align-items: center;
-  margin-top: auto;
-  padding: 1rem 0 0;
-  border: 0 !important;
-  border-top: 1px solid var(--mui-palette-divider) !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-}
-
-.avatar,
 .speaker-avatar,
 .workspace-icon {
   display: inline-flex;
@@ -49,92 +26,6 @@ button {
   color: var(--mui-palette-tint-contrastText);
   font: var(--mui-font-subtitle1);
   line-height: 1;
-}
-
-.avatar {
-  width: 2.5rem;
-  height: 2.5rem;
-  padding-top: 0.06rem;
-}
-
-.nav-button,
-.workspace-node {
-  justify-content: flex-start !important;
-  color: var(--mui-palette-text-primary) !important;
-  min-height: 2.45rem !important;
-  font: var(--mui-font-subtitle1) !important;
-}
-
-.workspace-node {
-  padding-left: 0.75rem !important;
-}
-
-.workspace-node .MuiButton-endIcon {
-  margin-left: auto;
-}
-
-.workspace-count {
-  color: var(--mui-palette-text-secondary);
-}
-
-.workspace-node .MuiButton-endIcon > .workspace-count {
-  font: var(--mui-font-caption);
-  line-height: 1;
-}
-
-.nav-button.active,
-.workspace-node.active {
-  background: var(--mui-palette-background-subtle) !important;
-}
-
-.workspace-tree {
-  padding-left: 0.35rem;
-}
-
-.transcript-links {
-  margin-left: 0.75rem;
-  padding-left: 0.6rem;
-  border-left: 1px solid var(--mui-palette-divider);
-}
-
-.transcript-link {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.5rem;
-  width: 100%;
-  min-height: 2.15rem;
-  padding: 0.42rem 0.4rem;
-  border: 0;
-  border-radius: 0.35rem;
-  background: transparent;
-  color: var(--mui-palette-text-primary);
-  text-align: left;
-  font: var(--mui-font-body2);
-}
-
-.transcript-link span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.transcript-link small {
-  color: var(--mui-palette-text-secondary);
-  text-transform: capitalize;
-}
-
-.nav-processing {
-  display: inline-flex;
-  gap: 0.35rem;
-  align-items: center;
-  color: var(--mui-palette-text-secondary);
-  text-transform: none !important;
-}
-
-.transcript-link:hover,
-.transcript-link.active {
-  background: var(--mui-palette-tint-main);
-  color: var(--mui-palette-tint-contrastText);
 }
 
 .auth-screen {
