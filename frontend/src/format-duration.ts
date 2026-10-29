@@ -1,4 +1,4 @@
-export function formatDuration(seconds) {
+export function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null) return "Duration pending";
 
   const hours = Math.floor(seconds / 3600);

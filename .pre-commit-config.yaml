@@ -81,11 +81,25 @@ repos:
         pass_filenames: false
         require_serial: true
 
+      - id: frontend-typecheck
+        name: tsc (frontend)
+        language: unsupported
+        entry: npm --prefix frontend run typecheck
+        files: ^frontend/
+        pass_filenames: false
+
+      - id: frontend-test
+        name: vitest (frontend)
+        language: unsupported
+        entry: npm --prefix frontend test
+        files: ^frontend/
+        pass_filenames: false
+
       - id: no-suppressions
         name: no inline suppression comments (configure exceptions in pyproject.toml or biome.jsonc)
         language: pygrep
-        entry: '#\s*(?:type:\s*ignore|pyright:\s*(?:ignore|basic)|ty:\s*ignore|noqa|nosec|ruff:\s*(?:noqa|ignore))|biome-ignore'
-        types_or: [python, pyi, javascript, jsx, css]
+        entry: '#\s*(?:type:\s*ignore|pyright:\s*(?:ignore|basic)|ty:\s*ignore|noqa|nosec|ruff:\s*(?:noqa|ignore))|biome-ignore|@ts-ignore|@ts-expect-error|@ts-nocheck'
+        types_or: [python, pyi, javascript, jsx, ts, tsx, css]
 
       - id: typos
         name: typos

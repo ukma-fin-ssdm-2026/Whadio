@@ -58,7 +58,8 @@ npm run dev
 ```
 
 Biome formats and lints the frontend: `npm run check` reports problems and `npm run check:fix`
-fixes what it can. The commit hook runs `check:fix` whenever a commit touches `frontend/`.
+fixes what it can. `npm test` runs the Vitest tests and `npm run typecheck` the TypeScript
+compiler. The commit hook runs all three whenever a commit touches `frontend/`.
 
 Open <http://localhost:5173>. Vite proxies `/api` requests to the local API, so browser sessions
 and uploads use the backend without a separate CORS setup. Set `VITE_API_BASE_URL` only when the

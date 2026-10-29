@@ -40,7 +40,6 @@ import {
   Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
 import { ApiError, api } from "./api";
 import { meetingLibraryPath, meetingPath, readMeetingLink } from "./meeting-link";
 import "./styles.css";
@@ -1465,8 +1464,4 @@ export function ExportControls({ meetingId, tab, transcript, notes, loading }) {
       )}
     </Box>
   );
-}
-
-if (!import.meta.env.SSR) {
-  createRoot(document.getElementById("root")).render(<App />);
 }

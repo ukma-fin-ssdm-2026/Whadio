@@ -51,6 +51,9 @@ jobs:
       - name: Run the commit-hook checks on all files
         run: uv run --frozen task check
 
+      - name: Build the frontend
+        run: npm --prefix frontend run build
+
       - name: Start the services and migrate the test database
         env:
           WHADIO_DB_HOST: 127.0.0.1
