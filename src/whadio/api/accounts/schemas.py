@@ -1,10 +1,10 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Self
+from typing import Annotated, ClassVar, Self
 from uuid import UUID
 
 from fastapi import Path
-from pydantic import BeforeValidator, EmailStr, Field, SecretStr, StringConstraints, model_validator
+from pydantic import ConfigDict, EmailStr, Field, SecretStr, StringConstraints, model_validator
 
 from ...accounts.enums import RegistrationMode
 from ..core.schemas import DisplayText, Input, Output
@@ -146,14 +146,13 @@ class WorkspaceRead(WorkspaceSummary):
     default_preset: Preset = Field(description="Notes preset used when none is chosen")
 
 
-def _preserve_secret_whitespace(value: str | SecretStr) -> SecretStr:
-    return value if isinstance(value, SecretStr) else SecretStr(value)
-
-
 class RegistrationComplete(Input):
+    # Per-field StringConstraints cannot preserve whitespace on SecretStr in both validation modes.
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
     token: SecretStr = Field(description="Secret from the registration link fragment")
     name: DisplayText = Field(min_length=1, max_length=100, description="Account display name")
-    password: Annotated[SecretStr, BeforeValidator(_preserve_secret_whitespace)] = Field(
+    password: SecretStr = Field(
         min_length=12,
         max_length=128,
         description="12 to 128 characters, a digit and an uppercase letter",

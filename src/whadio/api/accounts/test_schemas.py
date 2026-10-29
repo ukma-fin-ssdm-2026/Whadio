@@ -1,3 +1,4 @@
+import json
 from uuid import uuid4
 
 import pytest
@@ -96,12 +97,16 @@ def test_registration_password_accepts_only_12_to_128_characters(length: int) ->
 
 
 @pytest.mark.parametrize("length", [12, 128])
-def test_registration_password_keeps_surrounding_spaces(length: int) -> None:
+@pytest.mark.parametrize("from_json", [False, True])
+def test_registration_password_keeps_surrounding_spaces(length: int, *, from_json: bool) -> None:
     # Arrange
     password = " A1" + "x" * (length - 4) + " "
     # Act
-    payload = RegistrationComplete.model_validate(
-        {"token": uuid4().hex, "name": "Alice", "password": password, "accept_terms": True}
+    data = {"token": uuid4().hex, "name": "Alice", "password": password, "accept_terms": True}
+    payload = (
+        RegistrationComplete.model_validate_json(json.dumps(data))
+        if from_json
+        else RegistrationComplete.model_validate(data)
     )
     # Assert
     assert payload.password.get_secret_value() == password

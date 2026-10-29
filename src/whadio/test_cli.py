@@ -4,7 +4,7 @@ from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import create_engine, delete, insert, select
+from sqlalchemy import create_engine, delete, func, insert, select
 from typer.testing import CliRunner
 
 from .accounts.models import PendingRegistration, User
@@ -62,7 +62,9 @@ def test_registration_command_refuses_an_existing_account(
         result = CliRunner().invoke(app, ["links", "registration", "--email", email.upper()])
         with engine.connect() as connection:
             pending = connection.scalar(
-                select(PendingRegistration.email).where(PendingRegistration.email == email)
+                select(PendingRegistration.email).where(
+                    func.lower(PendingRegistration.email) == email
+                )
             )
         # Assert
         assert (result.exit_code, result.stdout, result.stderr.strip(), pending) == (
@@ -74,7 +76,7 @@ def test_registration_command_refuses_an_existing_account(
     finally:
         with engine.begin() as connection:
             connection.execute(
-                delete(PendingRegistration).where(PendingRegistration.email == email)
+                delete(PendingRegistration).where(func.lower(PendingRegistration.email) == email)
             )
             connection.execute(delete(User).where(User.email == email))
         engine.dispose()
