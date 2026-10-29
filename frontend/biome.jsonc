@@ -7,7 +7,8 @@
     "root": ".."
   },
   "files": {
-    "ignoreUnknown": true
+    "ignoreUnknown": true,
+    "includes": ["**", "!**/*.gen.ts"]
   },
   "formatter": {
     "enabled": true,
