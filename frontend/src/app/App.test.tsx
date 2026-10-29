@@ -2,8 +2,8 @@ import { render, screen } from "@testing-library/react";
 import { type UserEvent, userEvent } from "@testing-library/user-event";
 import { HttpResponse, type HttpResponseResolver, http, type JsonBodyType } from "msw";
 import { describe, expect, test } from "vitest";
+import { server } from "@/shared/testing/server";
 import { App } from "./App";
-import { server } from "./shared/testing/server";
 
 const DEEP_LINK = "/whadio/meetings/meeting?revision_id=original";
 const CURRENT_LINK = "/whadio/meetings/meeting";

@@ -1,7 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { expect, test } from "vitest";
-import { ExportControls, ExportDownloadMenu } from "./App";
+import { ExportControls } from "./ExportControls";
+import { ExportDownloadMenu } from "./ExportDownloadMenu";
 
 function renderControls(changes: Partial<ComponentProps<typeof ExportControls>> = {}) {
   return render(

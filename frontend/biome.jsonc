@@ -60,7 +60,7 @@
       }
     },
     {
-      "includes": ["src/App.jsx"],
+      "includes": ["src/features/meetings/detail/MeetingDetail.jsx"],
       "linter": {
         "rules": {
           "a11y": {
