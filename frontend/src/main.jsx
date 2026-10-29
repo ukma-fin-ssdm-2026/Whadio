@@ -89,6 +89,10 @@ function isProcessing(meeting) {
   return Object.hasOwn(IN_PROGRESS_LABELS, meeting.state);
 }
 
+export function matchesStateFilter(meeting, stateFilter) {
+  return stateFilter === "all" || meeting.state === stateFilter;
+}
+
 const theme = createTheme({
   palette: {
     background: { default: "#F6F4EF", paper: "#FFFFFF" },
@@ -217,11 +221,7 @@ export function App() {
 
     return source
       .filter((item) => item.title.toLowerCase().includes(query.toLowerCase()))
-      .filter(
-        (item) =>
-          stateFilter === "all" ||
-          (stateFilter === "queued" ? isProcessing(item) : item.state === stateFilter),
-      )
+      .filter((item) => matchesStateFilter(item, stateFilter))
       .sort((left, right) => new Date(right.date) - new Date(left.date));
   }, [meetings, query, stateFilter, view, workspaceId]);
 
@@ -1133,10 +1133,12 @@ export function MeetingLibrary({
               onChange={(event) => onStateFilter(event.target.value)}
             >
               <MenuItem value="all">All states</MenuItem>
+              {Object.entries(IN_PROGRESS_LABELS).map(([state, label]) => (
+                <MenuItem key={state} value={state}>
+                  {label}
+                </MenuItem>
+              ))}
               <MenuItem value="processed">Processed</MenuItem>
-              <MenuItem value="queued">Processing</MenuItem>
-              <MenuItem value="processing">Transcribing</MenuItem>
-              <MenuItem value="recording">Recording</MenuItem>
               <MenuItem value="failed">Failed</MenuItem>
             </Select>
           </FormControl>

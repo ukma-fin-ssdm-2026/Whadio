@@ -5,6 +5,7 @@ import { openAppEnvironment } from "./app-test-environment.js";
 let environment;
 let MeetingLibrary;
 let MeetingDetail;
+let matchesStateFilter;
 let act;
 let createElement;
 let createRoot;
@@ -12,7 +13,7 @@ let createRoot;
 before(async () => {
   environment = await openAppEnvironment("https://app.example/");
   ({ act, createElement, createRoot } = environment);
-  ({ MeetingLibrary, MeetingDetail } = environment.app);
+  ({ MeetingLibrary, MeetingDetail, matchesStateFilter } = environment.app);
 });
 
 after(async () => {
@@ -54,10 +55,11 @@ async function render(component, props) {
     });
   };
   await rerender();
-  return { container, rerender };
+  const unmount = () => act(async () => root.unmount());
+  return { container, rerender, unmount };
 }
 
-function renderLibrary(item) {
+function renderLibrary(item, changes = {}) {
   return render(MeetingLibrary, {
     title: "Workspace library",
     meetings: [item],
@@ -67,7 +69,19 @@ function renderLibrary(item) {
     onStateFilter: () => {},
     onMeeting: () => {},
     selectedMeetingId: "",
+    ...changes,
   });
+}
+
+async function openStateFilter(context, changes) {
+  const library = await renderLibrary(meeting(), changes);
+  context.after(library.unmount);
+  await act(async () => {
+    library.container
+      .querySelector('[role="combobox"]')
+      .dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true, button: 0 }));
+  });
+  return [...document.querySelectorAll('[role="option"]')];
 }
 
 function renderDetail(changes = {}) {
@@ -104,6 +118,52 @@ for (const [state, label] of [
     assert.equal(status?.textContent, label);
   });
 }
+
+test("state filter offers each in-progress state under its row label", async (context) => {
+  // Arrange
+  const options = await openStateFilter(context);
+
+  // Act
+  const labels = options.map((option) => option.textContent);
+
+  // Assert
+  assert.deepEqual(labels, [
+    "All states",
+    "Recording",
+    "Queued",
+    "Processing",
+    "Processed",
+    "Failed",
+  ]);
+});
+
+test("choosing Processing in the state filter selects the processing state", async (context) => {
+  // Arrange
+  const chosen = [];
+  const options = await openStateFilter(context, { onStateFilter: (state) => chosen.push(state) });
+
+  // Act
+  await act(async () => {
+    options.find((option) => option.textContent === "Processing").click();
+  });
+
+  // Assert
+  assert.deepEqual(chosen, ["processing"]);
+});
+
+test("processing state filter keeps only processing meetings", () => {
+  // Arrange
+  const meetings = ["recording", "queued", "processing"].map((state) => meeting({ state }));
+
+  // Act
+  const kept = meetings.filter((item) => matchesStateFilter(item, "processing"));
+
+  // Assert
+  assert.deepEqual(
+    kept.map((item) => item.state),
+    ["processing"],
+  );
+});
 
 test("in-progress library row offers no control besides opening the meeting", async () => {
   // Arrange

@@ -8,6 +8,7 @@ export async function openAppEnvironment(url) {
     document: dom.window.document,
     navigator: dom.window.navigator,
     HTMLElement: dom.window.HTMLElement,
+    DocumentFragment: dom.window.DocumentFragment,
     Node: dom.window.Node,
     sessionStorage: dom.window.sessionStorage,
     getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
