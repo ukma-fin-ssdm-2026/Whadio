@@ -4,9 +4,22 @@ from fastapi import APIRouter, Response
 
 from ...accounts import enums
 from ..composition import SignIns
-from ..core.errors import DOC_INVALID, DOC_MALFORMED, ErrorCode, error_responses
-from .auth import Bearer, Cookie, clear_session_cookie, set_session_cookie, user_read
-from .schemas import SessionKind, SessionRead, SignIn
+from ..core.errors import (
+    DOC_INVALID,
+    DOC_MALFORMED,
+    DOC_UNAUTHENTICATED,
+    ErrorCode,
+    error_responses,
+)
+from .auth import (
+    Bearer,
+    CaptureUser,
+    Cookie,
+    clear_session_cookie,
+    set_session_cookie,
+    user_read,
+)
+from .schemas import SessionKind, SessionRead, SignIn, UserRead
 
 router = APIRouter(tags=["accounts"])
 
@@ -18,8 +31,9 @@ router = APIRouter(tags=["accounts"])
     description=(
         "Public. With `kind: browser` (the default) sets an HttpOnly, SameSite=Strict "
         "session cookie valid for 14 days. With `kind: extension` returns a bearer token, "
-        "shown once and valid for 24 hours, that only the capture endpoints accept. Neither "
-        "is extended by use. A failure never says which credential was wrong."
+        "shown once and valid for 24 hours, that only the capture endpoints, `GET /users/me` "
+        "and sign-out accept. Neither is extended by use. A failure never says which "
+        "credential was wrong."
     ),
     response_description="The session that was started",
     responses=error_responses(
@@ -45,6 +59,17 @@ async def sign_in(payload: SignIn, response: Response, sign_ins: SignIns) -> Ses
         )
     set_session_cookie(response, signed.token, signed.expires_at)
     return SessionRead(kind=payload.kind, expires_at=signed.expires_at, user=user_read(signed.user))
+
+
+@router.get(
+    "/users/me",
+    summary="Get the signed-in user",
+    description="Returns the user behind the session cookie or the extension's bearer token.",
+    response_description="The signed-in user",
+    responses=error_responses({401: DOC_UNAUTHENTICATED}),
+)
+async def get_signed_in_user(user: CaptureUser) -> UserRead:
+    return user
 
 
 @router.delete(

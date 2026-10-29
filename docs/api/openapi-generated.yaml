@@ -32,9 +32,9 @@ paths:
       summary: Sign in
       description: 'Public. With `kind: browser` (the default) sets an HttpOnly, SameSite=Strict
         session cookie valid for 14 days. With `kind: extension` returns a bearer
-        token, shown once and valid for 24 hours, that only the capture endpoints
-        accept. Neither is extended by use. A failure never says which credential
-        was wrong.'
+        token, shown once and valid for 24 hours, that only the capture endpoints,
+        `GET /users/me` and sign-out accept. Neither is extended by use. A failure
+        never says which credential was wrong.'
       operationId: sign_in_api_v1_sessions_post
       requestBody:
         content:
@@ -76,6 +76,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/users/me:
+    get:
+      tags:
+      - accounts
+      summary: Get the signed-in user
+      description: Returns the user behind the session cookie or the extension's bearer
+        token.
+      operationId: get_signed_in_user_api_v1_users_me_get
+      responses:
+        '200':
+          description: The signed-in user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRead'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - sessionCookie: []
+      - extensionToken: []
   /api/v1/sessions/current:
     delete:
       tags:
@@ -5447,7 +5471,7 @@ components:
     extensionToken:
       type: http
       description: 'Token from `POST /api/v1/sessions` with `kind: extension`; accepted
-        only by the capture endpoints and by sign-out'
+        only by the capture endpoints, `GET /api/v1/users/me` and sign-out'
       scheme: bearer
 tags:
 - name: accounts
