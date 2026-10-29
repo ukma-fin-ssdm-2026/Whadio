@@ -35,9 +35,7 @@ export function MeetingLibrary({
           gap: 1.5,
         }}
       >
-        <Typography variant="h2" sx={{ fontSize: 22 }}>
-          {title}
-        </Typography>
+        <Typography variant="h2">{title}</Typography>
         <Stack direction="row" sx={{ gap: 1 }}>
           <TextField
             size="small"
@@ -81,7 +79,7 @@ export function MeetingLibrary({
                 <Box className="state-dot" />
               )}
               <Box sx={{ minWidth: 0 }}>
-                <Typography noWrap sx={{ fontWeight: 650 }}>
+                <Typography variant="subtitle1" noWrap>
                   {meeting.title}
                 </Typography>
                 <Typography color="textSecondary" noWrap>
@@ -97,7 +95,7 @@ export function MeetingLibrary({
         ))}
         {meetings.length === 0 && (
           <Card className="empty-state">
-            <Typography sx={{ fontWeight: 650 }}>No meetings found</Typography>
+            <Typography variant="subtitle1">No meetings found</Typography>
             <Typography color="textSecondary">Try another filter or upload a recording.</Typography>
           </Card>
         )}

@@ -46,9 +46,7 @@ export function MeetingDetail({
   const header = (
     <Stack direction={{ xs: "column", md: "row" }} sx={{ justifyContent: "space-between", gap: 2 }}>
       <Box>
-        <Typography variant="h1" sx={{ fontSize: { xs: 34, md: 48 } }}>
-          {meeting.title}
-        </Typography>
+        <Typography variant="h1">{meeting.title}</Typography>
         <Typography className="meeting-date" color="textSecondary">
           {formatDate(meeting.date)} · {meeting.source}
         </Typography>
@@ -85,9 +83,7 @@ export function MeetingDetail({
             >
               <CircularProgress size={22} thickness={5} />
               <Box>
-                <Typography sx={{ fontWeight: 650 }}>
-                  {IN_PROGRESS_LABELS[meeting.state]}
-                </Typography>
+                <Typography variant="subtitle1">{IN_PROGRESS_LABELS[meeting.state]}</Typography>
                 <Typography color="textSecondary">
                   Transcript and notes appear here when processing finishes.
                 </Typography>
@@ -124,7 +120,7 @@ export function MeetingDetail({
                   <Box className="play-circle">
                     <PlayArrowRoundedIcon fontSize="large" />
                   </Box>
-                  <Typography sx={{ fontWeight: 650 }}>{meeting.title}</Typography>
+                  <Typography variant="subtitle1">{meeting.title}</Typography>
                   <Typography>
                     {meeting.recordingAvailable
                       ? "Loading recording..."
@@ -143,7 +139,7 @@ export function MeetingDetail({
             )}
             <Stack sx={{ gap: 1.5 }}>
               <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
-                <Typography variant="h2" sx={{ fontSize: 22 }}>
+                <Typography variant="h2">
                   {transcript?.revision.revision_type === "original"
                     ? "Original transcript"
                     : transcript
@@ -178,7 +174,7 @@ export function MeetingDetail({
                   <Box key={item.id} className="transcript-item">
                     <Stack direction="row" sx={{ gap: 1, alignItems: "center" }}>
                       <Box className="speaker-avatar">{item.speaker.slice(-2)}</Box>
-                      <Typography sx={{ fontWeight: 650 }}>{item.speaker}</Typography>
+                      <Typography variant="subtitle1">{item.speaker}</Typography>
                       <Typography color="primary">{formatTimestamp(item.start_seconds)}</Typography>
                     </Stack>
                     <Typography color="textSecondary">{item.text}</Typography>

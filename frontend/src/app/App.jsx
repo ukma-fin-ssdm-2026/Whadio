@@ -331,11 +331,11 @@ export function App() {
             >
               <Box>
                 {view === "workspace" && (
-                  <Typography className="eyebrow">{workspace.role} workspace</Typography>
+                  <Typography variant="overline" className="eyebrow">
+                    {workspace.role} workspace
+                  </Typography>
                 )}
-                <Typography variant="h1" sx={{ fontSize: { xs: 36, md: 52 } }}>
-                  {title}
-                </Typography>
+                <Typography variant="h1">{title}</Typography>
               </Box>
               {view === "workspace" && (
                 <Tooltip title="Workspace settings" arrow>

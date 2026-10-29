@@ -56,7 +56,7 @@ button {
   border-radius: 50%;
   background: #dcefeb;
   color: #115e59;
-  font-weight: 700;
+  font: var(--mui-font-subtitle1);
   line-height: 1;
 }
 
@@ -71,9 +71,7 @@ button {
   justify-content: flex-start !important;
   color: #202522 !important;
   min-height: 2.45rem !important;
-  font-size: 0.98rem !important;
-  font-weight: 600 !important;
-  letter-spacing: 0 !important;
+  font: var(--mui-font-subtitle1) !important;
 }
 
 .workspace-node {
@@ -86,13 +84,11 @@ button {
 
 .workspace-count {
   color: #64706a;
-  font-size: 0.68rem;
-  font-weight: 600;
-  line-height: 1;
 }
 
 .workspace-node .MuiButton-endIcon > .workspace-count {
-  font-size: 0.68rem;
+  font: var(--mui-font-caption);
+  line-height: 1;
 }
 
 .nav-button.active,
@@ -122,7 +118,7 @@ button {
   background: transparent;
   color: #202522;
   text-align: left;
-  font-size: 0.92rem;
+  font: var(--mui-font-body2);
 }
 
 .transcript-link span {
@@ -193,7 +189,7 @@ button {
   min-height: 1.8rem;
   margin-bottom: 0.8rem;
   color: #64706a;
-  font-weight: 650;
+  font: var(--mui-font-body2);
 }
 
 .breadcrumbs button {
@@ -201,7 +197,7 @@ button {
   border: 0;
   background: transparent;
   color: #0f766e;
-  font-weight: 700;
+  font: var(--mui-font-subtitle2);
 }
 
 .page-header {
@@ -227,10 +223,6 @@ button {
   display: block;
   margin-bottom: 0.35rem;
   color: #64706a;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
 }
 
 .quiet-panel,
@@ -368,8 +360,7 @@ button {
   align-items: center;
   justify-self: end;
   color: #64706a;
-  font-size: 0.82rem;
-  font-weight: 600;
+  font: var(--mui-font-caption);
   white-space: nowrap;
 }
 
@@ -396,7 +387,6 @@ button {
 .notes-text,
 .action-list {
   color: #3f4944;
-  font-size: 1rem;
   line-height: 1.75;
 }
 
@@ -411,7 +401,6 @@ button {
 
 .meeting-date {
   margin-top: 0.65rem !important;
-  font-size: 0.95rem !important;
 }
 
 .meta-icon-button {
@@ -475,7 +464,7 @@ button {
 .speaker-avatar {
   width: 1.8rem;
   height: 1.8rem;
-  font-size: 0.75rem;
+  font: var(--mui-font-caption);
 }
 
 .transcript-item {

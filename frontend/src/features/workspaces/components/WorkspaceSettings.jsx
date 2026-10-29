@@ -8,7 +8,9 @@ export function WorkspaceSettings({ workspace, assistantSettings }) {
   return (
     <Card className="settings-panel">
       <Box className="settings-nav">
-        <Typography className="eyebrow">Settings</Typography>
+        <Typography variant="overline" className="eyebrow">
+          Settings
+        </Typography>
         <button
           className={section === "workspace" ? "settings-nav-item active" : "settings-nav-item"}
           type="button"
@@ -28,9 +30,7 @@ export function WorkspaceSettings({ workspace, assistantSettings }) {
       {section === "workspace" ? (
         <Stack className="settings-options" sx={{ gap: 1.25 }}>
           <Box>
-            <Typography variant="h2" sx={{ fontSize: 24 }}>
-              Workspace settings
-            </Typography>
+            <Typography variant="h2">Workspace settings</Typography>
             <Typography color="textSecondary">
               Configure processing defaults for {workspace.name}.
             </Typography>
@@ -42,7 +42,9 @@ export function WorkspaceSettings({ workspace, assistantSettings }) {
               sx={{ justifyContent: "space-between", gap: 2 }}
             >
               <Box>
-                <Typography sx={{ fontWeight: 650 }}>Notes provider</Typography>
+                <Typography variant="subtitle1" component="h3">
+                  Notes provider
+                </Typography>
                 <Typography color="textSecondary">
                   Whadio gemma-3-12b-it is used for generated notes.
                 </Typography>
@@ -57,7 +59,9 @@ export function WorkspaceSettings({ workspace, assistantSettings }) {
               sx={{ justifyContent: "space-between", gap: 2 }}
             >
               <Box>
-                <Typography sx={{ fontWeight: 650 }}>Default notes preset</Typography>
+                <Typography variant="subtitle1" component="h3">
+                  Default notes preset
+                </Typography>
                 <Typography color="textSecondary">
                   New uploads use the workspace notes preset.
                 </Typography>
