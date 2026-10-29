@@ -1,78 +1,67 @@
-import { Box, Card, Chip, Stack, Typography } from "@mui/material";
+import { Box, Chip, Divider, List, ListItemButton, Paper, Stack } from "@mui/material";
 import { useState } from "react";
 import { titleCase } from "@/shared/lib/format";
+import { SectionHeader } from "@/shared/ui/SectionHeader";
+import { SettingsRow } from "@/shared/ui/SettingsRow";
+
+const SECTIONS = [
+  ["workspace", "Workspace"],
+  ["assistant", "AI assistant"],
+];
 
 export function WorkspaceSettings({ workspace, assistantSettings }) {
   const [section, setSection] = useState("workspace");
 
   return (
-    <Card className="settings-panel">
-      <Box className="settings-nav">
-        <Typography variant="overline" className="eyebrow">
-          Settings
-        </Typography>
-        <button
-          className={section === "workspace" ? "settings-nav-item active" : "settings-nav-item"}
-          type="button"
-          onClick={() => setSection("workspace")}
-        >
-          Workspace
-        </button>
-        <button
-          className={section === "assistant" ? "settings-nav-item active" : "settings-nav-item"}
-          type="button"
-          onClick={() => setSection("assistant")}
-        >
-          AI assistant
-        </button>
+    <Paper variant="outlined" sx={{ display: "flex", flexDirection: { xs: "column", md: "row" } }}>
+      <List
+        component="nav"
+        aria-label="Settings sections"
+        sx={{
+          flexShrink: 0,
+          width: { md: 220 },
+          p: 1,
+          borderStyle: "solid",
+          borderColor: "divider",
+          borderWidth: { xs: "0 0 1px", md: "0 1px 0 0" },
+        }}
+      >
+        {SECTIONS.map(([value, label]) => (
+          <ListItemButton
+            key={value}
+            selected={section === value}
+            aria-current={section === value ? "true" : undefined}
+            onClick={() => setSection(value)}
+            sx={{ borderRadius: 1 }}
+          >
+            {label}
+          </ListItemButton>
+        ))}
+      </List>
+      <Box sx={{ flexGrow: 1, minWidth: 0, p: { xs: 2, md: 3 } }}>
+        {section === "workspace" ? (
+          <>
+            <SectionHeader
+              title="Workspace settings"
+              description={`Configure processing defaults for ${workspace.name}.`}
+            />
+            <Stack divider={<Divider />} sx={{ mt: 1 }}>
+              <SettingsRow
+                title="Notes provider"
+                description="Whadio gemma-3-12b-it is used for generated notes."
+                control={<Chip label={workspace.provider} variant="outlined" />}
+              />
+              <SettingsRow
+                title="Default notes preset"
+                description="New uploads use the workspace notes preset."
+                control={<Chip label={titleCase(workspace.preset)} variant="outlined" />}
+              />
+            </Stack>
+          </>
+        ) : (
+          assistantSettings
+        )}
       </Box>
-
-      {section === "workspace" ? (
-        <Stack className="settings-options" sx={{ gap: 1.25 }}>
-          <Box>
-            <Typography variant="h2">Workspace settings</Typography>
-            <Typography color="textSecondary">
-              Configure processing defaults for {workspace.name}.
-            </Typography>
-          </Box>
-
-          <Card className="settings-option-card">
-            <Stack
-              direction={{ xs: "column", md: "row" }}
-              sx={{ justifyContent: "space-between", gap: 2 }}
-            >
-              <Box>
-                <Typography variant="subtitle1" component="h3">
-                  Notes provider
-                </Typography>
-                <Typography color="textSecondary">
-                  Whadio gemma-3-12b-it is used for generated notes.
-                </Typography>
-              </Box>
-              <Chip label={workspace.provider} variant="outlined" />
-            </Stack>
-          </Card>
-
-          <Card className="settings-option-card">
-            <Stack
-              direction={{ xs: "column", md: "row" }}
-              sx={{ justifyContent: "space-between", gap: 2 }}
-            >
-              <Box>
-                <Typography variant="subtitle1" component="h3">
-                  Default notes preset
-                </Typography>
-                <Typography color="textSecondary">
-                  New uploads use the workspace notes preset.
-                </Typography>
-              </Box>
-              <Chip label={titleCase(workspace.preset)} variant="outlined" />
-            </Stack>
-          </Card>
-        </Stack>
-      ) : (
-        assistantSettings
-      )}
-    </Card>
+    </Paper>
   );
 }
