@@ -1,16 +1,7 @@
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
-import {
-  Box,
-  CircularProgress,
-  CssBaseline,
-  IconButton,
-  Stack,
-  ThemeProvider,
-  Tooltip,
-} from "@mui/material";
+import { Box, CircularProgress, IconButton, Stack, Tooltip } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api } from "@/api";
-import { theme } from "@/app/theme";
 import { McpKeySettings } from "@/features/accounts/components/McpKeySettings";
 import { SignIn } from "@/features/accounts/components/SignIn";
 import { ExportControls } from "@/features/export/components/ExportControls";
@@ -26,6 +17,7 @@ import { AppShell } from "./layout/AppShell";
 import { Breadcrumbs } from "./layout/Breadcrumbs";
 import { Sidebar } from "./layout/Sidebar";
 import { meetingLibraryPath, meetingPath, readMeetingLink } from "./navigation/meeting-link";
+import { AppProviders } from "./providers";
 import "@/styles.css";
 
 const USER_STORAGE_KEY = "whadio-user";
@@ -244,16 +236,20 @@ export function App() {
     await loadData();
   };
 
+  const endSession = useCallback(() => {
+    requestedMeetingId.current = "";
+    sessionStorage.removeItem(USER_STORAGE_KEY);
+    setUser(null);
+    setWorkspaces([]);
+    setMeetings([]);
+    setAuthStatus("signedOut");
+  }, []);
+
   const handleSignOut = async () => {
     try {
       await api.signOut();
     } finally {
-      requestedMeetingId.current = "";
-      sessionStorage.removeItem(USER_STORAGE_KEY);
-      setUser(null);
-      setWorkspaces([]);
-      setMeetings([]);
-      setAuthStatus("signedOut");
+      endSession();
     }
   };
 
@@ -271,8 +267,7 @@ export function App() {
 
   if (authStatus !== "signedIn") {
     return (
-      <ThemeProvider theme={theme}>
-        <CssBaseline enableColorScheme />
+      <AppProviders onUnauthorized={endSession}>
         {authStatus === "loading" ? (
           <Box className="auth-screen">
             <CircularProgress />
@@ -280,13 +275,12 @@ export function App() {
         ) : (
           <SignIn onSubmit={handleSignIn} externalError={error} />
         )}
-      </ThemeProvider>
+      </AppProviders>
     );
   }
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline enableColorScheme />
+    <AppProviders onUnauthorized={endSession}>
       <AppShell
         renderSidebar={(onNavigate) => (
           <Sidebar
@@ -403,6 +397,6 @@ export function App() {
           )}
         </Stack>
       </AppShell>
-    </ThemeProvider>
+    </AppProviders>
   );
 }
