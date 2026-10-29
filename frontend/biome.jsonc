@@ -59,7 +59,7 @@
       }
     },
     {
-      "includes": ["src/main.jsx"],
+      "includes": ["src/App.jsx"],
       "linter": {
         "rules": {
           "a11y": {

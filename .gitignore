@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 .env
 dist/
+coverage/
 *.db
 recordings/
 node_modules/
