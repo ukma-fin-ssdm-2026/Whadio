@@ -2,9 +2,7 @@ import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import KeyOutlinedIcon from "@mui/icons-material/KeyOutlined";
 import {
-  Box,
   Button,
-  Card,
   Chip,
   CircularProgress,
   Dialog,
@@ -14,6 +12,8 @@ import {
   FormControl,
   IconButton,
   InputLabel,
+  ListItem,
+  ListItemText,
   MenuItem,
   Select,
   Stack,
@@ -24,6 +24,10 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/api";
 import { formatDate } from "@/shared/lib/format";
+import { EmptyState } from "@/shared/ui/EmptyState";
+import { ListPanel } from "@/shared/ui/ListPanel";
+import { SectionHeader } from "@/shared/ui/SectionHeader";
+import { SettingsRow } from "@/shared/ui/SettingsRow";
 
 export function McpKeySettings() {
   const [keys, setKeys] = useState([]);
@@ -76,42 +80,40 @@ export function McpKeySettings() {
   };
 
   return (
-    <Stack className="settings-options" sx={{ gap: 1.25 }}>
-      <Box>
-        <Typography variant="h2">AI assistant access</Typography>
-        <Typography color="textSecondary">
-          Use a personal key to connect an assistant to meetings you can access.
-        </Typography>
-      </Box>
-
-      <Card className="settings-option-card">
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          sx={{ alignItems: { sm: "center" }, gap: 1.25 }}
-        >
-          <FormControl size="small" sx={{ minWidth: 180 }}>
-            <InputLabel>Expires</InputLabel>
-            <Select
-              label="Expires"
-              value={expiresInDays}
-              onChange={(event) => setExpiresInDays(event.target.value)}
+    <Stack sx={{ gap: 1.5 }}>
+      <SectionHeader
+        title="AI assistant access"
+        description="Use a personal key to connect an assistant to meetings you can access."
+      />
+      <SettingsRow
+        title="New key"
+        description="Choose when the key expires; its secret is shown once."
+        control={
+          <>
+            <FormControl size="small" sx={{ minWidth: 140 }}>
+              <InputLabel>Expires</InputLabel>
+              <Select
+                label="Expires"
+                value={expiresInDays}
+                onChange={(event) => setExpiresInDays(event.target.value)}
+              >
+                <MenuItem value="">Never</MenuItem>
+                <MenuItem value={30}>30 days</MenuItem>
+                <MenuItem value={90}>90 days</MenuItem>
+                <MenuItem value={365}>1 year</MenuItem>
+              </Select>
+            </FormControl>
+            <Button
+              variant="contained"
+              startIcon={<KeyOutlinedIcon />}
+              disabled={submitting}
+              onClick={createKey}
             >
-              <MenuItem value="">Never</MenuItem>
-              <MenuItem value={30}>30 days</MenuItem>
-              <MenuItem value={90}>90 days</MenuItem>
-              <MenuItem value={365}>1 year</MenuItem>
-            </Select>
-          </FormControl>
-          <Button
-            variant="contained"
-            startIcon={<KeyOutlinedIcon />}
-            disabled={submitting}
-            onClick={createKey}
-          >
-            {submitting ? "Creating..." : "Create key"}
-          </Button>
-        </Stack>
-      </Card>
+              {submitting ? "Creating..." : "Create key"}
+            </Button>
+          </>
+        }
+      />
 
       {error && (
         <Typography color="error" role="alert">
@@ -120,37 +122,45 @@ export function McpKeySettings() {
       )}
       {loading ? (
         <CircularProgress size={24} />
+      ) : keys.length === 0 ? (
+        <EmptyState title="No assistant keys yet" />
       ) : (
-        <Stack sx={{ gap: 1 }}>
-          {keys.length === 0 && (
-            <Typography color="textSecondary">No assistant keys yet.</Typography>
-          )}
+        <ListPanel>
           {keys.map((key) => (
-            <Box className="mcp-key-row" key={key.id}>
+            <ListItem
+              key={key.id}
+              secondaryAction={
+                key.is_active && (
+                  <Tooltip title="Revoke key" arrow>
+                    <IconButton
+                      edge="end"
+                      aria-label="Revoke key"
+                      onClick={() => revokeKey(key.id)}
+                    >
+                      <DeleteOutlineOutlinedIcon />
+                    </IconButton>
+                  </Tooltip>
+                )
+              }
+              sx={{ gap: 2, py: 1.5 }}
+            >
               <KeyOutlinedIcon color={key.is_active ? "primary" : "disabled"} />
-              <Box sx={{ minWidth: 0 }}>
-                <Typography variant="subtitle1">Key {key.id.slice(0, 8)}</Typography>
-                <Typography variant="body2" color="textSecondary">
-                  Created {formatDate(key.created_at)} ·{" "}
-                  {key.expires_at ? `Expires ${formatDate(key.expires_at)}` : "Never expires"}
-                </Typography>
-              </Box>
+              <ListItemText
+                primary={`Key ${key.id.slice(0, 8)}`}
+                secondary={`Created ${formatDate(key.created_at)} · ${
+                  key.expires_at ? `Expires ${formatDate(key.expires_at)}` : "Never expires"
+                }`}
+                slotProps={{ primary: { variant: "subtitle1" } }}
+              />
               <Chip
                 size="small"
                 label={key.is_active ? "Active" : key.revoked_at ? "Revoked" : "Expired"}
                 color={key.is_active ? "success" : "default"}
                 variant="outlined"
               />
-              {key.is_active && (
-                <Tooltip title="Revoke key" arrow>
-                  <IconButton aria-label="Revoke key" onClick={() => revokeKey(key.id)}>
-                    <DeleteOutlineOutlinedIcon />
-                  </IconButton>
-                </Tooltip>
-              )}
-            </Box>
+            </ListItem>
           ))}
-        </Stack>
+        </ListPanel>
       )}
 
       <Dialog open={Boolean(secret)} onClose={() => setSecret("")} fullWidth maxWidth="sm">
