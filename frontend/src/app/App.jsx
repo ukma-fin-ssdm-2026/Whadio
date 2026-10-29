@@ -3,7 +3,9 @@ import { Box, CircularProgress, IconButton, Stack, Tooltip } from "@mui/material
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api } from "@/api";
 import { McpKeySettings } from "@/features/accounts/components/McpKeySettings";
-import { SignIn } from "@/features/accounts/components/SignIn";
+import { SignInForm } from "@/features/accounts/components/SignInForm";
+import { SignOutButton } from "@/features/accounts/components/SignOutButton";
+import { clearSignedInUser, readSignedInUser } from "@/features/accounts/session-storage";
 import { ExportControls } from "@/features/export/components/ExportControls";
 import { MeetingDetail } from "@/features/meetings/detail/MeetingDetail";
 import { MeetingLibrary } from "@/features/meetings/library/MeetingLibrary";
@@ -20,17 +22,9 @@ import { meetingLibraryPath, meetingPath, readMeetingLink } from "./navigation/m
 import { AppProviders } from "./providers";
 import "@/styles.css";
 
-const USER_STORAGE_KEY = "whadio-user";
-
 export function App() {
   const [authStatus, setAuthStatus] = useState("loading");
-  const [user, setUser] = useState(() => {
-    try {
-      return JSON.parse(sessionStorage.getItem(USER_STORAGE_KEY));
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState(readSignedInUser);
   const [workspaces, setWorkspaces] = useState([]);
   const [meetings, setMeetings] = useState([]);
   const [error, setError] = useState("");
@@ -79,16 +73,18 @@ export function App() {
     setAuthStatus("signedIn");
   }, []);
 
-  useEffect(() => {
-    loadData().catch((caught) => {
-      if (caught instanceof ApiError && caught.status === 401) {
+  const loadSession = useCallback(
+    () =>
+      loadData().catch((caught) => {
+        if (!(caught instanceof ApiError && caught.status === 401)) setError(caught.message);
         setAuthStatus("signedOut");
-        return;
-      }
-      setError(caught.message);
-      setAuthStatus("signedOut");
-    });
-  }, [loadData]);
+      }),
+    [loadData],
+  );
+
+  useEffect(() => {
+    loadSession();
+  }, [loadSession]);
 
   useEffect(() => {
     if (
@@ -227,31 +223,21 @@ export function App() {
           ? (selectedMeeting?.title ?? "Meeting")
           : (workspace?.name ?? "Workspace");
 
-  const handleSignIn = async (email, password) => {
+  const handleSignedIn = (signedInUser) => {
     setError("");
-    const session = await api.signIn(email, password);
-    setUser(session.user);
-    sessionStorage.setItem(USER_STORAGE_KEY, JSON.stringify(session.user));
+    setUser(signedInUser);
     setAuthStatus("loading");
-    await loadData();
+    loadSession();
   };
 
   const endSession = useCallback(() => {
     requestedMeetingId.current = "";
-    sessionStorage.removeItem(USER_STORAGE_KEY);
+    clearSignedInUser();
     setUser(null);
     setWorkspaces([]);
     setMeetings([]);
     setAuthStatus("signedOut");
   }, []);
-
-  const handleSignOut = async () => {
-    try {
-      await api.signOut();
-    } finally {
-      endSession();
-    }
-  };
 
   const handleUpload = async (payload) => {
     const created = await api.uploadMeeting(workspaceId, payload);
@@ -273,7 +259,7 @@ export function App() {
             <CircularProgress />
           </Box>
         ) : (
-          <SignIn onSubmit={handleSignIn} externalError={error} />
+          <SignInForm onSignedIn={handleSignedIn} externalError={error} />
         )}
       </AppProviders>
     );
@@ -295,7 +281,7 @@ export function App() {
             }}
             onMeetings={showMeetings}
             onWorkspace={openWorkspace}
-            onSignOut={handleSignOut}
+            signOutAction={<SignOutButton onSignedOut={endSession} />}
             onNavigate={onNavigate}
           />
         )}
