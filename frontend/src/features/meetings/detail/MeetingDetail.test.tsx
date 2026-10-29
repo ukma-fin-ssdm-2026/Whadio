@@ -81,14 +81,32 @@ test("meeting header has no workspace access control", () => {
 });
 
 test("meeting header names the source as text beside the date", () => {
-  // Arrange
-  const { container } = renderDetail();
-
   // Act
-  const meta = container.querySelector(".meeting-date");
+  renderDetail();
 
   // Assert
-  expect(meta).toHaveTextContent(/ · Google Meet$/);
+  expect(screen.getByText(/^\w{3} \d+, \d{4}.* · Google Meet$/)).toBeInTheDocument();
+});
+
+test.for(["notes", "transcript", "recording"])(
+  "%s tab has the meeting title as its only first-level heading",
+  (tab) => {
+    // Act
+    renderDetail({ tab, transcript: transcript("edited") });
+
+    // Assert
+    expect(screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent)).toEqual([
+      "Weekly sync",
+    ]);
+  },
+);
+
+test("tab panel is labelled by the selected tab", () => {
+  // Act
+  renderDetail({ tab: "transcript", transcript: transcript("edited") });
+
+  // Assert
+  expect(screen.getByRole("tabpanel")).toHaveAccessibleName("Transcript");
 });
 
 test("queued meeting notes panel is headed Queued", () => {

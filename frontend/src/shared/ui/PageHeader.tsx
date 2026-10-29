@@ -4,10 +4,11 @@ import type { ReactNode } from "react";
 interface PageHeaderProps {
   title: string;
   overline?: string;
+  description?: string;
   actions?: ReactNode;
 }
 
-export function PageHeader({ title, overline, actions }: PageHeaderProps) {
+export function PageHeader({ title, overline, description, actions }: PageHeaderProps) {
   return (
     <Stack
       direction="row"
@@ -22,6 +23,7 @@ export function PageHeader({ title, overline, actions }: PageHeaderProps) {
         <Typography variant="h1" sx={{ overflowWrap: "anywhere" }}>
           {title}
         </Typography>
+        {description && <Typography color="textSecondary">{description}</Typography>}
       </Box>
       {actions && (
         <Stack direction="row" sx={{ gap: 1, alignItems: "center", flexShrink: 0 }}>
