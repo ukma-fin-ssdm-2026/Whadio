@@ -6,14 +6,14 @@ from enum import StrEnum
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from ..shared.pagination import ListWindow
 from .contracts import UserProfile
 from .enums import NotesTemplate, SessionKind, WorkspaceRole
-from .models import McpKey, Session, User, Workspace, WorkspaceMembership
+from .models import McpKey, PendingRegistration, Session, User, Workspace, WorkspaceMembership
 
 
 class IWorkspaceSettingsRepository(Protocol):
@@ -391,3 +391,87 @@ class WorkspaceRepository:
     async def remove(self, workspace_id: UUID) -> None:
         # Folders and memberships go with it through ON DELETE CASCADE.
         await self._session.execute(delete(Workspace).where(Workspace.workspace_id == workspace_id))
+
+
+# --- Registration ---
+
+
+class IRegistrationRepository(Protocol):
+    async def lock_email(self, email: str, /) -> None: ...
+
+    async def pending(self, registration_id: UUID, /) -> PendingRegistration | None: ...
+
+    async def issue(
+        self, email: str, token_hash: str, now: datetime, expires_at: datetime, /
+    ) -> UUID: ...
+
+    async def create_account(
+        self, email: str, name: str, password_hash: str, now: datetime, /
+    ) -> tuple[User, UUID]: ...
+
+
+class RegistrationRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session: AsyncSession = session
+
+    async def lock_email(self, email: str) -> None:
+        # A row lock cannot serialize first issuance: no pending row exists yet.
+        await self._session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(lower(:email), 0))"),
+            {"email": email},
+        )
+
+    async def pending(self, registration_id: UUID) -> PendingRegistration | None:
+        return await self._session.scalar(
+            select(PendingRegistration)
+            .where(PendingRegistration.pending_registration_id == registration_id)
+            .execution_options(populate_existing=True)
+        )
+
+    async def issue(self, email: str, token_hash: str, now: datetime, expires_at: datetime) -> UUID:
+        pending = await self._session.scalar(
+            select(PendingRegistration).where(
+                func.lower(PendingRegistration.email) == email.lower()
+            )
+        )
+        if pending is None:
+            pending = PendingRegistration(email=email)
+            self._session.add(pending)
+        pending.token_hash = token_hash
+        pending.created_at = now
+        pending.expires_at = expires_at
+        await self._session.flush()
+        return pending.pending_registration_id
+
+    async def create_account(
+        self, email: str, name: str, password_hash: str, now: datetime
+    ) -> tuple[User, UUID]:
+        await self._session.execute(
+            delete(PendingRegistration).where(
+                func.lower(PendingRegistration.email) == email.lower()
+            )
+        )
+        user = User(
+            email=email,
+            name=name,
+            password_hash=password_hash,
+            terms_accepted_at=now,
+            created_at=now,
+        )
+        self._session.add(user)
+        await self._session.flush()
+        workspace = Workspace(
+            name=name, default_template=NotesTemplate.DETAILED, is_personal=True, created_at=now
+        )
+        self._session.add(workspace)
+        await self._session.flush()
+        self._session.add(
+            WorkspaceMembership(
+                workspace_id=workspace.workspace_id,
+                user_id=user.user_id,
+                role=WorkspaceRole.OWNER,
+                joined_at=now,
+            )
+        )
+        await self._session.flush()
+        return user, workspace.workspace_id
