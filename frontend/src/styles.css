@@ -9,19 +9,12 @@ button {
   font: inherit;
 }
 
-.app-shell {
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  min-height: 100vh;
-}
-
 .sidebar {
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
+  height: 100%;
   padding: 1.25rem;
-  border-right: 1px solid var(--mui-palette-divider);
-  background: rgb(var(--mui-palette-background-paperChannel) / 80%);
 }
 
 .brand {
@@ -142,11 +135,6 @@ button {
 .transcript-link.active {
   background: var(--mui-palette-tint-main);
   color: var(--mui-palette-tint-contrastText);
-}
-
-.main {
-  min-width: 0;
-  padding: 1.25rem clamp(1rem, 3vw, 2.5rem) 2rem;
 }
 
 .auth-screen {
@@ -482,14 +470,8 @@ button {
 }
 
 @media (max-width: 980px) {
-  .app-shell,
   .recording-grid {
     grid-template-columns: 1fr;
-  }
-
-  .sidebar {
-    border-right: 0;
-    border-bottom: 1px solid var(--mui-palette-divider);
   }
 
   .workspace-card,
