@@ -31,9 +31,15 @@ tasks:
       - uv run --frozen pre-commit run --all-files --show-diff-on-failure
 
   test:
-    desc: Run the whole test suite, slow tests included
+    desc: Run the whole test suite, slow tests and the frontend's tests included
     cmds:
       - uv run --frozen pytest {{.CLI_ARGS}}
+      - task: frontend:test
+
+  frontend:test:
+    desc: Run the frontend's tests
+    cmds:
+      - npm --prefix frontend test
 
   test:cov:
     desc: Run the suite CI runs, with the line and branch coverage gate from pyproject.toml

@@ -117,7 +117,7 @@ presigned links are signed for `http://seaweedfs:8333`.
 A change is done when `uv run task check` and `uv run task test` pass and a teammate has approved
 the pull request. The commit hook runs the same checks as `task check`, in this order, and stops at
 the first failure: branch name, file hygiene, gitleaks, `uv lock --check`, `ruff check --fix` and
-`ruff format` on the whole project, `biome check --write` on the frontend, the suppression ban,
+`ruff format` on the whole project, Biome, `tsc` and Vitest on the frontend, the suppression ban,
 typos, schema and workflow checks, import-linter, ty, basedpyright, Bandit, deptry, the OpenAPI
 drift check and the fast tests. The commit message is checked last. `git push` runs
 `uv run task test:cov`: the whole test suite but the `models` tests, failing below 85% line and
@@ -129,9 +129,9 @@ On a pull request, CI checks the title and every commit message against the comm
 - Never bypass the checks: no `--no-verify`, no `SKIP=`. If a check is wrong, fix it in its own
   pull request.
 - Never add an inline suppression: `# type: ignore`, `# pyright: ignore`, `# ty: ignore`,
-  `# noqa`, `# nosec` and `biome-ignore` are refused. Fix the code. A genuine false positive gets
-  a scoped exception in `pyproject.toml` or `frontend/biome.jsonc` with a one-line reason, and the
-  pull request explains it.
+  `# noqa`, `# nosec`, `biome-ignore`, `@ts-ignore`, `@ts-expect-error` and `@ts-nocheck` are
+  refused. Fix the code. A genuine false positive gets a scoped exception in `pyproject.toml` or
+  `frontend/biome.jsonc` with a one-line reason, and the pull request explains it.
 - When a hook changes files (ruff, Biome, whitespace, the OpenAPI specification), review the
   change, stage it and commit again.
 - Ruff's and Biome's fixes conflict with a partly staged file: run `uv run task fix` and stage the
@@ -174,6 +174,7 @@ Tests use pytest:
   happy path.
 - Mark a test that needs running services or models `@pytest.mark.slow`: the commit hook skips it;
   the push hook and CI run it.
+- Frontend tests use Vitest and Testing Library the same way: `App.test.tsx` next to `App.tsx`.
 
 ## Git and pull requests
 
