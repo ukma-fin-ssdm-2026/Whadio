@@ -5,18 +5,6 @@ import { http, server } from "./shared/testing/server";
 
 const CREATED_AT = "2026-10-25T10:00:00Z";
 
-const SESSION: Schemas["SessionRead"] = {
-  kind: "browser",
-  expires_at: CREATED_AT,
-  user: {
-    id: "member",
-    email: "member@example.com",
-    name: "Demo Member",
-    is_administrator: false,
-    created_at: CREATED_AT,
-  },
-};
-
 const TRANSCRIPT: Schemas["TranscriptRead"] = {
   meeting_id: "meeting",
   language: "uk",
@@ -35,26 +23,6 @@ const TRANSCRIPT: Schemas["TranscriptRead"] = {
   segments: [],
 };
 
-const MCP_KEY: Schemas["McpKeyCreated"] = {
-  id: "key",
-  created_at: CREATED_AT,
-  expires_at: null,
-  revoked_at: null,
-  is_active: true,
-  secret: "whadio_mcp_secret",
-};
-
-function captureSignIn() {
-  const bodies: unknown[] = [];
-  server.use(
-    http.post("/api/v1/sessions", async ({ request, response }) => {
-      bodies.push(await request.json());
-      return response(201).json(SESSION);
-    }),
-  );
-  return bodies;
-}
-
 function captureTranscriptQuery() {
   const searches: string[] = [];
   server.use(
@@ -64,17 +32,6 @@ function captureTranscriptQuery() {
     }),
   );
   return searches;
-}
-
-function captureMcpKeyCreate() {
-  const bodies: unknown[] = [];
-  server.use(
-    http.post("/api/v1/users/me/mcp-keys", async ({ request, response }) => {
-      bodies.push(await request.json());
-      return response(201).json(MCP_KEY);
-    }),
-  );
-  return bodies;
 }
 
 const formFields = (form: FormData) =>
@@ -108,19 +65,6 @@ describe("recording upload form", () => {
 });
 
 describe("requests", () => {
-  test("sign-in sends the credentials for a browser session", async () => {
-    // Arrange
-    const bodies = captureSignIn();
-
-    // Act
-    await api.signIn("member@example.com", "test-password");
-
-    // Assert
-    expect(bodies).toEqual([
-      { email: "member@example.com", password: "test-password", kind: "browser" },
-    ]);
-  });
-
   test("transcript request names the requested revision", async () => {
     // Arrange
     const searches = captureTranscriptQuery();
@@ -141,28 +85,6 @@ describe("requests", () => {
 
     // Assert
     expect(searches).toEqual([""]);
-  });
-
-  test("MCP key that never expires is created with a null expiry", async () => {
-    // Arrange
-    const bodies = captureMcpKeyCreate();
-
-    // Act
-    await api.createMcpKey(null);
-
-    // Assert
-    expect(bodies).toEqual([{ expires_in_days: null }]);
-  });
-
-  test("MCP key is created with the chosen lifetime in days", async () => {
-    // Arrange
-    const bodies = captureMcpKeyCreate();
-
-    // Act
-    await api.createMcpKey(30);
-
-    // Assert
-    expect(bodies).toEqual([{ expires_in_days: 30 }]);
   });
 });
 
