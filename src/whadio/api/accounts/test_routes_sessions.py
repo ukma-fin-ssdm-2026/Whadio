@@ -1,4 +1,6 @@
-from uuid import uuid4
+import hashlib
+from datetime import UTC, datetime, timedelta
+from uuid import UUID, uuid4
 
 import pytest
 from httpx import Response
@@ -6,8 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from conftest import AsyncDatabase
 
+from ...accounts.enums import SessionKind
+from ...accounts.models import Session
 from ..core.errors import ErrorResponse
-from .schemas import SessionRead
+from .schemas import SessionRead, UserRead
 
 pytestmark = pytest.mark.slow
 
@@ -153,6 +157,93 @@ def test_sign_in_with_an_invalid_address_is_a_validation_error(
     found = async_database.run(scenario)
     # Assert
     assert found == (422, "VALIDATION_ERROR")
+
+
+def test_signed_in_user_is_returned_for_the_session_cookie(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, UUID, UUID]:
+        user = await AsyncDatabase.add_account(session, PASSWORD)
+        async with AsyncDatabase.api_client(session) as client:
+            await client.post("/api/v1/sessions", json={"email": user.email, "password": PASSWORD})
+            # Act
+            response = await client.get("/api/v1/users/me")
+            found = UserRead.model_validate_json(response.content).id
+            return response.status_code, found, user.user_id
+
+    status, found, expected = async_database.run(scenario)
+    # Assert
+    assert (status, found) == (200, expected)
+
+
+def test_signed_in_user_is_returned_for_the_extension_token(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, UUID, UUID]:
+        user = await AsyncDatabase.add_account(session, PASSWORD)
+        async with AsyncDatabase.api_client(session) as client:
+            signed = await client.post(
+                "/api/v1/sessions",
+                json={"email": user.email, "password": PASSWORD, "kind": "extension"},
+            )
+            token = SessionRead.model_validate_json(signed.content).token
+            # Act
+            response = await client.get(
+                "/api/v1/users/me", headers={"Authorization": f"Bearer {token}"}
+            )
+            found = UserRead.model_validate_json(response.content).id
+            return response.status_code, found, user.user_id
+
+    status, found, expected = async_database.run(scenario)
+    # Assert
+    assert (status, found) == (200, expected)
+
+
+def test_signed_in_user_without_a_session_is_unauthenticated(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, str]:
+        async with AsyncDatabase.api_client(session) as client:
+            # Act
+            response = await client.get("/api/v1/users/me")
+            return response.status_code, error_code(response)
+
+    found = async_database.run(scenario)
+    # Assert
+    assert found == (401, "UNAUTHENTICATED")
+
+
+def test_signed_in_user_with_an_expired_session_is_unauthenticated(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, str]:
+        user = await AsyncDatabase.add_account(session, PASSWORD)
+        token = uuid4().hex
+        now = datetime.now(UTC)
+        session.add(
+            Session(
+                user_id=user.user_id,
+                kind=SessionKind.BROWSER,
+                token_hash=hashlib.sha256(token.encode()).hexdigest(),
+                created_at=now - timedelta(days=15),
+                expires_at=now - timedelta(days=1),
+            )
+        )
+        await session.flush()
+        async with AsyncDatabase.api_client(session) as client:
+            # Act
+            response = await client.get(
+                "/api/v1/users/me", headers={"Cookie": f"whadio_session={token}"}
+            )
+            return response.status_code, error_code(response)
+
+    found = async_database.run(scenario)
+    # Assert
+    assert found == (401, "UNAUTHENTICATED")
 
 
 def error_code(response: Response) -> str:
