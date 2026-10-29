@@ -1,20 +1,17 @@
 import { API_ORIGIN, apiClient } from "./shared/api/client";
 import type { operations } from "./shared/api/schema.gen";
 import type {
-  McpKeyCreated,
-  McpKeyPage,
   MeetingPage,
   MeetingRead,
   NotePage,
   PlaybackLink,
   Schemas,
-  SessionRead,
   TranscriptRead,
   WorkspacePage,
   WorkspaceRead,
   WorkspaceUpdate,
 } from "./shared/api/types";
-import { expectNoContent, unwrap } from "./shared/api/unwrap";
+import { unwrap } from "./shared/api/unwrap";
 
 export { ApiError } from "./shared/api/errors";
 
@@ -40,16 +37,6 @@ const meetingUrl = (meetingId: string) =>
   `${API_ORIGIN}/api/v1/meetings/${encodeURIComponent(meetingId)}`;
 
 export const api = {
-  signIn(email: string, password: string): Promise<SessionRead> {
-    return unwrap(
-      apiClient.POST("/api/v1/sessions", { body: { email, password, kind: "browser" } }),
-    );
-  },
-
-  signOut(): Promise<void> {
-    return expectNoContent(apiClient.DELETE("/api/v1/sessions/current"));
-  },
-
   listWorkspaces(): Promise<WorkspacePage> {
     return unwrap(apiClient.GET("/api/v1/workspaces", { params: { query: PAGE } }));
   },
@@ -130,24 +117,6 @@ export const api = {
         params: { path: { workspace_id: workspaceId } },
         body: { file, name },
         bodySerializer: recordingForm,
-      }),
-    );
-  },
-
-  listMcpKeys(): Promise<McpKeyPage> {
-    return unwrap(apiClient.GET("/api/v1/users/me/mcp-keys", { params: { query: PAGE } }));
-  },
-
-  createMcpKey(expiresInDays: number | null): Promise<McpKeyCreated> {
-    return unwrap(
-      apiClient.POST("/api/v1/users/me/mcp-keys", { body: { expires_in_days: expiresInDays } }),
-    );
-  },
-
-  revokeMcpKey(keyId: string): Promise<void> {
-    return expectNoContent(
-      apiClient.DELETE("/api/v1/users/me/mcp-keys/{key_id}", {
-        params: { path: { key_id: keyId } },
       }),
     );
   },
