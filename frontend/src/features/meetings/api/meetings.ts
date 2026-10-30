@@ -33,9 +33,8 @@ function fetchMeetingPage(workspaceId: string, name: string, cursor: string, sig
   );
 }
 
-export const pollWhileInProgress = (
-  items: Pick<Schemas["MeetingSummary"], "processing_state">[],
-) => (items.some((item) => isInProgress(item.processing_state)) ? POLL_INTERVAL_MS : false);
+const pollWhileInProgress = (items: Pick<Schemas["MeetingSummary"], "processing_state">[]) =>
+  items.some((item) => isInProgress(item.processing_state)) ? POLL_INTERVAL_MS : false;
 
 export const meetingQueries = {
   list: (workspaceId: string, name = "") =>

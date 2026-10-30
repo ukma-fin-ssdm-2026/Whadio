@@ -6,6 +6,7 @@ type ProcessingState = Schemas["ProcessingState"];
 type InProgressState = Exclude<ProcessingState, "processed" | "failed">;
 
 export type StateFilter = "all" | ProcessingState;
+export type MeetingTab = "notes" | "transcript" | "recording";
 
 export interface Meeting {
   id: string;
@@ -42,7 +43,7 @@ export const IN_PROGRESS_LABELS: Record<InProgressState, string> = {
   processing: "Processing",
 };
 
-export function isInProgress(state: ProcessingState): boolean {
+export function isInProgress(state: ProcessingState): state is InProgressState {
   return Object.hasOwn(IN_PROGRESS_LABELS, state);
 }
 

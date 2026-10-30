@@ -60,7 +60,7 @@
       }
     },
     {
-      "includes": ["src/features/meetings/detail/MeetingDetail.jsx"],
+      "includes": ["src/features/meetings/detail/RecordingPlayer.tsx"],
       "linter": {
         "rules": {
           "a11y": {
