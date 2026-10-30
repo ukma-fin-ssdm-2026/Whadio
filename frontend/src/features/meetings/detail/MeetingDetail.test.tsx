@@ -3,21 +3,13 @@ import { userEvent } from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { expect, test } from "vitest";
 import { ExportControls } from "@/features/export/components/ExportControls";
+import type { Schemas } from "@/shared/api/types";
+import { meetingRead } from "@/shared/testing/fixtures";
+import { mapMeeting } from "../model";
 import { MeetingDetail } from "./MeetingDetail";
 
-function meeting(changes: Record<string, string> = {}) {
-  return {
-    id: "meeting",
-    workspaceId: "workspace",
-    title: "Weekly sync",
-    date: "2026-10-25T10:00:00Z",
-    state: "processed",
-    duration: "5s",
-    source: "Google Meet",
-    recordingAvailable: false,
-    failureReason: null,
-    ...changes,
-  };
+function meeting(changes: Partial<Schemas["MeetingRead"]> = {}) {
+  return mapMeeting(meetingRead(changes));
 }
 
 function transcript(revisionId: string) {
@@ -111,7 +103,10 @@ test("tab panel is labelled by the selected tab", () => {
 
 test("queued meeting notes panel is headed Queued", () => {
   // Arrange
-  const { container } = renderDetail({ meeting: meeting({ state: "queued" }), notes: null });
+  const { container } = renderDetail({
+    meeting: meeting({ processing_state: "queued" }),
+    notes: null,
+  });
 
   // Act
   const heading = container.querySelector(".processing-panel .MuiTypography-subtitle1");
@@ -122,7 +117,10 @@ test("queued meeting notes panel is headed Queued", () => {
 
 test("in-progress notes panel offers no control", () => {
   // Arrange
-  const { container } = renderDetail({ meeting: meeting({ state: "queued" }), notes: null });
+  const { container } = renderDetail({
+    meeting: meeting({ processing_state: "queued" }),
+    notes: null,
+  });
 
   // Act
   const controls = container.querySelectorAll(`.processing-panel :is(${interactive})`);
