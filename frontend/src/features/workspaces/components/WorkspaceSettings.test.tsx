@@ -159,3 +159,15 @@ test("a member sees the preset without a control", async () => {
   // Assert
   expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
 });
+
+test("settings have no workspace access switch", async () => {
+  // Arrange
+  serveWorkspace();
+
+  // Act
+  renderSettings();
+  await screen.findByRole("heading", { level: 2 });
+
+  // Assert
+  expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+});
