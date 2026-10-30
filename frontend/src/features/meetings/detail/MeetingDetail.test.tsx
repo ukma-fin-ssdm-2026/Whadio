@@ -201,6 +201,24 @@ test("a processed meeting loads its notes", async () => {
   expect(await screen.findByText("Saved notes")).toBeInTheDocument();
 });
 
+test("notes render as Markdown, without their markup characters", async () => {
+  // Arrange
+  serveContent();
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}/notes", ({ response }) =>
+      response(200).json(page([noteRead({ content: "## Decisions\n\n- Ship it" })])),
+    ),
+  );
+
+  // Act
+  renderDetail();
+
+  // Assert
+  expect(await screen.findByRole("heading", { name: "Decisions" })).toHaveTextContent(
+    /^Decisions$/,
+  );
+});
+
 test("a failed meeting explains its failure on the notes tab", () => {
   // Arrange
   serveContent();
