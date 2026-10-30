@@ -10,6 +10,7 @@ from . import meta
 from .access_policy import routes as access_routes
 from .accounts import (
     routes_instance,
+    routes_invitations,
     routes_mcp_keys,
     routes_password_resets,
     routes_registration,
@@ -108,6 +109,7 @@ def create_app(
         routes_password_resets.router,
         routes_sessions.router,
         routes_mcp_keys.router,
+        routes_invitations.router,
         routes_workspaces.router,
         meeting_routes.router,
         routes_content.router,

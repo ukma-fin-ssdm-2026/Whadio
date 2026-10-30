@@ -25,6 +25,7 @@ from ..accounts.enums import NotesTemplate, RegistrationMode
 from ..accounts.password_resets import PasswordResetService
 from ..accounts.passwords import Argon2PasswordHasher
 from ..accounts.repositories import (
+    InvitationRepository,
     McpKeyRepository,
     MembershipRepository,
     RegistrationRepository,
@@ -34,6 +35,7 @@ from ..accounts.repositories import (
 )
 from ..accounts.reset_repository import PasswordResetRepository
 from ..accounts.services import (
+    InvitationService,
     McpKeyService,
     RegistrationService,
     SignInService,
@@ -515,6 +517,17 @@ def workspace_service(session: Session) -> WorkspaceService:
 
 
 Workspaces = Annotated[WorkspaceService, Depends(workspace_service)]
+
+
+def invitation_service(session: Session) -> InvitationService:
+    return InvitationService(
+        InvitationRepository(session),
+        WorkspaceMembershipService(MembershipRepository(session)),
+        AuditWriter(session),
+    )
+
+
+Invitations = Annotated[InvitationService, Depends(invitation_service)]
 
 
 def capture_storage() -> IChunkStorage:

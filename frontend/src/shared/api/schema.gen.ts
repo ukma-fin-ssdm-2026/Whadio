@@ -148,6 +148,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_id}/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List pending invitations
+         * @description Moderator or Owner only. Lists pending invitations newest first. Secrets and links are never returned.
+         */
+        get: operations["list_invitations_api_v1_workspaces__workspace_id__invitations_get"];
+        put?: never;
+        /**
+         * Invite a workspace member
+         * @description Moderator or Owner only. Creates a seven-day, single-use invitation. Issuing another pending invitation to the same email replaces it and invalidates its old link.
+         */
+        post: operations["create_invitation_api_v1_workspaces__workspace_id__invitations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/invitations/{invitation_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel an invitation
+         * @description Moderator or Owner only. Cancels a pending invitation and invalidates its link.
+         */
+        post: operations["cancel_invitation_api_v1_workspaces__workspace_id__invitations__invitation_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces": {
         parameters: {
             query?: never;
@@ -1030,7 +1074,7 @@ export interface components {
          * ErrorCode
          * @enum {string}
          */
-        ErrorCode: "NO_NOTES" | "INTEGRATION_UNAVAILABLE" | "TRANSCRIPT_EXISTS" | "ALREADY_PROCESSED" | "FOLDER_RECOVERY_CONFLICT" | "DEFAULT_FOLDER" | "FOLDER_EXISTS" | "TERM_EXISTS" | "STALE_REVISION" | "LINK_INVALID" | "ACCESS_REQUEST_EXISTS" | "ALREADY_HAS_ACCESS" | "ACCESS_REQUEST_NOT_PENDING" | "SHARE_ALREADY_BOUND" | "SHARE_REVOKED" | "MALFORMED_REQUEST" | "VALIDATION_ERROR" | "UNAUTHENTICATED" | "INVALID_CREDENTIALS" | "INSUFFICIENT_ROLE" | "NOT_FOUND" | "METHOD_NOT_ALLOWED" | "PERSONAL_WORKSPACE" | "NOT_TRANSCRIBED" | "NOTES_IN_PROGRESS" | "RECORDING_NOT_READY" | "RECORDING_DELETED" | "REGENERATION_LIMIT" | "CHUNK_MISMATCH" | "CAPTURE_CLOSED" | "MISSING_CHUNKS" | "EMPTY_CAPTURE" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "RATE_LIMITED" | "HTTP_ERROR" | "INTERNAL_ERROR";
+        ErrorCode: "NO_NOTES" | "INTEGRATION_UNAVAILABLE" | "TRANSCRIPT_EXISTS" | "ALREADY_PROCESSED" | "FOLDER_RECOVERY_CONFLICT" | "DEFAULT_FOLDER" | "FOLDER_EXISTS" | "TERM_EXISTS" | "STALE_REVISION" | "LINK_INVALID" | "ACCESS_REQUEST_EXISTS" | "ALREADY_HAS_ACCESS" | "ACCESS_REQUEST_NOT_PENDING" | "SHARE_ALREADY_BOUND" | "SHARE_REVOKED" | "MALFORMED_REQUEST" | "VALIDATION_ERROR" | "UNAUTHENTICATED" | "INVALID_CREDENTIALS" | "INSUFFICIENT_ROLE" | "NOT_FOUND" | "METHOD_NOT_ALLOWED" | "PERSONAL_WORKSPACE" | "ALREADY_MEMBER" | "INVITATION_LIMIT" | "INVITATION_COOLDOWN" | "INVITATION_NOT_PENDING" | "NOT_TRANSCRIBED" | "NOTES_IN_PROGRESS" | "RECORDING_NOT_READY" | "RECORDING_DELETED" | "REGENERATION_LIMIT" | "CHUNK_MISMATCH" | "CAPTURE_CLOSED" | "MISSING_CHUNKS" | "EMPTY_CAPTURE" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "RATE_LIMITED" | "HTTP_ERROR" | "INTERNAL_ERROR";
         /** ErrorDetail */
         ErrorDetail: {
             /**
@@ -1143,6 +1187,103 @@ export interface components {
              */
             api_version: string;
         };
+        /** InvitationCreate */
+        InvitationCreate: {
+            /**
+             * Email
+             * Format: email
+             * @description Email address to invite
+             * @example bob@whadio.dev
+             */
+            email: string;
+            /** @description Workspace role granted when the invitation is accepted */
+            role: components["schemas"]["InvitedRole"];
+        };
+        /** InvitationCreated */
+        InvitationCreated: {
+            /**
+             * Id
+             * Format: uuid
+             * @description Invitation identifier
+             */
+            id: string;
+            /**
+             * Email
+             * @description Invited email address
+             */
+            email: string;
+            /** @description Role offered by this invitation */
+            role: components["schemas"]["InvitedRole"];
+            /** @description Current invitation state */
+            status: components["schemas"]["InvitationState"];
+            /**
+             * Created At
+             * Format: date-time
+             * @description When this invitation was most recently issued
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             * @description When this invitation becomes unusable
+             */
+            expires_at: string;
+            /**
+             * Link Active
+             * @description Whether the link can currently be accepted, including inviter authority
+             */
+            link_active: boolean;
+            /**
+             * Link
+             * @description One-time invitation link in invite-only mode; never returned by list
+             */
+            link: string | null;
+        };
+        /** InvitationRead */
+        InvitationRead: {
+            /**
+             * Id
+             * Format: uuid
+             * @description Invitation identifier
+             */
+            id: string;
+            /**
+             * Email
+             * @description Invited email address
+             */
+            email: string;
+            /** @description Role offered by this invitation */
+            role: components["schemas"]["InvitedRole"];
+            /** @description Current invitation state */
+            status: components["schemas"]["InvitationState"];
+            /**
+             * Created At
+             * Format: date-time
+             * @description When this invitation was most recently issued
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             * @description When this invitation becomes unusable
+             */
+            expires_at: string;
+            /**
+             * Link Active
+             * @description Whether the link can currently be accepted, including inviter authority
+             */
+            link_active: boolean;
+        };
+        /**
+         * InvitationState
+         * @enum {string}
+         */
+        InvitationState: "pending" | "cancelled";
+        /**
+         * InvitedRole
+         * @enum {string}
+         */
+        InvitedRole: "member" | "moderator";
         /** JobCounts */
         JobCounts: {
             /** @description Job type */
@@ -1613,6 +1754,15 @@ export interface components {
              * @description Items of this page, in the documented order
              */
             items: components["schemas"]["FolderRead"][];
+            pagination: components["schemas"]["PageInfo"];
+        };
+        /** Page[InvitationRead] */
+        Page_InvitationRead_: {
+            /**
+             * Items
+             * @description Items of this page, in the documented order
+             */
+            items: components["schemas"]["InvitationRead"][];
             pagination: components["schemas"]["PageInfo"];
         };
         /** Page[JobSnapshot] */
@@ -2680,6 +2830,239 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_invitations_api_v1_workspaces__workspace_id__invitations_get: {
+        parameters: {
+            query?: {
+                /** @description Maximum number of items to return */
+                limit?: number;
+                /** @description Opaque `next_cursor` from the previous page; omit for the first page */
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description Workspace identifier */
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of pending invitations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_InvitationRead_"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: the session is missing, expired or ended */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `INSUFFICIENT_ROLE`: Moderator or Owner required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such workspace, invitation, or caller membership */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_invitation_api_v1_workspaces__workspace_id__invitations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace identifier */
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationCreate"];
+            };
+        };
+        responses: {
+            /** @description The invitation and its one-time link */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationCreated"];
+                };
+            };
+            /** @description `MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: the session is missing, expired or ended */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `INSUFFICIENT_ROLE`: Moderator or Owner required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such workspace, invitation, or caller membership */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PERSONAL_WORKSPACE`, or `ALREADY_MEMBER` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `INVITATION_LIMIT` or `INVITATION_COOLDOWN`; see `Retry-After` */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `INTEGRATION_UNAVAILABLE`: verified-mode email delivery is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cancel_invitation_api_v1_workspaces__workspace_id__invitations__invitation_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace identifier */
+                workspace_id: string;
+                /** @description Invitation identifier */
+                invitation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The cancelled invitation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationRead"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: the session is missing, expired or ended */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `INSUFFICIENT_ROLE`: Moderator or Owner required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such workspace, invitation, or caller membership */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `INVITATION_NOT_PENDING`: the invitation was already answered or cancelled */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -5962,9 +6345,11 @@ type ReadonlyArray<T> = [
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
 export const accessModeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["AccessMode"]> = ["workspace", "restricted"];
 export const captureStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CaptureStatus"]> = ["recording", "idle", "assembled", "abandoned"];
-export const errorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorCode"]> = ["NO_NOTES", "INTEGRATION_UNAVAILABLE", "TRANSCRIPT_EXISTS", "ALREADY_PROCESSED", "FOLDER_RECOVERY_CONFLICT", "DEFAULT_FOLDER", "FOLDER_EXISTS", "TERM_EXISTS", "STALE_REVISION", "LINK_INVALID", "ACCESS_REQUEST_EXISTS", "ALREADY_HAS_ACCESS", "ACCESS_REQUEST_NOT_PENDING", "SHARE_ALREADY_BOUND", "SHARE_REVOKED", "MALFORMED_REQUEST", "VALIDATION_ERROR", "UNAUTHENTICATED", "INVALID_CREDENTIALS", "INSUFFICIENT_ROLE", "NOT_FOUND", "METHOD_NOT_ALLOWED", "PERSONAL_WORKSPACE", "NOT_TRANSCRIBED", "NOTES_IN_PROGRESS", "RECORDING_NOT_READY", "RECORDING_DELETED", "REGENERATION_LIMIT", "CHUNK_MISMATCH", "CAPTURE_CLOSED", "MISSING_CHUNKS", "EMPTY_CAPTURE", "PAYLOAD_TOO_LARGE", "UNSUPPORTED_MEDIA_TYPE", "RATE_LIMITED", "HTTP_ERROR", "INTERNAL_ERROR"];
+export const errorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorCode"]> = ["NO_NOTES", "INTEGRATION_UNAVAILABLE", "TRANSCRIPT_EXISTS", "ALREADY_PROCESSED", "FOLDER_RECOVERY_CONFLICT", "DEFAULT_FOLDER", "FOLDER_EXISTS", "TERM_EXISTS", "STALE_REVISION", "LINK_INVALID", "ACCESS_REQUEST_EXISTS", "ALREADY_HAS_ACCESS", "ACCESS_REQUEST_NOT_PENDING", "SHARE_ALREADY_BOUND", "SHARE_REVOKED", "MALFORMED_REQUEST", "VALIDATION_ERROR", "UNAUTHENTICATED", "INVALID_CREDENTIALS", "INSUFFICIENT_ROLE", "NOT_FOUND", "METHOD_NOT_ALLOWED", "PERSONAL_WORKSPACE", "ALREADY_MEMBER", "INVITATION_LIMIT", "INVITATION_COOLDOWN", "INVITATION_NOT_PENDING", "NOT_TRANSCRIBED", "NOTES_IN_PROGRESS", "RECORDING_NOT_READY", "RECORDING_DELETED", "REGENERATION_LIMIT", "CHUNK_MISMATCH", "CAPTURE_CLOSED", "MISSING_CHUNKS", "EMPTY_CAPTURE", "PAYLOAD_TOO_LARGE", "UNSUPPORTED_MEDIA_TYPE", "RATE_LIMITED", "HTTP_ERROR", "INTERNAL_ERROR"];
 export const exportFormatValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ExportFormat"]> = ["markdown", "vtt"];
 export const exportVersionValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ExportVersion"]> = ["current", "original"];
+export const invitationStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["InvitationState"]> = ["pending", "cancelled"];
+export const invitedRoleValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["InvitedRole"]> = ["member", "moderator"];
 export const jobStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["JobStatus"]> = ["queued", "running", "succeeded", "failed"];
 export const jobTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["JobType"]> = ["transcription", "notes"];
 export const presetValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Preset"]> = ["summary", "detailed", "interview"];
