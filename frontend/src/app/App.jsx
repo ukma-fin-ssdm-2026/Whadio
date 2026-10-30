@@ -1,7 +1,8 @@
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import { Box, CircularProgress, IconButton, Stack, Tooltip } from "@mui/material";
+import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, api } from "@/api";
+import { api } from "@/api";
 import { McpKeyPanel } from "@/features/accounts/components/McpKeyPanel";
 import { SignInForm } from "@/features/accounts/components/SignInForm";
 import { SignOutButton } from "@/features/accounts/components/SignOutButton";
@@ -11,9 +12,11 @@ import { MeetingDetail } from "@/features/meetings/detail/MeetingDetail";
 import { MeetingLibrary } from "@/features/meetings/library/MeetingLibrary";
 import { mapMeeting, matchesStateFilter } from "@/features/meetings/model";
 import { UploadPanel } from "@/features/meetings/upload/UploadPanel";
+import { workspaceQueries } from "@/features/workspaces/api/workspaces";
 import { HomeView } from "@/features/workspaces/components/HomeView";
+import { WorkspacePresetField } from "@/features/workspaces/components/WorkspacePresetField";
 import { WorkspaceSettings } from "@/features/workspaces/components/WorkspaceSettings";
-import { mapWorkspace } from "@/features/workspaces/model";
+import { countOf } from "@/shared/lib/plural";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { AppShell } from "./layout/AppShell";
 import { Breadcrumbs } from "./layout/Breadcrumbs";
@@ -23,17 +26,66 @@ import { AppProviders } from "./providers";
 import "@/styles.css";
 
 export function App() {
-  const [authStatus, setAuthStatus] = useState("loading");
+  const [signedOut, setSignedOut] = useState(false);
   const [user, setUser] = useState(readSignedInUser);
-  const [workspaces, setWorkspaces] = useState([]);
+  const [signInError, setSignInError] = useState("");
+
+  const endSession = useCallback(() => {
+    clearSignedInUser();
+    setUser(null);
+    setSignedOut(true);
+  }, []);
+
+  const handleSignedIn = (signedInUser) => {
+    setSignInError("");
+    setUser(signedInUser);
+    setSignedOut(false);
+  };
+
+  const handleLoadFailed = useCallback((message) => {
+    setSignInError(message);
+    setSignedOut(true);
+  }, []);
+
+  return (
+    <AppProviders onUnauthorized={endSession}>
+      {signedOut ? (
+        <SignInForm onSignedIn={handleSignedIn} externalError={signInError} />
+      ) : (
+        <SignedInApp user={user} onSignedOut={endSession} onLoadFailed={handleLoadFailed} />
+      )}
+    </AppProviders>
+  );
+}
+
+function SignedInApp({ user, onSignedOut, onLoadFailed }) {
+  const { data: workspaces, error } = useQuery(workspaceQueries.list());
+
+  useEffect(() => {
+    // A 401 already ended the session through the query client.
+    if (!workspaces && error && error.status !== 401) onLoadFailed(error.message);
+  }, [workspaces, error, onLoadFailed]);
+
+  if (!workspaces) {
+    return (
+      <Box className="auth-screen">
+        <CircularProgress />
+      </Box>
+    );
+  }
+  return <Workbench user={user} workspaces={workspaces} onSignedOut={onSignedOut} />;
+}
+
+function Workbench({ user, workspaces, onSignedOut }) {
   const [meetings, setMeetings] = useState([]);
+  const [meetingsLoaded, setMeetingsLoaded] = useState(false);
   const [error, setError] = useState("");
   const [contentLoading, setContentLoading] = useState(false);
   const [notes, setNotes] = useState(null);
   const [transcript, setTranscript] = useState(null);
   const [recordingUrl, setRecordingUrl] = useState("");
   const [view, setView] = useState("home");
-  const [workspaceId, setWorkspaceId] = useState("");
+  const [chosenWorkspaceId, setWorkspaceId] = useState("");
   const [meetingId, setMeetingId] = useState("");
   const [meetingLink, setMeetingLink] = useState(() => readMeetingLink(window.location.href));
   const [query, setQuery] = useState("");
@@ -43,16 +95,8 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const requestedMeetingId = useRef("");
 
-  const loadData = useCallback(async () => {
-    const workspacePage = await api.listWorkspaces();
-    const workspaceDetails = await Promise.all(
-      workspacePage.items.map((item) => api.getWorkspace(item.id)),
-    );
-    const nextWorkspaces = workspacePage.items.map((item, index) =>
-      mapWorkspace(item, workspaceDetails[index]),
-    );
-    const meetingPages = await Promise.all(nextWorkspaces.map((item) => api.listMeetings(item.id)));
-    setWorkspaces(nextWorkspaces);
+  const loadMeetings = useCallback(async () => {
+    const meetingPages = await Promise.all(workspaces.map((item) => api.listMeetings(item.id)));
     const nextMeetings = meetingPages.flatMap((page) => page.items.map(mapMeeting));
     setMeetings((current) => {
       const linked = current.find(
@@ -69,35 +113,23 @@ export function App() {
           : meeting;
       });
     });
-    setWorkspaceId((current) => current || nextWorkspaces[0]?.id || "");
-    setAuthStatus("signedIn");
-  }, []);
-
-  const loadSession = useCallback(
-    () =>
-      loadData().catch((caught) => {
-        if (!(caught instanceof ApiError && caught.status === 401)) setError(caught.message);
-        setAuthStatus("signedOut");
-      }),
-    [loadData],
-  );
+    setMeetingsLoaded(true);
+  }, [workspaces]);
 
   useEffect(() => {
-    loadSession();
-  }, [loadSession]);
+    loadMeetings().catch((caught) => setError(caught.message));
+  }, [loadMeetings]);
 
   useEffect(() => {
-    if (
-      authStatus !== "signedIn" ||
-      !meetings.some((item) => ["recording", "queued", "processing"].includes(item.state))
-    )
+    if (!meetings.some((item) => ["recording", "queued", "processing"].includes(item.state)))
       return undefined;
     const timer = window.setInterval(() => {
-      loadData().catch((caught) => setError(caught.message));
+      loadMeetings().catch((caught) => setError(caught.message));
     }, 10000);
     return () => window.clearInterval(timer);
-  }, [authStatus, loadData, meetings]);
+  }, [loadMeetings, meetings]);
 
+  const workspaceId = chosenWorkspaceId || workspaces[0]?.id || "";
   const workspace = workspaces.find((item) => item.id === workspaceId) ?? workspaces[0];
   const selectedMeeting = meetings.find((item) => item.id === meetingId);
 
@@ -158,7 +190,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (authStatus !== "signedIn" || !meetingLink) return;
+    if (!meetingLink) return;
     setMeetingId(meetingLink.meetingId);
     setMeetingTab(meetingLink.tab ?? (meetingLink.revisionId ? "transcript" : "notes"));
     setTranscriptQuery("");
@@ -168,7 +200,7 @@ export function App() {
     return () => {
       requestedMeetingId.current = "";
     };
-  }, [authStatus, meetingLink, loadMeetingContent]);
+  }, [meetingLink, loadMeetingContent]);
 
   const clearMeetingLink = () => {
     window.history.pushState(null, "", meetingLibraryPath(window.location.href));
@@ -223,21 +255,12 @@ export function App() {
           ? (selectedMeeting?.title ?? "Meeting")
           : (workspace?.name ?? "Workspace");
 
-  const handleSignedIn = (signedInUser) => {
-    setError("");
-    setUser(signedInUser);
-    setAuthStatus("loading");
-    loadSession();
+  const meetingFigures = (id) => {
+    if (!meetingsLoaded) return "Loading meetings";
+    const listed = meetings.filter((item) => item.workspaceId === id);
+    const active = listed.filter((item) => item.state !== "processed").length;
+    return `${countOf(listed.length, "meeting")}, ${active} active`;
   };
-
-  const endSession = useCallback(() => {
-    requestedMeetingId.current = "";
-    clearSignedInUser();
-    setUser(null);
-    setWorkspaces([]);
-    setMeetings([]);
-    setAuthStatus("signedOut");
-  }, []);
 
   const handleUpload = async (payload) => {
     const created = await api.uploadMeeting(workspaceId, payload);
@@ -251,101 +274,80 @@ export function App() {
     openMeeting(mapped.id);
   };
 
-  if (authStatus !== "signedIn") {
-    return (
-      <AppProviders onUnauthorized={endSession}>
-        {authStatus === "loading" ? (
-          <Box className="auth-screen">
-            <CircularProgress />
-          </Box>
-        ) : (
-          <SignInForm onSignedIn={handleSignedIn} externalError={error} />
-        )}
-      </AppProviders>
-    );
-  }
-
   return (
-    <AppProviders onUnauthorized={endSession}>
-      <AppShell
-        renderSidebar={(onNavigate) => (
-          <Sidebar
-            user={user}
-            workspaces={workspaces}
-            page={view}
-            workspaceId={workspaceId}
-            onHome={() => {
-              clearMeetingLink();
-              setSettingsOpen(false);
-              setView("home");
-            }}
-            onMeetings={showMeetings}
-            onWorkspace={openWorkspace}
-            signOutAction={<SignOutButton onSignedOut={endSession} />}
-            onNavigate={onNavigate}
+    <AppShell
+      renderSidebar={(onNavigate) => (
+        <Sidebar
+          user={user}
+          workspaces={workspaces}
+          page={view}
+          workspaceId={workspaceId}
+          onHome={() => {
+            clearMeetingLink();
+            setSettingsOpen(false);
+            setView("home");
+          }}
+          onMeetings={showMeetings}
+          onWorkspace={openWorkspace}
+          signOutAction={<SignOutButton onSignedOut={onSignedOut} />}
+          onNavigate={onNavigate}
+        />
+      )}
+    >
+      <Stack sx={{ gap: 2 }}>
+        <Breadcrumbs
+          page={view}
+          workspace={workspace}
+          meeting={selectedMeeting}
+          onHome={() => {
+            clearMeetingLink();
+            setView("home");
+          }}
+          onWorkspace={openWorkspace}
+        />
+
+        {view !== "meeting" && (
+          <PageHeader
+            title={title}
+            overline={view === "workspace" ? `${workspace.role} workspace` : undefined}
+            actions={
+              view === "workspace" && (
+                <Tooltip title="Workspace settings" arrow>
+                  <IconButton
+                    aria-label="Workspace settings"
+                    aria-pressed={settingsOpen}
+                    color={settingsOpen ? "primary" : "default"}
+                    onClick={() => setSettingsOpen((value) => !value)}
+                  >
+                    <SettingsOutlinedIcon />
+                  </IconButton>
+                </Tooltip>
+              )
+            }
           />
         )}
-      >
-        <Stack sx={{ gap: 2 }}>
-          <Breadcrumbs
-            page={view}
-            workspace={workspace}
-            meeting={selectedMeeting}
-            onHome={() => {
-              clearMeetingLink();
-              setView("home");
-            }}
+
+        {error && (
+          <Box className="error-banner" role="alert">
+            {error}
+          </Box>
+        )}
+        {view === "home" && (
+          <HomeView
+            workspaces={workspaces}
+            renderMeetingFigures={meetingFigures}
             onWorkspace={openWorkspace}
           />
-
-          {view !== "meeting" && (
-            <PageHeader
-              title={title}
-              overline={view === "workspace" ? `${workspace.role} workspace` : undefined}
-              actions={
-                view === "workspace" && (
-                  <Tooltip title="Workspace settings" arrow>
-                    <IconButton
-                      aria-label="Workspace settings"
-                      aria-pressed={settingsOpen}
-                      color={settingsOpen ? "primary" : "default"}
-                      onClick={() => setSettingsOpen((value) => !value)}
-                    >
-                      <SettingsOutlinedIcon />
-                    </IconButton>
-                  </Tooltip>
-                )
-              }
+        )}
+        {view === "workspace" && settingsOpen && (
+          <WorkspaceSettings workspaceId={workspace.id} assistantSettings={<McpKeyPanel />} />
+        )}
+        {view === "workspace" && !settingsOpen && (
+          <>
+            <UploadPanel
+              presetField={<WorkspacePresetField workspaceId={workspace.id} />}
+              onUpload={handleUpload}
             />
-          )}
-
-          {error && (
-            <Box className="error-banner" role="alert">
-              {error}
-            </Box>
-          )}
-          {view === "home" && (
-            <HomeView workspaces={workspaces} meetings={meetings} onWorkspace={openWorkspace} />
-          )}
-          {view === "workspace" && settingsOpen && (
-            <WorkspaceSettings workspace={workspace} assistantSettings={<McpKeyPanel />} />
-          )}
-          {view === "workspace" && !settingsOpen && (
-            <>
-              <UploadPanel workspace={workspace} onUpload={handleUpload} />
-              <MeetingLibrary
-                title="Workspace library"
-                meetings={visibleMeetings}
-                query={query}
-                stateFilter={stateFilter}
-                onQuery={setQuery}
-                onStateFilter={setStateFilter}
-                onMeeting={openMeeting}
-                selectedMeetingId={meetingId}
-              />
-            </>
-          )}
-          {view === "meetings" && (
             <MeetingLibrary
               title="Workspace library"
               meetings={visibleMeetings}
@@ -356,33 +358,45 @@ export function App() {
               onMeeting={openMeeting}
               selectedMeetingId={meetingId}
             />
-          )}
-          {view === "meeting" && selectedMeeting && (
-            <MeetingDetail
-              meeting={selectedMeeting}
-              workspace={workspace}
-              tab={meetingTab}
-              transcriptQuery={transcriptQuery}
-              onTranscriptQuery={setTranscriptQuery}
-              onTab={(value) => (value === "recording" ? showRecording() : setMeetingTab(value))}
-              notes={notes}
-              transcript={transcript}
-              onRevision={(revisionId) => openMeeting(selectedMeeting.id, revisionId, "transcript")}
-              recordingUrl={recordingUrl}
-              loading={contentLoading}
-              exportControls={
-                <ExportControls
-                  meetingId={selectedMeeting.id}
-                  tab={meetingTab}
-                  transcript={transcript}
-                  notes={notes}
-                  loading={contentLoading}
-                />
-              }
-            />
-          )}
-        </Stack>
-      </AppShell>
-    </AppProviders>
+          </>
+        )}
+        {view === "meetings" && (
+          <MeetingLibrary
+            title="Workspace library"
+            meetings={visibleMeetings}
+            query={query}
+            stateFilter={stateFilter}
+            onQuery={setQuery}
+            onStateFilter={setStateFilter}
+            onMeeting={openMeeting}
+            selectedMeetingId={meetingId}
+          />
+        )}
+        {view === "meeting" && selectedMeeting && (
+          <MeetingDetail
+            meeting={selectedMeeting}
+            workspace={workspace}
+            tab={meetingTab}
+            transcriptQuery={transcriptQuery}
+            onTranscriptQuery={setTranscriptQuery}
+            onTab={(value) => (value === "recording" ? showRecording() : setMeetingTab(value))}
+            notes={notes}
+            transcript={transcript}
+            onRevision={(revisionId) => openMeeting(selectedMeeting.id, revisionId, "transcript")}
+            recordingUrl={recordingUrl}
+            loading={contentLoading}
+            exportControls={
+              <ExportControls
+                meetingId={selectedMeeting.id}
+                tab={meetingTab}
+                transcript={transcript}
+                notes={notes}
+                loading={contentLoading}
+              />
+            }
+          />
+        )}
+      </Stack>
+    </AppShell>
   );
 }

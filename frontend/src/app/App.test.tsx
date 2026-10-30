@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { type UserEvent, userEvent } from "@testing-library/user-event";
 import { HttpResponse, type HttpResponseResolver, http, type JsonBodyType } from "msw";
 import { describe, expect, test } from "vitest";
+import { errorBody, page } from "@/shared/testing/fixtures";
 import { server } from "@/shared/testing/server";
 import { App } from "./App";
 
@@ -77,7 +78,7 @@ function serveApi(signedIn: boolean): ApiTraffic {
     ),
     http.get(
       "/api/v1/workspaces/workspace/meetings",
-      member(() => ({ items: [] })),
+      member(() => page([])),
     ),
     http.get(
       "/api/v1/meetings/meeting",
@@ -138,6 +139,14 @@ async function goBackToCurrent(signedIn: boolean) {
   await showRevision(user, "View original transcript", ORIGINAL_WORDING);
   window.history.back();
   await screen.findByText(CURRENT_WORDING);
+}
+
+function renderHome() {
+  window.history.replaceState(null, "", "/whadio/");
+  sessionStorage.clear();
+  const traffic = serveApi(true);
+  render(<App />);
+  return traffic;
 }
 
 const currentPath = () => window.location.pathname + window.location.search;
@@ -284,4 +293,32 @@ describe.for([
     // Assert
     expect(screen.queryByText(ORIGINAL_WORDING)).not.toBeInTheDocument();
   });
+});
+
+test("Home requests no workspace details", async () => {
+  // Arrange
+  const traffic = renderHome();
+
+  // Act
+  await screen.findByRole("button", { name: /Demo Workspace.*Owner · 1 member/ });
+
+  // Assert
+  expect(traffic.requests.filter((request) => /workspaces\/workspace$/.test(request))).toEqual([]);
+});
+
+test("a workspace list failure returns to sign-in with its message", async () => {
+  // Arrange
+  window.history.replaceState(null, "", "/whadio/");
+  sessionStorage.clear();
+  server.use(
+    http.get("/api/v1/workspaces", () =>
+      HttpResponse.json(errorBody("INSUFFICIENT_ROLE", "Not allowed here"), { status: 403 }),
+    ),
+  );
+
+  // Act
+  render(<App />);
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent("Not allowed here");
 });

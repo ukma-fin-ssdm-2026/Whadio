@@ -2,6 +2,7 @@ import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query
 import { apiClient } from "@/shared/api/client";
 import type { WorkspaceUpdate } from "@/shared/api/types";
 import { unwrap } from "@/shared/api/unwrap";
+import { mapWorkspace } from "../model";
 
 export const workspaceQueries = {
   list: () =>
@@ -9,6 +10,7 @@ export const workspaceQueries = {
       queryKey: ["workspaces", "list"],
       queryFn: ({ signal }) =>
         unwrap(apiClient.GET("/api/v1/workspaces", { params: { query: { limit: 100 } }, signal })),
+      select: (page) => page.items.map(mapWorkspace),
     }),
   detail: (workspaceId: string) =>
     queryOptions({

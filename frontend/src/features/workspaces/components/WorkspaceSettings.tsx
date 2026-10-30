@@ -1,0 +1,142 @@
+import {
+  Alert,
+  Box,
+  Chip,
+  CircularProgress,
+  Divider,
+  List,
+  ListItemButton,
+  MenuItem,
+  Paper,
+  Stack,
+  TextField,
+} from "@mui/material";
+import { useQuery } from "@tanstack/react-query";
+import { type ReactNode, useState } from "react";
+import type { Schemas } from "@/shared/api/types";
+import { titleCase } from "@/shared/lib/format";
+import { useNotify } from "@/shared/ui/NotifyProvider";
+import { SectionHeader } from "@/shared/ui/SectionHeader";
+import { SettingsRow } from "@/shared/ui/SettingsRow";
+import { useUpdateWorkspace, workspaceQueries } from "../api/workspaces";
+
+const SECTIONS = [
+  ["workspace", "Workspace"],
+  ["assistant", "AI assistant"],
+] as const;
+
+const PRESETS: Schemas["Preset"][] = ["summary", "detailed", "interview"];
+
+function PresetSelect({ workspace }: { workspace: Schemas["WorkspaceRead"] }) {
+  const update = useUpdateWorkspace(workspace.id);
+  const notify = useNotify();
+
+  const choose = (value: string) => {
+    const preset = PRESETS.find((item) => item === value);
+    if (!preset) return;
+    update.mutate(
+      { default_preset: preset },
+      { onError: (caught) => notify(caught.message, "error") },
+    );
+  };
+
+  return (
+    <TextField
+      select
+      size="small"
+      value={workspace.default_preset}
+      disabled={update.isPending}
+      onChange={(event) => choose(event.target.value)}
+      slotProps={{ htmlInput: { "aria-label": "Default notes preset" } }}
+      sx={{ minWidth: 140 }}
+    >
+      {PRESETS.map((preset) => (
+        <MenuItem key={preset} value={preset}>
+          {titleCase(preset)}
+        </MenuItem>
+      ))}
+    </TextField>
+  );
+}
+
+function WorkspaceDefaults({ workspaceId }: { workspaceId: string }) {
+  const { data: workspace, error } = useQuery(workspaceQueries.detail(workspaceId));
+  if (!workspace) {
+    return error ? (
+      <Alert severity="error">{error.message}</Alert>
+    ) : (
+      <CircularProgress aria-label="Loading workspace settings" />
+    );
+  }
+  return (
+    <>
+      <SectionHeader
+        title="Workspace settings"
+        description={`Configure processing defaults for ${workspace.name}.`}
+      />
+      <Stack divider={<Divider />} sx={{ mt: 1 }}>
+        <SettingsRow
+          title="Notes provider"
+          description="Whadio gemma-3-12b-it is used for generated notes."
+          control={<Chip label={titleCase(workspace.notes_provider)} variant="outlined" />}
+        />
+        <SettingsRow
+          title="Default notes preset"
+          description="New uploads use the workspace notes preset."
+          control={
+            workspace.my_role === "owner" ? (
+              <PresetSelect workspace={workspace} />
+            ) : (
+              <Chip label={titleCase(workspace.default_preset)} variant="outlined" />
+            )
+          }
+        />
+      </Stack>
+    </>
+  );
+}
+
+interface WorkspaceSettingsProps {
+  workspaceId: string;
+  assistantSettings: ReactNode;
+}
+
+export function WorkspaceSettings({ workspaceId, assistantSettings }: WorkspaceSettingsProps) {
+  const [section, setSection] = useState<(typeof SECTIONS)[number][0]>("workspace");
+
+  return (
+    <Paper variant="outlined" sx={{ display: "flex", flexDirection: { xs: "column", md: "row" } }}>
+      <List
+        component="nav"
+        aria-label="Settings sections"
+        sx={{
+          flexShrink: 0,
+          width: { md: 220 },
+          p: 1,
+          borderStyle: "solid",
+          borderColor: "divider",
+          borderWidth: { xs: "0 0 1px", md: "0 1px 0 0" },
+        }}
+      >
+        {SECTIONS.map(([value, label]) => (
+          <ListItemButton
+            key={value}
+            selected={section === value}
+            aria-current={section === value ? "true" : undefined}
+            onClick={() => setSection(value)}
+            sx={{ borderRadius: 1 }}
+          >
+            {label}
+          </ListItemButton>
+        ))}
+      </List>
+      <Box sx={{ flexGrow: 1, minWidth: 0, p: { xs: 2, md: 3 } }}>
+        {section === "workspace" ? (
+          <WorkspaceDefaults workspaceId={workspaceId} />
+        ) : (
+          assistantSettings
+        )}
+      </Box>
+    </Paper>
+  );
+}
