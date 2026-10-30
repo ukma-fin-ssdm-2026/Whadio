@@ -177,7 +177,7 @@ class SessionRepository:
         return await self._session.scalar(
             select(User)
             .where(func.lower(User.email) == email.lower())
-            .with_for_update(key_share=True)
+            .with_for_update()
             .execution_options(populate_existing=True)
         )
 
