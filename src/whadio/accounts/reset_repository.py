@@ -30,13 +30,13 @@ class PasswordResetRepository:
         return await self._session.scalar(
             select(User)
             .where(func.lower(User.email) == email.lower())
-            .with_for_update(key_share=True)
+            .with_for_update()
             .execution_options(populate_existing=True)
         )
 
     async def lock_account(self, user_id: UUID) -> None:
         await self._session.scalar(
-            select(User.user_id).where(User.user_id == user_id).with_for_update(key_share=True)
+            select(User.user_id).where(User.user_id == user_id).with_for_update()
         )
 
     async def pending(self, reset_id: UUID) -> PasswordReset | None:
