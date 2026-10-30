@@ -3,11 +3,11 @@ import { Box, IconButton, Paper } from "@mui/material";
 import { useId, useRef, useState } from "react";
 import { ExportDownloadMenu } from "./ExportDownloadMenu";
 
-export function ExportControls({ meetingId, tab, transcript, notes, loading }) {
+export function ExportControls({ meetingId, tab, transcript, notes }) {
   const [open, setOpen] = useState(false);
   const button = useRef(null);
   const menuId = useId();
-  if (loading || (tab === "notes" ? !notes : tab !== "transcript" || !transcript)) return null;
+  if (tab === "notes" ? !notes : tab !== "transcript" || !transcript) return null;
   return (
     <Box
       sx={{ position: "relative" }}

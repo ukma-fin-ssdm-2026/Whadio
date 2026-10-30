@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react";
-import { userEvent } from "@testing-library/user-event";
+import { screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { expect, test } from "vitest";
 import { ExportControls } from "@/features/export/components/ExportControls";
 import type { Schemas } from "@/shared/api/types";
-import { meetingRead } from "@/shared/testing/fixtures";
+import { errorBody, meetingRead, noteRead, page, transcriptRead } from "@/shared/testing/fixtures";
+import { createTestQueryClient, renderWithProviders } from "@/shared/testing/render";
+import { http, server } from "@/shared/testing/server";
 import { mapMeeting } from "../model";
 import { MeetingDetail } from "./MeetingDetail";
 
@@ -12,59 +13,80 @@ function meeting(changes: Partial<Schemas["MeetingRead"]> = {}) {
   return mapMeeting(meetingRead(changes));
 }
 
-function transcript(revisionId: string) {
-  return {
-    revision: { id: revisionId, revision_type: revisionId === "original" ? "original" : "edited" },
+function revision(revisionId: string): Schemas["TranscriptRead"] {
+  return transcriptRead({
+    revision: {
+      ...transcriptRead().revision,
+      id: revisionId,
+      revision_type: revisionId === "original" ? "original" : "edited",
+    },
     original_revision_id: "original",
     is_edited: true,
-    speakers: [],
-    segments: [],
-  };
+  });
+}
+
+function serveContent() {
+  const requests: string[] = [];
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}/notes", ({ response }) => {
+      requests.push("notes");
+      return response(200).json(page([noteRead()]));
+    }),
+    http.get("/api/v1/meetings/{meeting_id}/transcript", ({ request, response }) => {
+      const revisionId = new URL(request.url).searchParams.get("revision_id");
+      requests.push(revisionId ? `transcript ${revisionId}` : "transcript");
+      return response(200).json(revision(revisionId ?? "edited"));
+    }),
+    http.get("/api/v1/meetings/{meeting_id}/recording", ({ response }) => {
+      requests.push("recording");
+      return response(200).json({ url: "", expires_at: "2026-10-25T10:05:00Z" });
+    }),
+  );
+  return requests;
 }
 
 function detail(changes: Partial<ComponentProps<typeof MeetingDetail>> = {}) {
   const props = {
     meeting: meeting(),
-    tab: "notes",
+    revisionId: null,
+    tab: "notes" as const,
     transcriptQuery: "",
     onTab: () => {},
     onTranscriptQuery: () => {},
-    notes: { content: "Saved notes" },
-    transcript: null,
     onRevision: () => {},
-    recordingUrl: "",
-    loading: false,
     ...changes,
   };
   return (
     <MeetingDetail
       {...props}
-      exportControls={
+      renderExport={({ transcript, notes }) => (
         <ExportControls
           meetingId={props.meeting.id}
           tab={props.tab}
-          transcript={props.transcript}
-          notes={props.notes}
-          loading={props.loading}
+          transcript={transcript}
+          notes={notes}
         />
-      }
+      )}
     />
   );
 }
 
 function renderDetail(changes: Partial<ComponentProps<typeof MeetingDetail>> = {}) {
-  return render(detail(changes));
+  return renderWithProviders(detail(changes), createTestQueryClient());
 }
 
 async function openTranscriptDownloads() {
-  const view = renderDetail({ tab: "transcript", transcript: transcript("edited") });
-  await userEvent.click(screen.getByRole("button", { name: "Download transcript" }));
+  const view = renderDetail({ tab: "transcript" });
+  await view.user.click(await screen.findByRole("button", { name: "Download transcript" }));
   return view;
 }
 
 const interactive = 'button, a[href], input, select, [role="button"], [tabindex="0"]';
 
 test("meeting header has no workspace access control", () => {
+  // Arrange
+  serveContent();
+
   // Act
   renderDetail();
 
@@ -73,6 +95,9 @@ test("meeting header has no workspace access control", () => {
 });
 
 test("meeting header names the source as text beside the date", () => {
+  // Arrange
+  serveContent();
+
   // Act
   renderDetail();
 
@@ -80,11 +105,15 @@ test("meeting header names the source as text beside the date", () => {
   expect(screen.getByText(/^\w{3} \d+, \d{4}.* · Google Meet$/)).toBeInTheDocument();
 });
 
-test.for(["notes", "transcript", "recording"])(
+test.for(["notes", "transcript", "recording"] as const)(
   "%s tab has the meeting title as its only first-level heading",
-  (tab) => {
+  async (tab) => {
+    // Arrange
+    serveContent();
+
     // Act
-    renderDetail({ tab, transcript: transcript("edited") });
+    renderDetail({ tab });
+    await screen.findByRole("tabpanel");
 
     // Assert
     expect(screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent)).toEqual([
@@ -94,8 +123,11 @@ test.for(["notes", "transcript", "recording"])(
 );
 
 test("tab panel is labelled by the selected tab", () => {
+  // Arrange
+  serveContent();
+
   // Act
-  renderDetail({ tab: "transcript", transcript: transcript("edited") });
+  renderDetail({ tab: "transcript" });
 
   // Assert
   expect(screen.getByRole("tabpanel")).toHaveAccessibleName("Transcript");
@@ -103,10 +135,7 @@ test("tab panel is labelled by the selected tab", () => {
 
 test("queued meeting notes panel is headed Queued", () => {
   // Arrange
-  const { container } = renderDetail({
-    meeting: meeting({ processing_state: "queued" }),
-    notes: null,
-  });
+  const { container } = renderDetail({ meeting: meeting({ processing_state: "queued" }) });
 
   // Act
   const heading = container.querySelector(".processing-panel .MuiTypography-subtitle1");
@@ -117,10 +146,7 @@ test("queued meeting notes panel is headed Queued", () => {
 
 test("in-progress notes panel offers no control", () => {
   // Arrange
-  const { container } = renderDetail({
-    meeting: meeting({ processing_state: "queued" }),
-    notes: null,
-  });
+  const { container } = renderDetail({ meeting: meeting({ processing_state: "queued" }) });
 
   // Act
   const controls = container.querySelectorAll(`.processing-panel :is(${interactive})`);
@@ -129,15 +155,129 @@ test("in-progress notes panel offers no control", () => {
   expect(controls).toHaveLength(0);
 });
 
+test("a processed meeting loads its notes", async () => {
+  // Arrange
+  serveContent();
+
+  // Act
+  renderDetail();
+
+  // Assert
+  expect(await screen.findByText("Saved notes")).toBeInTheDocument();
+});
+
+test("a failed meeting shows its reason on the notes tab", () => {
+  // Act
+  renderDetail({
+    meeting: meeting({ processing_state: "failed", failure_reason: "No audio track" }),
+  });
+
+  // Assert
+  expect(screen.getByRole("alert")).toHaveTextContent("No audio track");
+});
+
+test("a failed meeting without a reason says processing failed", () => {
+  // Act
+  renderDetail({ meeting: meeting({ processing_state: "failed" }) });
+
+  // Assert
+  expect(screen.getByRole("alert")).toHaveTextContent("Processing failed");
+});
+
+test("a revision is requested by its identifier", async () => {
+  // Arrange
+  const requests = serveContent();
+
+  // Act
+  renderDetail({ tab: "transcript", revisionId: "original" });
+
+  // Assert
+  await waitFor(() => expect(requests).toContain("transcript original"));
+});
+
+test("the recording link waits for the recording tab", async () => {
+  // Arrange
+  const requests = serveContent();
+
+  // Act
+  renderDetail({ meeting: meeting({ recording_available: true }) });
+  await screen.findByText("Saved notes");
+
+  // Assert
+  expect(requests).not.toContain("recording");
+});
+
+test("the recording tab requests the link of an available recording", async () => {
+  // Arrange
+  const requests = serveContent();
+
+  // Act
+  renderDetail({ meeting: meeting({ recording_available: true }), tab: "recording" });
+
+  // Assert
+  await waitFor(() => expect(requests).toContain("recording"));
+});
+
+test("a meeting with no transcript yet raises no alert", async () => {
+  // Arrange
+  const requests = serveContent();
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}/transcript", ({ response }) => {
+      requests.push("refused");
+      return response(409).json(errorBody("NOT_TRANSCRIBED", "Not transcribed yet"));
+    }),
+  );
+
+  // Act
+  renderDetail({ tab: "transcript" });
+  await screen.findByText("Transcript is not available yet.");
+
+  // Assert
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("a transcript failure shows its message", async () => {
+  // Arrange
+  serveContent();
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}/transcript", ({ response }) =>
+      response(404).json(errorBody("NOT_FOUND", "No such revision")),
+    ),
+  );
+
+  // Act
+  renderDetail({ tab: "transcript", revisionId: "absent" });
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent("No such revision");
+});
+
+test("a notes failure shows its message", async () => {
+  // Arrange
+  serveContent();
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}/notes", ({ response }) =>
+      response(404).json(errorBody("NOT_FOUND", "Meeting not found")),
+    ),
+  );
+
+  // Act
+  renderDetail();
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent("Meeting not found");
+});
+
 test("transcript download menu closes when another revision is shown", async () => {
   // Arrange
+  serveContent();
   const { rerender } = await openTranscriptDownloads();
 
   // Act
-  rerender(detail({ tab: "transcript", transcript: transcript("original") }));
+  rerender(detail({ tab: "transcript", revisionId: "original" }));
 
   // Assert
-  expect(screen.getByRole("button", { name: "Download transcript" })).toHaveAttribute(
+  expect(await screen.findByRole("button", { name: "Download transcript" })).toHaveAttribute(
     "aria-expanded",
     "false",
   );
@@ -145,10 +285,11 @@ test("transcript download menu closes when another revision is shown", async () 
 
 test("transcript download menu stays open when the same revision reloads", async () => {
   // Arrange
-  const { rerender } = await openTranscriptDownloads();
+  serveContent();
+  const { queryClient } = await openTranscriptDownloads();
 
   // Act
-  rerender(detail({ tab: "transcript", transcript: transcript("edited") }));
+  await queryClient.invalidateQueries();
 
   // Assert
   expect(screen.getByRole("button", { name: "Download transcript" })).toHaveAttribute(
