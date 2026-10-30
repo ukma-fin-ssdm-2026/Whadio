@@ -1,6 +1,11 @@
 from enum import StrEnum
 
 
+class RegistrationMode(StrEnum):
+    INVITE_ONLY = "invite-only"
+    VERIFIED = "verified"
+
+
 class WorkspaceRole(StrEnum):
     MEMBER = "Member"
     MODERATOR = "Moderator"

@@ -1,5 +1,6 @@
 from collections.abc import Awaitable
 from datetime import UTC, datetime, timedelta
+from typing import override
 from uuid import UUID, uuid4
 
 import pytest
@@ -13,20 +14,32 @@ from ..audit.models import AuditEvent
 from ..audit.services import AuditWriter
 from ..shared.errors import Failure, UseCaseError
 from .enums import NotesTemplate, SessionKind, WorkspaceRole
-from .models import Session, Workspace, WorkspaceMembership
+from .models import PendingRegistration, Session, User, Workspace, WorkspaceMembership
 from .passwords import Argon2PasswordHasher
 from .repositories import (
     IdentityRepository,
     MembershipRepository,
+    RegistrationRepository,
     SessionRepository,
     WorkspaceRepository,
 )
-from .services import IdentityService, SignInService, WorkspaceMembershipService, WorkspaceService
+from .services import (
+    IdentityService,
+    RegistrationDetails,
+    RegistrationIssuer,
+    RegistrationLink,
+    RegistrationService,
+    RegistrationValidationError,
+    SignInService,
+    WorkspaceMembershipService,
+    WorkspaceService,
+)
 
 pytestmark = pytest.mark.slow
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 PASSWORD = uuid4().hex
+REGISTRATION_DETAILS = RegistrationDetails("Alice", f"A1{uuid4().hex}", accept_terms=True)
 
 
 async def add_member(session: AsyncSession, workspace_id: UUID, role: WorkspaceRole) -> UUID:
@@ -436,3 +449,119 @@ def test_deleted_workspace_is_audited(async_database: AsyncDatabase) -> None:
     audited, workspace_id = async_database.run(scenario)
     # Assert
     assert audited == [workspace_id]
+
+
+# --- Registration ---
+
+
+class FailingRegistrationContent(FakeContent):
+    @override
+    async def add_default_folder(self, workspace_id: UUID, _now: datetime) -> None:
+        del workspace_id, _now
+        raise RuntimeError("Folder creation failed")
+
+
+def registrations(session: AsyncSession, content: FakeContent | None = None) -> RegistrationService:
+    return RegistrationService(
+        RegistrationRepository(session),
+        SessionRepository(session),
+        Argon2PasswordHasher(),
+        content or FakeContent(),
+        WorkspaceRepository(session),
+    )
+
+
+async def issue_registration(session: AsyncSession, email: str, now: datetime) -> RegistrationLink:
+    return await RegistrationIssuer(
+        RegistrationRepository(session), SessionRepository(session)
+    ).issue(email, now)
+
+
+@pytest.mark.parametrize("offset", [timedelta(hours=24), timedelta(hours=25)])
+def test_registration_expiry_includes_the_exact_boundary(
+    async_database: AsyncDatabase, offset: timedelta
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> Failure:
+        now = datetime.now(UTC)
+        link = await issue_registration(session, f"{uuid4()}@example.com", now)
+        # Act
+        with pytest.raises(UseCaseError) as failure:
+            await registrations(session).complete(
+                link.registration_id, link.token, REGISTRATION_DETAILS, now + offset
+            )
+        return failure.value.code
+
+    # Assert
+    assert async_database.run(scenario) is Failure.LINK_INVALID
+
+
+def test_registration_link_works_just_before_expiry(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> str:
+        now = datetime.now(UTC)
+        link = await issue_registration(session, f"{uuid4()}@example.com", now)
+        # Act
+        signed = await registrations(session).complete(
+            link.registration_id,
+            link.token,
+            REGISTRATION_DETAILS,
+            now + timedelta(hours=24, microseconds=-1),
+        )
+        return signed.user.name
+
+    # Assert
+    assert async_database.run(scenario) == REGISTRATION_DETAILS.name
+
+
+@pytest.mark.parametrize(
+    "details",
+    [
+        RegistrationDetails("Alice", "weak", accept_terms=True),
+        RegistrationDetails("Alice", REGISTRATION_DETAILS.password, accept_terms=False),
+        RegistrationDetails("\u3164", REGISTRATION_DETAILS.password, accept_terms=True),
+    ],
+)
+def test_registration_refuses_invalid_account_details(
+    async_database: AsyncDatabase,
+    details: RegistrationDetails,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> bool:
+        link = await issue_registration(session, f"{uuid4()}@example.com", datetime.now(UTC))
+        # Act
+        with pytest.raises(RegistrationValidationError):
+            await registrations(session).complete(
+                link.registration_id, link.token, details, datetime.now(UTC)
+            )
+        return await session.get(PendingRegistration, link.registration_id) is not None
+
+    # Assert
+    assert async_database.run(scenario)
+
+
+def test_failed_folder_creation_rolls_back_registration(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[bool, bool]:
+        email = f"{uuid4()}@example.com"
+        link = await issue_registration(session, email, datetime.now(UTC))
+        # Act
+        with pytest.raises(RuntimeError, match="Folder creation failed"):
+            async with session.begin_nested():
+                await registrations(session, FailingRegistrationContent()).complete(
+                    link.registration_id,
+                    link.token,
+                    REGISTRATION_DETAILS,
+                    datetime.now(UTC),
+                )
+        return (
+            await session.get(PendingRegistration, link.registration_id) is not None,
+            await session.scalar(select(User.user_id).where(User.email == email)) is None,
+        )
+
+    # Assert
+    assert async_database.run(scenario) == (True, True)

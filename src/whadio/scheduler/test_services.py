@@ -49,6 +49,53 @@ class NotificationJobs:
         return 0
 
 
+class RegistrationJobs:
+    def __init__(self, calls: list[str], *, fail: bool = False) -> None:
+        self.calls: list[str] = calls
+        self.fail: bool = fail
+        self.expired_at: datetime | None = None
+
+    async def remove_expired(self, now: datetime) -> int:
+        self.calls.append("registrations")
+        self.expired_at = now
+        if self.fail:
+            raise OperationalError("database unavailable", None, RuntimeError())
+        return 2
+
+
+def test_tick_cleans_registrations_using_the_scheduler_clock() -> None:
+    # Arrange
+    now = datetime(2026, 10, 29, tzinfo=UTC)
+    jobs = RetentionJobs()
+    registrations = RegistrationJobs(jobs.calls)
+    scheduler = RetentionScheduler(jobs, 60, lambda: now, registrations=registrations)
+    # Act
+    asyncio.run(scheduler.tick())
+    # Assert
+    assert (registrations.expired_at, jobs.calls) == (
+        now,
+        ["registrations", "cleanup", "retention"],
+    )
+
+
+def test_registration_cleanup_failure_does_not_stop_other_scheduler_jobs() -> None:
+    # Arrange
+    jobs = RetentionJobs()
+    scheduler = RetentionScheduler(
+        jobs,
+        60,
+        notifications=NotificationJobs(jobs.calls),
+        registrations=RegistrationJobs(jobs.calls, fail=True),
+    )
+    # Act
+    failures = asyncio.run(scheduler.tick())
+    # Assert
+    assert (failures, jobs.calls) == (
+        2,
+        ["registrations", "cleanup", "retention", "drain", "remove sent"],
+    )
+
+
 def test_tick_delivers_notifications_after_retention() -> None:
     # Arrange
     jobs = RetentionJobs()
