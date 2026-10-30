@@ -7,13 +7,19 @@ import {
 import { apiClient } from "@/shared/api/client";
 import type { Schemas } from "@/shared/api/types";
 import { unwrap } from "@/shared/api/unwrap";
-import { isInProgress, mapMeeting } from "../model";
+import { isInProgress, type Meeting, mapMeeting } from "../model";
 
 export const MEETINGS_PER_PAGE = 100;
 export const POLL_INTERVAL_MS = 10_000;
 const FIRST_PAGE = "";
+const CURRENT_NOTE_ONLY = { limit: 1 };
+
+// The server signs a playback link for 5 minutes (meetings/recordings.py).
+const RECORDING_LINK_LIFE_MS = 5 * 60_000;
+const RECORDING_LINK_FRESH_MS = 4 * 60_000;
 
 const workspaceListsKey = (workspaceId: string) => ["meetings", "list", workspaceId] as const;
+const detailKey = (meetingId: string) => ["meetings", "detail", meetingId] as const;
 
 function fetchMeetingPage(workspaceId: string, name: string, cursor: string, signal: AbortSignal) {
   return unwrap(
@@ -48,6 +54,61 @@ export const meetingQueries = {
       queryKey: [...workspaceListsKey(workspaceId), "latest", { name }],
       queryFn: ({ signal }) => fetchMeetingPage(workspaceId, name, FIRST_PAGE, signal),
       refetchInterval: ({ state }) => pollWhileInProgress(state.data?.items ?? []),
+    }),
+  detail: (meetingId: string) =>
+    queryOptions({
+      queryKey: detailKey(meetingId),
+      queryFn: ({ signal }) =>
+        unwrap(
+          apiClient.GET("/api/v1/meetings/{meeting_id}", {
+            params: { path: { meeting_id: meetingId } },
+            signal,
+          }),
+        ),
+      refetchInterval: ({ state }) => pollWhileInProgress(state.data ? [state.data] : []),
+      select: mapMeeting,
+    }),
+  transcript: ({ id, state }: Pick<Meeting, "id" | "state">, revisionId: string | null) =>
+    queryOptions({
+      queryKey: [...detailKey(id), "transcript", { revisionId }],
+      queryFn: ({ signal }) =>
+        unwrap(
+          apiClient.GET("/api/v1/meetings/{meeting_id}/transcript", {
+            params: { path: { meeting_id: id }, query: { revision_id: revisionId } },
+            signal,
+          }),
+        ),
+      enabled: state === "processed",
+    }),
+  notes: ({ id, state }: Pick<Meeting, "id" | "state">) =>
+    queryOptions({
+      queryKey: [...detailKey(id), "notes"],
+      queryFn: ({ signal }) =>
+        unwrap(
+          apiClient.GET("/api/v1/meetings/{meeting_id}/notes", {
+            params: { path: { meeting_id: id }, query: CURRENT_NOTE_ONLY },
+            signal,
+          }),
+        ),
+      select: ({ items }) => items[0] ?? null,
+      enabled: state === "processed",
+    }),
+  recording: ({ id, recordingAvailable }: Pick<Meeting, "id" | "recordingAvailable">) =>
+    queryOptions({
+      queryKey: [...detailKey(id), "recording"],
+      queryFn: ({ signal }) =>
+        unwrap(
+          apiClient.GET("/api/v1/meetings/{meeting_id}/recording", {
+            params: { path: { meeting_id: id } },
+            signal,
+          }),
+        ),
+      enabled: recordingAvailable,
+      staleTime: RECORDING_LINK_FRESH_MS,
+      gcTime: RECORDING_LINK_LIFE_MS,
+      // A new link changes the player's source, which restarts playback.
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
     }),
 };
 
