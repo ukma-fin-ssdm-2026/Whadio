@@ -60,6 +60,44 @@ export function meetingRead(changes: Partial<Schemas["MeetingRead"]> = {}): Sche
   };
 }
 
+export function noteRead(changes: Partial<Schemas["NoteRead"]> = {}): Schemas["NoteRead"] {
+  return {
+    id: "note",
+    preset: "summary",
+    provider: "whadio",
+    model_name: "gemma",
+    content: "Saved notes",
+    created_at: CREATED_AT,
+    created_by_user_id: null,
+    is_current: true,
+    context_meetings: [],
+    ...changes,
+  };
+}
+
+export function transcriptRead(
+  changes: Partial<Schemas["TranscriptRead"]> = {},
+): Schemas["TranscriptRead"] {
+  return {
+    meeting_id: "meeting",
+    language: "uk",
+    model_name: "whisper",
+    revision: {
+      id: "revision",
+      revision_type: "original",
+      created_at: CREATED_AT,
+      edited_by_user_id: null,
+      is_current: true,
+    },
+    original_revision_id: "revision",
+    is_edited: false,
+    has_unnamed_speakers: false,
+    speakers: [],
+    segments: [],
+    ...changes,
+  };
+}
+
 export function page<T>(items: T[], nextCursor: string | null = null) {
   return {
     items,
