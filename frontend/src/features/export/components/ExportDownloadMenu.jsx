@@ -1,11 +1,11 @@
 import { MenuItem, MenuList } from "@mui/material";
-import { api } from "@/api";
+import { notesExportUrl, transcriptExportUrl } from "../api/export-urls";
 
 export function ExportDownloadMenu({ meetingId, tab, transcript, onDownload }) {
   if (tab === "notes") {
     return (
       <MenuList aria-label="Notes download formats">
-        <MenuItem component="a" href={api.notesExportUrl(meetingId)} onClick={onDownload}>
+        <MenuItem component="a" href={notesExportUrl(meetingId)} onClick={onDownload}>
           Markdown (.md)
         </MenuItem>
       </MenuList>
@@ -18,14 +18,14 @@ export function ExportDownloadMenu({ meetingId, tab, transcript, onDownload }) {
     >
       <MenuItem
         component="a"
-        href={api.transcriptExportUrl(meetingId, { version, timestamps: false })}
+        href={transcriptExportUrl(meetingId, { version, timestamps: false })}
         onClick={onDownload}
       >
         Markdown (.md)
       </MenuItem>
       <MenuItem
         component="a"
-        href={api.transcriptExportUrl(meetingId, { version })}
+        href={transcriptExportUrl(meetingId, { version })}
         onClick={onDownload}
       >
         Markdown with timestamps (.md)
@@ -33,7 +33,7 @@ export function ExportDownloadMenu({ meetingId, tab, transcript, onDownload }) {
 
       <MenuItem
         component="a"
-        href={api.transcriptExportUrl(meetingId, { version, format: "vtt" })}
+        href={transcriptExportUrl(meetingId, { version, format: "vtt" })}
         onClick={onDownload}
       >
         WebVTT (.vtt)
