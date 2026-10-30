@@ -12,7 +12,11 @@ interface BreadcrumbsProps {
 export function Breadcrumbs({ page, workspace, meeting, onHome, onWorkspace }: BreadcrumbsProps) {
   if (page === "home") return null;
   const current =
-    page === "meetings" ? "Meetings" : page === "meeting" ? meeting?.title : workspace?.name;
+    page === "meetings"
+      ? "Meetings"
+      : page === "meeting"
+        ? (meeting?.title ?? "Meeting")
+        : (workspace?.name ?? "Workspace");
   return (
     <MuiBreadcrumbs aria-label="Breadcrumb">
       <Link component="button" variant="body2" underline="hover" onClick={onHome}>
