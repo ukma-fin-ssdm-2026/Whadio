@@ -28,6 +28,8 @@ class INotificationJobs(Protocol):
 class IRegistrationJobs(Protocol):
     async def remove_expired(self, now: datetime) -> int: ...
 
+    async def remove_expired_password_resets(self, now: datetime) -> int: ...
+
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
@@ -60,6 +62,12 @@ class RetentionScheduler:
             except SQLAlchemyError:
                 failed += 1
                 logger.warning("Registration cleanup could not access the database")
+            try:
+                removed = await self._registrations.remove_expired_password_resets(now)
+                logger.info("Password-reset cleanup: %d expired links deleted", removed)
+            except SQLAlchemyError:
+                failed += 1
+                logger.warning("Password-reset cleanup could not access the database")
         try:
             failed += len(await self._retention.remove_deleted_meeting_recordings())
         except SQLAlchemyError:

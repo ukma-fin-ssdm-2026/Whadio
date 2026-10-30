@@ -20,7 +20,7 @@ from ..shared.text import display_text
 from .contracts import UserProfile
 from .enums import NotesTemplate, SessionKind, WorkspaceRole
 from .models import User
-from .passwords import IPasswordHasher, is_password_strong
+from .passwords import IPasswordHasher, is_password_strong, password_rule_message
 from .repositories import (
     IIdentityRepository,
     IMcpKeyRepository,
@@ -33,6 +33,7 @@ from .repositories import (
     MemberWorkspace,
     PersonalMcpKey,
 )
+from .tokens import supplied_token_hash
 
 SESSION_LIFETIMES: Final = {
     SessionKind.BROWSER: timedelta(days=14),
@@ -290,8 +291,11 @@ class RegistrationIssuer:
         if await self._sessions.by_email(email) is not None:
             raise AccountAlreadyExistsError
         token = secrets.token_urlsafe(32)
+        token_hash = supplied_token_hash(token)
+        if token_hash is None:
+            raise AssertionError("Generated token must be UTF-8 encodable")
         registration_id = await self._registrations.issue(
-            email, hashlib.sha256(token.encode()).hexdigest(), now, now + REGISTRATION_LIFETIME
+            email, token_hash, now, now + REGISTRATION_LIFETIME
         )
         return RegistrationLink(registration_id, token)
 
@@ -324,19 +328,17 @@ class RegistrationService:
         await self._registrations.lock_email(pending.email)
         # Re-read after locking: another request may have used or replaced the link while we waited.
         pending = await self._registrations.pending(registration_id)
+        token_hash = supplied_token_hash(token)
         if (
             pending is None
             or pending.expires_at <= now
-            or not secrets.compare_digest(
-                pending.token_hash, hashlib.sha256(token.encode()).hexdigest()
-            )
+            or token_hash is None
+            or not secrets.compare_digest(pending.token_hash, token_hash)
             or await self._sessions.by_email(pending.email) is not None
         ):
             raise UseCaseError(Failure.LINK_INVALID)
         if not is_password_strong(details.password):
-            raise RegistrationValidationError(
-                "password", "Use 12 to 128 characters, at least one digit and one uppercase letter"
-            )
+            raise RegistrationValidationError("password", password_rule_message())
         if not details.accept_terms:
             raise RegistrationValidationError("accept_terms", "Accept the Terms and Conditions")
         try:

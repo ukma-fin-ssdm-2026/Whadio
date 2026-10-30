@@ -73,6 +73,55 @@ def test_password_error_names_field_without_echoing_secrets(
     assert async_database.run(scenario) == (422, "password", True, True)
 
 
+def test_invalid_link_precedes_password_validation(async_database: AsyncDatabase) -> None:
+    # Arrange
+    weak_password = "lowercase" + "123456"
+
+    async def scenario(session: AsyncSession) -> tuple[int, str]:
+        user = await AsyncDatabase.add_account(session, PASSWORD)
+        link = await password_reset_service(session).issue(user.email, datetime.now(UTC))
+        async with AsyncDatabase.api_client(session) as client:
+            # Act
+            response = await client.post(
+                f"/api/v1/password-resets/{link.reset_id}/complete",
+                json={"token": uuid4().hex, "password": weak_password},
+            )
+            error = ErrorResponse.model_validate_json(response.content).error
+            return response.status_code, error.code.value
+
+    # Assert
+    assert async_database.run(scenario) == (404, "LINK_INVALID")
+
+
+@pytest.mark.parametrize(
+    ("body", "status", "field"),
+    [
+        (b'{"token":"\\ud800","password":"NewPassword1"}', 404, None),
+        (b'{"token":"valid","password":"NewPassword1\\ud800"}', 422, "password"),
+    ],
+)
+def test_non_utf8_secret_text_does_not_return_an_internal_error(
+    async_database: AsyncDatabase, body: bytes, status: int, field: str | None
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, str | None]:
+        user = await AsyncDatabase.add_account(session, PASSWORD)
+        link = await password_reset_service(session).issue(user.email, datetime.now(UTC))
+        request = body.replace(b'"valid"', f'"{link.token}"'.encode())
+        async with AsyncDatabase.api_client(session) as client:
+            # Act
+            response = await client.post(
+                f"/api/v1/password-resets/{link.reset_id}/complete",
+                content=request,
+                headers={"Content-Type": "application/json"},
+            )
+            error = ErrorResponse.model_validate_json(response.content).error
+            return response.status_code, None if not error.details else error.details[0].field
+
+    # Assert
+    assert async_database.run(scenario) == (status, field)
+
+
 @pytest.mark.parametrize("mode", ["invite-only", "verified"])
 def test_reset_changes_password_and_clears_cookie_in_either_mode(
     async_database: AsyncDatabase, monkeypatch: pytest.MonkeyPatch, mode: str
@@ -80,7 +129,7 @@ def test_reset_changes_password_and_clears_cookie_in_either_mode(
     # Arrange
     monkeypatch.setenv("WHADIO_REGISTRATION_MODE", mode)
 
-    async def scenario(session: AsyncSession) -> tuple[int, bytes, bool, int, int]:
+    async def scenario(session: AsyncSession) -> tuple[int, bytes, bool, str, int, int]:
         old_password = f"Old1{uuid4().hex}"
         user = await AsyncDatabase.add_account(session, old_password)
         link = await password_reset_service(session).issue(user.email, datetime.now(UTC))
@@ -103,12 +152,13 @@ def test_reset_changes_password_and_clears_cookie_in_either_mode(
                 response.status_code,
                 response.content,
                 "Max-Age=0" in response.headers["set-cookie"],
+                response.headers["cache-control"],
                 old.status_code,
                 new.status_code,
             )
 
     # Assert
-    assert async_database.run(scenario) == (204, b"", True, 401, 201)
+    assert async_database.run(scenario) == (204, b"", True, "no-store", 401, 201)
 
 
 def test_reset_revokes_every_session_but_preserves_mcp_and_other_accounts(

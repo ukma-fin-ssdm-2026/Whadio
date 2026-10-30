@@ -490,7 +490,9 @@ Registrations = Annotated[RegistrationService, Depends(registration_service)]
 
 
 def password_reset_service(session: Session) -> PasswordResetService:
-    return PasswordResetService(PasswordResetRepository(session), Argon2PasswordHasher())
+    return PasswordResetService(
+        PasswordResetRepository(session), SessionRepository(session), Argon2PasswordHasher()
+    )
 
 
 PasswordResets = Annotated[PasswordResetService, Depends(password_reset_service)]

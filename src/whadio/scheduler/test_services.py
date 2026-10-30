@@ -62,6 +62,13 @@ class RegistrationJobs:
             raise OperationalError("database unavailable", None, RuntimeError())
         return 2
 
+    async def remove_expired_password_resets(self, now: datetime) -> int:
+        self.calls.append("password resets")
+        self.expired_at = now
+        if self.fail:
+            raise OperationalError("database unavailable", None, RuntimeError())
+        return 2
+
 
 def test_tick_cleans_registrations_using_the_scheduler_clock() -> None:
     # Arrange
@@ -74,7 +81,7 @@ def test_tick_cleans_registrations_using_the_scheduler_clock() -> None:
     # Assert
     assert (registrations.expired_at, jobs.calls) == (
         now,
-        ["registrations", "cleanup", "retention"],
+        ["registrations", "password resets", "cleanup", "retention"],
     )
 
 
@@ -91,8 +98,8 @@ def test_registration_cleanup_failure_does_not_stop_other_scheduler_jobs() -> No
     failures = asyncio.run(scheduler.tick())
     # Assert
     assert (failures, jobs.calls) == (
-        2,
-        ["registrations", "cleanup", "retention", "drain", "remove sent"],
+        3,
+        ["registrations", "password resets", "cleanup", "retention", "drain", "remove sent"],
     )
 
 
