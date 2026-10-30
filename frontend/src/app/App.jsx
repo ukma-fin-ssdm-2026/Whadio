@@ -291,10 +291,7 @@ export function App() {
         renderSidebar={(onNavigate) => (
           <Sidebar
             user={user}
-            workspaces={workspaces.map((item) => ({
-              ...item,
-              meetingCount: meetings.filter((meeting) => meeting.workspaceId === item.id).length,
-            }))}
+            workspaces={workspaces}
             page={view}
             workspaceId={workspaceId}
             onHome={() => {

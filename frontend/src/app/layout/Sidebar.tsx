@@ -19,7 +19,7 @@ import type { Page } from "../navigation/page";
 
 interface SidebarProps {
   user: { name?: string | null; email: string } | null;
-  workspaces: { id: string; name: string; meetingCount: number }[];
+  workspaces: { id: string; name: string }[];
   page: Page;
   workspaceId: string;
   onHome: () => void;
@@ -31,13 +31,12 @@ interface SidebarProps {
 
 interface NavItemProps {
   label: string;
-  secondary?: string;
   icon?: ReactNode;
   current: boolean;
   onClick: () => void;
 }
 
-function NavItem({ label, secondary, icon, current, onClick }: NavItemProps) {
+function NavItem({ label, icon, current, onClick }: NavItemProps) {
   return (
     <ListItemButton
       selected={current}
@@ -48,14 +47,11 @@ function NavItem({ label, secondary, icon, current, onClick }: NavItemProps) {
       {icon && <ListItemIcon sx={{ minWidth: 36 }}>{icon}</ListItemIcon>}
       <ListItemText
         primary={label}
-        secondary={secondary}
         slotProps={{ primary: { noWrap: true, variant: "subtitle2" } }}
       />
     </ListItemButton>
   );
 }
-
-const meetingCount = (count: number) => (count === 1 ? "1 meeting" : `${count} meetings`);
 
 function initials(name: string) {
   return name
@@ -106,7 +102,6 @@ export function Sidebar({
           <NavItem
             key={workspace.id}
             label={workspace.name}
-            secondary={meetingCount(workspace.meetingCount)}
             current={page === "workspace" && workspace.id === workspaceId}
             onClick={navigate(() => onWorkspace(workspace.id))}
           />
