@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { api, recordingForm } from "./api";
+import { api } from "./api";
 import type { Schemas } from "./shared/api/types";
 import { http, server } from "./shared/testing/server";
 
@@ -33,36 +33,6 @@ function captureTranscriptQuery() {
   );
   return searches;
 }
-
-const formFields = (form: FormData) =>
-  [...form.entries()].map(([key, value]) => [key, typeof value === "string" ? value : value.name]);
-
-describe("recording upload form", () => {
-  test("carries the file and the trimmed name", () => {
-    // Arrange
-    const file = new File(["RIFF"], "standup.wav", { type: "audio/wav" });
-
-    // Act
-    const form = recordingForm({ file, name: "  Standup  " });
-
-    // Assert
-    expect(formFields(form)).toEqual([
-      ["file", "standup.wav"],
-      ["name", "Standup"],
-    ]);
-  });
-
-  test("leaves out a blank name", () => {
-    // Arrange
-    const file = new File(["RIFF"], "standup.wav", { type: "audio/wav" });
-
-    // Act
-    const form = recordingForm({ file, name: "   " });
-
-    // Assert
-    expect(formFields(form)).toEqual([["file", "standup.wav"]]);
-  });
-});
 
 describe("requests", () => {
   test("transcript request names the requested revision", async () => {

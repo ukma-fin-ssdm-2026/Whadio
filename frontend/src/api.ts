@@ -1,32 +1,11 @@
 import { API_ORIGIN, apiClient } from "./shared/api/client";
 import type { operations } from "./shared/api/schema.gen";
-import type {
-  MeetingPage,
-  MeetingRead,
-  NotePage,
-  PlaybackLink,
-  Schemas,
-  TranscriptRead,
-} from "./shared/api/types";
+import type { MeetingRead, NotePage, PlaybackLink, TranscriptRead } from "./shared/api/types";
 import { unwrap } from "./shared/api/unwrap";
-
-export { ApiError } from "./shared/api/errors";
-
-type UploadBody = Schemas["Body_upload_recording_api_v1_workspaces__workspace_id__meetings_post"];
 
 type TranscriptExportOptions = NonNullable<
   operations["export_transcript_api_v1_meetings__meeting_id__transcript_export_get"]["parameters"]["query"]
 >;
-
-type RecordingUpload = { file: Blob; name: string };
-
-export function recordingForm({ file, name }: UploadBody): FormData {
-  const form = new FormData();
-  form.append("file", file);
-  const trimmedName = name?.trim();
-  if (trimmedName) form.append("name", trimmedName);
-  return form;
-}
 
 const PAGE = { limit: 100 };
 
@@ -34,14 +13,6 @@ const meetingUrl = (meetingId: string) =>
   `${API_ORIGIN}/api/v1/meetings/${encodeURIComponent(meetingId)}`;
 
 export const api = {
-  listMeetings(workspaceId: string): Promise<MeetingPage> {
-    return unwrap(
-      apiClient.GET("/api/v1/workspaces/{workspace_id}/meetings", {
-        params: { path: { workspace_id: workspaceId }, query: PAGE },
-      }),
-    );
-  },
-
   getMeeting(meetingId: string): Promise<MeetingRead> {
     return unwrap(
       apiClient.GET("/api/v1/meetings/{meeting_id}", {
@@ -83,16 +54,6 @@ export const api = {
     return unwrap(
       apiClient.GET("/api/v1/meetings/{meeting_id}/recording", {
         params: { path: { meeting_id: meetingId } },
-      }),
-    );
-  },
-
-  uploadMeeting(workspaceId: string, { file, name }: RecordingUpload): Promise<MeetingRead> {
-    return unwrap(
-      apiClient.POST("/api/v1/workspaces/{workspace_id}/meetings", {
-        params: { path: { workspace_id: workspaceId } },
-        body: { file, name },
-        bodySerializer: recordingForm,
       }),
     );
   },
