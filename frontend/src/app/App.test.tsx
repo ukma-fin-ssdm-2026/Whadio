@@ -1,8 +1,10 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { type UserEvent, userEvent } from "@testing-library/user-event";
 import { HttpResponse, type HttpResponseResolver, http, type JsonBodyType } from "msw";
-import { describe, expect, test } from "vitest";
-import { errorBody, page } from "@/shared/testing/fixtures";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { POLL_INTERVAL_MS } from "@/features/meetings/api/meetings";
+import type { Schemas } from "@/shared/api/types";
+import { errorBody, meetingRead, meetingSummary, page } from "@/shared/testing/fixtures";
 import { server } from "@/shared/testing/server";
 import { App } from "./App";
 
@@ -10,8 +12,14 @@ const DEEP_LINK = "/whadio/meetings/meeting?revision_id=original";
 const CURRENT_LINK = "/whadio/meetings/meeting";
 const ORIGINAL_WORDING = "Original uncorrected wording";
 const CURRENT_WORDING = "Current corrected wording";
+const LINKED_TITLE = "Linked meeting outside the first page";
+const FAILURE_REASON = "The recording has no audio";
 
 type ApiTraffic = { requests: string[]; signIns: unknown[] };
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function transcript(original: boolean) {
   return {
@@ -85,7 +93,7 @@ function serveApi(signedIn: boolean): ApiTraffic {
       member(() => ({
         id: "meeting",
         workspace_id: "workspace",
-        name: "Linked meeting outside the first page",
+        name: LINKED_TITLE,
         recorded_at: "2026-10-25T10:00:00Z",
         processing_state: "processed",
         duration_seconds: 5,
@@ -141,10 +149,14 @@ async function goBackToCurrent(signedIn: boolean) {
   await screen.findByText(CURRENT_WORDING);
 }
 
-function renderHome() {
-  window.history.replaceState(null, "", "/whadio/");
+function startSession(path = "/whadio/") {
+  window.history.replaceState(null, "", path);
   sessionStorage.clear();
-  const traffic = serveApi(true);
+  return serveApi(true);
+}
+
+function renderHome() {
+  const traffic = startSession();
   render(<App />);
   return traffic;
 }
@@ -321,4 +333,144 @@ test("a workspace list failure returns to sign-in with its message", async () =>
 
   // Assert
   expect(await screen.findByRole("alert")).toHaveTextContent("Not allowed here");
+});
+
+test("a deep link to a meeting outside every list opens it", async () => {
+  // Act
+  await openDeepLink(true);
+
+  // Assert
+  expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(LINKED_TITLE);
+});
+
+test("a deep link names the meeting in the breadcrumbs", async () => {
+  // Act
+  await openDeepLink(true);
+
+  // Assert
+  expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(LINKED_TITLE);
+});
+
+test("a failure reason survives a trip through the list, which lacks it", async () => {
+  // Arrange
+  startSession(CURRENT_LINK);
+  server.use(
+    http.get("/api/v1/meetings/meeting", () =>
+      HttpResponse.json(
+        meetingRead({ processing_state: "failed", failure_reason: FAILURE_REASON }),
+      ),
+    ),
+    http.get("/api/v1/workspaces/workspace/meetings", () =>
+      HttpResponse.json(page([meetingSummary({ processing_state: "failed" })])),
+    ),
+  );
+  const user = userEvent.setup();
+  render(<App />);
+  await screen.findByText(FAILURE_REASON);
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Demo Workspace" }));
+  await user.click(await screen.findByRole("button", { name: /Weekly sync/ }));
+
+  // Assert
+  expect(await screen.findByText(FAILURE_REASON)).toBeInTheDocument();
+});
+
+test("an available recording survives a trip through the list, which lacks it", async () => {
+  // Arrange
+  startSession(CURRENT_LINK);
+  server.use(
+    http.get("/api/v1/meetings/meeting", () =>
+      HttpResponse.json(meetingRead({ recording_available: true })),
+    ),
+    http.get("/api/v1/meetings/meeting/recording", () =>
+      HttpResponse.json({ url: "", expires_at: "2026-10-25T10:05:00Z" }),
+    ),
+    http.get("/api/v1/workspaces/workspace/meetings", () =>
+      HttpResponse.json(page([meetingSummary()])),
+    ),
+  );
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Demo Workspace" }));
+  await user.click(await screen.findByRole("button", { name: /Weekly sync/ }));
+
+  // Act
+  await user.click(await screen.findByRole("tab", { name: "Recording" }));
+
+  // Assert
+  expect(await screen.findByText("Loading recording...")).toBeInTheDocument();
+});
+
+test("an open meeting follows its processing state", async () => {
+  // Arrange
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  startSession(CURRENT_LINK);
+  let state: Schemas["ProcessingState"] = "queued";
+  server.use(
+    http.get("/api/v1/meetings/meeting", () =>
+      HttpResponse.json(meetingRead({ processing_state: state })),
+    ),
+  );
+  render(<App />);
+  await screen.findByText("Queued");
+
+  // Act
+  state = "failed";
+  await act(() => vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS));
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent("Processing failed");
+});
+
+test("a session that expires while reading meetings returns to sign-in", async () => {
+  // Arrange
+  startSession();
+  server.use(
+    http.get("/api/v1/workspaces/workspace/meetings", () =>
+      HttpResponse.json(errorBody("UNAUTHENTICATED", "Sign in required"), { status: 401 }),
+    ),
+  );
+
+  // Act
+  render(<App />);
+
+  // Assert
+  expect(await screen.findByLabelText(/^Email/)).toBeInTheDocument();
+});
+
+test("Home reads each workspace's meetings once", async () => {
+  // Arrange
+  const traffic = renderHome();
+
+  // Act
+  await screen.findByText(/0 meetings, 0 active/);
+
+  // Assert
+  expect(traffic.requests.filter((request) => request.includes("/meetings"))).toEqual([
+    "GET /api/v1/workspaces/workspace/meetings?limit=100",
+  ]);
+});
+
+test("a finished upload opens the new meeting", async () => {
+  // Arrange
+  startSession();
+  server.use(
+    http.post("/api/v1/workspaces/workspace/meetings", () =>
+      HttpResponse.json(meetingRead({ id: "meeting" }), { status: 201 }),
+    ),
+  );
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: /Demo Workspace.*Owner/ }));
+  await user.click(await screen.findByRole("button", { name: "Upload" }));
+  const input = document.querySelector("input[type=file]");
+  if (!(input instanceof HTMLInputElement)) throw new Error("The dialog has no file input.");
+  await user.upload(input, new File(["RIFF"], "standup.wav", { type: "audio/wav" }));
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Queue processing" }));
+
+  // Assert
+  await waitFor(() => expect(currentPath()).toBe(CURRENT_LINK));
 });

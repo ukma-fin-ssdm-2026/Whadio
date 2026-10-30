@@ -1,22 +1,24 @@
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import { Box, CircularProgress, IconButton, Stack, Tooltip } from "@mui/material";
-import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/api";
 import { McpKeyPanel } from "@/features/accounts/components/McpKeyPanel";
 import { SignInForm } from "@/features/accounts/components/SignInForm";
 import { SignOutButton } from "@/features/accounts/components/SignOutButton";
 import { clearSignedInUser, readSignedInUser } from "@/features/accounts/session-storage";
 import { ExportControls } from "@/features/export/components/ExportControls";
+import { pollWhileInProgress } from "@/features/meetings/api/meetings";
 import { MeetingDetail } from "@/features/meetings/detail/MeetingDetail";
-import { MeetingLibrary } from "@/features/meetings/library/MeetingLibrary";
-import { mapMeeting, matchesStateFilter } from "@/features/meetings/model";
+import { AllMeetings } from "@/features/meetings/library/AllMeetings";
+import { WorkspaceMeetings } from "@/features/meetings/library/WorkspaceMeetings";
+import { MeetingFigures } from "@/features/meetings/MeetingFigures";
+import { mapMeeting } from "@/features/meetings/model";
 import { UploadPanel } from "@/features/meetings/upload/UploadPanel";
 import { workspaceQueries } from "@/features/workspaces/api/workspaces";
 import { HomeView } from "@/features/workspaces/components/HomeView";
 import { WorkspacePresetField } from "@/features/workspaces/components/WorkspacePresetField";
 import { WorkspaceSettings } from "@/features/workspaces/components/WorkspaceSettings";
-import { countOf } from "@/shared/lib/plural";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { AppShell } from "./layout/AppShell";
 import { Breadcrumbs } from "./layout/Breadcrumbs";
@@ -24,6 +26,13 @@ import { Sidebar } from "./layout/Sidebar";
 import { meetingLibraryPath, meetingPath, readMeetingLink } from "./navigation/meeting-link";
 import { AppProviders } from "./providers";
 import "@/styles.css";
+
+const openedMeetingQuery = (id) =>
+  queryOptions({
+    queryKey: ["meetings", "detail", id],
+    queryFn: () => api.getMeeting(id),
+    refetchInterval: ({ state }) => pollWhileInProgress(state.data ? [state.data] : []),
+  });
 
 export function App() {
   const [signedOut, setSignedOut] = useState(false);
@@ -77,8 +86,7 @@ function SignedInApp({ user, onSignedOut, onLoadFailed }) {
 }
 
 function Workbench({ user, workspaces, onSignedOut }) {
-  const [meetings, setMeetings] = useState([]);
-  const [meetingsLoaded, setMeetingsLoaded] = useState(false);
+  const queryClient = useQueryClient();
   const [error, setError] = useState("");
   const [contentLoading, setContentLoading] = useState(false);
   const [notes, setNotes] = useState(null);
@@ -88,96 +96,52 @@ function Workbench({ user, workspaces, onSignedOut }) {
   const [chosenWorkspaceId, setWorkspaceId] = useState("");
   const [meetingId, setMeetingId] = useState("");
   const [meetingLink, setMeetingLink] = useState(() => readMeetingLink(window.location.href));
-  const [query, setQuery] = useState("");
-  const [stateFilter, setStateFilter] = useState("all");
   const [meetingTab, setMeetingTab] = useState("notes");
   const [transcriptQuery, setTranscriptQuery] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const requestedMeetingId = useRef("");
 
-  const loadMeetings = useCallback(async () => {
-    const meetingPages = await Promise.all(workspaces.map((item) => api.listMeetings(item.id)));
-    const nextMeetings = meetingPages.flatMap((page) => page.items.map(mapMeeting));
-    setMeetings((current) => {
-      const linked = current.find(
-        (item) => item.id === readMeetingLink(window.location.href)?.meetingId,
-      );
-      const listed =
-        linked && !nextMeetings.some((item) => item.id === linked.id)
-          ? [...nextMeetings, linked]
-          : nextMeetings;
-      return listed.map((meeting) => {
-        const previous = current.find((item) => item.id === meeting.id);
-        return previous?.recordingAvailable
-          ? { ...meeting, recordingAvailable: true, failureReason: previous.failureReason }
-          : meeting;
-      });
-    });
-    setMeetingsLoaded(true);
-  }, [workspaces]);
-
-  useEffect(() => {
-    loadMeetings().catch((caught) => setError(caught.message));
-  }, [loadMeetings]);
-
-  useEffect(() => {
-    if (!meetings.some((item) => ["recording", "queued", "processing"].includes(item.state)))
-      return undefined;
-    const timer = window.setInterval(() => {
-      loadMeetings().catch((caught) => setError(caught.message));
-    }, 10000);
-    return () => window.clearInterval(timer);
-  }, [loadMeetings, meetings]);
-
   const workspaceId = chosenWorkspaceId || workspaces[0]?.id || "";
   const workspace = workspaces.find((item) => item.id === workspaceId) ?? workspaces[0];
-  const selectedMeeting = meetings.find((item) => item.id === meetingId);
+  const { data: openedMeeting } = useQuery({
+    ...openedMeetingQuery(meetingId),
+    enabled: view === "meeting" && Boolean(meetingId),
+  });
+  const selectedMeeting = openedMeeting && mapMeeting(openedMeeting);
 
-  const visibleMeetings = useMemo(() => {
-    const source =
-      view === "meetings" ? meetings : meetings.filter((item) => item.workspaceId === workspaceId);
-
-    return source
-      .filter((item) => item.title.toLowerCase().includes(query.toLowerCase()))
-      .filter((item) => matchesStateFilter(item, stateFilter))
-      .sort((left, right) => new Date(right.date) - new Date(left.date));
-  }, [meetings, query, stateFilter, view, workspaceId]);
-
-  const loadMeetingContent = useCallback(async (id, revisionId = null) => {
-    const request = {};
-    requestedMeetingId.current = request;
-    setContentLoading(true);
-    setError("");
-    setNotes(null);
-    setTranscript(null);
-    setRecordingUrl("");
-    try {
-      const detail = await api.getMeeting(id);
-      if (requestedMeetingId.current !== request) return;
-      const mapped = mapMeeting(detail);
-      setWorkspaceId(mapped.workspaceId);
-      setMeetings((items) => [mapped, ...items.filter((item) => item.id !== id)]);
-      const [notesResult, transcriptResult] = await Promise.allSettled([
-        api.listNotes(id),
-        api.getTranscript(id, revisionId),
-      ]);
-      if (requestedMeetingId.current !== request) return;
-      if (notesResult.status === "fulfilled") setNotes(notesResult.value.items[0] ?? null);
-      if (transcriptResult.status === "fulfilled") {
-        setTranscript(transcriptResult.value);
-      } else if (transcriptResult.reason.code !== "NOT_TRANSCRIBED" || revisionId) {
-        setError(transcriptResult.reason.message);
+  const loadMeetingContent = useCallback(
+    async (id, revisionId = null) => {
+      const request = {};
+      requestedMeetingId.current = request;
+      setContentLoading(true);
+      setError("");
+      setNotes(null);
+      setTranscript(null);
+      setRecordingUrl("");
+      try {
+        const detail = await queryClient.fetchQuery(openedMeetingQuery(id));
+        if (requestedMeetingId.current !== request) return;
+        setWorkspaceId(detail.workspace_id);
+        const [notesResult, transcriptResult] = await Promise.allSettled([
+          api.listNotes(id),
+          api.getTranscript(id, revisionId),
+        ]);
+        if (requestedMeetingId.current !== request) return;
+        if (notesResult.status === "fulfilled") setNotes(notesResult.value.items[0] ?? null);
+        if (transcriptResult.status === "fulfilled") {
+          setTranscript(transcriptResult.value);
+        } else if (transcriptResult.reason.code !== "NOT_TRANSCRIBED" || revisionId) {
+          setError(transcriptResult.reason.message);
+        }
+        if (notesResult.status === "rejected") setError(notesResult.reason.message);
+      } catch (caught) {
+        if (requestedMeetingId.current === request) setError(caught.message);
+      } finally {
+        if (requestedMeetingId.current === request) setContentLoading(false);
       }
-      if (notesResult.status === "rejected") setError(notesResult.reason.message);
-    } catch (caught) {
-      if (requestedMeetingId.current === request) {
-        setMeetings((items) => items.filter((item) => item.id !== id));
-        setError(caught.message);
-      }
-    } finally {
-      if (requestedMeetingId.current === request) setContentLoading(false);
-    }
-  }, []);
+    },
+    [queryClient],
+  );
 
   useEffect(() => {
     const followHistory = (event) => {
@@ -213,8 +177,6 @@ function Workbench({ user, workspaces, onSignedOut }) {
     requestedMeetingId.current = "";
     setWorkspaceId(id);
     setMeetingId("");
-    setQuery("");
-    setStateFilter("all");
     setSettingsOpen(false);
     setView("workspace");
   };
@@ -241,8 +203,6 @@ function Workbench({ user, workspaces, onSignedOut }) {
     requestedMeetingId.current = "";
     setView("meetings");
     setMeetingId("");
-    setQuery("");
-    setStateFilter("all");
     setSettingsOpen(false);
   };
 
@@ -254,25 +214,6 @@ function Workbench({ user, workspaces, onSignedOut }) {
         : view === "meeting"
           ? (selectedMeeting?.title ?? "Meeting")
           : (workspace?.name ?? "Workspace");
-
-  const meetingFigures = (id) => {
-    if (!meetingsLoaded) return "Loading meetings";
-    const listed = meetings.filter((item) => item.workspaceId === id);
-    const active = listed.filter((item) => item.state !== "processed").length;
-    return `${countOf(listed.length, "meeting")}, ${active} active`;
-  };
-
-  const handleUpload = async (payload) => {
-    const created = await api.uploadMeeting(workspaceId, payload);
-    const mapped = mapMeeting(created);
-    setMeetings((items) => [mapped, ...items]);
-    setMeetingId(mapped.id);
-    setMeetingTab("notes");
-    setTranscriptQuery("");
-    setSettingsOpen(false);
-    setView("meeting");
-    openMeeting(mapped.id);
-  };
 
   return (
     <AppShell
@@ -335,7 +276,7 @@ function Workbench({ user, workspaces, onSignedOut }) {
         {view === "home" && (
           <HomeView
             workspaces={workspaces}
-            renderMeetingFigures={meetingFigures}
+            renderMeetingFigures={(id) => <MeetingFigures workspaceId={id} />}
             onWorkspace={openWorkspace}
           />
         )}
@@ -345,32 +286,27 @@ function Workbench({ user, workspaces, onSignedOut }) {
         {view === "workspace" && !settingsOpen && (
           <>
             <UploadPanel
+              workspaceId={workspace.id}
               presetField={<WorkspacePresetField workspaceId={workspace.id} />}
-              onUpload={handleUpload}
+              onUploaded={openMeeting}
             />
-            <MeetingLibrary
-              title="Workspace library"
-              meetings={visibleMeetings}
-              query={query}
-              stateFilter={stateFilter}
-              onQuery={setQuery}
-              onStateFilter={setStateFilter}
-              onMeeting={openMeeting}
+            <WorkspaceMeetings
+              key={workspace.id}
+              workspaceId={workspace.id}
               selectedMeetingId={meetingId}
+              onMeeting={openMeeting}
             />
           </>
         )}
         {view === "meetings" && (
-          <MeetingLibrary
-            title="Workspace library"
-            meetings={visibleMeetings}
-            query={query}
-            stateFilter={stateFilter}
-            onQuery={setQuery}
-            onStateFilter={setStateFilter}
-            onMeeting={openMeeting}
+          <AllMeetings
+            workspaceIds={workspaces.map((item) => item.id)}
             selectedMeetingId={meetingId}
+            onMeeting={openMeeting}
           />
+        )}
+        {view === "meeting" && !selectedMeeting && contentLoading && (
+          <CircularProgress aria-label="Loading meeting" sx={{ alignSelf: "center" }} />
         )}
         {view === "meeting" && selectedMeeting && (
           <MeetingDetail

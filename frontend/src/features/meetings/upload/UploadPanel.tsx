@@ -11,32 +11,37 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
+import { useUploadMeeting } from "../api/meetings";
 
-export function UploadPanel({ presetField, onUpload }) {
+interface UploadPanelProps {
+  workspaceId: string;
+  presetField: ReactNode;
+  onUploaded: (meetingId: string) => void;
+}
+
+export function UploadPanel({ workspaceId, presetField, onUploaded }: UploadPanelProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [file, setFile] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [fileMissing, setFileMissing] = useState(false);
+  const upload = useUploadMeeting(workspaceId);
+  const error = fileMissing ? "Select an audio or video file." : upload.error?.message;
 
-  const submit = async () => {
-    if (!file) {
-      setError("Select an audio or video file.");
-      return;
-    }
-    setSubmitting(true);
-    setError("");
-    try {
-      await onUpload({ file, name });
-      setOpen(false);
-      setName("");
-      setFile(null);
-    } catch (caught) {
-      setError(caught.message);
-    } finally {
-      setSubmitting(false);
-    }
+  const submit = () => {
+    setFileMissing(!file);
+    if (!file) return;
+    upload.mutate(
+      { file, name },
+      {
+        onSuccess: (meeting) => {
+          setOpen(false);
+          setName("");
+          setFile(null);
+          onUploaded(meeting.id);
+        },
+      },
+    );
   };
 
   return (
@@ -101,8 +106,8 @@ export function UploadPanel({ presetField, onUpload }) {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpen(false)}>Cancel</Button>
-          <Button variant="contained" disabled={submitting} onClick={submit}>
-            {submitting ? "Uploading..." : "Queue processing"}
+          <Button variant="contained" disabled={upload.isPending} onClick={submit}>
+            {upload.isPending ? "Uploading..." : "Queue processing"}
           </Button>
         </DialogActions>
       </Dialog>
