@@ -4,6 +4,46 @@
  */
 
 export interface paths {
+    "/api/v1/instance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Describe this instance
+         * @description Public. Returns the registration mode and API version so the web app can decide whether to offer registration and password reset.
+         */
+        get: operations["instance_api_v1_instance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/registrations/{registration_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create the account from a registration link
+         * @description Works in either registration mode. Creates the account and its personal workspace atomically, consumes the link, and sets the browser session cookie.
+         */
+        post: operations["complete_api_v1_registrations__registration_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sessions": {
         parameters: {
             query?: never;
@@ -1073,6 +1113,16 @@ export interface components {
              */
             status: string;
         };
+        /** InstanceRead */
+        InstanceRead: {
+            /** @description How this instance admits accounts */
+            registration_mode: components["schemas"]["RegistrationMode"];
+            /**
+             * Api Version
+             * @description Version of the Web API
+             */
+            api_version: string;
+        };
         /** JobCounts */
         JobCounts: {
             /** @description Job type */
@@ -1660,6 +1710,36 @@ export interface components {
          * @enum {string}
          */
         RecordingStatus: "complete" | "partial";
+        /** RegistrationComplete */
+        RegistrationComplete: {
+            /**
+             * Token
+             * Format: password
+             * @description Secret from the registration link fragment
+             */
+            token: string;
+            /**
+             * Name
+             * @description Account display name
+             */
+            name: string;
+            /**
+             * Password
+             * Format: password
+             * @description 12 to 128 characters, a digit and an uppercase letter
+             */
+            password: string;
+            /**
+             * Accept Terms
+             * @description Explicit acceptance of the instance Terms
+             */
+            accept_terms: boolean;
+        };
+        /**
+         * RegistrationMode
+         * @enum {string}
+         */
+        RegistrationMode: "invite-only" | "verified";
         /** RequestInput */
         RequestInput: {
             /**
@@ -2223,6 +2303,80 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    instance_api_v1_instance_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceRead"];
+                };
+            };
+        };
+    };
+    complete_api_v1_registrations__registration_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Registration identifier from the link */
+                registration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegistrationComplete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserRead"];
+                };
+            };
+            /** @description `MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description LINK_INVALID: unknown, expired, replaced or used link */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     sign_in_api_v1_sessions_post: {
         parameters: {
             query?: never;
@@ -5730,6 +5884,7 @@ export const presetValues: ReadonlyArray<FlattenedDeepRequired<components>["sche
 export const processingStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProcessingState"]> = ["recording", "queued", "processing", "processed", "failed"];
 export const providerValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Provider"]> = ["whadio", "anthropic", "openai", "google"];
 export const recordingStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["RecordingStatus"]> = ["complete", "partial"];
+export const registrationModeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["RegistrationMode"]> = ["invite-only", "verified"];
 export const revisionTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["RevisionType"]> = ["original", "edited"];
 export const roleValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Role"]> = ["member", "moderator", "owner"];
 export const sessionKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SessionKind"]> = ["browser", "extension"];
