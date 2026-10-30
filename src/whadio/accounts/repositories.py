@@ -157,6 +157,10 @@ class IdentityRepository:
 class ISessionRepository(Protocol):
     async def by_email(self, email: str, /) -> User | None: ...
 
+    async def account_for_update(self, email: str, /) -> User | None: ...
+
+    async def lock_account(self, user_id: UUID, /) -> None: ...
+
     async def add_session(
         self, user_id: UUID, kind: SessionKind, token: str, expires_at: datetime, now: datetime, /
     ) -> None: ...
@@ -177,8 +181,21 @@ class SessionRepository:
         return await self._session.scalar(
             select(User)
             .where(func.lower(User.email) == email.lower())
-            .with_for_update()
+            .with_for_update(read=True)
             .execution_options(populate_existing=True)
+        )
+
+    async def account_for_update(self, email: str) -> User | None:
+        return await self._session.scalar(
+            select(User)
+            .where(func.lower(User.email) == email.lower())
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
+        )
+
+    async def lock_account(self, user_id: UUID) -> None:
+        await self._session.scalar(
+            select(User.user_id).where(User.user_id == user_id).with_for_update(key_share=True)
         )
 
     async def add_session(

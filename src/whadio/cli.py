@@ -243,6 +243,7 @@ def password_reset(
 
     from .accounts.password_resets import PasswordResetService
     from .accounts.passwords import Argon2PasswordHasher
+    from .accounts.repositories import SessionRepository
     from .accounts.reset_repository import PasswordResetRepository
     from .shared.database import Database, DatabaseSettings
     from .shared.errors import UseCaseError
@@ -261,7 +262,9 @@ def password_reset(
         try:
             async with database.transaction() as session:
                 link = await PasswordResetService(
-                    PasswordResetRepository(session), Argon2PasswordHasher()
+                    PasswordResetRepository(session),
+                    SessionRepository(session),
+                    Argon2PasswordHasher(),
                 ).issue(address, datetime.now(UTC))
             return link.url(str(settings.public_url))
         finally:

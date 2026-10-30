@@ -274,12 +274,18 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /password-resets/{reset_id}/complete` · Set a new password from a link
 
-- **Status:** Designed · **Caller:** public · **Success:** `204`
+- **Status:** Implemented · **Caller:** public · **Success:** `204`; clears the browser cookie
 - **Rules:**
   - Requires a new password of 12 to 128 characters with at least one digit and one uppercase
     letter.
   - Ends every session and extension token of the account, this browser's included. MCP keys keep
     working.
+  - Works in either mode, including after a mode switch. Operator links expire after one hour;
+    replacement invalidates the earlier token, and only its hash is stored.
+  - Password change, session revocation and link consumption share one transaction. Failed
+    validation leaves all three unchanged. Sign-in and reset serialize on the account row so
+    a sign-in using the old password cannot leave an active session after reset commits.
+  - The reset SPA page and the self-service request endpoint remain separate work.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used (section 6.3).
   - `422 VALIDATION_ERROR` on `password`: the password breaks the rule above.
@@ -1297,6 +1303,5 @@ and edited the content, and the document is reviewed through a pull request befo
 These PR #63 review revisions were assisted by OpenAI Codex. Everything was reviewed by me.
 
 The Export implementation and review changes were assisted by OpenAI Codex.
-
 
 Later revisions were assisted by OpenAI Codex and verified by author.

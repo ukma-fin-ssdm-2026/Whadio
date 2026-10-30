@@ -162,6 +162,42 @@ def test_unusable_links_have_one_error(async_database: AsyncDatabase, reason: st
     assert async_database.run(scenario) == (404, "LINK_INVALID")
 
 
+@pytest.mark.parametrize(
+    ("body", "status", "field"),
+    [
+        (
+            b'{"token":"\\ud800","name":"Alice","password":"NewPassword1","accept_terms":true}',
+            404,
+            None,
+        ),
+        (
+            b'{"token":"valid","name":"Alice","password":"NewPassword1\\ud800","accept_terms":true}',
+            422,
+            "password",
+        ),
+    ],
+)
+def test_non_utf8_secret_text_does_not_return_an_internal_error(
+    async_database: AsyncDatabase, body: bytes, status: int, field: str | None
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, str | None]:
+        link = await issue(session)
+        request = body.replace(b'"valid"', f'"{link.token}"'.encode())
+        async with AsyncDatabase.api_client(session) as client:
+            # Act
+            response = await client.post(
+                f"/api/v1/registrations/{link.registration_id}/complete",
+                content=request,
+                headers={"Content-Type": "application/json"},
+            )
+            error = ErrorResponse.model_validate_json(response.content).error
+            return response.status_code, None if not error.details else error.details[0].field
+
+    # Assert
+    assert async_database.run(scenario) == (status, field)
+
+
 @pytest.mark.parametrize("password", ["shortA1", "lowercase123456", "UppercaseOnly", "A1" * 65])
 def test_weak_password_is_a_field_error_and_does_not_consume_link(
     async_database: AsyncDatabase,

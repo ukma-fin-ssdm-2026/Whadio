@@ -13,6 +13,7 @@ from .enums import SessionKind
 from .models import PasswordReset, Session
 from .password_resets import PasswordResetService, PasswordResetValidationError
 from .passwords import Argon2PasswordHasher
+from .repositories import SessionRepository
 from .reset_repository import PasswordResetRepository
 
 pytestmark = pytest.mark.slow
@@ -20,7 +21,9 @@ PASSWORD = f"  A1{uuid4().hex}  "
 
 
 def service(session: AsyncSession) -> PasswordResetService:
-    return PasswordResetService(PasswordResetRepository(session), Argon2PasswordHasher())
+    return PasswordResetService(
+        PasswordResetRepository(session), SessionRepository(session), Argon2PasswordHasher()
+    )
 
 
 def test_issuance_stores_only_a_hash_with_one_hour_lifetime(async_database: AsyncDatabase) -> None:
@@ -52,6 +55,37 @@ def test_issuance_refuses_an_unknown_account(async_database: AsyncDatabase) -> N
 
     # Assert
     assert async_database.run(scenario) is Failure.NOT_FOUND
+
+
+def test_reissuing_a_link_refreshes_its_lifetime(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[bool, bool, bool]:
+        user = await AsyncDatabase.add_account(session, PASSWORD)
+        first_now = datetime.now(UTC)
+        first = await service(session).issue(user.email, first_now)
+        second_now = first_now + timedelta(minutes=30)
+        # Act
+        second = await service(session).issue(user.email.upper(), second_now)
+        pending = await session.get(PasswordReset, second.reset_id)
+        try:
+            await service(session).complete(first.reset_id, first.token, PASSWORD, second_now)
+        except UseCaseError as error:
+            first_is_invalid = error.code is Failure.LINK_INVALID
+        else:
+            first_is_invalid = False
+        await service(session).complete(
+            second.reset_id, second.token, PASSWORD, second_now + timedelta(minutes=59)
+        )
+        return (
+            pending is not None
+            and pending.created_at == second_now
+            and pending.expires_at == second_now + timedelta(hours=1),
+            first_is_invalid,
+            await session.get(PasswordReset, second.reset_id) is None,
+        )
+
+    # Assert
+    assert async_database.run(scenario) == (True, True, True)
 
 
 @pytest.mark.parametrize("offset", [timedelta(hours=1), timedelta(hours=2)])

@@ -1,3 +1,5 @@
+import asyncio
+import hashlib
 from collections.abc import Generator
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -9,9 +11,15 @@ import pytest
 from sqlalchemy import Engine, create_engine, delete, func, insert, select, update
 from typer.testing import CliRunner
 
-from .accounts.models import PendingRegistration, User
+from conftest import AsyncDatabase
+
+from .accounts.password_resets import PasswordResetService
+from .accounts.passwords import Argon2PasswordHasher
+from .accounts.repositories import SessionRepository
+from .accounts.reset_repository import PasswordResetRepository
+from .accounts.models import PasswordReset, PendingRegistration, User
 from .cli import app
-from .shared.database import DatabaseSettings
+from .shared.database import Database, DatabaseSettings
 
 
 @pytest.fixture(autouse=True)
@@ -248,3 +256,78 @@ def test_admin_commands_report_an_unknown_account(command: str, account: list[st
         "",
         "Account not found.",
     )
+
+
+@pytest.mark.slow
+def test_password_reset_command_refuses_unknown_account(
+    database_settings: DatabaseSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange
+    monkeypatch.setenv("WHADIO_DB_HOST", database_settings.host)
+    monkeypatch.setenv("WHADIO_DB_PORT", str(database_settings.port))
+    monkeypatch.setenv("WHADIO_DB_NAME", database_settings.name)
+    monkeypatch.setenv("WHADIO_DB_APP_PASSWORD", database_settings.app_password.get_secret_value())
+    email = f"{uuid4()}@example.com"
+    # Act
+    result = CliRunner().invoke(app, ["links", "password-reset", "--email", email])
+    # Assert
+    assert (result.exit_code, "Account not found" in result.output) == (1, True)
+
+
+@pytest.mark.slow
+def test_password_reset_command_prints_a_redeemable_link(
+    database_settings: DatabaseSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange
+    monkeypatch.setenv("WHADIO_DB_HOST", database_settings.host)
+    monkeypatch.setenv("WHADIO_DB_PORT", str(database_settings.port))
+    monkeypatch.setenv("WHADIO_DB_NAME", database_settings.name)
+    monkeypatch.setenv("WHADIO_DB_APP_PASSWORD", database_settings.app_password.get_secret_value())
+    email = f"{uuid4()}@example.com"
+    engine = create_engine(database_settings.application_url(), hide_parameters=True)
+
+    async def prepare() -> None:
+        database = Database(database_settings)
+        try:
+            async with database.transaction() as session:
+                await AsyncDatabase.add_account(session, "OriginalPassword1", email)
+        finally:
+            await database.close()
+
+    async def redeem(reset_id: UUID, token: str) -> None:
+        database = Database(database_settings)
+        try:
+            async with database.transaction() as session:
+                await PasswordResetService(
+                    PasswordResetRepository(session),
+                    SessionRepository(session),
+                    Argon2PasswordHasher(),
+                ).complete(reset_id, token, "ReplacementPassword1", datetime.now(UTC))
+        finally:
+            await database.close()
+
+    try:
+        asyncio.run(prepare(), loop_factory=asyncio.SelectorEventLoop)
+        # Act
+        result = CliRunner().invoke(app, ["links", "password-reset", "--email", email.upper()])
+        link = urlsplit(result.stdout.strip())
+        reset_id = UUID(link.path.rsplit("/", 1)[1])
+        token = parse_qs(link.fragment)["token"][0]
+        with engine.connect() as connection:
+            stored_hash = connection.scalar(
+                select(PasswordReset.token_hash).where(PasswordReset.password_reset_id == reset_id)
+            )
+        asyncio.run(redeem(reset_id, token), loop_factory=asyncio.SelectorEventLoop)
+        # Assert
+        assert (result.exit_code, link.scheme, link.netloc, link.path, link.query, stored_hash) == (
+            0,
+            "https",
+            "example.com",
+            f"/whadio/password-resets/{reset_id}",
+            "",
+            hashlib.sha256(token.encode()).hexdigest(),
+        )
+    finally:
+        with engine.begin() as connection:
+            connection.execute(delete(User).where(User.email == email))
+        engine.dispose()
