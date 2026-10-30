@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from ...shared.errors import Failure, UseCaseError
+from ...shared.errors import Failure, RateLimitError, UseCaseError
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
@@ -39,6 +39,10 @@ class ErrorCode(StrEnum):
     NOT_FOUND = "NOT_FOUND"
     METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
     PERSONAL_WORKSPACE = "PERSONAL_WORKSPACE"
+    ALREADY_MEMBER = "ALREADY_MEMBER"
+    INVITATION_LIMIT = "INVITATION_LIMIT"
+    INVITATION_COOLDOWN = "INVITATION_COOLDOWN"
+    INVITATION_NOT_PENDING = "INVITATION_NOT_PENDING"
     NOT_TRANSCRIBED = "NOT_TRANSCRIBED"
     NOTES_IN_PROGRESS = "NOTES_IN_PROGRESS"
     RECORDING_NOT_READY = "RECORDING_NOT_READY"
@@ -140,6 +144,10 @@ _FAILURE_MESSAGES: Final[Mapping[Failure, str]] = {
     Failure.ALREADY_PROCESSED: "This was already processed",
     Failure.INVALID_CREDENTIALS: "Unknown email address or wrong password",
     Failure.PERSONAL_WORKSPACE: "A personal workspace cannot be changed this way",
+    Failure.ALREADY_MEMBER: "This email address already belongs to a workspace member",
+    Failure.INVITATION_LIMIT: "You have issued too many invitations; try again later",
+    Failure.INVITATION_COOLDOWN: "This email address was invited recently; try again later",
+    Failure.INVITATION_NOT_PENDING: "This invitation is no longer pending",
     Failure.FOLDER_EXISTS: "A folder with this name already exists",
     Failure.TERM_EXISTS: "This glossary term already exists",
     Failure.NOT_TRANSCRIBED: "The meeting has not been transcribed yet",
@@ -185,6 +193,8 @@ async def _handle(_request: Request, exc: Exception) -> JSONResponse:
         error=ErrorBody(code=code, message=message, details=details, request_id=request_id)
     )
     headers = dict(exc.headers or {}) if isinstance(exc, StarletteHTTPException) else {}
+    if isinstance(exc, RateLimitError):
+        headers["Retry-After"] = str(exc.retry_after)
     if code is ErrorCode.UNAUTHENTICATED:
         headers["WWW-Authenticate"] = 'Session realm="whadio"'
     return JSONResponse(
@@ -205,6 +215,8 @@ def _describe(exc: Exception) -> tuple[int, ErrorCode, str, list[ErrorDetail]]:
                 Failure.VALIDATION_ERROR: 422,
                 Failure.INTEGRATION_UNAVAILABLE: 503,
                 Failure.RECORDING_DELETED: 410,
+                Failure.INVITATION_LIMIT: 429,
+                Failure.INVITATION_COOLDOWN: 429,
             }
             status = statuses.get(exc.code, 409)
             return status, ErrorCode(exc.code.value), _FAILURE_MESSAGES[exc.code], []
