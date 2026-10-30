@@ -6,7 +6,7 @@ import { McpKeyPanel } from "@/features/accounts/components/McpKeyPanel";
 import { SignInForm } from "@/features/accounts/components/SignInForm";
 import { SignOutButton } from "@/features/accounts/components/SignOutButton";
 import { clearSignedInUser, readSignedInUser } from "@/features/accounts/session-storage";
-import { ExportControls } from "@/features/export/components/ExportControls";
+import { ExportMenu } from "@/features/export/components/ExportMenu";
 import { isMeetingGone, meetingQueries } from "@/features/meetings/api/meetings";
 import { MeetingDetail } from "@/features/meetings/detail/MeetingDetail";
 import { AllMeetings } from "@/features/meetings/library/AllMeetings";
@@ -253,7 +253,7 @@ function Workbench({ user, workspaces, onSignedOut }) {
             onTab={setMeetingTab}
             onRevision={(revisionId) => openMeeting(selectedMeeting.id, revisionId, "transcript")}
             renderExport={({ transcript, notes }) => (
-              <ExportControls
+              <ExportMenu
                 meetingId={selectedMeeting.id}
                 tab={meetingTab}
                 transcript={transcript}
