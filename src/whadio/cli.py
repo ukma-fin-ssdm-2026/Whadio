@@ -124,8 +124,19 @@ admin_app = typer.Typer(
 )
 app.add_typer(admin_app, name="admin")
 
+AccountId = Annotated[UUID | None, typer.Option(help="Existing account UUID.")]
+AccountEmail = Annotated[str | None, typer.Option(help="Existing account email; case is ignored.")]
 
-def _administrator(user_id: UUID, *, enabled: bool) -> None:
+
+def _account(user_id: UUID | None, email: str | None) -> UUID | str:
+    if user_id is not None and email is None:
+        return user_id
+    if email is not None and user_id is None:
+        return email.strip()
+    raise typer.BadParameter("pass exactly one of the two", param_hint="--user-id / --email")
+
+
+def _administrator(account: UUID | str, *, enabled: bool) -> None:
     import asyncio
 
     from pydantic import ValidationError
@@ -139,16 +150,18 @@ def _administrator(user_id: UUID, *, enabled: bool) -> None:
         database = Database(DatabaseSettings.model_validate({}))
         try:
             async with database.transaction() as session:
-                await AdministratorService(AdministratorRepository(session)).set_enabled(
-                    user_id, enabled=enabled
-                )
+                service = AdministratorService(AdministratorRepository(session))
+                if isinstance(account, UUID):
+                    await service.set_enabled(account, enabled=enabled)
+                else:
+                    await service.set_enabled_by_email(account, enabled=enabled)
         finally:
             await database.close()
 
     try:
         asyncio.run(change(), loop_factory=asyncio.SelectorEventLoop)
-    except UseCaseError as error:
-        typer.echo(error.code.value, err=True)
+    except UseCaseError:
+        typer.echo("Account not found.", err=True)
         raise typer.Exit(code=1) from None
     except (SQLAlchemyError, ValidationError):
         typer.echo("Administrator database configuration or connection unavailable.", err=True)
@@ -159,13 +172,13 @@ def _administrator(user_id: UUID, *, enabled: bool) -> None:
 
 
 @admin_app.command(help="Grant administrator permission to an existing account.")
-def grant(user_id: Annotated[UUID, typer.Option(help="Existing account UUID.")]) -> None:
-    _administrator(user_id, enabled=True)
+def grant(user_id: AccountId = None, email: AccountEmail = None) -> None:
+    _administrator(_account(user_id, email), enabled=True)
 
 
 @admin_app.command(help="Revoke administrator permission; existing sessions remain signed in.")
-def revoke(user_id: Annotated[UUID, typer.Option(help="Existing account UUID.")]) -> None:
-    _administrator(user_id, enabled=False)
+def revoke(user_id: AccountId = None, email: AccountEmail = None) -> None:
+    _administrator(_account(user_id, email), enabled=False)
 
 
 links_app = typer.Typer(help="Operator-only account links; requires deployment database access.")
