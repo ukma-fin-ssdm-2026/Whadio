@@ -1,7 +1,7 @@
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..shared.errors import Failure, UseCaseError
@@ -12,6 +12,8 @@ class IAdministratorRepository(Protocol):
     async def enabled(self, user_id: UUID) -> bool: ...
 
     async def set_enabled(self, user_id: UUID, *, enabled: bool) -> bool: ...
+
+    async def set_enabled_by_email(self, email: str, *, enabled: bool) -> bool: ...
 
 
 class AdministratorRepository:
@@ -32,6 +34,16 @@ class AdministratorRepository:
         )
         return found is not None
 
+    async def set_enabled_by_email(self, email: str, *, enabled: bool) -> bool:
+        # The unique index is on lower(email), so this changes one account at most.
+        found = await self._session.scalar(
+            update(User)
+            .where(func.lower(User.email) == email.lower())
+            .values(is_administrator=enabled)
+            .returning(User.user_id)
+        )
+        return found is not None
+
 
 class AdministratorService:
     def __init__(self, repository: IAdministratorRepository) -> None:
@@ -43,4 +55,8 @@ class AdministratorService:
 
     async def set_enabled(self, user_id: UUID, *, enabled: bool) -> None:
         if not await self._repository.set_enabled(user_id, enabled=enabled):
+            raise UseCaseError(Failure.NOT_FOUND)
+
+    async def set_enabled_by_email(self, email: str, *, enabled: bool) -> None:
+        if not await self._repository.set_enabled_by_email(email, enabled=enabled):
             raise UseCaseError(Failure.NOT_FOUND)
