@@ -4,7 +4,7 @@ import { HttpResponse, type HttpResponseResolver, http, type JsonBodyType } from
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { POLL_INTERVAL_MS } from "@/features/meetings/api/meetings";
 import type { Schemas } from "@/shared/api/types";
-import { errorBody, meetingRead, meetingSummary, page } from "@/shared/testing/fixtures";
+import { errorBody, meetingRead, meetingSummary, noteRead, page } from "@/shared/testing/fixtures";
 import { server } from "@/shared/testing/server";
 import { App } from "./App";
 
@@ -14,6 +14,7 @@ const ORIGINAL_WORDING = "Original uncorrected wording";
 const CURRENT_WORDING = "Current corrected wording";
 const LINKED_TITLE = "Linked meeting outside the first page";
 const FAILURE_REASON = "The recording has no audio";
+const GENERATED_NOTES = "Decisions from the weekly sync";
 
 type ApiTraffic = { requests: string[]; signIns: unknown[] };
 
@@ -402,25 +403,145 @@ test("an available recording survives a trip through the list, which lacks it", 
   expect(await screen.findByText("Loading recording...")).toBeInTheDocument();
 });
 
-test("an open meeting follows its processing state", async () => {
+test("a deep link to a meeting the user cannot read says why", async () => {
   // Arrange
-  vi.useFakeTimers({ shouldAdvanceTime: true });
   startSession(CURRENT_LINK);
-  let state: Schemas["ProcessingState"] = "queued";
   server.use(
     http.get("/api/v1/meetings/meeting", () =>
-      HttpResponse.json(meetingRead({ processing_state: state })),
+      HttpResponse.json(errorBody("NOT_FOUND", "Meeting not found"), { status: 404 }),
     ),
   );
-  render(<App />);
-  await screen.findByText("Queued");
 
   // Act
-  state = "failed";
-  await act(() => vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS));
+  render(<App />);
 
   // Assert
-  expect(await screen.findByRole("alert")).toHaveTextContent("Processing failed");
+  expect(await screen.findByRole("alert")).toHaveTextContent("Meeting not found");
+});
+
+describe("a meeting that finishes while it is open", () => {
+  async function watchMeeting(initial: Schemas["ProcessingState"] = "processing") {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const traffic = startSession(CURRENT_LINK);
+    const live = { state: initial, polls: 0 };
+    server.use(
+      http.get("/api/v1/meetings/meeting", () => {
+        live.polls += 1;
+        return HttpResponse.json(
+          meetingRead({
+            processing_state: live.state,
+            failure_reason: live.state === "failed" ? FAILURE_REASON : null,
+          }),
+        );
+      }),
+      http.get("/api/v1/meetings/meeting/notes", () =>
+        HttpResponse.json(page([noteRead({ content: GENERATED_NOTES })])),
+      ),
+    );
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<App />);
+    await screen.findByText(/when processing finishes/);
+    return { traffic, live, user };
+  }
+
+  async function nextPoll() {
+    await act(() => vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS));
+  }
+
+  const contentRequests = (traffic: ApiTraffic) =>
+    traffic.requests.filter((request) => /\/(transcript|notes)/.test(request));
+
+  test("requests no transcript or notes before it is processed", async () => {
+    // Arrange
+    const { traffic } = await watchMeeting();
+
+    // Act
+    await nextPoll();
+
+    // Assert
+    expect(contentRequests(traffic)).toEqual([]);
+  });
+
+  test.for(["recording", "queued", "processing"] as const)(
+    "keeps polling while %s",
+    async (state) => {
+      // Arrange
+      const { live } = await watchMeeting(state);
+      const polls = live.polls;
+
+      // Act
+      await nextPoll();
+
+      // Assert
+      expect(live.polls).toBe(polls + 1);
+    },
+  );
+
+  test("shows its notes without a reload", async () => {
+    // Arrange
+    const { live } = await watchMeeting();
+
+    // Act
+    live.state = "processed";
+    await nextPoll();
+
+    // Assert
+    expect(await screen.findByText(GENERATED_NOTES)).toBeInTheDocument();
+  });
+
+  test("shows its transcript without a reload", async () => {
+    // Arrange
+    const { live, user } = await watchMeeting();
+    await user.click(screen.getByRole("tab", { name: "Transcript" }));
+
+    // Act
+    live.state = "processed";
+    await nextPoll();
+
+    // Assert
+    expect(await screen.findByText(CURRENT_WORDING)).toBeInTheDocument();
+  });
+
+  test("shows its failure without a reload", async () => {
+    // Arrange
+    const { live } = await watchMeeting();
+
+    // Act
+    live.state = "failed";
+    await nextPoll();
+
+    // Assert
+    expect(await screen.findByRole("alert")).toHaveTextContent(FAILURE_REASON);
+  });
+
+  test("a failure requests no transcript or notes", async () => {
+    // Arrange
+    const { live, traffic } = await watchMeeting();
+    live.state = "failed";
+    await nextPoll();
+    await screen.findByRole("alert");
+
+    // Act
+    await nextPoll();
+
+    // Assert
+    expect(contentRequests(traffic)).toEqual([]);
+  });
+
+  test.for(["processed", "failed"] as const)("stops polling once %s", async (state) => {
+    // Arrange
+    const { live } = await watchMeeting();
+    live.state = state;
+    await nextPoll();
+    const polls = live.polls;
+
+    // Act
+    await nextPoll();
+    await nextPoll();
+
+    // Assert
+    expect(live.polls).toBe(polls);
+  });
 });
 
 test("a session that expires while reading meetings returns to sign-in", async () => {

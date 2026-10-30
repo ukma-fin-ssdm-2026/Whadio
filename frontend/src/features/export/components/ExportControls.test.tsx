@@ -11,7 +11,6 @@ function renderControls(changes: Partial<ComponentProps<typeof ExportControls>> 
       tab="transcript"
       transcript={{ revision: { revision_type: "edited" } }}
       notes={null}
-      loading={false}
       {...changes}
     />,
   );
@@ -101,7 +100,6 @@ test.for([
     "recording tab has no transcript or notes download button",
     { tab: "recording", notes: { content: "Saved notes" } },
   ],
-  ["download is hidden while content loads", { loading: true }],
 ] as const)("%s", ([, changes]) => {
   // Act
   const { container } = renderControls(changes);
