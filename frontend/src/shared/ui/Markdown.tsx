@@ -44,7 +44,7 @@ const prose: SxProps<Theme> = {
     borderRadius: 1,
     bgcolor: "action.hover",
   },
-  "& th, & td": { minWidth: "7rem", overflowWrap: "normal" },
+  "& th, & td": { minWidth: "9rem", overflowWrap: "normal" },
 };
 
 const heading =
