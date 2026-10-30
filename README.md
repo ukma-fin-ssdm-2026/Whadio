@@ -93,6 +93,16 @@ Replace the placeholders and use a password of 12 to 128 characters with a digit
 letter. A successful request returns `201` and sets the browser session cookie. The scheduler
 removes unused registration links once their 24-hour lifetime expires.
 
+To make an account an administrator, grant the permission by its sign-in address, in any case:
+
+```bash
+uv run whadio admin grant --email person@example.com
+```
+
+`whadio admin revoke` takes the same option, and both commands accept `--user-id` instead. The
+address must belong to an existing account. A revocation takes effect on the account's next
+request; its sessions stay signed in.
+
 `whadio dev-user` remains a local development shortcut:
 
 ```bash
