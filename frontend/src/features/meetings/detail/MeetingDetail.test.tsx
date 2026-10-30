@@ -1,7 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { expect, test } from "vitest";
-import { ExportControls } from "@/features/export/components/ExportControls";
+import { ExportMenu } from "@/features/export/components/ExportMenu";
 import type { Schemas } from "@/shared/api/types";
 import { errorBody, meetingRead, noteRead, page, transcriptRead } from "@/shared/testing/fixtures";
 import { createTestQueryClient, renderWithProviders } from "@/shared/testing/render";
@@ -60,7 +60,7 @@ function detail(changes: Partial<ComponentProps<typeof MeetingDetail>> = {}) {
     <MeetingDetail
       {...props}
       renderExport={({ transcript, notes }) => (
-        <ExportControls
+        <ExportMenu
           meetingId={props.meeting.id}
           tab={props.tab}
           transcript={transcript}
@@ -295,10 +295,7 @@ test("transcript download menu closes when another revision is shown", async () 
   rerender(detail({ tab: "transcript", revisionId: "original" }));
 
   // Assert
-  expect(await screen.findByRole("button", { name: "Download transcript" })).toHaveAttribute(
-    "aria-expanded",
-    "false",
-  );
+  await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
 });
 
 test("transcript download menu stays open when the same revision reloads", async () => {
@@ -310,8 +307,5 @@ test("transcript download menu stays open when the same revision reloads", async
   await queryClient.invalidateQueries();
 
   // Assert
-  expect(screen.getByRole("button", { name: "Download transcript" })).toHaveAttribute(
-    "aria-expanded",
-    "true",
-  );
+  expect(screen.getByRole("menu")).toBeInTheDocument();
 });
