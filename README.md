@@ -66,8 +66,8 @@ The API's TypeScript types in `frontend/src/shared/api/schema.gen.ts` are genera
 the specification or `frontend/` changes, and fails until the regenerated file is staged.
 
 Open <http://localhost:5173>. Vite proxies `/api` requests to the local API, so browser sessions
-and uploads use the backend without a separate CORS setup. Set `VITE_API_BASE_URL` only when the
-API is hosted at a different origin.
+and uploads use the backend without a separate CORS setup. Set `VITE_API_ORIGIN` (such as
+`https://api.example.org`) only when the API is hosted at a different origin.
 
 After applying the database migrations, set `WHADIO_PUBLIC_URL` to the application's public base
 URL and issue the first account's registration link:
