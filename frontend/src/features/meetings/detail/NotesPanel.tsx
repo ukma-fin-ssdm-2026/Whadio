@@ -1,5 +1,6 @@
 import { Box, Card, CircularProgress, Stack, Typography } from "@mui/material";
 import type { NoteRead } from "@/shared/api/types";
+import { Markdown } from "@/shared/ui/Markdown";
 import { IN_PROGRESS_LABELS, isInProgress, type Meeting } from "../model";
 
 interface NotesPanelProps {
@@ -39,11 +40,7 @@ function NotesContent({ meeting, notes, loading }: NotesPanelProps) {
   if (!notes) {
     return <Typography color="textSecondary">No generated notes are available yet.</Typography>;
   }
-  return (
-    <Typography component="div" className="notes-text notes-markdown">
-      {notes.content}
-    </Typography>
-  );
+  return <Markdown>{notes.content}</Markdown>;
 }
 
 export function NotesPanel(props: NotesPanelProps) {
