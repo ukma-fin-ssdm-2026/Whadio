@@ -9,8 +9,8 @@ function renderSidebar(changes: Partial<ComponentProps<typeof Sidebar>> = {}) {
     <Sidebar
       user={{ name: "Demo Member", email: "member@example.com" }}
       workspaces={[
-        { id: "alpha", name: "Alpha", meetingCount: 1 },
-        { id: "beta", name: "Beta", meetingCount: 3 },
+        { id: "alpha", name: "Alpha" },
+        { id: "beta", name: "Beta" },
       ]}
       page="home"
       workspaceId="alpha"
@@ -25,7 +25,7 @@ function renderSidebar(changes: Partial<ComponentProps<typeof Sidebar>> = {}) {
   return within(screen.getByRole("navigation", { name: "Main" }));
 }
 
-test("navigation offers Home, Meetings and each workspace with its meeting count", () => {
+test("navigation offers Home, Meetings and each workspace", () => {
   // Arrange
   const nav = renderSidebar();
 
@@ -33,7 +33,7 @@ test("navigation offers Home, Meetings and each workspace with its meeting count
   const items = nav.getAllByRole("button").map((item) => item.textContent);
 
   // Assert
-  expect(items).toEqual(["Home", "Meetings", "Alpha1 meeting", "Beta3 meetings"]);
+  expect(items).toEqual(["Home", "Meetings", "Alpha", "Beta"]);
 });
 
 test("marks the open workspace as the current page", () => {
@@ -44,7 +44,18 @@ test("marks the open workspace as the current page", () => {
   const current = nav.getAllByRole("button").filter((item) => item.ariaCurrent === "page");
 
   // Assert
-  expect(current.map((item) => item.textContent)).toEqual(["Beta3 meetings"]);
+  expect(current.map((item) => item.textContent)).toEqual(["Beta"]);
+});
+
+test("a workspace entry shows its name without a meeting count", () => {
+  // Arrange
+  const nav = renderSidebar();
+
+  // Act
+  const entry = nav.getByRole("button", { name: /^Beta/ });
+
+  // Assert
+  expect(entry).toHaveTextContent(/^Beta$/);
 });
 
 test("marks no item as current on a meeting page", () => {
