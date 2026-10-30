@@ -1,4 +1,4 @@
-import { api, originPattern, signIn, signedIn } from "./server.js";
+import { api, signedIn } from "./server.js";
 
 // MediaRecorder hands over one slice a second; ten of them make one uploaded chunk.
 const SLICES_PER_CHUNK = 10;
@@ -151,18 +151,12 @@ chrome.runtime.onConnect.addListener(async (port) => {
   await chrome.action.setBadgeText({ tabId, text: "REC" });
 });
 
-// The card on the Meet page signs in through here: a content script cannot reach the server itself.
+// The card on the Meet page cannot read the token, so it asks here whether the user is signed in.
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.type !== "sign-in") {
+  if (message.type !== "signed-in") {
     return false;
   }
-  (async () => {
-    if (!(await chrome.permissions.contains({ origins: [originPattern(message.server)] }))) {
-      return { error: "Sign in to this server once from the Whadio button in the toolbar." };
-    }
-    await signIn(message.server, message.email, message.password);
-    return {};
-  })().then(sendResponse, (failure) => sendResponse({ error: failure.message }));
+  signedIn().then(sendResponse, () => sendResponse(false));
   return true;
 });
 
