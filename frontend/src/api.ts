@@ -1,16 +1,8 @@
-import { API_ORIGIN, apiClient } from "./shared/api/client";
-import type { operations } from "./shared/api/schema.gen";
+import { apiClient } from "./shared/api/client";
 import type { MeetingRead, NotePage, PlaybackLink, TranscriptRead } from "./shared/api/types";
 import { unwrap } from "./shared/api/unwrap";
 
-type TranscriptExportOptions = NonNullable<
-  operations["export_transcript_api_v1_meetings__meeting_id__transcript_export_get"]["parameters"]["query"]
->;
-
 const PAGE = { limit: 100 };
-
-const meetingUrl = (meetingId: string) =>
-  `${API_ORIGIN}/api/v1/meetings/${encodeURIComponent(meetingId)}`;
 
 export const api = {
   getMeeting(meetingId: string): Promise<MeetingRead> {
@@ -35,19 +27,6 @@ export const api = {
         params: { path: { meeting_id: meetingId }, query: PAGE },
       }),
     );
-  },
-
-  transcriptExportUrl(
-    meetingId: string,
-    { format = "markdown", version = "current", timestamps = true }: TranscriptExportOptions = {},
-  ): string {
-    const query = new URLSearchParams({ format, version });
-    if (format === "markdown") query.set("timestamps", String(timestamps));
-    return `${meetingUrl(meetingId)}/transcript/export?${query}`;
-  },
-
-  notesExportUrl(meetingId: string): string {
-    return `${meetingUrl(meetingId)}/notes/export`;
   },
 
   getRecording(meetingId: string): Promise<PlaybackLink> {
