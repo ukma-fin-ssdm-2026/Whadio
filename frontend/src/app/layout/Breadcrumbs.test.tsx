@@ -36,3 +36,22 @@ test("marks the last crumb as the current page", () => {
   // Assert
   expect(screen.getByText("Meetings")).toHaveAttribute("aria-current", "page");
 });
+
+test.each([
+  { page: "meeting", fallback: "Meeting" },
+  { page: "workspace", fallback: "Workspace" },
+] as const)("names the current crumb $fallback when its $page is missing", ({ page, fallback }) => {
+  // Act
+  render(
+    <Breadcrumbs
+      page={page}
+      workspace={undefined}
+      meeting={undefined}
+      onHome={() => {}}
+      onWorkspace={() => {}}
+    />,
+  );
+
+  // Assert
+  expect(screen.getByText(fallback)).toHaveAttribute("aria-current", "page");
+});
