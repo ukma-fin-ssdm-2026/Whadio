@@ -33,7 +33,7 @@ from .repositories import (
     MemberWorkspace,
     PersonalMcpKey,
 )
-from .tokens import supplied_token_hash
+from .tokens import generated_token_hash, supplied_token_hash
 
 SESSION_LIFETIMES: Final = {
     SessionKind.BROWSER: timedelta(days=14),
@@ -291,9 +291,7 @@ class RegistrationIssuer:
         if await self._sessions.by_email(email) is not None:
             raise AccountAlreadyExistsError
         token = secrets.token_urlsafe(32)
-        token_hash = supplied_token_hash(token)
-        if token_hash is None:
-            raise AssertionError("Generated token must be UTF-8 encodable")
+        token_hash = generated_token_hash(token)
         registration_id = await self._registrations.issue(
             email, token_hash, now, now + REGISTRATION_LIFETIME
         )

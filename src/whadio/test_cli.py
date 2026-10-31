@@ -13,11 +13,11 @@ from typer.testing import CliRunner
 
 from conftest import AsyncDatabase
 
+from .accounts.models import PasswordReset, PendingRegistration, User
 from .accounts.password_resets import PasswordResetService
 from .accounts.passwords import Argon2PasswordHasher
 from .accounts.repositories import SessionRepository
 from .accounts.reset_repository import PasswordResetRepository
-from .accounts.models import PasswordReset, PendingRegistration, User
 from .cli import app
 from .shared.database import Database, DatabaseSettings
 
@@ -28,20 +28,22 @@ def _environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("WHADIO_PUBLIC_URL", "https://example.com/whadio/")
 
 
-def test_registration_command_refuses_invalid_email() -> None:
+@pytest.mark.parametrize("command", ["registration", "password-reset"])
+def test_link_command_refuses_invalid_email(command: str) -> None:
     # Arrange
     runner = CliRunner()
     # Act
-    result = runner.invoke(app, ["links", "registration", "--email", "invalid"])
+    result = runner.invoke(app, ["links", command, "--email", "invalid"])
     # Assert
     assert (result.exit_code != 0, "must be an email address" in result.output) == (True, True)
 
 
-def test_registration_command_requires_a_public_url(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("command", ["registration", "password-reset"])
+def test_link_command_requires_a_public_url(monkeypatch: pytest.MonkeyPatch, command: str) -> None:
     # Arrange
     monkeypatch.delenv("WHADIO_PUBLIC_URL")
     # Act
-    result = CliRunner().invoke(app, ["links", "registration", "--email", "alice@example.com"])
+    result = CliRunner().invoke(app, ["links", command, "--email", "alice@example.com"])
     # Assert
     assert (result.exit_code, "WHADIO_PUBLIC_URL" in result.output) == (1, True)
 

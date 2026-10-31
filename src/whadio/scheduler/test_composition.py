@@ -170,10 +170,17 @@ def test_scheduler_registration_job_deletes_expired_password_reset_links(
         reset_id = await PasswordResetRepository(session).issue(
             user.user_id, uuid4().hex, now - timedelta(hours=2), now
         )
+        live_user = await AsyncDatabase.add_account(session, "OriginalPassword1")
+        live_id = await PasswordResetRepository(session).issue(
+            live_user.user_id, uuid4().hex, now, now + timedelta(hours=1)
+        )
         jobs = RegistrationCleanupJobs(SavepointTransactions(session))
         # Act
         await jobs.remove_expired_password_resets(now)
-        return await session.get(PasswordReset, reset_id) is None
+        return (
+            await session.get(PasswordReset, reset_id) is None
+            and await session.get(PasswordReset, live_id) is not None
+        )
 
     # Assert
     assert async_database.run(scenario)

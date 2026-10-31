@@ -91,6 +91,14 @@ class ObservedSessionRepository(SessionRepository):
         return await super().by_email(email)
 
 
+class PausedBeforeLockSessionRepository(PausedSessionRepository):
+    @override
+    async def lock_account(self, user_id: UUID) -> None:
+        self._locked.set()
+        await self._release.wait()
+        await SessionRepository.lock_account(self, user_id)
+
+
 class ObservedIssueSessionRepository(SessionRepository):
     def __init__(self, session: AsyncSession, started: asyncio.Event) -> None:
         super().__init__(session)
@@ -237,3 +245,63 @@ def test_issuance_waiting_for_reset_replaces_the_used_link(
     result = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
     # Assert
     assert result == ("LINK_INVALID", "new link redeemed")
+
+
+def test_completion_rereads_link_replaced_before_account_lock(
+    database_settings: DatabaseSettings,
+) -> None:
+    # Arrange
+    async def scenario() -> str:
+        database = Database(database_settings)
+        user_id: UUID | None = None
+        waiting, release = asyncio.Event(), asyncio.Event()
+        try:
+            async with database.transaction() as session:
+                user = await AsyncDatabase.add_account(session, "OriginalPassword1")
+                user_id, email = user.user_id, user.email
+                old = await PasswordResetService(
+                    PasswordResetRepository(session),
+                    SessionRepository(session),
+                    Argon2PasswordHasher(),
+                ).issue(email, datetime.now(UTC))
+
+            async def complete_old() -> str:
+                async with database.transaction() as session:
+                    try:
+                        await PasswordResetService(
+                            PasswordResetRepository(session),
+                            PausedBeforeLockSessionRepository(session, waiting, release),
+                            Argon2PasswordHasher(),
+                        ).complete(
+                            old.reset_id, old.token, "ReplacementPassword1", datetime.now(UTC)
+                        )
+                    except UseCaseError as error:
+                        return error.code.value
+                    return "old link redeemed"
+
+            async with asyncio.TaskGroup() as group:
+                result = group.create_task(complete_old())
+                await waiting.wait()
+                async with database.transaction() as session:
+                    new = await PasswordResetService(
+                        PasswordResetRepository(session),
+                        SessionRepository(session),
+                        Argon2PasswordHasher(),
+                    ).issue(email, datetime.now(UTC))
+                release.set()
+            async with database.transaction() as session:
+                await PasswordResetService(
+                    PasswordResetRepository(session),
+                    SessionRepository(session),
+                    Argon2PasswordHasher(),
+                ).complete(new.reset_id, new.token, "ReplacementPassword1", datetime.now(UTC))
+            return result.result()
+        finally:
+            async with database.transaction() as session:
+                await session.execute(delete(User).where(User.user_id == user_id))
+            await database.close()
+
+    # Act
+    result = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+    # Assert
+    assert result == "LINK_INVALID"

@@ -9,7 +9,7 @@ from ..shared.errors import Failure, UseCaseError
 from .passwords import IPasswordHasher, is_password_strong, password_rule_message
 from .repositories import ISessionRepository
 from .reset_repository import IPasswordResetRepository
-from .tokens import supplied_token_hash
+from .tokens import generated_token_hash, supplied_token_hash
 
 RESET_LIFETIME: Final = timedelta(hours=1)
 
@@ -43,9 +43,7 @@ class PasswordResetService:
         if user is None:
             raise UseCaseError(Failure.NOT_FOUND)
         token = secrets.token_urlsafe(32)
-        token_hash = supplied_token_hash(token)
-        if token_hash is None:
-            raise AssertionError("Generated token must be UTF-8 encodable")
+        token_hash = generated_token_hash(token)
         reset_id = await self._resets.issue(user.user_id, token_hash, now, now + RESET_LIFETIME)
         return PasswordResetLink(reset_id, token)
 

@@ -78,7 +78,7 @@ uv run whadio links registration --email person@example.com
 
 The command prints a single-use link valid for 24 hours. Hand it to its intended recipient
 privately; issuing another link for the same address invalidates the earlier one. Only the token's
-hash is stored. An existing account is refused; password-reset support is a separate milestone.
+hash is stored. An existing account is refused; use `whadio links password-reset` to recover it.
 
 The registration page is not available yet. To redeem the link through the API, take the
 registration ID from `/registrations/<id>` and the token from `#token=<token>`, then send:
@@ -123,6 +123,7 @@ curl -i -X POST 'http://localhost:3000/api/v1/password-resets/<id>/complete' \
 The new password follows the registration rule. A successful request ends every browser and
 extension session; MCP keys keep working, and the user signs in again. Neither operator command
 sends email.
+
 `whadio dev-user` remains a local development shortcut:
 
 ```bash
