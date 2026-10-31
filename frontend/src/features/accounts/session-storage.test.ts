@@ -1,4 +1,5 @@
-import { beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { denySessionStorage } from "@/shared/testing/deny-storage";
 import { clearSignedInUser, readSignedInUser, storeSignedInUser } from "./session-storage";
 
 const USER = { id: "member", email: "member@example.com", name: "Demo Member" };
@@ -41,4 +42,43 @@ test.for([
 
   // Assert
   expect(user).toBeNull();
+});
+
+describe("when storage is denied", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("reads no user", () => {
+    // Arrange
+    denySessionStorage();
+
+    // Act
+    const user = readSignedInUser();
+
+    // Assert
+    expect(user).toBeNull();
+  });
+
+  test("storing a user does not throw", () => {
+    // Arrange
+    denySessionStorage();
+
+    // Act
+    const store = () => storeSignedInUser(USER);
+
+    // Assert
+    expect(store).not.toThrow();
+  });
+
+  test("clearing the user does not throw", () => {
+    // Arrange
+    denySessionStorage();
+
+    // Act
+    const clear = () => clearSignedInUser();
+
+    // Assert
+    expect(clear).not.toThrow();
+  });
 });

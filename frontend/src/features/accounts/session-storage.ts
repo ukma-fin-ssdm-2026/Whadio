@@ -12,9 +12,9 @@ const signedInUser: z.ZodType<SignedInUser> = z.object({
 });
 
 export function readSignedInUser(): SignedInUser | null {
-  const stored = sessionStorage.getItem(STORAGE_KEY);
-  if (stored === null) return null;
   try {
+    const stored = sessionStorage.getItem(STORAGE_KEY);
+    if (stored === null) return null;
     const parsed = signedInUser.safeParse(JSON.parse(stored));
     return parsed.success ? parsed.data : null;
   } catch {
@@ -22,10 +22,22 @@ export function readSignedInUser(): SignedInUser | null {
   }
 }
 
+// The session lives in a cookie and this copy only names the user, so denied or full storage
+// must not fail the sign-in or sign-out around it.
+function ignoringStorageFailure(write: () => void): void {
+  try {
+    write();
+  } catch {
+    return;
+  }
+}
+
 export function storeSignedInUser({ id, email, name }: SignedInUser): void {
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ id, email, name }));
+  ignoringStorageFailure(() =>
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ id, email, name })),
+  );
 }
 
 export function clearSignedInUser(): void {
-  sessionStorage.removeItem(STORAGE_KEY);
+  ignoringStorageFailure(() => sessionStorage.removeItem(STORAGE_KEY));
 }

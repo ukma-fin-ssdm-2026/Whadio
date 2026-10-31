@@ -1,7 +1,8 @@
 import { renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Schemas } from "@/shared/api/types";
+import { denySessionStorage } from "@/shared/testing/deny-storage";
 import { createTestQueryClient, TestProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
 import { readSignedInUser, storeSignedInUser } from "../session-storage";
@@ -101,5 +102,42 @@ describe.for([
 
     // Assert
     expect(readSignedInUser()).toBeNull();
+  });
+});
+
+describe("when storage is denied", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("signing in still succeeds", async () => {
+    // Arrange
+    server.use(
+      http.post("/api/v1/sessions", ({ response }) =>
+        response(201).json({ kind: "browser", expires_at: USER.created_at, user: USER }),
+      ),
+    );
+    const { result } = renderWithClient(useSignIn);
+    denySessionStorage();
+
+    // Act
+    const session = await result.current.mutateAsync(CREDENTIALS);
+
+    // Assert
+    expect(session.user).toEqual(USER);
+  });
+
+  test("signing out still clears the query cache", async () => {
+    // Arrange
+    server.use(http.delete("/api/v1/sessions/current", ({ response }) => response(204).empty()));
+    const { result, queryClient } = renderWithClient(useSignOut);
+    queryClient.setQueryData(["accounts", "mcp-keys"], { items: [] });
+    denySessionStorage();
+
+    // Act
+    await result.current.mutateAsync().catch(() => undefined);
+
+    // Assert
+    expect(queryClient.getQueryCache().getAll()).toEqual([]);
   });
 });
