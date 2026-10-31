@@ -93,6 +93,26 @@ Replace the placeholders and use a password of 12 to 128 characters with a digit
 letter. A successful request returns `201` and sets the browser session cookie. The scheduler
 removes unused registration links once their 24-hour lifetime expires.
 
+An existing account can be recovered with an operator-issued reset link:
+
+```bash
+uv run whadio links password-reset --email person@example.com
+```
+
+The reset link is single-use and valid for one hour, in either registration mode. Reissuing it
+invalidates the previous link. The reset page is pending the SPA milestone. To redeem the link
+through the API, take the reset ID from `/password-resets/<id>` and the token from
+`#token=<token>`, then send:
+
+```bash
+curl -i -X POST 'http://localhost:3000/api/v1/password-resets/<id>/complete' \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"<token>","password":"<your-password>"}'
+```
+
+The new password follows the registration rule. A successful request ends every browser and
+extension session; MCP keys keep working, and the user signs in again. Neither operator command
+sends email.
 `whadio dev-user` remains a local development shortcut:
 
 ```bash

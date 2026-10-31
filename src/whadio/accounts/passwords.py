@@ -30,8 +30,16 @@ class Argon2PasswordHasher:
 
 
 def is_password_strong(password: str) -> bool:
+    try:
+        password.encode()
+    except UnicodeEncodeError:
+        return False
     return (
         MIN_PASSWORD_LENGTH <= len(password) <= MAX_PASSWORD_LENGTH
         and any(character.isdigit() for character in password)
         and any(character.isupper() for character in password)
     )
+
+
+def password_rule_message() -> str:
+    return "Use 12 to 128 characters, at least one digit and one uppercase letter"

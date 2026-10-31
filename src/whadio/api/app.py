@@ -11,6 +11,7 @@ from .access_policy import routes as access_routes
 from .accounts import (
     routes_instance,
     routes_mcp_keys,
+    routes_password_resets,
     routes_registration,
     routes_sessions,
     routes_workspaces,
@@ -104,6 +105,7 @@ def create_app(
     for router in (
         routes_instance.router,
         routes_registration.router,
+        routes_password_resets.router,
         routes_sessions.router,
         routes_mcp_keys.router,
         routes_workspaces.router,

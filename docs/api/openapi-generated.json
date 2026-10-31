@@ -106,6 +106,76 @@
         "security": []
       }
     },
+    "/api/v1/password-resets/{reset_id}/complete": {
+      "post": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Set a new password from a reset link",
+        "description": "Public in either registration mode. Consumes the single-use link, changes the password and ends every browser and extension session atomically. MCP keys remain active.",
+        "operationId": "complete_api_v1_password_resets__reset_id__complete_post",
+        "parameters": [
+          {
+            "name": "reset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Password-reset identifier from the link",
+              "title": "Reset Id"
+            },
+            "description": "Password-reset identifier from the link"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetComplete"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Password changed; sign in again with the new password"
+          },
+          "400": {
+            "description": "`MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LINK_INVALID: unknown, expired, replaced or used link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
     "/api/v1/sessions": {
       "post": {
         "tags": [
@@ -7105,6 +7175,33 @@
           "pagination"
         ],
         "title": "Page[WorkspaceSummary]"
+      },
+      "PasswordResetComplete": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "format": "password",
+            "title": "Token",
+            "description": "Secret from the password-reset link fragment",
+            "writeOnly": true
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 12,
+            "format": "password",
+            "title": "Password",
+            "description": "12 to 128 characters, a digit and an uppercase letter",
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "token",
+          "password"
+        ],
+        "title": "PasswordResetComplete"
       },
       "PlaybackLink": {
         "properties": {
