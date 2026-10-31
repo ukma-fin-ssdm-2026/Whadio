@@ -44,7 +44,7 @@ export function McpKeyPanel() {
   const revokeKey = useRevokeMcpKey();
   const [expiry, setExpiry] = useState("30");
   const [keyToRevoke, setKeyToRevoke] = useState<McpKey | null>(null);
-  const error = keys.error ?? createKey.error ?? revokeKey.error;
+  const error = keys.error ?? createKey.error;
 
   return (
     <Stack sx={{ gap: 1.5 }}>
@@ -139,11 +139,24 @@ export function McpKeyPanel() {
           destructive
           pending={revokeKey.isPending}
           onConfirm={() =>
-            revokeKey.mutate(keyToRevoke.id, { onSettled: () => setKeyToRevoke(null) })
+            revokeKey.mutate(keyToRevoke.id, { onSuccess: () => setKeyToRevoke(null) })
           }
-          onCancel={() => setKeyToRevoke(null)}
+          onCancel={() => {
+            revokeKey.reset();
+            setKeyToRevoke(null);
+          }}
         >
           {`Assistants that use key ${shortId(keyToRevoke)} lose access at once. This cannot be undone.`}
+          {revokeKey.error && (
+            <Typography
+              component="span"
+              color="error"
+              role="alert"
+              sx={{ display: "block", mt: 1 }}
+            >
+              {revokeKey.error.message}
+            </Typography>
+          )}
         </ConfirmDialog>
       )}
       <McpKeySecretDialog secret={createKey.data?.secret} onClose={() => createKey.reset()} />

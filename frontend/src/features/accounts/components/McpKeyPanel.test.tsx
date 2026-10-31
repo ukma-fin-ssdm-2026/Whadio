@@ -98,6 +98,20 @@ async function askToRevoke() {
   return panel;
 }
 
+async function failToRevoke() {
+  const panel = await askToRevoke();
+  server.use(
+    http.delete(
+      "/api/v1/users/me/mcp-keys/{key_id}",
+      ({ response }) => response.untyped(serverError()),
+      { once: true },
+    ),
+  );
+  await panel.user.click(screen.getByRole("button", { name: "Revoke" }));
+  await screen.findByRole("alert");
+  return panel;
+}
+
 describe("key list", () => {
   test("shows each key's status", async () => {
     // Act
@@ -260,5 +274,57 @@ describe("revoking a key", () => {
 
     // Assert
     expect(await within(row ?? document.body).findByText("Revoked")).toBeInTheDocument();
+  });
+
+  test("once revoked, closes the confirmation", async () => {
+    // Arrange
+    const { user } = await askToRevoke();
+
+    // Act
+    await user.click(screen.getByRole("button", { name: "Revoke" }));
+
+    // Assert
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  test("that fails keeps the confirmation open with the reason", async () => {
+    // Act
+    await failToRevoke();
+
+    // Assert
+    expect(within(screen.getByRole("dialog")).getByRole("alert")).toHaveTextContent(
+      "Unexpected server error",
+    );
+  });
+
+  test("that fails reports the reason only once", async () => {
+    // Act
+    await failToRevoke();
+
+    // Assert
+    expect(screen.getAllByRole("alert", { hidden: true })).toHaveLength(1);
+  });
+
+  test("that fails can be retried from the same confirmation", async () => {
+    // Arrange
+    const { traffic, user } = await failToRevoke();
+
+    // Act
+    await user.click(screen.getByRole("button", { name: "Revoke" }));
+
+    // Assert
+    await waitFor(() => expect(traffic.revoked).toEqual([ACTIVE.id]));
+  });
+
+  test("that fails forgets the reason when cancelled", async () => {
+    // Arrange
+    const { user } = await failToRevoke();
+
+    // Act
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Revoke key" }));
+
+    // Assert
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });
