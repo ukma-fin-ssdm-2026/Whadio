@@ -1,6 +1,6 @@
 import { Box, Card, CircularProgress, Stack, Typography } from "@mui/material";
 import type { NoteRead } from "@/shared/api/types";
-import { IN_PROGRESS_LABELS, isInProgress, type Meeting } from "../model";
+import { describeFailure, IN_PROGRESS_LABELS, isInProgress, type Meeting } from "../model";
 
 interface NotesPanelProps {
   meeting: Meeting;
@@ -25,7 +25,7 @@ function NotesContent({ meeting, notes, loading }: NotesPanelProps) {
   if (meeting.state === "failed") {
     return (
       <Box className="error-banner" role="alert">
-        {meeting.failureReason ?? "Processing failed. Please try another recording."}
+        {describeFailure(meeting.failureReason)}
       </Box>
     );
   }

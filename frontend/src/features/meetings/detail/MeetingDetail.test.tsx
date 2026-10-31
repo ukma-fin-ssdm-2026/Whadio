@@ -185,22 +185,30 @@ test("a processed meeting loads its notes", async () => {
   expect(await screen.findByText("Saved notes")).toBeInTheDocument();
 });
 
-test("a failed meeting shows its reason on the notes tab", () => {
+test("a failed meeting explains its failure on the notes tab", () => {
+  // Arrange
+  serveContent();
+
+  // Act
+  renderDetail({ meeting: failed() });
+
+  // Assert
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    /^Notes could not be written for this meeting\.$/,
+  );
+});
+
+test("a failed meeting with an unknown reason never shows the code", () => {
+  // Arrange
+  serveContent();
+
   // Act
   renderDetail({
-    meeting: meeting({ processing_state: "failed", failure_reason: "No audio track" }),
+    meeting: meeting({ processing_state: "failed", failure_reason: "disk_full" }),
   });
 
   // Assert
-  expect(screen.getByRole("alert")).toHaveTextContent("No audio track");
-});
-
-test("a failed meeting without a reason says processing failed", () => {
-  // Act
-  renderDetail({ meeting: meeting({ processing_state: "failed" }) });
-
-  // Assert
-  expect(screen.getByRole("alert")).toHaveTextContent("Processing failed");
+  expect(screen.getByRole("alert")).toHaveTextContent("Processing failed for this meeting.");
 });
 
 test("a failed meeting with a transcript shows it", async () => {
