@@ -4,6 +4,7 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { apiClient } from "@/shared/api/client";
 import { ApiError } from "@/shared/api/errors";
 import type { Schemas } from "@/shared/api/types";
@@ -134,6 +135,19 @@ export const meetingQueries = {
       refetchOnReconnect: false,
     }),
 };
+
+export function useForgetRecordingLink({
+  id,
+  recordingAvailable,
+}: Pick<Meeting, "id" | "recordingAvailable">) {
+  const queryClient = useQueryClient();
+  // `enabled: false` keeps cached data, and `gcTime` doesn't run while the player stays mounted.
+  useEffect(() => {
+    if (recordingAvailable) return;
+    const { queryKey } = meetingQueries.recording({ id, recordingAvailable });
+    queryClient.removeQueries({ queryKey });
+  }, [queryClient, id, recordingAvailable]);
+}
 
 interface RecordingUpload {
   file: File;

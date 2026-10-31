@@ -1,3 +1,4 @@
+import { focusManager } from "@tanstack/react-query";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { type UserEvent, userEvent } from "@testing-library/user-event";
 import { HttpResponse, type HttpResponseResolver, http, type JsonBodyType } from "msw";
@@ -18,10 +19,12 @@ const BEFORE_TRANSCRIPTION = ["recording", "queued"] as const;
 const FAILURE_REASON = "transcription_failed";
 const FAILURE_TEXT = "This recording could not be transcribed.";
 const GENERATED_NOTES = "Decisions from the weekly sync";
+const STALE_MS = 30_000;
 
 type ApiTraffic = { requests: string[]; signIns: unknown[] };
 
 afterEach(() => {
+  focusManager.setFocused(undefined);
   vi.useRealTimers();
 });
 
@@ -624,6 +627,49 @@ describe("a meeting that finishes while it is open", () => {
 
     // Assert
     expect(live.polls).toBe(polls);
+  });
+});
+
+describe("a recording that retention deletes while it is open", () => {
+  async function watchRecording() {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    startSession(CURRENT_LINK);
+    const live = { available: true };
+    server.use(
+      http.get("/api/v1/meetings/meeting", () =>
+        HttpResponse.json(meetingRead({ recording_available: live.available })),
+      ),
+      http.get("/api/v1/meetings/meeting/recording", () =>
+        HttpResponse.json({
+          url: "https://storage.example/link",
+          expires_at: "2026-10-25T10:05:00Z",
+        }),
+      ),
+    );
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<App />);
+    await user.click(await screen.findByRole("tab", { name: "Recording" }));
+    await screen.findByLabelText("Weekly sync recording");
+    return live;
+  }
+
+  async function returnToTheWindow() {
+    await act(() => vi.advanceTimersByTimeAsync(STALE_MS + 1));
+    focusManager.setFocused(false);
+    focusManager.setFocused(true);
+    await act(() => vi.advanceTimersByTimeAsync(0));
+  }
+
+  test("coming back to the window takes the player away", async () => {
+    // Arrange
+    const live = await watchRecording();
+
+    // Act
+    live.available = false;
+    await returnToTheWindow();
+
+    // Assert
+    expect(await screen.findByText("Recording is not available")).toBeInTheDocument();
   });
 });
 
