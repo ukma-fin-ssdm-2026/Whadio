@@ -19,6 +19,16 @@ class Role(StrEnum):
     OWNER = "owner"
 
 
+class InvitedRole(StrEnum):
+    MEMBER = "member"
+    MODERATOR = "moderator"
+
+
+class InvitationState(StrEnum):
+    PENDING = "pending"
+    CANCELLED = "cancelled"
+
+
 class SessionKind(StrEnum):
     BROWSER = "browser"
     EXTENSION = "extension"
@@ -144,6 +154,31 @@ class WorkspaceSummary(Output):
 
 class WorkspaceRead(WorkspaceSummary):
     default_preset: Preset = Field(description="Notes preset used when none is chosen")
+
+
+class InvitationCreate(Input):
+    email: EmailStr = Field(
+        max_length=254, description="Email address to invite", examples=["bob@whadio.dev"]
+    )
+    role: InvitedRole = Field(description="Workspace role granted when the invitation is accepted")
+
+
+class InvitationRead(Output):
+    id: UUID = Field(description="Invitation identifier")
+    email: str = Field(description="Invited email address")
+    role: InvitedRole = Field(description="Role offered by this invitation")
+    status: InvitationState = Field(description="Current invitation state")
+    created_at: datetime = Field(description="When this invitation was most recently issued")
+    expires_at: datetime = Field(description="When this invitation becomes unusable")
+    link_active: bool = Field(
+        description="Whether the link can currently be accepted, including inviter authority"
+    )
+
+
+class InvitationCreated(InvitationRead):
+    link: str | None = Field(
+        description="One-time invitation link in invite-only mode; never returned by list"
+    )
 
 
 class RegistrationComplete(Input):
