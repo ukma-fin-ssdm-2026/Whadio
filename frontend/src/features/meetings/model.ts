@@ -37,6 +37,18 @@ export function mapMeeting(item: MeetingFields): Meeting {
   };
 }
 
+const FAILURE_TEXT = new Map([
+  ["transcription_failed", "This recording could not be transcribed."],
+  ["notes_failed", "Notes could not be written for this meeting."],
+  ["provider_unavailable", "The notes provider was unavailable, so no notes were written."],
+  ["provider_rejected", "The notes provider refused the request, so no notes were written."],
+  ["processing_timeout", "Processing took too long and was stopped."],
+]);
+
+export function describeFailure(reason: string | null): string {
+  return FAILURE_TEXT.get(reason ?? "") ?? "Processing failed for this meeting.";
+}
+
 export const IN_PROGRESS_LABELS: Record<InProgressState, string> = {
   recording: "Recording",
   queued: "Queued",

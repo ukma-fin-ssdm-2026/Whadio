@@ -14,7 +14,8 @@ const ORIGINAL_WORDING = "Original uncorrected wording";
 const CURRENT_WORDING = "Current corrected wording";
 const LINKED_TITLE = "Linked meeting outside the first page";
 const IN_PROGRESS = ["recording", "queued", "processing"] as const;
-const FAILURE_REASON = "The recording has no audio";
+const FAILURE_REASON = "transcription_failed";
+const FAILURE_TEXT = "This recording could not be transcribed.";
 const GENERATED_NOTES = "Decisions from the weekly sync";
 
 type ApiTraffic = { requests: string[]; signIns: unknown[] };
@@ -368,14 +369,14 @@ test("a failure reason survives a trip through the list, which lacks it", async 
   );
   const user = userEvent.setup();
   render(<App />);
-  await screen.findByText(FAILURE_REASON);
+  await screen.findByText(FAILURE_TEXT);
 
   // Act
   await user.click(screen.getByRole("button", { name: "Demo Workspace" }));
   await user.click(await screen.findByRole("button", { name: /Weekly sync/ }));
 
   // Assert
-  expect(await screen.findByText(FAILURE_REASON)).toBeInTheDocument();
+  expect(await screen.findByText(FAILURE_TEXT)).toBeInTheDocument();
 });
 
 test("an available recording survives a trip through the list, which lacks it", async () => {
@@ -512,7 +513,7 @@ describe("a meeting that finishes while it is open", () => {
     await nextPoll();
 
     // Assert
-    expect(await screen.findByRole("alert")).toHaveTextContent(FAILURE_REASON);
+    expect(await screen.findByRole("alert")).toHaveTextContent(FAILURE_TEXT);
   });
 
   test("a failure requests the transcript once and not the notes", async () => {
