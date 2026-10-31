@@ -63,7 +63,7 @@ export interface paths {
         head?: never;
         patch?: never;
         trace?: never;
-     };
+    };
     "/api/v1/sessions": {
         parameters: {
             query?: never;
@@ -2463,7 +2463,7 @@ export interface operations {
                 };
             };
         };
-     };
+    };
     sign_in_api_v1_sessions_post: {
         parameters: {
             query?: never;
