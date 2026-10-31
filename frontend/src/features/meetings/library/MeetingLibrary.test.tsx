@@ -2,21 +2,13 @@ import { render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { expect, test, vi } from "vitest";
+import type { Schemas } from "@/shared/api/types";
+import { meetingRead } from "@/shared/testing/fixtures";
+import { mapMeeting } from "../model";
 import { MeetingLibrary } from "./MeetingLibrary";
 
-function meeting(changes: Record<string, string> = {}) {
-  return {
-    id: "meeting",
-    workspaceId: "workspace",
-    title: "Weekly sync",
-    date: "2026-10-25T10:00:00Z",
-    state: "processed",
-    duration: "5s",
-    source: "Google Meet",
-    recordingAvailable: false,
-    failureReason: null,
-    ...changes,
-  };
+function meeting(changes: Partial<Schemas["MeetingRead"]> = {}) {
+  return mapMeeting(meetingRead(changes));
 }
 
 function renderLibrary(
@@ -52,7 +44,7 @@ test.for([
   ["processing", "Processing"],
 ] as const)("%s library row is labelled %s", ([state, label]) => {
   // Arrange
-  const { container } = renderLibrary(meeting({ state }));
+  const { container } = renderLibrary(meeting({ processing_state: state }));
 
   // Act
   const status = container.querySelector(".MuiChip-label");
@@ -93,7 +85,7 @@ test("choosing Processing in the state filter selects the processing state", asy
 
 test("in-progress library row offers no control besides opening the meeting", () => {
   // Arrange
-  renderLibrary(meeting({ state: "queued" }));
+  renderLibrary(meeting({ processing_state: "queued" }));
 
   // Act
   const controls = screen.getByRole("listitem").querySelectorAll(`:is(${interactive})`);
@@ -104,7 +96,7 @@ test("in-progress library row offers no control besides opening the meeting", ()
 
 test("in-progress library row shows a progress indicator", () => {
   // Act
-  renderLibrary(meeting({ state: "queued" }));
+  renderLibrary(meeting({ processing_state: "queued" }));
 
   // Assert
   expect(screen.getByRole("progressbar")).toBeInTheDocument();
@@ -120,7 +112,7 @@ test("processed library row shows no progress indicator", () => {
 
 test("failed library row is marked with an error chip", () => {
   // Arrange
-  const { container } = renderLibrary(meeting({ state: "failed" }));
+  const { container } = renderLibrary(meeting({ processing_state: "failed" }));
 
   // Act
   const chip = container.querySelector(".MuiChip-root");
@@ -129,10 +121,82 @@ test("failed library row is marked with an error chip", () => {
   expect(chip).toHaveClass("MuiChip-colorError");
 });
 
-test("library without meetings says none were found", () => {
+test("a library with no meetings at all invites an upload", () => {
   // Act
   renderLibrary(meeting(), { meetings: [] });
 
   // Assert
-  expect(screen.getByText("No meetings found")).toBeInTheDocument();
+  expect(screen.getByText("No meetings yet")).toBeInTheDocument();
+});
+
+test("a library with no meetings at all does not blame the filters", () => {
+  // Act
+  renderLibrary(meeting(), { meetings: [] });
+
+  // Assert
+  expect(screen.queryByText("No meetings match these filters")).not.toBeInTheDocument();
+});
+
+test("a name filter with no match blames the filters", () => {
+  // Act
+  renderLibrary(meeting(), { meetings: [], query: "retro" });
+
+  // Assert
+  expect(screen.getByText("No meetings match these filters")).toBeInTheDocument();
+});
+
+test("a state filter with no match among loaded meetings blames the filters", () => {
+  // Act
+  renderLibrary(meeting(), { stateFilter: "failed" });
+
+  // Assert
+  expect(screen.getByText("No meetings match these filters")).toBeInTheDocument();
+});
+
+test("a state filter keeps only meetings in that state", () => {
+  // Arrange
+  const meetings = [
+    meeting({ id: "done", name: "Done" }),
+    meeting({ id: "failed", name: "Broken", processing_state: "failed" }),
+  ];
+
+  // Act
+  renderLibrary(meeting(), { meetings, stateFilter: "failed" });
+
+  // Assert
+  expect(screen.getAllByRole("listitem").map((row) => row.textContent)).toEqual([
+    expect.stringContaining("Broken"),
+  ]);
+});
+
+test("a blank name filter counts as no filter", () => {
+  // Act
+  renderLibrary(meeting(), { meetings: [], query: "   " });
+
+  // Assert
+  expect(screen.getByText("No meetings yet")).toBeInTheDocument();
+});
+
+test("loading shows a spinner instead of an empty state", () => {
+  // Act
+  renderLibrary(meeting(), { meetings: [], loading: true });
+
+  // Assert
+  expect(screen.queryByText("No meetings yet")).not.toBeInTheDocument();
+});
+
+test("a failure shows its message instead of an empty state", () => {
+  // Act
+  renderLibrary(meeting(), { meetings: [], error: "Could not load" });
+
+  // Assert
+  expect(screen.getByRole("alert")).toHaveTextContent("Could not load");
+});
+
+test("a failure keeps the meetings already loaded", () => {
+  // Act
+  renderLibrary(meeting(), { error: "Could not refresh" });
+
+  // Assert
+  expect(screen.getByText("Weekly sync")).toBeInTheDocument();
 });
