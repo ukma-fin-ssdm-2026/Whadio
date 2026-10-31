@@ -209,7 +209,7 @@ wheels = [
 
 [[package]]
 name = "anthropic"
-version = "1.15.0"
+version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -221,9 +221,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/10/37/5a2a4316df8babd28f096477a707cd75f240b4264c97fb128c32375105d6/anthropic-1.15.0.tar.gz", hash = "sha256:90caa9df83e2fc8bddb4ddeb83b7191bce255f635c03eae055deec521741df08", size = 1726101, upload-time = "2026-10-15T19:45:34.635Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3e/ba/4c91947e0d0062d66d371db371597287153f7685fbed512d3294d0cde3c7/anthropic-2.3.0.tar.gz", hash = "sha256:edfdea1e3fa7b3ce25df1511953408b2f03bfa61eb6f6268f766101a9e18ad53", size = 1869656, upload-time = "2026-10-23T23:18:47.649Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d1/65/54437e7edea49a3be9ef56f6b5965999bfdc52b9dadc9b448124ca51a594/anthropic-1.15.0-py3-none-any.whl", hash = "sha256:10189a7993c5c71a0a2d4bb80020ca6a2fd27679f51e627405da37251d15ff49", size = 2047755, upload-time = "2026-10-15T19:45:32.951Z" },
+    { url = "https://files.pythonhosted.org/packages/3f/29/eb3558ab6bf252a07ac41c76ac5b0ea24a0aa0c23f87a40aaf31a5f8dba4/anthropic-2.3.0-py3-none-any.whl", hash = "sha256:aa6a3984f9276f307933d42dc6f58b6efc821a5ecafbc8d1bb5993a066767622", size = 2216980, upload-time = "2026-10-23T23:18:45.779Z" },
 ]
 
 [[package]]
@@ -291,7 +291,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "torch", version = "2.14.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
+    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torch", version = "2.14.1+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "extra == 'extra-6-whadio-cuda'" },
     { name = "typing-extensions" },
@@ -354,7 +354,7 @@ name = "bandit"
 version = "1.9.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
     { name = "pyyaml" },
     { name = "rich" },
     { name = "stevedore" },
@@ -433,7 +433,7 @@ name = "cffi"
 version = "2.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pycparser", marker = "implementation_name != 'PyPy' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "pycparser", marker = "implementation_name != 'PyPy'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9e/ef/008a1939e372c06329a3fce4279c02f328488f3526744906eeec3da7ad5f/cffi-2.1.1.tar.gz", hash = "sha256:dd31f52ea1086513bb9df30f8fcee9b8918323ae067a3d5b78bc826a000712be", size = 530807, upload-time = "2026-08-03T21:21:18.939Z" }
 wheels = [
@@ -617,7 +617,7 @@ name = "colorlog"
 version = "6.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/8c/55/ba79756cb90c8d69d599d57785398ac87bba7b19c80e87f4e8a562197c93/colorlog-6.12.0.tar.gz", hash = "sha256:2a7924c1dadf18b22a0eb8b06d1c7b01d5341707ec1641eb6fcc4fde0c3e8e5f", size = 18151, upload-time = "2026-07-23T13:40:40.71Z" }
 wheels = [
@@ -729,7 +729,7 @@ name = "cryptography"
 version = "50.0.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cffi", marker = "platform_python_implementation != 'PyPy' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "cffi", marker = "platform_python_implementation != 'PyPy'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9d/af/182eb91b0df3fe75c4d9f26fe70684569566745f6ba7e5c9c73a862c5252/cryptography-50.0.2.tar.gz", hash = "sha256:7b46165bb56eb4704e2eaaf86f3c940d19154535d9b0ca7d6d590b04060e00d5", size = 880623, upload-time = "2026-09-30T15:30:04.884Z" }
 wheels = [
@@ -853,43 +853,43 @@ wheels = [
 
 [package.optional-dependencies]
 cublas = [
-    { name = "nvidia-cublas", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform != 'linux' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform != 'linux' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cublas", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
 ]
 cudart = [
-    { name = "nvidia-cuda-runtime", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform != 'linux' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cuda-runtime", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
 ]
 cufft = [
-    { name = "nvidia-cufft", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform != 'linux' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform != 'linux' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cufft", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
 ]
 cufile = [
-    { name = "nvidia-cufile", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform != 'linux' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cufile", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
 ]
 cupti = [
-    { name = "nvidia-cuda-cupti", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform != 'linux' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cuda-cupti", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
 ]
 curand = [
-    { name = "nvidia-curand", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform != 'linux' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-curand", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
 ]
 cusolver = [
-    { name = "nvidia-cublas", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform != 'linux' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "nvidia-cusolver", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform != 'linux' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "nvidia-cusparse", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform != 'linux' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform != 'linux' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cublas", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cusolver", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
 ]
 cusparse = [
-    { name = "nvidia-cusparse", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform != 'linux' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform != 'linux' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
 ]
 nvjitlink = [
-    { name = "nvidia-nvjitlink", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform != 'linux' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
 ]
 nvrtc = [
-    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform != 'linux' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
 ]
 nvtx = [
-    { name = "nvidia-nvtx", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (platform_machine == 'x86_64' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform != 'linux' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-nvtx", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
 ]
 
 [[package]]
@@ -922,7 +922,7 @@ version = "0.25.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
     { name = "packaging" },
     { name = "requirements-parser" },
     { name = "tomli" },
@@ -1476,8 +1476,8 @@ name = "httpcore2"
 version = "2.13.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "h11", marker = "sys_platform != 'emscripten' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "truststore", marker = "sys_platform != 'emscripten' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "h11" },
+    { name = "truststore" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/cb/f3/1db7aa2bc2524062192bb0e0323969492d1883152a232fe36eea65f4e35c/httpcore2-2.13.1.tar.gz", hash = "sha256:e0aa977abe17e69a3b820a24542a6fa88702676d83880b8d194dcd18408e5103", size = 68071, upload-time = "2026-09-23T07:47:22.372Z" }
 wheels = [
@@ -1533,11 +1533,11 @@ name = "httpx2"
 version = "2.13.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "anyio", marker = "sys_platform != 'emscripten' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "httpcore2", marker = "sys_platform != 'emscripten' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "httpx2-jsfetch", marker = "sys_platform == 'emscripten' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "anyio", marker = "sys_platform != 'emscripten'" },
+    { name = "httpcore2", marker = "sys_platform != 'emscripten'" },
+    { name = "httpx2-jsfetch", marker = "sys_platform == 'emscripten'" },
     { name = "idna" },
-    { name = "truststore", marker = "sys_platform != 'emscripten' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "truststore", marker = "sys_platform != 'emscripten'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d5/44/474bef2a0e9d90f1715d32cb98b0738695ca17ba324095fb2497ed7fbd59/httpx2-2.13.1.tar.gz", hash = "sha256:e48744a19e3af5ee48313d0ce5fe941d5422fae5705ea922a4aabf94d7800dfa", size = 100405, upload-time = "2026-09-23T07:47:23.052Z" }
 wheels = [
@@ -1561,7 +1561,7 @@ dependencies = [
     { name = "click" },
     { name = "filelock" },
     { name = "fsspec" },
-    { name = "hf-xet", marker = "platform_machine == 'AMD64' or platform_machine == 'ARM64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "hf-xet", marker = "platform_machine == 'AMD64' or platform_machine == 'ARM64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'" },
     { name = "httpx2" },
     { name = "packaging" },
     { name = "pyyaml" },
@@ -1869,7 +1869,7 @@ version = "0.2.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "torch", version = "2.14.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
+    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torch", version = "2.14.1+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "extra == 'extra-6-whadio-cuda'" },
 ]
@@ -1886,9 +1886,9 @@ dependencies = [
     { name = "jaraco-classes" },
     { name = "jaraco-context" },
     { name = "jaraco-functools" },
-    { name = "jeepney", marker = "sys_platform == 'linux' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "pywin32-ctypes", marker = "sys_platform == 'win32' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "secretstorage", marker = "sys_platform == 'linux' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "jeepney", marker = "sys_platform == 'linux'" },
+    { name = "pywin32-ctypes", marker = "sys_platform == 'win32'" },
+    { name = "secretstorage", marker = "sys_platform == 'linux'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/43/4b/674af6ef2f97d56f0ab5153bf0bfa28ccb6c3ed4d1babf4305449668807b/keyring-25.7.0.tar.gz", hash = "sha256:fe01bd85eb3f8fb3dd0405defdeac9a5b4f6f0439edbb3149577f244a2e8245b", size = 63516, upload-time = "2025-11-16T16:26:09.482Z" }
 wheels = [
@@ -1959,8 +1959,8 @@ name = "libcst"
 version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyyaml", marker = "python_full_version >= '3.14' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "pyyaml-ft", marker = "python_full_version < '3.14' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "pyyaml", marker = "python_full_version >= '3.14'" },
+    { name = "pyyaml-ft", marker = "python_full_version < '3.14'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/02/c0/098e5c91ff1537f00c85a6438b6cb1863d17144680cc91f47c87f104a200/libcst-1.9.0.tar.gz", hash = "sha256:087b58a9afe076bb08e2d726478e1f16cb928d67ffa9092817e033c335de522a", size = 914739, upload-time = "2026-07-29T21:28:43.153Z" }
 wheels = [
@@ -1998,7 +1998,7 @@ dependencies = [
     { name = "pytorch-lightning" },
     { name = "pyyaml" },
     { name = "torch", version = "2.14.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
+    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torch", version = "2.14.1+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "extra == 'extra-6-whadio-cuda'" },
     { name = "torchmetrics" },
@@ -2200,12 +2200,12 @@ dependencies = [
     { name = "pydantic" },
     { name = "pyjwt", extra = ["crypto"] },
     { name = "python-multipart" },
-    { name = "pywin32", marker = "sys_platform == 'win32' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "pywin32", marker = "sys_platform == 'win32'" },
     { name = "sse-starlette" },
     { name = "starlette" },
     { name = "typing-extensions" },
     { name = "typing-inspection" },
-    { name = "uvicorn", marker = "sys_platform != 'emscripten' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "uvicorn", marker = "sys_platform != 'emscripten'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9d/8d/e0d339616f4810e9051d4aba6887afab289ab1f81875fe908b606cdfd0e3/mcp-2.3.0.tar.gz", hash = "sha256:8b147a50441cf059dc88c684e0aeed3687f0aa0f39c6cde7b90330effd2b34d8", size = 4171955, upload-time = "2026-10-02T22:06:56.091Z" }
 wheels = [
@@ -2862,7 +2862,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "python-dateutil" },
-    { name = "tzdata", marker = "sys_platform == 'emscripten' or sys_platform == 'win32' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "tzdata", marker = "sys_platform == 'emscripten' or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e2/17/d7b106e05bfa642e8694451e7d3d759c6a241c5386a5d962e4f66c047e06/pandas-3.0.6.tar.gz", hash = "sha256:66b07ef7315a31bfe1089cd3d71a7de781c9dca986762d0b4fe7c0ef17465d10", size = 4667686, upload-time = "2026-09-17T23:23:18.345Z" }
 wheels = [
@@ -3065,7 +3065,7 @@ name = "psycopg"
 version = "3.3.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "tzdata", marker = "sys_platform == 'win32' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "tzdata", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/76/26/3ea4ca5eaea1c0debcdf7ee7c1613fbe721dc27a03c461c0817ffd8a0601/psycopg-3.3.6.tar.gz", hash = "sha256:c081f2250df751a943036e42db6df4571c66cd0aabe8291a7a506512b12007d2", size = 168171, upload-time = "2026-09-18T13:22:55.152Z" }
 wheels = [
@@ -3074,7 +3074,7 @@ wheels = [
 
 [package.optional-dependencies]
 binary = [
-    { name = "psycopg-binary", marker = "implementation_name != 'pypy' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "psycopg-binary", marker = "implementation_name != 'pypy'" },
 ]
 
 [[package]]
@@ -3153,16 +3153,16 @@ dependencies = [
     { name = "rich" },
     { name = "safetensors" },
     { name = "torch", version = "2.14.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
+    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torch", version = "2.14.1+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "extra == 'extra-6-whadio-cuda'" },
     { name = "torch-audiomentations" },
     { name = "torchaudio", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
+    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torchaudio", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torchaudio", version = "2.11.0+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "extra == 'extra-6-whadio-cuda'" },
     { name = "torchcodec", version = "0.17.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "torchcodec", version = "0.17.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
+    { name = "torchcodec", version = "0.17.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torchcodec", version = "0.17.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torchcodec", version = "0.17.0+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "extra == 'extra-6-whadio-cuda'" },
     { name = "torchmetrics" },
@@ -3441,7 +3441,7 @@ name = "pytest"
 version = "9.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
     { name = "iniconfig" },
     { name = "packaging" },
     { name = "pluggy" },
@@ -3518,7 +3518,7 @@ dependencies = [
     { name = "packaging" },
     { name = "pyyaml" },
     { name = "torch", version = "2.14.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
+    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torch", version = "2.14.1+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "extra == 'extra-6-whadio-cuda'" },
     { name = "torchmetrics" },
@@ -3538,7 +3538,7 @@ dependencies = [
     { name = "numpy" },
     { name = "scikit-learn" },
     { name = "torch", version = "2.14.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
+    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torch", version = "2.14.1+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "extra == 'extra-6-whadio-cuda'" },
     { name = "tqdm" },
@@ -3951,8 +3951,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography", marker = "(sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'extra-6-whadio-cuda') or (sys_platform == 'darwin' and extra != 'extra-6-whadio-cpu') or (sys_platform == 'emscripten' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform == 'win32' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "jeepney", marker = "(sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'extra-6-whadio-cuda') or (sys_platform == 'darwin' and extra != 'extra-6-whadio-cpu') or (sys_platform == 'emscripten' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform == 'win32' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "cryptography" },
+    { name = "jeepney" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [
@@ -4275,18 +4275,18 @@ resolution-markers = [
 dependencies = [
     { name = "cuda-bindings", marker = "(sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "cuda-toolkit", extra = ["cublas", "cudart", "cufft", "cufile", "cupti", "curand", "cusolver", "cusparse", "nvjitlink", "nvrtc", "nvtx"], marker = "(sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "filelock", marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
-    { name = "fsspec", marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
-    { name = "jinja2", marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
-    { name = "networkx", marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
+    { name = "filelock", marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "fsspec", marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "jinja2", marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "networkx", marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "nvidia-cudnn-cu13", marker = "(sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "nvidia-cusparselt-cu13", marker = "(sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "nvidia-nccl-cu13", marker = "(sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "nvidia-nvshmem-cu13", marker = "(sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "setuptools", marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
-    { name = "sympy", marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
+    { name = "setuptools", marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "sympy", marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "triton", marker = "(sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "typing-extensions", marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
+    { name = "typing-extensions", marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7d/11/faaca4f8541c45127b7e0d6bb141221fe944c8466d89986b8466c6c195f9/torch-2.14.1-cp313-cp313-macosx_14_0_arm64.whl", hash = "sha256:dbe359d705f4d67236743794c296c6dee93a922fd8117eff8c3e880d7d0fb2b9", size = 127315286, upload-time = "2026-09-30T17:52:27.43Z" },
@@ -4387,12 +4387,12 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "julius" },
     { name = "torch", version = "2.14.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
+    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torch", version = "2.14.1+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "extra == 'extra-6-whadio-cuda'" },
     { name = "torch-pitch-shift" },
     { name = "torchaudio", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
+    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torchaudio", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torchaudio", version = "2.11.0+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "extra == 'extra-6-whadio-cuda'" },
 ]
@@ -4409,11 +4409,11 @@ dependencies = [
     { name = "packaging" },
     { name = "primepy" },
     { name = "torch", version = "2.14.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
+    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torch", version = "2.14.1+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "extra == 'extra-6-whadio-cuda'" },
     { name = "torchaudio", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
+    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torchaudio", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torchaudio", version = "2.11.0+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "extra == 'extra-6-whadio-cuda'" },
 ]
@@ -4617,7 +4617,7 @@ dependencies = [
     { name = "numpy" },
     { name = "packaging" },
     { name = "torch", version = "2.14.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda')" },
+    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra != 'extra-6-whadio-cpu' and extra != 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
     { name = "torch", version = "2.14.1+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "extra == 'extra-6-whadio-cuda'" },
 ]
@@ -4631,7 +4631,7 @@ name = "tqdm"
 version = "4.70.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0d/ea/b2a5bd54b28a324dae8211928b2d730b6547500342c7e6c6dea08bd0a485/tqdm-4.70.1.tar.gz", hash = "sha256:cefd0eca11b2a37a3aee776544d4f4ae913f02688135b5556b8788dfa474afc4", size = 171846, upload-time = "2026-09-11T07:25:16.601Z" }
 wheels = [
@@ -4691,7 +4691,7 @@ version = "0.27.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "annotated-doc" },
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
     { name = "rich" },
     { name = "shellingham" },
 ]
@@ -4792,7 +4792,7 @@ standard = [
     { name = "httptools" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
-    { name = "uvloop", marker = "(platform_python_implementation != 'PyPy' and sys_platform != 'cygwin' and sys_platform != 'win32') or (platform_python_implementation == 'PyPy' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform == 'cygwin' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda') or (sys_platform == 'win32' and extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "uvloop", marker = "platform_python_implementation != 'PyPy' and sys_platform != 'cygwin' and sys_platform != 'win32'" },
     { name = "watchfiles" },
     { name = "websockets" },
 ]
