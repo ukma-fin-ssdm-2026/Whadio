@@ -5,6 +5,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { apiClient } from "@/shared/api/client";
+import { ApiError } from "@/shared/api/errors";
 import type { Schemas } from "@/shared/api/types";
 import { unwrap } from "@/shared/api/unwrap";
 import { isInProgress, type Meeting, mapMeeting } from "../model";
@@ -31,6 +32,21 @@ function fetchMeetingPage(workspaceId: string, name: string, cursor: string, sig
       signal,
     }),
   );
+}
+
+async function fetchTranscript(meetingId: string, revisionId: string | null, signal: AbortSignal) {
+  try {
+    return await unwrap(
+      apiClient.GET("/api/v1/meetings/{meeting_id}/transcript", {
+        params: { path: { meeting_id: meetingId }, query: { revision_id: revisionId } },
+        signal,
+      }),
+    );
+  } catch (error) {
+    // A meeting that failed in transcription has none; a named revision has to exist.
+    if (error instanceof ApiError && error.code === "NOT_TRANSCRIBED" && !revisionId) return null;
+    throw error;
+  }
 }
 
 const pollWhileInProgress = (items: Pick<Schemas["MeetingSummary"], "processing_state">[]) =>
@@ -70,13 +86,7 @@ export const meetingQueries = {
   transcript: ({ id, state }: Pick<Meeting, "id" | "state">, revisionId: string | null) =>
     queryOptions({
       queryKey: [...detailKey(id), "transcript", { revisionId }],
-      queryFn: ({ signal }) =>
-        unwrap(
-          apiClient.GET("/api/v1/meetings/{meeting_id}/transcript", {
-            params: { path: { meeting_id: id }, query: { revision_id: revisionId } },
-            signal,
-          }),
-        ),
+      queryFn: ({ signal }) => fetchTranscript(id, revisionId, signal),
       // Not `processed`, unlike the notes: a meeting whose notes failed keeps its transcript.
       enabled: !isInProgress(state),
     }),

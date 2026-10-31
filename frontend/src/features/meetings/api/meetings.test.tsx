@@ -146,6 +146,54 @@ test.for([
   expect(searches).toEqual([search]);
 });
 
+function refuseTranscript() {
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}/transcript", ({ response }) =>
+      response(409).json(errorBody("NOT_TRANSCRIBED", "Not transcribed")),
+    ),
+  );
+}
+
+test("a meeting with no transcript answers with none", async () => {
+  // Arrange
+  refuseTranscript();
+  const query = meetingQueries.transcript({ id: "meeting", state: "failed" }, null);
+
+  // Act
+  const transcript = await createTestQueryClient().fetchQuery(query);
+
+  // Assert
+  expect(transcript).toBeNull();
+});
+
+test("a named revision of a meeting with no transcript is an error", async () => {
+  // Arrange
+  refuseTranscript();
+  const query = meetingQueries.transcript({ id: "meeting", state: "failed" }, "original");
+
+  // Act
+  const request = createTestQueryClient().fetchQuery(query);
+
+  // Assert
+  await expect(request).rejects.toMatchObject({ code: "NOT_TRANSCRIBED" });
+});
+
+test("a transcript request that fails otherwise stays an error", async () => {
+  // Arrange
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}/transcript", ({ response }) =>
+      response(404).json(errorBody("NOT_FOUND", "Meeting not found")),
+    ),
+  );
+  const query = meetingQueries.transcript({ id: "meeting", state: "failed" }, null);
+
+  // Act
+  const request = createTestQueryClient().fetchQuery(query);
+
+  // Assert
+  await expect(request).rejects.toMatchObject({ code: "NOT_FOUND" });
+});
+
 test("notes query selects the newest version", async () => {
   // Arrange
   server.use(

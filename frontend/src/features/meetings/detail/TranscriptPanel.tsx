@@ -4,6 +4,7 @@ import { formatTimestamp } from "@/shared/lib/format";
 
 interface TranscriptPanelProps {
   transcript: TranscriptRead | null;
+  missing: boolean;
   loading: boolean;
   query: string;
   onQuery: (query: string) => void;
@@ -28,6 +29,7 @@ function matchingSegments(transcript: TranscriptRead | null, query: string) {
 
 export function TranscriptPanel({
   transcript,
+  missing,
   loading,
   query,
   onQuery,
@@ -77,7 +79,9 @@ export function TranscriptPanel({
             <Typography color="textSecondary">
               {transcript
                 ? "No transcript matches your search."
-                : "Transcript is not available yet."}
+                : missing
+                  ? "This meeting has no transcript."
+                  : "Transcript is not available yet."}
             </Typography>
           )}
         </Stack>
