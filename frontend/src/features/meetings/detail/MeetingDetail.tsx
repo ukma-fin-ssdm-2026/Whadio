@@ -42,8 +42,7 @@ export function MeetingDetail({
   const notes = notesResult.data ?? null;
   const transcript = transcriptResult.data ?? null;
 
-  const notTranscribed = transcriptResult.error?.code === "NOT_TRANSCRIBED" && !revisionId;
-  const contentError = notesResult.error ?? (notTranscribed ? null : transcriptResult.error);
+  const contentError = notesResult.error ?? transcriptResult.error;
 
   const tabProps = (value: MeetingTab) => ({
     value,
@@ -90,6 +89,7 @@ export function MeetingDetail({
             {tab === "recording" && <RecordingPlayer meeting={meeting} />}
             <TranscriptPanel
               transcript={transcript}
+              missing={transcriptResult.data === null}
               loading={transcriptResult.isLoading}
               query={transcriptQuery}
               onQuery={onTranscriptQuery}

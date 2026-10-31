@@ -20,6 +20,7 @@ function renderPanel(changes: Partial<ComponentProps<typeof TranscriptPanel>> = 
   return render(
     <TranscriptPanel
       transcript={EDITED}
+      missing={false}
       loading={false}
       query=""
       onQuery={() => {}}
@@ -115,4 +116,20 @@ test("a meeting without a transcript says so", () => {
 
   // Assert
   expect(screen.getByText("Transcript is not available yet.")).toBeInTheDocument();
+});
+
+test("no transcript yet says so", () => {
+  // Act
+  renderPanel({ transcript: null });
+
+  // Assert
+  expect(screen.getByText("Transcript is not available yet.")).toBeInTheDocument();
+});
+
+test("a transcript that will never come says so", () => {
+  // Act
+  renderPanel({ transcript: null, missing: true });
+
+  // Assert
+  expect(screen.getByText("This meeting has no transcript.")).toBeInTheDocument();
 });

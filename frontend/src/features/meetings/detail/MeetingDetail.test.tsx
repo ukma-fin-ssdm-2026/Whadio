@@ -54,6 +54,15 @@ function serveSpokenTranscript() {
   );
 }
 
+function refuseTranscript() {
+  serveContent();
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}/transcript", ({ response }) =>
+      response(409).json(errorBody("NOT_TRANSCRIBED", "Not transcribed")),
+    ),
+  );
+}
+
 function detail(changes: Partial<ComponentProps<typeof MeetingDetail>> = {}) {
   const props = {
     meeting: meeting(),
@@ -277,22 +286,27 @@ test("the recording tab requests the link of an available recording", async () =
   await waitFor(() => expect(requests).toContain("recording"));
 });
 
-test("a meeting with no transcript yet raises no alert", async () => {
+test("a meeting with no transcript says so without an alert", async () => {
   // Arrange
-  const requests = serveContent();
-  server.use(
-    http.get("/api/v1/meetings/{meeting_id}/transcript", ({ response }) => {
-      requests.push("refused");
-      return response(409).json(errorBody("NOT_TRANSCRIBED", "Not transcribed yet"));
-    }),
-  );
+  refuseTranscript();
 
   // Act
-  renderDetail({ tab: "transcript" });
-  await screen.findByText("Transcript is not available yet.");
+  renderDetail({ meeting: failed(), tab: "transcript" });
+  await screen.findByText("This meeting has no transcript.");
 
   // Assert
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("a revision link to a meeting with no transcript reports the error", async () => {
+  // Arrange
+  refuseTranscript();
+
+  // Act
+  renderDetail({ meeting: failed(), tab: "transcript", revisionId: "original" });
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent("Not transcribed");
 });
 
 test("a transcript failure shows its message", async () => {
