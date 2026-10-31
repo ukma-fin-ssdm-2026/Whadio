@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { describe, expect, test } from "vitest";
 import type { Schemas } from "@/shared/api/types";
@@ -24,6 +24,25 @@ const REVOKED: McpKey = {
 };
 
 const SECRET = "whadio_mcp_secret";
+
+const serverError = () =>
+  HttpResponse.json(
+    {
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "Unexpected server error",
+        details: [],
+        request_id: "req_1",
+      },
+    },
+    { status: 500 },
+  );
+
+function failListing() {
+  server.use(
+    http.get("/api/v1/users/me/mcp-keys", ({ response }) => response.untyped(serverError())),
+  );
+}
 
 type Traffic = { created: unknown[]; revoked: string[] };
 
@@ -109,29 +128,38 @@ describe("key list", () => {
 
   test("shows why the keys could not load", async () => {
     // Arrange
-    server.use(
-      http.get("/api/v1/users/me/mcp-keys", ({ response }) =>
-        response.untyped(
-          HttpResponse.json(
-            {
-              error: {
-                code: "INTERNAL_ERROR",
-                message: "Unexpected server error",
-                details: [],
-                request_id: "req_1",
-              },
-            },
-            { status: 500 },
-          ),
-        ),
-      ),
-    );
+    failListing();
 
     // Act
     renderWithProviders(<McpKeyPanel />);
 
     // Assert
     expect(await screen.findByRole("alert")).toHaveTextContent("Unexpected server error");
+  });
+
+  test("does not claim there are no keys when they could not load", async () => {
+    // Arrange
+    failListing();
+
+    // Act
+    renderWithProviders(<McpKeyPanel />);
+    await screen.findByRole("alert");
+
+    // Assert
+    expect(screen.queryByText("No assistant keys yet")).not.toBeInTheDocument();
+  });
+
+  test("keeps the listed keys when refreshing them fails", async () => {
+    // Arrange
+    const { queryClient } = await renderPanel();
+    failListing();
+
+    // Act
+    await act(() => queryClient.invalidateQueries());
+    await screen.findByRole("alert");
+
+    // Assert
+    expect(screen.getByText(`Key ${ACTIVE.id.slice(0, 8)}`)).toBeInTheDocument();
   });
 });
 
