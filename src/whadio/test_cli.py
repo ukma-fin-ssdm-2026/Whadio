@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 from collections.abc import Generator
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,6 +10,8 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import Engine, create_engine, delete, func, insert, select, update
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 from typer.testing import CliRunner
 
 from conftest import AsyncDatabase
@@ -46,6 +49,41 @@ def test_link_command_requires_a_public_url(monkeypatch: pytest.MonkeyPatch, com
     result = CliRunner().invoke(app, ["links", command, "--email", "alice@example.com"])
     # Assert
     assert (result.exit_code, "WHADIO_PUBLIC_URL" in result.output) == (1, True)
+
+
+@pytest.mark.parametrize(
+    ("command", "message"),
+    [
+        ("registration", "Registration database or configuration unavailable."),
+        ("password-reset", "Password-reset database or configuration unavailable."),
+    ],
+)
+def test_link_command_hides_database_errors_and_closes_database(
+    monkeypatch: pytest.MonkeyPatch, command: str, message: str
+) -> None:
+    # Arrange
+    monkeypatch.setenv("WHADIO_DB_APP_PASSWORD", uuid4().hex)
+    closed: list[bool] = []
+    original_close = Database.close
+
+    def fail_transaction(_database: Database) -> AbstractAsyncContextManager[AsyncSession]:
+        raise SQLAlchemyError("private database details")
+
+    async def close(database: Database) -> None:
+        await original_close(database)
+        closed.append(True)
+
+    monkeypatch.setattr(Database, "transaction", fail_transaction)
+    monkeypatch.setattr(Database, "close", close)
+    # Act
+    result = CliRunner().invoke(app, ["links", command, "--email", "alice@example.com"])
+    # Assert
+    assert (result.exit_code, result.stdout, result.stderr.strip(), closed) == (
+        1,
+        "",
+        message,
+        [True],
+    )
 
 
 @pytest.mark.slow
