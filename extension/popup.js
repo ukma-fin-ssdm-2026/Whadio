@@ -144,11 +144,9 @@ consent.addEventListener("change", () => {
 start.addEventListener("click", async () => {
   showError("");
   start.disabled = true;
-  const streamId = await chrome.tabCapture.getMediaStreamId({
-    targetTabId: tab.id,
-    consumerTabId: tab.id,
-  });
-  const reply = await chrome.tabs.sendMessage(tab.id, { type: "start", streamId });
+  // Left without a consumer tab, the capture is the extension's own, for its offscreen document to record.
+  const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
+  const reply = await chrome.runtime.sendMessage({ type: "record", tabId: tab.id, streamId });
   if (reply.error) {
     showError(reply.error);
     start.disabled = false;
