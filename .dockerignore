@@ -3,4 +3,11 @@
 !uv.lock
 !README.md
 !src/
+!frontend/
+!frontend/**
+!infra/
+!infra/nginx/
+!infra/nginx/**
+frontend/node_modules/
+frontend/dist/
 **/__pycache__

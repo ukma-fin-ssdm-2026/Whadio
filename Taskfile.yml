@@ -15,6 +15,9 @@ tasks:
 
   dev:
     desc: Run the API with auto-reload on http://localhost:3000
+    env:
+      # The container reaches Mailpit by service name; a host-run API uses its published port.
+      WHADIO_SMTP__HOST: 127.0.0.1
     cmds:
       - uv run --frozen fastapi dev --entrypoint whadio.api.main:app --port 3000
 
@@ -134,13 +137,13 @@ tasks:
   infra:down:
     desc: Stop the services and the workers, and keep their data
     cmds:
-      - docker compose --profile core --profile gpu down
+      - docker compose --profile core --profile gpu --profile ollama --profile dev down
 
   infra:reset:
     desc: Stop the services and the workers, and delete their data
     prompt: This deletes the local database, broker and storage data, and the downloaded models. Continue?
     cmds:
-      - docker compose --profile core --profile gpu down --volumes
+      - docker compose --profile core --profile gpu --profile ollama --profile dev down --volumes
 
   infra:logs:
     desc: Follow the services' logs
@@ -171,11 +174,11 @@ tasks:
       - sh: test -f .env
         msg: Copy .env.example to .env first
     cmds:
-      - docker compose --profile gpu up --detach --wait llm-runtime
+      - docker compose --profile ollama up --detach --wait llm-runtime
       # `up --wait` returns once the one-shot pull is running, not when it has finished.
-      - docker compose --profile gpu run --rm llm-pull
+      - docker compose --profile ollama run --rm llm-pull
 
   llm:logs:
     desc: Follow the Ollama runtime's logs
     cmds:
-      - docker compose --profile gpu logs --follow llm-runtime
+      - docker compose --profile ollama logs --follow llm-runtime
