@@ -6,6 +6,7 @@ import type { Schemas } from "@/shared/api/types";
 import { errorBody, meetingRead, noteRead, page, transcriptRead } from "@/shared/testing/fixtures";
 import { createTestQueryClient, renderWithProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
+import { meetingQueries } from "../api/meetings";
 import { mapMeeting } from "../model";
 import { MeetingDetail } from "./MeetingDetail";
 
@@ -314,6 +315,58 @@ test("the recording tab requests the link of an available recording", async () =
 
   // Assert
   await waitFor(() => expect(requests).toContain("recording"));
+});
+
+async function watchRecordingLink(afterLoad: "recording" | "notes") {
+  const requests = serveContent();
+  const available = meeting({ recording_available: true });
+  const view = renderDetail({ meeting: available, tab: "recording" });
+  await waitFor(() => expect(requests).toContain("recording"));
+  await waitFor(() =>
+    expect(
+      view.queryClient.getQueryData(meetingQueries.recording(available).queryKey),
+    ).toBeDefined(),
+  );
+  view.rerender(detail({ meeting: available, tab: afterLoad }));
+  return { ...view, requests, available };
+}
+
+test.for(["recording", "notes"] as const)(
+  "a recording that goes away while the %s tab is open leaves no link in the cache",
+  async (tab) => {
+    // Arrange
+    const { rerender, queryClient, available } = await watchRecordingLink(tab);
+
+    // Act
+    rerender(detail({ meeting: meeting({ recording_available: false }), tab }));
+
+    // Assert
+    expect(queryClient.getQueryData(meetingQueries.recording(available).queryKey)).toBeUndefined();
+  },
+);
+
+test("reopening a meeting keeps the link of its available recording", async () => {
+  // Arrange
+  const { unmount, queryClient, available } = await watchRecordingLink("recording");
+  unmount();
+
+  // Act
+  renderWithProviders(detail({ meeting: available, tab: "recording" }), queryClient);
+
+  // Assert
+  expect(queryClient.getQueryData(meetingQueries.recording(available).queryKey)).toBeDefined();
+});
+
+test("a recording that comes back asks for a new link", async () => {
+  // Arrange
+  const { rerender, requests, available } = await watchRecordingLink("recording");
+  rerender(detail({ meeting: meeting({ recording_available: false }), tab: "recording" }));
+
+  // Act
+  rerender(detail({ meeting: available, tab: "recording" }));
+
+  // Assert
+  await waitFor(() => expect(requests.filter((item) => item === "recording")).toHaveLength(2));
 });
 
 test("a meeting with no transcript says so without an alert", async () => {

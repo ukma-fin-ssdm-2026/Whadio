@@ -13,6 +13,7 @@ const FOUR_MINUTES_MS = 4 * 60_000;
 const FIVE_MINUTES_MS = 5 * 60_000;
 
 const availableMeeting = mapMeeting(meetingRead({ recording_available: true }));
+const unavailableMeeting = mapMeeting(meetingRead({ recording_available: false }));
 
 afterEach(() => {
   focusManager.setFocused(undefined);
@@ -71,6 +72,46 @@ test("a refused link shows why", async () => {
 
   // Assert
   expect(await screen.findByRole("alert")).toHaveTextContent("Recording not found");
+});
+
+test("a recording that goes away stops playing", async () => {
+  // Arrange
+  serveLink();
+  const { rerender } = renderWithProviders(<RecordingPlayer meeting={availableMeeting} />);
+  await screen.findByLabelText("Weekly sync recording");
+
+  // Act
+  rerender(<RecordingPlayer meeting={unavailableMeeting} />);
+
+  // Assert
+  expect(screen.queryByLabelText("Weekly sync recording")).not.toBeInTheDocument();
+});
+
+async function refuseLinkThenLoseRecording() {
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}/recording", ({ response }) =>
+      response(410).json(errorBody("RECORDING_DELETED", "Recording deleted")),
+    ),
+  );
+  const { rerender } = renderWithProviders(<RecordingPlayer meeting={availableMeeting} />);
+  await screen.findByRole("alert");
+  rerender(<RecordingPlayer meeting={unavailableMeeting} />);
+}
+
+test("a recording that goes away says so instead of keeping the refusal", async () => {
+  // Act
+  await refuseLinkThenLoseRecording();
+
+  // Assert
+  expect(screen.getByText("Recording is not available")).toBeInTheDocument();
+});
+
+test("a recording that goes away shows no alert", async () => {
+  // Act
+  await refuseLinkThenLoseRecording();
+
+  // Assert
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
 test("coming back to the window with a stale link keeps the player's source", async () => {
