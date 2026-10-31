@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 .env
+certs/
 dist/
 coverage/
 *.db
