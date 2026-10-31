@@ -90,7 +90,7 @@ export function McpKeyPanel() {
       )}
       {keys.isPending ? (
         <CircularProgress size={24} />
-      ) : !keys.data?.items.length ? (
+      ) : keys.isLoadingError ? null : !keys.data.items.length ? (
         <EmptyState title="No assistant keys yet" />
       ) : (
         <ListPanel>
