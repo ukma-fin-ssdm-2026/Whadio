@@ -1,17 +1,14 @@
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
-import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import NotesOutlinedIcon from "@mui/icons-material/NotesOutlined";
 import {
   Avatar,
   Divider,
-  IconButton,
   List,
   ListItemButton,
   ListItemIcon,
   ListItemText,
   ListSubheader,
   Stack,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import type { ReactNode } from "react";
@@ -25,7 +22,7 @@ interface SidebarProps {
   onHome: () => void;
   onMeetings: () => void;
   onWorkspace: (id: string) => void;
-  onSignOut: () => void;
+  signOutAction: ReactNode;
   onNavigate: () => void;
 }
 
@@ -70,7 +67,7 @@ export function Sidebar({
   onHome,
   onMeetings,
   onWorkspace,
-  onSignOut,
+  signOutAction,
   onNavigate,
 }: SidebarProps) {
   const navigate = (go: () => void) => () => {
@@ -117,11 +114,7 @@ export function Sidebar({
           secondary={user?.email}
           slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }}
         />
-        <Tooltip title="Sign out" arrow>
-          <IconButton size="small" aria-label="Sign out" onClick={onSignOut}>
-            <LogoutOutlinedIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        {signOutAction}
       </Stack>
     </Stack>
   );
