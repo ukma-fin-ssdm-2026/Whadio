@@ -101,21 +101,24 @@ test("each transcript revision gets its own cache entry", () => {
 });
 
 test.for([
-  ["processed", true],
-  ["recording", false],
-  ["queued", false],
-  ["processing", false],
-  ["failed", false],
-] as const)("%s meeting has transcript and notes enabled: %s", ([state, enabled]) => {
-  // Act
-  const flags = [
-    meetingQueries.transcript({ id: "alpha", state }, null).enabled,
-    meetingQueries.notes({ id: "alpha", state }).enabled,
-  ];
+  ["processed", true, true],
+  ["failed", true, false],
+  ["recording", false, false],
+  ["queued", false, false],
+  ["processing", false, false],
+] as const)(
+  "%s meeting enables its transcript: %s, its notes: %s",
+  ([state, transcript, notes]) => {
+    // Act
+    const flags = [
+      meetingQueries.transcript({ id: "alpha", state }, null).enabled,
+      meetingQueries.notes({ id: "alpha", state }).enabled,
+    ];
 
-  // Assert
-  expect(flags).toEqual([enabled, enabled]);
-});
+    // Assert
+    expect(flags).toEqual([transcript, notes]);
+  },
+);
 
 function captureTranscriptQuery() {
   const searches: string[] = [];
