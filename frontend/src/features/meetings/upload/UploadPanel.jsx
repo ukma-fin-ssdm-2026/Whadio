@@ -7,18 +7,13 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
 import { useState } from "react";
-import { titleCase } from "@/shared/lib/format";
 
-export function UploadPanel({ workspace, onUpload }) {
+export function UploadPanel({ presetField, onUpload }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [file, setFile] = useState(null);
@@ -82,14 +77,7 @@ export function UploadPanel({ workspace, onUpload }) {
               onChange={(event) => setName(event.target.value)}
               fullWidth
             />
-            <FormControl fullWidth>
-              <InputLabel>Note preset</InputLabel>
-              <Select label="Note preset" value={workspace.preset} disabled>
-                <MenuItem value={workspace.preset}>
-                  {titleCase(workspace.preset)} (workspace default)
-                </MenuItem>
-              </Select>
-            </FormControl>
+            {presetField}
             <Button
               className="file-picker-button"
               component="label"

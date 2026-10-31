@@ -7,9 +7,6 @@ import type {
   PlaybackLink,
   Schemas,
   TranscriptRead,
-  WorkspacePage,
-  WorkspaceRead,
-  WorkspaceUpdate,
 } from "./shared/api/types";
 import { unwrap } from "./shared/api/unwrap";
 
@@ -37,27 +34,6 @@ const meetingUrl = (meetingId: string) =>
   `${API_ORIGIN}/api/v1/meetings/${encodeURIComponent(meetingId)}`;
 
 export const api = {
-  listWorkspaces(): Promise<WorkspacePage> {
-    return unwrap(apiClient.GET("/api/v1/workspaces", { params: { query: PAGE } }));
-  },
-
-  getWorkspace(workspaceId: string): Promise<WorkspaceRead> {
-    return unwrap(
-      apiClient.GET("/api/v1/workspaces/{workspace_id}", {
-        params: { path: { workspace_id: workspaceId } },
-      }),
-    );
-  },
-
-  updateWorkspace(workspaceId: string, changes: WorkspaceUpdate): Promise<WorkspaceRead> {
-    return unwrap(
-      apiClient.PATCH("/api/v1/workspaces/{workspace_id}", {
-        params: { path: { workspace_id: workspaceId } },
-        body: changes,
-      }),
-    );
-  },
-
   listMeetings(workspaceId: string): Promise<MeetingPage> {
     return unwrap(
       apiClient.GET("/api/v1/workspaces/{workspace_id}/meetings", {
