@@ -1,11 +1,11 @@
 import { Box, Stack, Tab, Tabs } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
-import { Fragment, type ReactNode, useId } from "react";
+import { Fragment, type ReactNode, useEffect, useId } from "react";
 import type { NoteRead, TranscriptRead } from "@/shared/api/types";
 import { formatDate } from "@/shared/lib/format";
 import { PageHeader } from "@/shared/ui/PageHeader";
-import { meetingQueries } from "../api/meetings";
-import type { Meeting, MeetingTab } from "../model";
+import { meetingQueries, TRANSCRIPT_PENDING } from "../api/meetings";
+import { isInProgress, type Meeting, type MeetingTab } from "../model";
 import { NotesPanel } from "./NotesPanel";
 import { RecordingPlayer } from "./RecordingPlayer";
 import { TranscriptPanel } from "./TranscriptPanel";
@@ -39,8 +39,16 @@ export function MeetingDetail({
   const id = useId();
   const notesResult = useQuery(meetingQueries.notes(meeting));
   const transcriptResult = useQuery(meetingQueries.transcript(meeting, revisionId));
+  const { data: transcriptAnswer, refetch: refetchTranscript } = transcriptResult;
   const notes = notesResult.data ?? null;
-  const transcript = transcriptResult.data ?? null;
+  const transcriptPending = transcriptAnswer === TRANSCRIPT_PENDING;
+  const transcript = transcriptPending ? null : (transcriptAnswer ?? null);
+  const meetingEnded = !isInProgress(meeting.state);
+
+  // `enabled` stays on past `processing`, so nothing else would ask again until `staleTime`.
+  useEffect(() => {
+    if (transcriptPending && meetingEnded) refetchTranscript();
+  }, [transcriptPending, meetingEnded, refetchTranscript]);
 
   const contentError = notesResult.error ?? transcriptResult.error;
 
@@ -89,7 +97,7 @@ export function MeetingDetail({
             {tab === "recording" && <RecordingPlayer meeting={meeting} />}
             <TranscriptPanel
               transcript={transcript}
-              missing={transcriptResult.data === null}
+              missing={transcriptAnswer === null}
               loading={transcriptResult.isLoading}
               query={transcriptQuery}
               onQuery={onTranscriptQuery}

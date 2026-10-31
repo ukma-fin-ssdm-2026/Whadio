@@ -100,6 +100,9 @@ async function openTranscriptDownloads() {
 }
 
 const failed = () => meeting({ processing_state: "failed", failure_reason: "notes_failed" });
+const processing = () => meeting({ processing_state: "processing" });
+const transcribing = (state: "failed" | "processing") =>
+  state === "failed" ? failed() : processing();
 const interactive = 'button, a[href], input, select, [role="button"], [tabindex="0"]';
 
 test("meeting header has no workspace access control", () => {
@@ -211,54 +214,73 @@ test("a failed meeting with an unknown reason never shows the code", () => {
   expect(screen.getByRole("alert")).toHaveTextContent("Processing failed for this meeting.");
 });
 
-test("a failed meeting with a transcript shows it", async () => {
+const WITHOUT_NOTES = ["failed", "processing"] as const;
+
+test.for(WITHOUT_NOTES)("a %s meeting with a transcript shows it", async (state) => {
   // Arrange
   serveContent();
   serveSpokenTranscript();
 
   // Act
-  renderDetail({ meeting: failed(), tab: "transcript" });
+  renderDetail({ meeting: transcribing(state), tab: "transcript" });
 
   // Assert
   expect(await screen.findByText("Budget agreed")).toBeInTheDocument();
 });
 
-test("a failed meeting offers the original of its edited transcript", async () => {
-  // Arrange
-  serveContent();
+test.for(WITHOUT_NOTES)(
+  "a %s meeting offers the original of its edited transcript",
+  async (state) => {
+    // Arrange
+    serveContent();
 
-  // Act
-  renderDetail({ meeting: failed(), tab: "transcript" });
+    // Act
+    renderDetail({ meeting: transcribing(state), tab: "transcript" });
 
-  // Assert
-  expect(
-    await screen.findByRole("button", { name: "View original transcript" }),
-  ).toBeInTheDocument();
-});
+    // Assert
+    expect(
+      await screen.findByRole("button", { name: "View original transcript" }),
+    ).toBeInTheDocument();
+  },
+);
 
-test("searching the transcript of a failed meeting filters it", async () => {
+test.for(WITHOUT_NOTES)("searching the transcript of a %s meeting filters it", async (state) => {
   // Arrange
   serveContent();
   serveSpokenTranscript();
 
   // Act
-  renderDetail({ meeting: failed(), tab: "transcript", transcriptQuery: "absent" });
+  renderDetail({ meeting: transcribing(state), tab: "transcript", transcriptQuery: "absent" });
 
   // Assert
   expect(await screen.findByText("No transcript matches your search.")).toBeInTheDocument();
 });
 
-test("the notes tab of a failed meeting loads the transcript but not the notes", async () => {
+test.for(WITHOUT_NOTES)("a %s meeting offers its transcript for download", async (state) => {
   // Arrange
-  const requests = serveContent();
+  serveContent();
 
   // Act
-  renderDetail({ meeting: failed() });
-  await waitFor(() => expect(requests).toContain("transcript"));
+  renderDetail({ meeting: transcribing(state), tab: "transcript" });
 
   // Assert
-  expect(requests).not.toContain("notes");
+  expect(await screen.findByRole("button", { name: "Download transcript" })).toBeInTheDocument();
 });
+
+test.for(WITHOUT_NOTES)(
+  "the notes tab of a %s meeting loads the transcript but not the notes",
+  async (state) => {
+    // Arrange
+    const requests = serveContent();
+
+    // Act
+    renderDetail({ meeting: transcribing(state) });
+    await waitFor(() => expect(requests).toContain("transcript"));
+
+    // Assert
+    expect(requests).not.toContain("notes");
+  },
+);
 
 test("a revision is requested by its identifier", async () => {
   // Arrange
@@ -304,6 +326,69 @@ test("a meeting with no transcript says so without an alert", async () => {
 
   // Assert
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+async function watchUntranscribedMeeting() {
+  refuseTranscript();
+  const view = renderDetail({ meeting: processing(), tab: "transcript" });
+  await screen.findByText("Transcript is not available yet.");
+  return view;
+}
+
+test("a processing meeting with no transcript yet shows no alert", async () => {
+  // Act
+  await watchUntranscribedMeeting();
+
+  // Assert
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("leaving processing never claims there is no transcript while it is asked for", async () => {
+  // Arrange
+  const { rerender } = await watchUntranscribedMeeting();
+
+  // Act
+  rerender(detail({ meeting: meeting(), tab: "transcript" }));
+
+  // Assert
+  expect(screen.getByText("Transcript is not available yet.")).toBeInTheDocument();
+});
+
+test.for([
+  ["processed", meeting],
+  ["failed", failed],
+] as const)("a meeting that becomes %s shows its transcript at once", async ([, ended]) => {
+  // Arrange
+  const { rerender } = await watchUntranscribedMeeting();
+  serveSpokenTranscript();
+
+  // Act
+  rerender(detail({ meeting: ended(), tab: "transcript" }));
+
+  // Assert
+  expect(await screen.findByText("Budget agreed")).toBeInTheDocument();
+});
+
+test("a meeting that fails in transcription ends up with no transcript", async () => {
+  // Arrange
+  const { rerender } = await watchUntranscribedMeeting();
+
+  // Act
+  rerender(detail({ meeting: failed(), tab: "transcript" }));
+
+  // Assert
+  expect(await screen.findByText("This meeting has no transcript.")).toBeInTheDocument();
+});
+
+test("a meeting sent back to the queue does not ask for its transcript", async () => {
+  // Arrange
+  const { rerender, queryClient } = await watchUntranscribedMeeting();
+
+  // Act
+  rerender(detail({ meeting: meeting({ processing_state: "queued" }), tab: "transcript" }));
+
+  // Assert
+  expect(queryClient.isFetching()).toBe(0);
 });
 
 test("a revision link to a meeting with no transcript reports the error", async () => {

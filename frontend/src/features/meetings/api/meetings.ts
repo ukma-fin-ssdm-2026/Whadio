@@ -12,6 +12,7 @@ import { isInProgress, type Meeting, mapMeeting } from "../model";
 
 export const MEETINGS_PER_PAGE = 100;
 export const POLL_INTERVAL_MS = 10_000;
+export const TRANSCRIPT_PENDING = "pending" as const;
 const FIRST_PAGE = "";
 const CURRENT_NOTE_ONLY = { limit: 1 };
 
@@ -34,7 +35,12 @@ function fetchMeetingPage(workspaceId: string, name: string, cursor: string, sig
   );
 }
 
-async function fetchTranscript(meetingId: string, revisionId: string | null, signal: AbortSignal) {
+async function fetchTranscript(
+  meetingId: string,
+  meetingState: Meeting["state"],
+  revisionId: string | null,
+  signal: AbortSignal,
+) {
   try {
     return await unwrap(
       apiClient.GET("/api/v1/meetings/{meeting_id}/transcript", {
@@ -43,8 +49,10 @@ async function fetchTranscript(meetingId: string, revisionId: string | null, sig
       }),
     );
   } catch (error) {
-    // A meeting that failed in transcription has none; a named revision has to exist.
-    if (error instanceof ApiError && error.code === "NOT_TRANSCRIBED" && !revisionId) return null;
+    // None yet while processing, none at all after a failure; a named revision has to exist.
+    if (error instanceof ApiError && error.code === "NOT_TRANSCRIBED" && !revisionId) {
+      return meetingState === "processing" ? TRANSCRIPT_PENDING : null;
+    }
     throw error;
   }
 }
@@ -83,12 +91,17 @@ export const meetingQueries = {
       refetchInterval: ({ state }) => pollWhileInProgress(state.data ? [state.data] : []),
       select: mapMeeting,
     }),
-  transcript: ({ id, state }: Pick<Meeting, "id" | "state">, revisionId: string | null) =>
+  transcript: (
+    { id, state: meetingState }: Pick<Meeting, "id" | "state">,
+    revisionId: string | null,
+  ) =>
     queryOptions({
       queryKey: [...detailKey(id), "transcript", { revisionId }],
-      queryFn: ({ signal }) => fetchTranscript(id, revisionId, signal),
-      // Not `processed`, unlike the notes: a meeting whose notes failed keeps its transcript.
-      enabled: !isInProgress(state),
+      queryFn: ({ signal }) => fetchTranscript(id, meetingState, revisionId, signal),
+      // Not `processed`, unlike the notes: it is saved before them and outlives their failure.
+      enabled: meetingState !== "recording" && meetingState !== "queued",
+      refetchInterval: ({ state }) =>
+        state.data === TRANSCRIPT_PENDING ? POLL_INTERVAL_MS : false,
     }),
   notes: ({ id, state }: Pick<Meeting, "id" | "state">) =>
     queryOptions({

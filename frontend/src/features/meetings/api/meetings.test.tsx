@@ -12,7 +12,7 @@ import {
 } from "@/shared/testing/fixtures";
 import { createTestQueryClient, TestProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
-import { meetingQueries, useUploadMeeting } from "./meetings";
+import { meetingQueries, TRANSCRIPT_PENDING, useUploadMeeting } from "./meetings";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -105,7 +105,7 @@ test.for([
   ["failed", true, false],
   ["recording", false, false],
   ["queued", false, false],
-  ["processing", false, false],
+  ["processing", true, false],
 ] as const)(
   "%s meeting enables its transcript: %s, its notes: %s",
   ([state, transcript, notes]) => {
@@ -166,17 +166,32 @@ test("a meeting with no transcript answers with none", async () => {
   expect(transcript).toBeNull();
 });
 
-test("a named revision of a meeting with no transcript is an error", async () => {
+test("a processing meeting with no transcript answers that it is pending", async () => {
   // Arrange
   refuseTranscript();
-  const query = meetingQueries.transcript({ id: "meeting", state: "failed" }, "original");
+  const query = meetingQueries.transcript({ id: "meeting", state: "processing" }, null);
 
   // Act
-  const request = createTestQueryClient().fetchQuery(query);
+  const transcript = await createTestQueryClient().fetchQuery(query);
 
   // Assert
-  await expect(request).rejects.toMatchObject({ code: "NOT_TRANSCRIBED" });
+  expect(transcript).toBe(TRANSCRIPT_PENDING);
 });
+
+test.for(["failed", "processing"] as const)(
+  "a named revision of a %s meeting with no transcript is an error",
+  async (state) => {
+    // Arrange
+    refuseTranscript();
+    const query = meetingQueries.transcript({ id: "meeting", state }, "original");
+
+    // Act
+    const request = createTestQueryClient().fetchQuery(query);
+
+    // Assert
+    await expect(request).rejects.toMatchObject({ code: "NOT_TRANSCRIBED" });
+  },
+);
 
 test("a transcript request that fails otherwise stays an error", async () => {
   // Arrange
