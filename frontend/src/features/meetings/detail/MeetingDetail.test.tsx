@@ -45,6 +45,15 @@ function serveContent() {
   return requests;
 }
 
+function serveSpokenTranscript() {
+  const segment = { id: "one", speaker_id: null, start_seconds: 0, end_seconds: 5 };
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}/transcript", ({ response }) =>
+      response(200).json(transcriptRead({ segments: [{ ...segment, text: "Budget agreed" }] })),
+    ),
+  );
+}
+
 function detail(changes: Partial<ComponentProps<typeof MeetingDetail>> = {}) {
   const props = {
     meeting: meeting(),
@@ -81,6 +90,7 @@ async function openTranscriptDownloads() {
   return view;
 }
 
+const failed = () => meeting({ processing_state: "failed", failure_reason: "notes_failed" });
 const interactive = 'button, a[href], input, select, [role="button"], [tabindex="0"]';
 
 test("meeting header has no workspace access control", () => {
@@ -182,6 +192,55 @@ test("a failed meeting without a reason says processing failed", () => {
 
   // Assert
   expect(screen.getByRole("alert")).toHaveTextContent("Processing failed");
+});
+
+test("a failed meeting with a transcript shows it", async () => {
+  // Arrange
+  serveContent();
+  serveSpokenTranscript();
+
+  // Act
+  renderDetail({ meeting: failed(), tab: "transcript" });
+
+  // Assert
+  expect(await screen.findByText("Budget agreed")).toBeInTheDocument();
+});
+
+test("a failed meeting offers the original of its edited transcript", async () => {
+  // Arrange
+  serveContent();
+
+  // Act
+  renderDetail({ meeting: failed(), tab: "transcript" });
+
+  // Assert
+  expect(
+    await screen.findByRole("button", { name: "View original transcript" }),
+  ).toBeInTheDocument();
+});
+
+test("searching the transcript of a failed meeting filters it", async () => {
+  // Arrange
+  serveContent();
+  serveSpokenTranscript();
+
+  // Act
+  renderDetail({ meeting: failed(), tab: "transcript", transcriptQuery: "absent" });
+
+  // Assert
+  expect(await screen.findByText("No transcript matches your search.")).toBeInTheDocument();
+});
+
+test("the notes tab of a failed meeting loads the transcript but not the notes", async () => {
+  // Arrange
+  const requests = serveContent();
+
+  // Act
+  renderDetail({ meeting: failed() });
+  await waitFor(() => expect(requests).toContain("transcript"));
+
+  // Assert
+  expect(requests).not.toContain("notes");
 });
 
 test("a revision is requested by its identifier", async () => {

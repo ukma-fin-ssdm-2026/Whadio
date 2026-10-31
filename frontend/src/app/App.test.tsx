@@ -13,6 +13,7 @@ const CURRENT_LINK = "/whadio/meetings/meeting";
 const ORIGINAL_WORDING = "Original uncorrected wording";
 const CURRENT_WORDING = "Current corrected wording";
 const LINKED_TITLE = "Linked meeting outside the first page";
+const IN_PROGRESS = ["recording", "queued", "processing"] as const;
 const FAILURE_REASON = "The recording has no audio";
 const GENERATED_NOTES = "Decisions from the weekly sync";
 
@@ -451,9 +452,9 @@ describe("a meeting that finishes while it is open", () => {
   const contentRequests = (traffic: ApiTraffic) =>
     traffic.requests.filter((request) => /\/(transcript|notes)/.test(request));
 
-  test("requests no transcript or notes before it is processed", async () => {
+  test.for(IN_PROGRESS)("requests no transcript or notes while %s", async (state) => {
     // Arrange
-    const { traffic } = await watchMeeting();
+    const { traffic } = await watchMeeting(state);
 
     // Act
     await nextPoll();
@@ -462,20 +463,17 @@ describe("a meeting that finishes while it is open", () => {
     expect(contentRequests(traffic)).toEqual([]);
   });
 
-  test.for(["recording", "queued", "processing"] as const)(
-    "keeps polling while %s",
-    async (state) => {
-      // Arrange
-      const { live } = await watchMeeting(state);
-      const polls = live.polls;
+  test.for(IN_PROGRESS)("keeps polling while %s", async (state) => {
+    // Arrange
+    const { live } = await watchMeeting(state);
+    const polls = live.polls;
 
-      // Act
-      await nextPoll();
+    // Act
+    await nextPoll();
 
-      // Assert
-      expect(live.polls).toBe(polls + 1);
-    },
-  );
+    // Assert
+    expect(live.polls).toBe(polls + 1);
+  });
 
   test("shows its notes without a reload", async () => {
     // Arrange
@@ -489,18 +487,21 @@ describe("a meeting that finishes while it is open", () => {
     expect(await screen.findByText(GENERATED_NOTES)).toBeInTheDocument();
   });
 
-  test("shows its transcript without a reload", async () => {
-    // Arrange
-    const { live, user } = await watchMeeting();
-    await user.click(screen.getByRole("tab", { name: "Transcript" }));
+  test.for(["processed", "failed"] as const)(
+    "shows its transcript without a reload once %s",
+    async (state) => {
+      // Arrange
+      const { live, user } = await watchMeeting();
+      await user.click(screen.getByRole("tab", { name: "Transcript" }));
 
-    // Act
-    live.state = "processed";
-    await nextPoll();
+      // Act
+      live.state = state;
+      await nextPoll();
 
-    // Assert
-    expect(await screen.findByText(CURRENT_WORDING)).toBeInTheDocument();
-  });
+      // Assert
+      expect(await screen.findByText(CURRENT_WORDING)).toBeInTheDocument();
+    },
+  );
 
   test("shows its failure without a reload", async () => {
     // Arrange
@@ -514,7 +515,7 @@ describe("a meeting that finishes while it is open", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(FAILURE_REASON);
   });
 
-  test("a failure requests no transcript or notes", async () => {
+  test("a failure requests the transcript once and not the notes", async () => {
     // Arrange
     const { live, traffic } = await watchMeeting();
     live.state = "failed";
@@ -525,7 +526,7 @@ describe("a meeting that finishes while it is open", () => {
     await nextPoll();
 
     // Assert
-    expect(contentRequests(traffic)).toEqual([]);
+    expect(contentRequests(traffic)).toEqual(["GET /api/v1/meetings/meeting/transcript"]);
   });
 
   test.for(["processed", "failed"] as const)("stops polling once %s", async (state) => {

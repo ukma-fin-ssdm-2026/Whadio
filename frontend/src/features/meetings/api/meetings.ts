@@ -77,7 +77,8 @@ export const meetingQueries = {
             signal,
           }),
         ),
-      enabled: state === "processed",
+      // Not `processed`, unlike the notes: a meeting whose notes failed keeps its transcript.
+      enabled: !isInProgress(state),
     }),
   notes: ({ id, state }: Pick<Meeting, "id" | "state">) =>
     queryOptions({
