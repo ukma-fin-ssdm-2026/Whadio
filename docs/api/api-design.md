@@ -424,7 +424,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /workspaces/{workspace_id}/invitations` · List pending invitations
 
-- **Status:** Designed · **Caller:** Moderator or Owner · **Success:** `200`, a page of
+- **Status:** Implemented · **Caller:** Moderator or Owner · **Success:** `200`, a page of
   invitations, newest first
 - **Rules:** `link_active` becomes false once the link expires, or once its creator loses the
   Moderator role.
@@ -434,7 +434,8 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /workspaces/{workspace_id}/invitations` · Invite a person
 
-- **Status:** Designed · **Caller:** Moderator or Owner · **Success:** `201` for a new
+- **Status:** Implemented for `invite-only` ·
+  **Caller:** Moderator or Owner · **Success:** `201` for a new
   invitation; `200` when a pending one was replaced
 - **Rules:**
   - Creates a single-use link valid for 7 days (FR-006).
@@ -458,7 +459,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /workspaces/{workspace_id}/invitations/{invitation_id}/cancel` · Cancel
 
-- **Status:** Designed · **Caller:** Moderator or Owner · **Success:** `200`, the cancelled
+- **Status:** Implemented · **Caller:** Moderator or Owner · **Success:** `200`, the cancelled
   invitation
 - **Rules:** the link stops working. The invitation still counts towards the one-day wait for
   its address.
