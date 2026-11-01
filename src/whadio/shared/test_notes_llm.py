@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from .notes_llm import AnthropicLlm, OllamaLlm, load_notes_llm
 
-API_KEY = "sk-ant-must-stay-hidden"
+API_KEY = "sk-test"
 
 
 @pytest.fixture(autouse=True)
