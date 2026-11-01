@@ -25,7 +25,7 @@ extension_token = HTTPBearer(
     auto_error=False,
     scheme_name="extensionToken",
     description="Token from `POST /api/v1/sessions` with `kind: extension`; accepted only "
-    "by the capture endpoints, `GET /api/v1/users/me` and sign-out",
+    "by the capture endpoints and by sign-out",
 )
 
 Cookie = Annotated[str | None, Depends(session_cookie)]

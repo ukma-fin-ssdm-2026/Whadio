@@ -306,8 +306,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /users/me` · Get the signed-in user
 
-- **Status:** Implemented · **Caller:** any user, with a browser session or the extension
-  token · **Success:** `200`, the user
+- **Status:** Implemented · **Caller:** any user · **Success:** `200`, the user
 - **Errors:** common only.
 
 #### `GET /users/me/mcp-keys` · List my MCP keys
@@ -996,8 +995,8 @@ status, and which operations return it.
 
 **`401 Unauthorized`**
 
-- **`UNAUTHENTICATED`:** no valid session or token (section 5.3). An extension token on an
-  endpoint other than capture, `GET /users/me` and sign-out is treated as no session (FR-003).
+- **`UNAUTHENTICATED`:** no valid session or token (section 5.3). An extension token on a
+  non-capture endpoint is treated as no session (FR-003).
 - **`INVALID_CREDENTIALS`:** sign-in with an unknown address or a wrong password. A single code
   for both, so the API cannot be used to check which addresses have accounts. Returned by
   `POST /sessions`.
@@ -1128,8 +1127,8 @@ Rules that follow from this:
 - **Lifetimes are fixed and never extended by use** (FR-003): 14 days for a browser session,
   24 hours for an extension token.
 - **The extension signs in with `kind: extension`** and receives a bearer token once. It
-  works only on the capture endpoints, `GET /users/me` and sign-out, so a stolen extension
-  token cannot read meetings.
+  works only on the capture endpoints and for sign-out, so a stolen extension token cannot
+  read meetings.
 - **State-changing requests from a foreign `Origin` are refused** with `403 ORIGIN_REJECTED`,
   unless they carry a bearer token. This is the CSRF defence for cookie requests. *Designed;
   not in the stub.*

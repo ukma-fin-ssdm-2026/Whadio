@@ -13,6 +13,7 @@ from .accounts import (
     routes_mcp_keys,
     routes_registration,
     routes_sessions,
+    routes_users,
     routes_workspaces,
 )
 from .admin import routes as admin_routes
@@ -105,6 +106,7 @@ def create_app(
         routes_instance.router,
         routes_registration.router,
         routes_sessions.router,
+        routes_users.router,
         routes_mcp_keys.router,
         routes_workspaces.router,
         meeting_routes.router,
