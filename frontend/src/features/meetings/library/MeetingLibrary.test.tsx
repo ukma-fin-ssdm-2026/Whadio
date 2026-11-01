@@ -94,6 +94,17 @@ test("in-progress library row offers no control besides opening the meeting", ()
   expect(controls).toHaveLength(1);
 });
 
+test.for(["recording", "queued", "processing"] as const)(
+  "a %s library row has no pause or resume button",
+  (state) => {
+    // Act
+    renderLibrary(meeting({ processing_state: state }));
+
+    // Assert
+    expect(screen.queryByRole("button", { name: /pause|resume/i })).not.toBeInTheDocument();
+  },
+);
+
 test("in-progress library row shows a progress indicator", () => {
   // Act
   renderLibrary(meeting({ processing_state: "queued" }));
