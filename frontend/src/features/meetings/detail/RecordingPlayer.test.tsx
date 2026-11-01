@@ -169,6 +169,30 @@ test("a stale link is replaced when the tab is reopened", async () => {
   expect(traffic.requests).toBe(2);
 });
 
+test("a stale link whose refresh fails gives way to the reason", async () => {
+  // Arrange
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  serveLink();
+  const { unmount, queryClient } = renderWithProviders(
+    <RecordingPlayer meeting={availableMeeting} />,
+  );
+  await screen.findByLabelText("Weekly sync recording");
+  unmount();
+  await act(() => vi.advanceTimersByTimeAsync(FOUR_MINUTES_MS + 1));
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}/recording", ({ response }) =>
+      response(404).json(errorBody("NOT_FOUND", "Recording not found")),
+    ),
+  );
+
+  // Act
+  renderWithProviders(<RecordingPlayer meeting={availableMeeting} />, queryClient);
+  await screen.findByRole("alert");
+
+  // Assert
+  expect(screen.queryByLabelText("Weekly sync recording")).not.toBeInTheDocument();
+});
+
 test("a link leaves the cache by the end of its life", async () => {
   // Arrange
   vi.useFakeTimers({ shouldAdvanceTime: true });

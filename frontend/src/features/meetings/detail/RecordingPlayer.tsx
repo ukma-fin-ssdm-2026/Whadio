@@ -7,7 +7,7 @@ import type { Meeting } from "../model";
 export function RecordingPlayer({ meeting }: { meeting: Meeting }) {
   const { data: link, error } = useQuery(meetingQueries.recording(meeting));
 
-  if (meeting.recordingAvailable && link?.url) {
+  if (meeting.recordingAvailable && !error && link?.url) {
     return (
       <Box className="player player-ready">
         <video controls src={link.url} aria-label={`${meeting.title} recording`} />
