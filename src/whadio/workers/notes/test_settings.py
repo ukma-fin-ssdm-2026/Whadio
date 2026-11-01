@@ -8,6 +8,7 @@ from pydantic import SecretStr, ValidationError
 
 from conftest import refused_fields
 
+from ...shared.notes_llm import load_notes_llm
 from .settings import (
     AnthropicSettings,
     NotesSettings,
@@ -86,6 +87,23 @@ def test_ollama_provider_reads_the_ollama_settings() -> None:
 
     # Assert
     assert settings.notes.llm == OllamaSettings(provider="ollama", model="gemma3:12b")
+
+
+def test_web_reader_matches_the_worker_for_claude_with_no_model_set() -> None:
+    # Act
+    worker, web = load_notes_worker_settings().notes.llm, load_notes_llm()
+
+    # Assert
+    assert (web.provider, web.model) == (worker.provider, worker.model)
+
+
+@pytest.mark.usefixtures("ollama")
+def test_web_reader_matches_the_worker_for_ollama() -> None:
+    # Act
+    worker, web = load_notes_worker_settings().notes.llm, load_notes_llm()
+
+    # Assert
+    assert (web.provider, web.model) == (worker.provider, worker.model)
 
 
 def test_settings_with_an_unknown_provider_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:

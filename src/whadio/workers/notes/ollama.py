@@ -5,6 +5,7 @@ import httpx2
 from pydantic import BaseModel, Field, JsonValue, ValidationError
 
 from ...contracts.notes import NotesFailure, NotesProvider
+from ...shared.notes_llm import OllamaLlm
 from .errors import NotesError
 from .llm import Completion
 from .prompt import Prompt
@@ -52,7 +53,7 @@ class OllamaChatModel:
 
     @property
     def provider(self) -> NotesProvider:
-        return NotesProvider.WHADIO
+        return NotesProvider(OllamaLlm.reported_provider)
 
     async def complete(self, prompt: Prompt) -> Completion:
         try:
