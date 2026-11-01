@@ -96,6 +96,9 @@ uv run task infra:up             # PostgreSQL, RabbitMQ, SeaweedFS and Mailpit
 uv run task dev                  # the API with auto-reload
 ```
 
+Before playing a recording locally, add `127.0.0.1 seaweedfs` to the system hosts file. The
+browser must resolve the same storage host used to sign links for the Compose ASR worker.
+
 `uv run task --list` shows every task. Local addresses, with credentials in `.env`:
 
 | Service | Address |

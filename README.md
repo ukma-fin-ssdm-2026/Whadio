@@ -87,6 +87,10 @@ uv run task infra:up             # PostgreSQL, RabbitMQ, SeaweedFS and Mailpit
 uv run task dev                  # the API on http://localhost:3000, with auto-reload
 ```
 
+Before playing a recording locally, map `seaweedfs` to `127.0.0.1` in the system hosts file
+(`/etc/hosts` on Linux and macOS, or `C:\Windows\System32\drivers\etc\hosts` on Windows). The
+browser then resolves the same storage host used to sign links for the Compose ASR worker.
+
 ## Running the API
 
 Database setup, migrations and integration tests are documented in
