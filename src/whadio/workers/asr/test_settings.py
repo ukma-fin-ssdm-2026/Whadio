@@ -144,3 +144,18 @@ def test_asr_limit_is_refused_only_below_its_floor(
 
     # Assert
     assert found == refused
+
+
+def test_refused_settings_do_not_show_the_hugging_face_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    monkeypatch.delenv("WHADIO_BROKER__URL")
+    monkeypatch.setenv("WHADIO_ASR__DIARIZATION__HF_TOKEN", "hf-secret")
+
+    # Act
+    with pytest.raises(ValidationError) as failure:
+        load_asr_worker_settings()
+
+    # Assert
+    assert "hf-secret" not in str(failure.value)

@@ -1,8 +1,10 @@
 import math
+from pathlib import Path
 from typing import Final
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from conftest import refused_fields
 
@@ -35,3 +37,20 @@ def test_retention_interval_must_be_above_zero(interval: float, refused: set[str
 
     # Assert
     assert found == refused
+
+
+def test_refused_settings_do_not_show_the_storage_secret(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Arrange
+    secret_key = uuid4().hex
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("WHADIO_STORAGE__ACCESS_KEY", raising=False)
+    monkeypatch.setenv("WHADIO_STORAGE__SECRET_KEY", secret_key)
+
+    # Act
+    with pytest.raises(ValidationError) as failure:
+        SchedulerSettings.model_validate({})
+
+    # Assert
+    assert secret_key not in str(failure.value)
