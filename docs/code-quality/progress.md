@@ -1,70 +1,67 @@
 # Implementation Progress
 
-State on 2026-10-12, and the plan for the minimal working prototype due by Lab 6.
+State on 2026-11-01 at `main` commit `46af4d7`, for the midterm evaluation.
 
-## The MVP
+## Try the current product
 
-The prototype covers the core path, from a recording to its notes:
+Whadio has no public evaluation instance yet; deployment is tracked in
+[#182](https://github.com/ukma-fin-ssdm-2026/Whadio/issues/182). The current product can be run
+locally with the [README setup](../../README.md#development), and recordings are processed after
+starting the [workers](../../README.md#running-the-workers). The dedicated midterm demo is tracked
+in [#192](https://github.com/ukma-fin-ssdm-2026/Whadio/issues/192).
 
-1. A user signs in and uploads a recorded meeting (any audio or video file, for example one
-   recorded with OBS) to a workspace.
-2. The recording goes to object storage (SeaweedFS), and Processing queues a transcription job on
-   RabbitMQ.
-3. The ASR worker transcribes the recording with speaker separation and returns the transcript.
-4. Processing stores the transcript and queues a notes job; the notes worker writes the notes
-   through an LLM API.
-5. The user reads the transcript and the notes in the web app.
+## End-to-end path
 
-Along the way, Access Policy decides who may open a meeting, Audit records who changed or deleted
-what, and Retention deletes recordings 90 days after the meeting.
+The implemented path starts either in the Chrome extension or with an upload in the SPA. The
+recording goes to S3-compatible storage, Processing publishes a RabbitMQ job, the ASR worker
+creates a speaker-separated transcript, and the notes worker writes notes through local Ollama or
+Anthropic. Processing stores each result, the SPA polls the meeting until it is ready, and the user
+can play the recording, read the transcript and notes, and export them.
 
-Left for later labs:
+The production Compose template runs nginx, migrations, the API, scheduler, both workers,
+PostgreSQL, RabbitMQ and optional SeaweedFS on one CPU host by default. A CUDA override accelerates
+ASR, and an optional Ollama profile supplies the built-in notes model.
 
-- live capture through the Chrome extension;
-- e-mail notifications, since SMTP is a paid service;
-- administrator monitoring, planned for the observability lab;
-- a self-hosted LLM, which needs a shared GPU host;
-- rate limiting for failed MCP authentication, to be tracked in a separate security issue.
+## Feature status
 
-## Status
+| Feature area | Built | Partial or missing |
+|---|---|---|
+| Accounts and workspaces | Stored accounts and Argon2id passwords; browser and extension sessions; workspace create, read, update and delete; operator registration and password-reset links; invitation creation, preview, acceptance, registration, decline and cancellation | Self-service registration and reset requests by email; SPA pages for workspace creation and deletion, registration, reset, invitations and member management; member role/removal API |
+| Capture and upload | Chrome extension consent flow, tab and microphone recording, chunk upload and completion; existing-file upload; storage validation and queued processing | Interrupted captures are not finalised by the scheduler; extension publication to the Chrome Web Store is out of scope |
+| Processing and workers | Transactional job outbox, least-privilege broker users, retries and failure reasons; Parakeet or Whisper recognition; pyannote diarization; Claude or Ollama notes; CPU and CUDA configurations | The planned full-system CI cases TC-PIPE-01, TC-PIPE-02 and TC-NFR-01 do not exist yet; the public CPU-host timing required by #182 has not been run |
+| Meetings and organisation | Meeting lists, name/date filters, rename, delete, playback, folders with restore, glossary CRUD, transcript revisions and speaker renaming; notes context from the folder's other readable meetings | Meeting rename, move and delete, folder and glossary management, transcript editing and speaker renaming are API-only; the SPA does not show which meetings were used as context; notes regeneration is deliberately refused for the MVP |
+| Access and sharing | Workspace and restricted access, explicit grants, shares, access requests and decisions, recipient content views, redacted speaker labels, authorization shared by HTTP and MCP | Sharing and access management have no SPA screens |
+| Notes and export | Notes rendered safely as Markdown; current/original transcript export to Markdown or VTT; notes export to Markdown | Workspace-specific provider-key management is designed but not implemented; editable notes are out of scope |
+| MCP | Personal keys shown once and stored hashed; meeting search/list, transcript and notes tools enforce the same access policy | Authentication rate limiting remains a tracked security follow-up |
+| Retention and notifications | Recording expiry and deletion, deletion warnings, processing outcome notices, transactional notification outbox and SMTP delivery; expired registration, invitation and reset-link cleanup | No SMTP relay means notices remain unsent by design in `invite-only` mode |
+| Administration | Admin permission CLI; API job list and aggregate metrics with no meeting content | No administrator SPA dashboard; host/model telemetry is not collected |
+| Web SPA | Sign-in/out, workspace and all-meeting libraries, filters in the URL, upload, processing-state polling, playback, notes, transcript revision viewing and search, export, workspace defaults and MCP key management | The account, workspace creation and deletion, membership, meeting rename, move and delete, transcript editing, folder, glossary, sharing, access and administrator surfaces listed above remain API-only |
+| Deployment and operations | Development and production Compose configurations, TLS nginx proxy, health checks, one-shot migrations, external or bundled S3-compatible storage, CPU/CUDA ASR and local/external notes provider choices | `https://whadio.com`, automated deployment/rollback and the operating note remain under #182 |
 
-| Component | Owner | Status | What exists |
-|---|---|---|---|
-| Tooling and CI | Andrii | Done | Pre-commit hooks, CI, the dependency audit and Dependabot, for the backend and the frontend ([static analysis](static-analysis.md)) |
-| Database | Valeriia | Done | The schema split by owning module, six Alembic migrations, separate owner and application roles, and integrity guards: one Owner and one default folder per workspace, a sealed original transcript, an append-only audit log ([database](../architecture/database.md)) |
-| Job contracts, broker, object storage | Andrii | Done | Typed job and result messages between Processing and the workers, RabbitMQ helpers, S3 storage with presigned links |
-| Transcription worker | Andrii | Done | Whisper or Parakeet recognition, pyannote speaker diarization and language detection, on a CPU or a GPU, in parallel slots under a supervisor that stops the worker when it can no longer take jobs |
-| Notes worker | Andrii | Done | Notes written by Claude through the Anthropic API, with presets and a context budget |
-| Accounts & Workspaces | Denys | Done | Sign-in with argon2id password hashes, browser and extension sessions, workspaces and their members, and personal MCP key creation, listing and revocation |
-| Processing, Audit | Denys | Done | Processing queues the jobs and stores the workers' results, accepting each result only from the worker that may send it; Audit records changes in the same transaction |
-| Meetings, Access Policy | Valeriia | Done | Upload, folders, transcripts, notes and their Markdown and VTT export; access checks, share links and access requests |
-| Retention | Valeriia | Done | A scheduler job that deletes recordings once they expire |
-| Web SPA | Zlata | Done | Browser sign-in, workspaces, upload, meeting notes and transcripts, workspace settings, and personal MCP key management connected to the API |
+## Quality evidence
 
-The backend runs the whole path: an upload is stored in SeaweedFS and queued for transcription,
-and the web app stores the workers' results as they arrive.
+- The latest committed [coverage report](../../htmlcov/index.html) comes from successful
+  [CI run 41335159391](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/41335159391)
+  at `3242e59` on 2026-11-01: 92.42% combined line and branch coverage.
+- The [test plan](../validation/test-plan.md#results) records the full CI suite, CPU/CUDA ASR,
+  local and external notes models, worker restart recovery and performance measurements.
+- The current [static-analysis report](static-analysis.md) contains fresh raw Bandit and
+  `npm audit` output and documents the remaining dependency advisory.
 
-## The working component
+## Next steps
 
-The transcription and notes workers run end to end on their own: they take jobs from RabbitMQ,
-read the recording from SeaweedFS, and publish their results for Processing.
-`uv run task workers:up` starts them in Docker Compose; the README lists the keys they need.
-
-They meet the standards of the [code quality policy](../../TeamCharter.md#11-code-quality-and-review-policy):
-every commit-hook check passes, and 131 tests cover them, 10 of them slow tests that run real
-models or the Compose services.
-
-## Next steps to Lab 6
-
-1. Replace the development-user command with the planned registration flow.
-2. Run the whole path end to end in Docker Compose, from an uploaded recording to its notes in
-   the browser.
-3. ~~Add a linter, a formatter and `npm audit` for the frontend.~~ Done: Biome and `npm audit`
-   run in the hooks and CI.
+1. Publish the midterm demo (#192), then add its link beside the local run instructions.
+2. Complete the public CPU deployment, timing run and automated rollback in #182.
+3. Add TC-PIPE-01, TC-PIPE-02 and TC-NFR-01 to CI so recovery is no longer evidenced only by a
+   manual system run.
+4. Add the missing SPA flows, starting with invitations and registration, then meeting access and
+   the administrator dashboard.
+5. Resolve the transitive `minimatch` advisory without taking the breaking generator downgrade
+   proposed by `npm audit`.
 
 ## AI Usage
 
-Drafted with Claude Code (Claude Opus 5.5) from the repository's state and the team's MVP
-decisions; checked and edited by Andrii Shalaiev, and reviewed through a pull request before
-merging. The MCP and Web SPA status updates were prepared with OpenAI Codex and reviewed by
-Zlata.
+The original document was drafted with Claude Code (Claude Opus 5.5). OpenAI Codex updated the
+2026-11-01 status from the repository, generated OpenAPI specification, CI coverage artifact and
+test-plan evidence. Andrii Shalaiev checked the feature statuses and evidence against the code,
+test plan and CI artifact in pull request #255.

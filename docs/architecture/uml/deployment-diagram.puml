@@ -51,7 +51,6 @@ web --> store : S3 API\n[TB-4]
 web --> mq : AMQP\n[TB-5]
 scheduler --> db : SQL\n[TB-4]
 scheduler --> store : S3 API\n[TB-4]
-scheduler --> mq : AMQP\n[TB-5]
 notesWorker --> mq : AMQP\n[TB-5]
 
 ' --- Between the hosts: everything travels over the private network ---
@@ -62,7 +61,6 @@ notesWorker --> llm : HTTP /api/chat\n[TB-6]
 
 ' --- Egress to third parties ---
 notesWorker --> provider : HTTPS\nonly when the Owner configured a key\n[TB-7]
-web --> smtp : SMTP + STARTTLS\n[TB-8]
 scheduler --> smtp : SMTP + STARTTLS\n[TB-8]
 
 note bottom of gpu

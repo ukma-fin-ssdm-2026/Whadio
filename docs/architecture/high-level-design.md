@@ -136,7 +136,7 @@ The deployable processes, all but the off-the-shelf services built from the same
 | Unit | Runs | Host | Instances |
 |---|---|---|---|
 | `web` | All backend modules except Retention; consumes `processing.results` | Main host | 1, stateless; more can run behind nginx |
-| `scheduler` | Retention, capture finalisation, re-publishing jobs stuck in `queued`, deleting expired registration and password-reset links, invitations and sessions, sending the notification emails reserved in the outbox | Main host | Exactly 1 |
+| `scheduler` | Retention and recording deletion, deleting expired registration, invitation and password-reset links, and sending or removing notification outbox entries; finalising interrupted captures is designed, not built yet | Main host | Exactly 1 |
 | `notes-worker` | Notes pipeline | Main host (CPU only) | 1 or more, competing consumers |
 | `asr-worker` | Transcription pipeline | GPU host | 1 per GPU |
 | `llm-runtime` | The built-in language model, on Ollama | GPU host | 1 |
@@ -187,14 +187,16 @@ Source: [uml/sequence-meeting-pipeline.puml](uml/sequence-meeting-pipeline.puml)
    stored at once.
 2. **Interrupted capture.** If the connection is lost or the tab is closed, the chunks already
    acknowledged stay stored. Once the capture has been idle past a timeout, the scheduler assembles
-   what was received into a partial recording and queues it like any other.
+   what was received into a partial recording and queues it like any other. *Designed; not built
+   yet: today only an explicit completion request assembles and queues a recording.*
 3. **Transcription.** The ASR worker takes the job, reports that it started, fetches the audio,
    and returns the transcript with numbered speakers. The backend names them from the speaker
    events the extension sent where the match is unambiguous, saves it, and the member can read it
    while the notes are still being generated.
 4. **Notes.** The backend assembles the preset, the provider and the context set, excluding
    restricted meetings, and queues the notes job. The notes worker returns the notes, the proposed
-   name and the meetings used as context.
+   name and the meetings used as context. *The per-workspace provider is designed; not built yet:
+   today each deployment sets the provider on the notes worker.*
 5. **Delivery.** The backend saves the notes, applies the proposed name as the meeting's name,
    marked as generated, marks the meeting processed and reserves an email to the member in the
    same transaction; the scheduler sends it. The SPA shows the transcript and notes and prompts
@@ -209,11 +211,11 @@ How the architecture meets fault tolerance (NFR-015) and recoverability (NFR-014
 |---|---|---|
 | GPU host or ASR worker down | Everything except new transcripts; recordings keep arriving. | Jobs wait in `transcription.requests` and run when a worker returns. |
 | LLM runtime or notes worker down | Transcripts are readable. | Notes jobs wait in `notes.requests`; the meeting shows its transcript while processing. |
-| The configured provider fails | Transcripts are readable. | The meeting is failed with the cause, and generation with the built-in model is offered (FR-023). |
+| The configured provider fails | Transcripts are readable. | The job is retried for a temporary failure; a permanent or exhausted failure marks the meeting failed with its cause. Offering generation with the built-in model (FR-023) is designed, not built yet. |
 | Notes generation fails, so no name is proposed | The transcript and the meeting itself. | The meeting keeps a default name built from its date and time until the member names it or notes are regenerated (FR-033). |
 | A job fails repeatedly | Everything else. | Past the delivery limit, the meeting is failed with the cause and the member is notified (FR-014, FR-024). |
-| The extension loses its connection | Acknowledged chunks stay stored. | The scheduler finalises a partial recording. |
-| Broker down | Reading, editing, sharing, export. | Meetings stay `queued`; the scheduler re-publishes jobs stuck in `queued` once the broker is back. |
+| The extension loses its connection | Acknowledged chunks stay stored. | The scheduler finalises a partial recording. *Designed; not built yet:* today the capture stays unfinalised. |
+| Broker down | Reading, editing, sharing, export. | Meetings stay `queued`; `web` keeps retrying their unpublished jobs and publishes them once the broker is back. |
 | SMTP relay down | Everything except email; existing accounts sign in as usual. | Registration, invitation and password-reset links cannot be delivered, so new registrations and resets in `verified` mode cannot complete; notifications are not delivered. The operator can still issue registration and reset links from the command line (FR-049). |
 | Main host down | Nothing. | Availability is deliberately not among the requirements: a single main host cannot guarantee it. |
 
@@ -258,7 +260,9 @@ choice that does not change the architecture.
   hardware assumptions in the [project description](../../Project-Description.md)); the `gpu`
   profile still names the ASR placement but reserves no GPU unless `compose.cuda.yaml` is selected.
   An external notes provider leaves `ollama` disabled. Enable the `storage` profile for bundled
-  SeaweedFS, or configure any external S3-compatible endpoint. NFR-002 does not hold in this CPU layout.
+  SeaweedFS, or configure any external S3-compatible endpoint. NFR-002 does not hold in this CPU
+  layout. This is the layout `.env.production.example` ships. Compose does not create the
+  cross-host network of the two-host layout; the operator provides it.
 
 ### Registration modes
 

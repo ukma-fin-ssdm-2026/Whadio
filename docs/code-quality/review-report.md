@@ -128,3 +128,10 @@ Below is each point and what we did with it.
 
 This section was drafted with Claude Code (Claude Opus 5.5), which checked each point against the
 code; Andrii Shalaiev reviewed the statuses and decisions.
+
+## AI Usage
+
+The human review and the human-to-AI comparison explicitly state above that no AI was used for
+them. Claude Code (Claude Opus 5.5) produced the separate AI review and drafted the follow-up
+status table; the named team members reviewed those results. OpenAI Codex added this consolidated
+disclosure while preparing the midterm documentation update.

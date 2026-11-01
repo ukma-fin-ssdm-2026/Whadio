@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Whadio code coverage</title>
+    <title>Coverage report</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_c827f16f.png">
     <link rel="stylesheet" href="style_cb_4667309f.css" type="text/css">
     <script src="coverage_html_cb_15cffcd0.js" defer></script>
@@ -10,8 +10,8 @@
 <body class="indexfile">
 <header>
     <div class="content">
-        <h1>Whadio code coverage:
-            <span class="pc_cov">88%</span>
+        <h1>Coverage report:
+            <span class="pc_cov">92.42%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -26,6 +26,8 @@
                         <kbd>s</kbd>
                         <kbd>m</kbd>
                         <kbd>x</kbd>
+                        <kbd>b</kbd>
+                        <kbd>p</kbd>
                         <kbd>c</kbd>
                         &nbsp; change column sorting
                     </p>
@@ -43,7 +45,7 @@
         <form id="filter_container">
             <input id="filter" type="text" value="" placeholder="filter...">
             <div>
-                <input id="hide100" type="checkbox" >
+                <input id="hide100" type="checkbox" checked disabled >
                 <label for="hide100">hide covered</label>
             </div>
         </form>
@@ -54,1185 +56,799 @@
         </h2>
         <p class="text">
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.2">coverage.py v7.16.2</a>,
-            created at 2026-10-13 09:08 +0300
+            created at 2026-11-01 18:42 +0000
         </p>
     </div>
 </header>
 <main id="index">
     <table class="index" data-sortable>
         <thead>
+            <tr class="tablehead grouphead">
+                <th class="spacer">&nbsp;</th>
+                <th class="spacer">&nbsp;</th>
+                <th class="left" colspan="4">Statements</th>
+                <th class="spacer">&nbsp;</th>
+                <th class="left" colspan="3">Branches</th>
+                <th class="spacer">&nbsp;</th>
+                <th>Total</th>
+            </tr>
             <tr class="tablehead" title="Click to sort">
                 <th id="file" class="name" aria-sort="none" data-shortcut="f">File<span class="arrows"></span></th>
                 <th class="spacer">&nbsp;</th>
+                <th id="statements_coverage" aria-sort="none" data-default-sort-order="descending">coverage<span class="arrows"></span></th>
                 <th id="statements" aria-sort="none" data-default-sort-order="descending" data-shortcut="s">statements<span class="arrows"></span></th>
                 <th id="missing" aria-sort="none" data-default-sort-order="descending" data-shortcut="m">missing<span class="arrows"></span></th>
                 <th id="excluded" aria-sort="none" data-default-sort-order="descending" data-shortcut="x">excluded<span class="arrows"></span></th>
+                <th class="spacer">&nbsp;</th>
+                <th id="branches_coverage" aria-sort="none" data-default-sort-order="descending">coverage<span class="arrows"></span></th>
+                <th id="branches" aria-sort="none" data-default-sort-order="descending" data-shortcut="b">branches<span class="arrows"></span></th>
+                <th id="partial" aria-sort="none" data-default-sort-order="descending" data-shortcut="p">partial<span class="arrows"></span></th>
                 <th class="spacer">&nbsp;</th>
                 <th id="coverage" aria-sort="none" data-shortcut="c">coverage<span class="arrows"></span></th>
             </tr>
         </thead>
         <tbody>
             <tr class="region">
-                <td class="name"><a href="z_f8db715f465f3ccf___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>__init__.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_57741ac63d561676___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>access_policy<span class="sep">/</span>__init__.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_57741ac63d561676_contracts_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>access_policy<span class="sep">/</span>contracts.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>10</td>
-                <td>0</td>
-                <td>4</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="10 10">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_57741ac63d561676_enums_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>access_policy<span class="sep">/</span>enums.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>5</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="5 5">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_57741ac63d561676_models_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>access_policy<span class="sep">/</span>models.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>34</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="34 34">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_57741ac63d561676_repositories_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>access_policy<span class="sep">/</span>repositories.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>56</td>
-                <td>0</td>
-                <td>27</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="56 56">100%</td>
-            </tr>
-            <tr class="region">
                 <td class="name"><a href="z_57741ac63d561676_services_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>access_policy<span class="sep">/</span>services.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="203 207">98.07%</td>
                 <td>207</td>
                 <td>4</td>
                 <td>20</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="203 207">98%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_1d2d9cdbb8db63eb___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>accounts<span class="sep">/</span>__init__.py</a></td>
+                <td data-ratio="62 66">93.94%</td>
+                <td>66</td>
+                <td>4</td>
                 <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_1d2d9cdbb8db63eb_contracts_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>accounts<span class="sep">/</span>contracts.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>5</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="5 5">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_1d2d9cdbb8db63eb_enums_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>accounts<span class="sep">/</span>enums.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>25</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="25 25">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_1d2d9cdbb8db63eb_models_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>accounts<span class="sep">/</span>models.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>87</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="87 87">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_1d2d9cdbb8db63eb_passwords_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>accounts<span class="sep">/</span>passwords.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>14</td>
-                <td>0</td>
-                <td>5</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="14 14">100%</td>
+                <td data-ratio="265 273">97.07%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_1d2d9cdbb8db63eb_repositories_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>accounts<span class="sep">/</span>repositories.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>98</td>
+                <td data-ratio="254 258">98.45%</td>
+                <td>258</td>
                 <td>4</td>
-                <td>47</td>
+                <td>107</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="94 98">96%</td>
+                <td data-ratio="25 28">89.29%</td>
+                <td>28</td>
+                <td>3</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="279 286">97.55%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_1d2d9cdbb8db63eb_services_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>accounts<span class="sep">/</span>services.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>105</td>
-                <td>3</td>
+                <td data-ratio="266 270">98.52%</td>
+                <td>270</td>
+                <td>4</td>
                 <td>24</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="102 105">97%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_fc885eb77c0d99e9___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>admin<span class="sep">/</span>__init__.py</a></td>
+                <td data-ratio="44 46">95.65%</td>
+                <td>46</td>
+                <td>2</td>
                 <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_21e9e4e2aaa64282___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>__init__.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_7b73098784972b77___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>access_policy<span class="sep">/</span>__init__.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
+                <td data-ratio="310 316">98.10%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_7b73098784972b77_routes_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>access_policy<span class="sep">/</span>routes.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="94 125">75.20%</td>
                 <td>125</td>
-                <td>46</td>
+                <td>31</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="79 125">63%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_ddacbb477f6837c1___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>accounts<span class="sep">/</span>__init__.py</a></td>
+                <td data-ratio="2 8">25.00%</td>
+                <td>8</td>
+                <td>2</td>
                 <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
+                <td data-ratio="96 133">72.18%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_ddacbb477f6837c1_auth_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>accounts<span class="sep">/</span>auth.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="42 43">97.67%</td>
                 <td>43</td>
-                <td>7</td>
+                <td>1</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="36 43">84%</td>
+                <td data-ratio="7 8">87.50%</td>
+                <td>8</td>
+                <td>1</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="49 51">96.08%</td>
             </tr>
             <tr class="region">
-                <td class="name"><a href="z_ddacbb477f6837c1_routes_sessions_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>accounts<span class="sep">/</span>routes_sessions.py</a></td>
+                <td class="name"><a href="z_8d4a3ffdac461934_routes_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>admin<span class="sep">/</span>routes.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>19</td>
-                <td>5</td>
+                <td data-ratio="44 45">97.78%</td>
+                <td>45</td>
+                <td>1</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="14 19">74%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_ddacbb477f6837c1_routes_workspaces_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>accounts<span class="sep">/</span>routes_workspaces.py</a></td>
+                <td data-ratio="1 2">50.00%</td>
+                <td>2</td>
+                <td>1</td>
                 <td class="spacer">&nbsp;</td>
-                <td>33</td>
-                <td>3</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="30 33">91%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_ddacbb477f6837c1_schemas_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>accounts<span class="sep">/</span>schemas.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>63</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="63 63">100%</td>
+                <td data-ratio="45 47">95.74%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_21e9e4e2aaa64282_app_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>app.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>40</td>
+                <td data-ratio="49 52">94.23%</td>
+                <td>52</td>
                 <td>3</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="37 40">92%</td>
+                <td data-ratio="4 6">66.67%</td>
+                <td>6</td>
+                <td>0</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="53 58">91.38%</td>
+            </tr>
+            <tr class="region">
+                <td class="name"><a href="z_a444a7a3a9a92a16_routes_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>capture<span class="sep">/</span>routes.py</a></td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="58 60">96.67%</td>
+                <td>60</td>
+                <td>2</td>
+                <td>0</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="8 10">80.00%</td>
+                <td>10</td>
+                <td>2</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="66 70">94.29%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_21e9e4e2aaa64282_composition_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>composition.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>175</td>
-                <td>49</td>
-                <td>0</td>
+                <td data-ratio="211 262">80.53%</td>
+                <td>262</td>
+                <td>51</td>
+                <td>3</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="126 175">72%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_1baa5ea3307f6477___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>core<span class="sep">/</span>__init__.py</a></td>
+                <td data-ratio="11 30">36.67%</td>
+                <td>30</td>
+                <td>3</td>
                 <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
+                <td data-ratio="222 292">76.03%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_1baa5ea3307f6477_errors_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>core<span class="sep">/</span>errors.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>109</td>
-                <td>6</td>
+                <td data-ratio="117 121">96.69%</td>
+                <td>121</td>
+                <td>4</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="103 109">94%</td>
+                <td data-ratio="15 16">93.75%</td>
+                <td>16</td>
+                <td>1</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="132 137">96.35%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_1baa5ea3307f6477_pagination_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>core<span class="sep">/</span>pagination.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="36 37">97.30%</td>
                 <td>37</td>
-                <td>6</td>
+                <td>1</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="31 37">84%</td>
+                <td data-ratio="9 10">90.00%</td>
+                <td>10</td>
+                <td>1</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="45 47">95.74%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_1baa5ea3307f6477_schemas_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>core<span class="sep">/</span>schemas.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>42</td>
-                <td>7</td>
+                <td data-ratio="29 34">85.29%</td>
+                <td>34</td>
+                <td>5</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="35 42">83%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_4f9be3326115e462___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>export<span class="sep">/</span>__init__.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_4f9be3326115e462_routes_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>export<span class="sep">/</span>routes.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>24</td>
+                <td data-ratio="1 4">25.00%</td>
                 <td>4</td>
-                <td>0</td>
+                <td>1</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="20 24">83%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_21e9e4e2aaa64282_main_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>main.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>2</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="2 2">100%</td>
+                <td data-ratio="30 38">78.95%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_21e9e4e2aaa64282_mcp_server_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>mcp_server.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="65 70">92.86%</td>
                 <td>70</td>
-                <td>18</td>
+                <td>5</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="52 70">74%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_1883df837a73ea57___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>meetings<span class="sep">/</span>__init__.py</a></td>
+                <td data-ratio="5 6">83.33%</td>
+                <td>6</td>
+                <td>1</td>
                 <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_1883df837a73ea57_audio_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>meetings<span class="sep">/</span>audio.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>13</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="13 13">100%</td>
+                <td data-ratio="70 76">92.11%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_1883df837a73ea57_pagination_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>meetings<span class="sep">/</span>pagination.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="20 31">64.52%</td>
                 <td>31</td>
-                <td>17</td>
+                <td>11</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="14 31">45%</td>
+                <td data-ratio="2 6">33.33%</td>
+                <td>6</td>
+                <td>2</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="22 37">59.46%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_1883df837a73ea57_routes_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>meetings<span class="sep">/</span>routes.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="88 99">88.89%</td>
                 <td>99</td>
-                <td>30</td>
+                <td>11</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="69 99">70%</td>
+                <td data-ratio="6 10">60.00%</td>
+                <td>10</td>
+                <td>2</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="94 109">86.24%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_1883df837a73ea57_routes_content_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>meetings<span class="sep">/</span>routes_content.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="89 123">72.36%</td>
                 <td>123</td>
-                <td>41</td>
+                <td>34</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="82 123">67%</td>
+                <td data-ratio="1 6">16.67%</td>
+                <td>6</td>
+                <td>1</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="90 129">69.77%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_1883df837a73ea57_schemas_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>meetings<span class="sep">/</span>schemas.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="106 108">98.15%</td>
                 <td>108</td>
-                <td>4</td>
+                <td>2</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="104 108">96%</td>
+                <td data-ratio="2 4">50.00%</td>
+                <td>4</td>
+                <td>2</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="108 112">96.43%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_1883df837a73ea57_upload_limits_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>meetings<span class="sep">/</span>upload_limits.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="41 41">100.00%</td>
                 <td>41</td>
                 <td>0</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="41 41">100%</td>
+                <td data-ratio="11 12">91.67%</td>
+                <td>12</td>
+                <td>1</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="52 53">98.11%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_1883df837a73ea57_views_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>meetings<span class="sep">/</span>views.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="13 14">92.86%</td>
                 <td>14</td>
-                <td>4</td>
+                <td>1</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="10 14">71%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_21e9e4e2aaa64282_meta_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>meta.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>9</td>
+                <td data-ratio="0 0">100.00%</td>
                 <td>0</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="9 9">100%</td>
+                <td data-ratio="13 14">92.86%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_21e9e4e2aaa64282_openapi_export_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>openapi_export.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="15 24">62.50%</td>
                 <td>24</td>
                 <td>9</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="15 24">62%</td>
+                <td data-ratio="0 0">100.00%</td>
+                <td>0</td>
+                <td>0</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="15 24">62.50%</td>
             </tr>
             <tr class="region">
-                <td class="name"><a href="z_21e9e4e2aaa64282_settings_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>api<span class="sep">/</span>settings.py</a></td>
+                <td class="name"><a href="z_0283793ec6e68c4a_repositories_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>capture<span class="sep">/</span>repositories.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>9</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="9 9">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_d45de1f588a10cf7___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>audit<span class="sep">/</span>__init__.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_d45de1f588a10cf7_contracts_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>audit<span class="sep">/</span>contracts.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>25</td>
-                <td>0</td>
-                <td>2</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="25 25">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_d45de1f588a10cf7_enums_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>audit<span class="sep">/</span>enums.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>27</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="27 27">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_d45de1f588a10cf7_models_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>audit<span class="sep">/</span>models.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>19</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="19 19">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_d45de1f588a10cf7_services_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>audit<span class="sep">/</span>services.py</a></td>
-                <td class="spacer">&nbsp;</td>
+                <td data-ratio="34 36">94.44%</td>
                 <td>36</td>
-                <td>0</td>
-                <td>6</td>
+                <td>2</td>
+                <td>25</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="36 36">100%</td>
+                <td data-ratio="2 2">100.00%</td>
+                <td>2</td>
+                <td>0</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="36 38">94.74%</td>
             </tr>
             <tr class="region">
-                <td class="name"><a href="z_0283793ec6e68c4a___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>capture<span class="sep">/</span>__init__.py</a></td>
+                <td class="name"><a href="z_0283793ec6e68c4a_services_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>capture<span class="sep">/</span>services.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
+                <td data-ratio="156 161">96.89%</td>
+                <td>161</td>
+                <td>5</td>
+                <td>31</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_0283793ec6e68c4a_enums_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>capture<span class="sep">/</span>enums.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>6</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="6 6">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_0283793ec6e68c4a_models_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>capture<span class="sep">/</span>models.py</a></td>
-                <td class="spacer">&nbsp;</td>
+                <td data-ratio="27 28">96.43%</td>
                 <td>28</td>
-                <td>0</td>
-                <td>0</td>
+                <td>1</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="28 28">100%</td>
+                <td data-ratio="183 189">96.83%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_f8db715f465f3ccf_cli_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>cli.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="115 148">77.70%</td>
+                <td>148</td>
                 <td>33</td>
-                <td>33</td>
-                <td>0</td>
+                <td>6</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 33">0%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_dc31edf6fe77724c___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>contracts<span class="sep">/</span>__init__.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_dc31edf6fe77724c_common_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>contracts<span class="sep">/</span>common.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>39</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="39 39">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_dc31edf6fe77724c_notes_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>contracts<span class="sep">/</span>notes.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>58</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="58 58">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_dc31edf6fe77724c_queues_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>contracts<span class="sep">/</span>queues.py</a></td>
-                <td class="spacer">&nbsp;</td>
+                <td data-ratio="8 14">57.14%</td>
                 <td>14</td>
                 <td>0</td>
-                <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="14 14">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_dc31edf6fe77724c_results_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>contracts<span class="sep">/</span>results.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>13</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="13 13">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_dc31edf6fe77724c_transcription_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>contracts<span class="sep">/</span>transcription.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>36</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="36 36">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_624cf0ba4c984562___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>export<span class="sep">/</span>__init__.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_624cf0ba4c984562_services_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>export<span class="sep">/</span>services.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>42</td>
-                <td>25</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="17 42">40%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_937d5a8a51d07268___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>meetings<span class="sep">/</span>__init__.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_937d5a8a51d07268_contracts_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>meetings<span class="sep">/</span>contracts.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>81</td>
-                <td>0</td>
-                <td>3</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="81 81">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_937d5a8a51d07268_enums_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>meetings<span class="sep">/</span>enums.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>25</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="25 25">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_937d5a8a51d07268_models_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>meetings<span class="sep">/</span>models.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>118</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="118 118">100%</td>
+                <td data-ratio="123 162">75.93%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_937d5a8a51d07268_persistence_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>meetings<span class="sep">/</span>persistence.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>67</td>
+                <td data-ratio="81 83">97.59%</td>
+                <td>83</td>
                 <td>2</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="65 67">97%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_937d5a8a51d07268_processing_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>meetings<span class="sep">/</span>processing.py</a></td>
+                <td data-ratio="12 14">85.71%</td>
+                <td>14</td>
+                <td>2</td>
                 <td class="spacer">&nbsp;</td>
-                <td>8</td>
-                <td>0</td>
-                <td>4</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="8 8">100%</td>
+                <td data-ratio="93 97">95.88%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_937d5a8a51d07268_recordings_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>meetings<span class="sep">/</span>recordings.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="32 37">86.49%</td>
                 <td>37</td>
                 <td>5</td>
                 <td>3</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="32 37">86%</td>
+                <td data-ratio="5 6">83.33%</td>
+                <td>6</td>
+                <td>1</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="37 43">86.05%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_937d5a8a51d07268_repositories_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>meetings<span class="sep">/</span>repositories.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>217</td>
-                <td>29</td>
-                <td>78</td>
+                <td data-ratio="194 221">87.78%</td>
+                <td>221</td>
+                <td>27</td>
+                <td>80</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="188 217">87%</td>
+                <td data-ratio="47 68">69.12%</td>
+                <td>68</td>
+                <td>13</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="241 289">83.39%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_937d5a8a51d07268_retention_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>meetings<span class="sep">/</span>retention.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>56</td>
+                <td data-ratio="65 66">98.48%</td>
+                <td>66</td>
                 <td>1</td>
                 <td>23</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="55 56">98%</td>
+                <td data-ratio="9 10">90.00%</td>
+                <td>10</td>
+                <td>1</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="74 76">97.37%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_937d5a8a51d07268_services_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>meetings<span class="sep">/</span>services.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>356</td>
-                <td>9</td>
+                <td data-ratio="354 364">97.25%</td>
+                <td>364</td>
+                <td>10</td>
                 <td>3</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="347 356">97%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_937d5a8a51d07268_settings_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>meetings<span class="sep">/</span>settings.py</a></td>
+                <td data-ratio="99 110">90.00%</td>
+                <td>110</td>
+                <td>11</td>
                 <td class="spacer">&nbsp;</td>
-                <td>8</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="8 8">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_3b6e057f64dac241___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>migrations<span class="sep">/</span>__init__.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
+                <td data-ratio="453 474">95.57%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_3b6e057f64dac241_env_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>migrations<span class="sep">/</span>env.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>24</td>
-                <td>24</td>
+                <td data-ratio="0 25">0.00%</td>
+                <td>25</td>
+                <td>25</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 24">0%</td>
+                <td data-ratio="0 2">0.00%</td>
+                <td>2</td>
+                <td>0</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="0 27">0.00%</td>
             </tr>
             <tr class="region">
-                <td class="name"><a href="z_433efdf4cb57e0ed___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>notifications<span class="sep">/</span>__init__.py</a></td>
+                <td class="name"><a href="z_433efdf4cb57e0ed_services_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>notifications<span class="sep">/</span>services.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
+                <td data-ratio="95 96">98.96%</td>
+                <td>96</td>
+                <td>1</td>
+                <td>6</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="14 14">100.00%</td>
+                <td>14</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
+                <td data-ratio="109 110">99.09%</td>
             </tr>
             <tr class="region">
-                <td class="name"><a href="z_0ac7b5273edf93c0___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>processing<span class="sep">/</span>__init__.py</a></td>
+                <td class="name"><a href="z_433efdf4cb57e0ed_templates_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>notifications<span class="sep">/</span>templates.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
+                <td data-ratio="88 92">95.65%</td>
+                <td>92</td>
+                <td>4</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
+                <td data-ratio="12 14">85.71%</td>
+                <td>14</td>
+                <td>2</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="100 106">94.34%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_0ac7b5273edf93c0_consumer_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>processing<span class="sep">/</span>consumer.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="136 152">89.47%</td>
                 <td>152</td>
-                <td>18</td>
+                <td>16</td>
                 <td>25</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="134 152">88%</td>
+                <td data-ratio="24 28">85.71%</td>
+                <td>28</td>
+                <td>2</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="160 180">88.89%</td>
             </tr>
             <tr class="region">
-                <td class="name"><a href="z_0ac7b5273edf93c0_enums_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>processing<span class="sep">/</span>enums.py</a></td>
+                <td class="name"><a href="z_0ac7b5273edf93c0_monitoring_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>processing<span class="sep">/</span>monitoring.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>9</td>
-                <td>0</td>
-                <td>0</td>
+                <td data-ratio="97 101">96.04%</td>
+                <td>101</td>
+                <td>4</td>
+                <td>7</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="9 9">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_0ac7b5273edf93c0_models_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>processing<span class="sep">/</span>models.py</a></td>
+                <td data-ratio="14 18">77.78%</td>
+                <td>18</td>
+                <td>4</td>
                 <td class="spacer">&nbsp;</td>
-                <td>22</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="22 22">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_0ac7b5273edf93c0_repositories_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>processing<span class="sep">/</span>repositories.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>50</td>
-                <td>0</td>
-                <td>26</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="50 50">100%</td>
+                <td data-ratio="111 119">93.28%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_0ac7b5273edf93c0_services_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>processing<span class="sep">/</span>services.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>153</td>
+                <td data-ratio="182 186">97.85%</td>
+                <td>186</td>
                 <td>4</td>
-                <td>27</td>
+                <td>33</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="149 153">97%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_bb1b3d59a4e74f94___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>retention<span class="sep">/</span>__init__.py</a></td>
+                <td data-ratio="45 52">86.54%</td>
+                <td>52</td>
+                <td>7</td>
                 <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
+                <td data-ratio="227 238">95.38%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_bb1b3d59a4e74f94_services_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>retention<span class="sep">/</span>services.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>76</td>
+                <td data-ratio="76 78">97.44%</td>
+                <td>78</td>
+                <td>2</td>
                 <td>3</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="19 22">86.36%</td>
+                <td>22</td>
                 <td>3</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="73 76">96%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_bb1b3d59a4e74f94_storage_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>retention<span class="sep">/</span>storage.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>11</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="11 11">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_dd6412d1fb63d561___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>scheduler<span class="sep">/</span>__init__.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
+                <td data-ratio="95 100">95.00%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_dd6412d1fb63d561_composition_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>scheduler<span class="sep">/</span>composition.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>17</td>
-                <td>17</td>
+                <td data-ratio="64 66">96.97%</td>
+                <td>66</td>
+                <td>2</td>
+                <td>6</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="2 2">100.00%</td>
+                <td>2</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 17">0%</td>
+                <td data-ratio="66 68">97.06%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_dd6412d1fb63d561_main_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>scheduler<span class="sep">/</span>main.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>40</td>
-                <td>40</td>
+                <td data-ratio="0 37">0.00%</td>
+                <td>37</td>
+                <td>37</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 40">0%</td>
+                <td data-ratio="0 8">0.00%</td>
+                <td>8</td>
+                <td>0</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="0 45">0.00%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_dd6412d1fb63d561_services_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>scheduler<span class="sep">/</span>services.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>41</td>
-                <td>6</td>
-                <td>5</td>
+                <td data-ratio="69 78">88.46%</td>
+                <td>78</td>
+                <td>9</td>
+                <td>15</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="35 41">85%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_dd6412d1fb63d561_settings_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>scheduler<span class="sep">/</span>settings.py</a></td>
-                <td class="spacer">&nbsp;</td>
+                <td data-ratio="7 8">87.50%</td>
                 <td>8</td>
-                <td>8</td>
-                <td>0</td>
+                <td>1</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 8">0%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_45c54c6389373cb1___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>shared<span class="sep">/</span>__init__.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_45c54c6389373cb1_broker_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>shared<span class="sep">/</span>broker.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>23</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="23 23">100%</td>
+                <td data-ratio="76 86">88.37%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_45c54c6389373cb1_database_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>shared<span class="sep">/</span>database.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="41 42">97.62%</td>
                 <td>42</td>
                 <td>1</td>
                 <td>3</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="41 42">98%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_45c54c6389373cb1_errors_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>shared<span class="sep">/</span>errors.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>30</td>
+                <td data-ratio="0 0">100.00%</td>
                 <td>0</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="30 30">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_45c54c6389373cb1_logs_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>shared<span class="sep">/</span>logs.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>6</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="6 6">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_45c54c6389373cb1_pagination_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>shared<span class="sep">/</span>pagination.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>10</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="10 10">100%</td>
+                <td data-ratio="41 42">97.62%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_45c54c6389373cb1_storage_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>shared<span class="sep">/</span>storage.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>52</td>
-                <td>0</td>
+                <td data-ratio="62 64">96.88%</td>
+                <td>64</td>
+                <td>2</td>
                 <td>7</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="52 52">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_0433a225a36a3050___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>__init__.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
+                <td data-ratio="2 2">100.00%</td>
+                <td>2</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_a7c46ea09584ee22___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>asr<span class="sep">/</span>__init__.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
+                <td data-ratio="64 66">96.97%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_a7c46ea09584ee22_audio_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>asr<span class="sep">/</span>audio.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="98 102">96.08%</td>
                 <td>102</td>
                 <td>4</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="98 102">96%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_f809a5c9a3d7f5eb___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>asr<span class="sep">/</span>diarization<span class="sep">/</span>__init__.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>9</td>
-                <td>0</td>
+                <td data-ratio="28 30">93.33%</td>
+                <td>30</td>
                 <td>2</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="9 9">100%</td>
+                <td data-ratio="126 132">95.45%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_f809a5c9a3d7f5eb_pyannote_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>asr<span class="sep">/</span>diarization<span class="sep">/</span>pyannote.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>22</td>
-                <td>22</td>
+                <td data-ratio="19 25">76.00%</td>
+                <td>25</td>
+                <td>6</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 22">0%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_a7c46ea09584ee22_errors_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>asr<span class="sep">/</span>errors.py</a></td>
+                <td data-ratio="1 4">25.00%</td>
+                <td>4</td>
+                <td>1</td>
                 <td class="spacer">&nbsp;</td>
-                <td>5</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="5 5">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_a7c46ea09584ee22_language_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>asr<span class="sep">/</span>language.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>12</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="12 12">100%</td>
+                <td data-ratio="20 29">68.97%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_a7c46ea09584ee22_main_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>asr<span class="sep">/</span>main.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="22 35">62.86%</td>
                 <td>35</td>
                 <td>13</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="22 35">63%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_a7c46ea09584ee22_pipeline_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>asr<span class="sep">/</span>pipeline.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>40</td>
-                <td>0</td>
+                <td data-ratio="0 2">0.00%</td>
+                <td>2</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="40 40">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_abfb2d9ce143f42d___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>asr<span class="sep">/</span>recognition<span class="sep">/</span>__init__.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>24</td>
-                <td>0</td>
-                <td>5</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="24 24">100%</td>
+                <td data-ratio="22 37">59.46%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_abfb2d9ce143f42d_parakeet_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>asr<span class="sep">/</span>recognition<span class="sep">/</span>parakeet.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="33 45">73.33%</td>
                 <td>45</td>
                 <td>12</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="33 45">73%</td>
+                <td data-ratio="8 8">100.00%</td>
+                <td>8</td>
+                <td>0</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="41 53">77.36%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_abfb2d9ce143f42d_whisper_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>asr<span class="sep">/</span>recognition<span class="sep">/</span>whisper.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="19 27">70.37%</td>
                 <td>27</td>
                 <td>8</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="19 27">70%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_a7c46ea09584ee22_settings_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>asr<span class="sep">/</span>settings.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>40</td>
+                <td data-ratio="0 0">100.00%</td>
                 <td>0</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="40 40">100%</td>
+                <td data-ratio="19 27">70.37%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_a7c46ea09584ee22_slot_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>asr<span class="sep">/</span>slot.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="14 28">50.00%</td>
                 <td>28</td>
                 <td>14</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="14 28">50%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_a7c46ea09584ee22_speakers_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>asr<span class="sep">/</span>speakers.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>66</td>
-                <td>0</td>
+                <td data-ratio="0 4">0.00%</td>
+                <td>4</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="66 66">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_732175e6e1bb3784___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>notes<span class="sep">/</span>__init__.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_732175e6e1bb3784_claude_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>notes<span class="sep">/</span>claude.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>37</td>
-                <td>1</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="36 37">97%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_732175e6e1bb3784_errors_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>notes<span class="sep">/</span>errors.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>5</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="5 5">100%</td>
+                <td data-ratio="14 32">43.75%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_732175e6e1bb3784_handler_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>notes<span class="sep">/</span>handler.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>32</td>
+                <td data-ratio="26 27">96.30%</td>
+                <td>27</td>
                 <td>1</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="31 32">97%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_732175e6e1bb3784_llm_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>notes<span class="sep">/</span>llm.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>9</td>
+                <td data-ratio="0 0">100.00%</td>
                 <td>0</td>
-                <td>5</td>
+                <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="9 9">100%</td>
+                <td data-ratio="26 27">96.30%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_732175e6e1bb3784_main_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>notes<span class="sep">/</span>main.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>35</td>
+                <td data-ratio="38 53">71.70%</td>
+                <td>53</td>
+                <td>15</td>
+                <td>0</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="3 6">50.00%</td>
+                <td>6</td>
+                <td>1</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="41 59">69.49%</td>
+            </tr>
+            <tr class="region">
+                <td class="name"><a href="z_732175e6e1bb3784_ollama_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>notes<span class="sep">/</span>ollama.py</a></td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="70 72">97.22%</td>
+                <td>72</td>
+                <td>2</td>
+                <td>0</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="14 14">100.00%</td>
                 <td>14</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="21 35">60%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_732175e6e1bb3784_output_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>notes<span class="sep">/</span>output.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>31</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="31 31">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_732175e6e1bb3784_presets_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>notes<span class="sep">/</span>presets.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>24</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="24 24">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_732175e6e1bb3784_prompt_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>notes<span class="sep">/</span>prompt.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>84</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="84 84">100%</td>
+                <td data-ratio="84 86">97.67%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_732175e6e1bb3784_settings_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>notes<span class="sep">/</span>settings.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>24</td>
+                <td data-ratio="48 48">100.00%</td>
+                <td>48</td>
                 <td>0</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="24 24">100%</td>
+                <td data-ratio="5 6">83.33%</td>
+                <td>6</td>
+                <td>1</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="53 54">98.15%</td>
             </tr>
             <tr class="region">
-                <td class="name"><a href="z_94024733a914be89___init___py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>supervision<span class="sep">/</span>__init__.py</a></td>
+                <td class="name"><a href="z_732175e6e1bb3784_writer_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>notes<span class="sep">/</span>writer.py</a></td>
                 <td class="spacer">&nbsp;</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="0 0">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_94024733a914be89_jobs_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>supervision<span class="sep">/</span>jobs.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>22</td>
-                <td>0</td>
-                <td>13</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="22 22">100%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_94024733a914be89_runners_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>supervision<span class="sep">/</span>runners.py</a></td>
-                <td class="spacer">&nbsp;</td>
-                <td>25</td>
-                <td>0</td>
+                <td data-ratio="36 37">97.30%</td>
+                <td>37</td>
+                <td>1</td>
                 <td>0</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="25 25">100%</td>
+                <td data-ratio="3 4">75.00%</td>
+                <td>4</td>
+                <td>1</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="39 41">95.12%</td>
             </tr>
             <tr class="region">
                 <td class="name"><a href="z_94024733a914be89_slots_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>supervision<span class="sep">/</span>slots.py</a></td>
                 <td class="spacer">&nbsp;</td>
+                <td data-ratio="118 142">83.10%</td>
                 <td>142</td>
                 <td>24</td>
                 <td>2</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="118 142">83%</td>
-            </tr>
-            <tr class="region">
-                <td class="name"><a href="z_94024733a914be89_supervisor_py.html">src<span class="sep">/</span>whadio<span class="sep">/</span>workers<span class="sep">/</span>supervision<span class="sep">/</span>supervisor.py</a></td>
+                <td data-ratio="24 26">92.31%</td>
+                <td>26</td>
+                <td>2</td>
                 <td class="spacer">&nbsp;</td>
-                <td>106</td>
-                <td>0</td>
-                <td>13</td>
-                <td class="spacer">&nbsp;</td>
-                <td data-ratio="106 106">100%</td>
+                <td data-ratio="142 168">84.52%</td>
             </tr>
         </tbody>
         <tfoot>
             <tr class="total">
                 <td class="name">Total</td>
                 <td class="spacer">&nbsp;</td>
-                <td>5045</td>
-                <td>608</td>
-                <td>385</td>
+                <td data-ratio="6850 7326">93.50%</td>
+                <td>7326</td>
+                <td>476</td>
+                <td>621</td>
                 <td class="spacer">&nbsp;</td>
-                <td data-ratio="4437 5045">88%</td>
+                <td data-ratio="830 984">84.35%</td>
+                <td>984</td>
+                <td>86</td>
+                <td class="spacer">&nbsp;</td>
+                <td data-ratio="7680 8310">92.42%</td>
             </tr>
         </tfoot>
     </table>
     <p id="no_rows">
         No items found using the specified filter.
     </p>
+        <p>109 files skipped due to complete coverage.</p>
 </main>
 <footer>
     <div class="content">
         <p>
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.2">coverage.py v7.16.2</a>,
-            created at 2026-10-13 09:08 +0300
+            created at 2026-11-01 18:42 +0000
         </p>
     </div>
     <aside class="hidden">
-        <a id="prevFileLink" class="nav" href="z_94024733a914be89_supervisor_py.html"></a>
-        <a id="nextFileLink" class="nav" href="z_f8db715f465f3ccf___init___py.html"></a>
+        <a id="prevFileLink" class="nav" href="z_94024733a914be89_slots_py.html"></a>
+        <a id="nextFileLink" class="nav" href="z_57741ac63d561676_services_py.html"></a>
         <button type="button" class="button_prev_file" data-shortcut="["></button>
         <button type="button" class="button_next_file" data-shortcut="]"></button>
         <button type="button" class="button_show_hide_help" data-shortcut="?"></button>

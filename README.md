@@ -78,19 +78,42 @@ to that HTTPS endpoint.
 
 [AGENTS.md](AGENTS.md) covers everything a contributor or their AI agent needs: the code layout,
 the architecture rules, the coding standards and the checks every change must pass. In short, with
-[uv](https://docs.astral.sh/uv/), Node 24 and Docker installed:
+[uv](https://docs.astral.sh/uv/), Node 24 and Docker installed, this sequence takes a fresh clone
+to the first local sign-in:
 
 ```bash
+git clone https://github.com/ukma-fin-ssdm-2026/Whadio.git
+cd Whadio
 uv sync --extra asr --extra cpu  # Python 3.13, the dependencies and the dev tools, in .venv
 uv run task setup                # also installs the frontend's dependencies and the git hooks
 cp .env.example .env             # local credentials for the Compose stack
 uv run task infra:up             # PostgreSQL, RabbitMQ, SeaweedFS and Mailpit
-uv run task dev                  # the API on http://localhost:3000, with auto-reload
+uv run task db:upgrade           # apply the database schema
+uv run whadio dev-user --email person@example.com
 ```
+
+`dev-user` asks for the local password without writing it to the repository. Keep the
+infrastructure running, then start the API and SPA in separate terminals:
+
+```bash
+uv run task dev                  # terminal 1: API on http://localhost:3000
+npm --prefix frontend run dev    # terminal 2: SPA on http://localhost:5173
+```
+
+Open <http://localhost:5173> and sign in with `person@example.com` and the password entered above.
+To process uploaded recordings as well, configure the model credentials described in
+[Running the workers](#running-the-workers), then run `uv run task workers:up` in another terminal.
 
 Before playing a recording locally, map `seaweedfs` to `127.0.0.1` in the system hosts file
 (`/etc/hosts` on Linux and macOS, or `C:\Windows\System32\drivers\etc\hosts` on Windows). The
 browser then resolves the same storage host used to sign links for the Compose ASR worker.
+
+## Try Whadio
+
+There is no public evaluation instance yet. To try the current product locally, follow the setup
+above. The dedicated midterm demo is tracked in
+[#192](https://github.com/ukma-fin-ssdm-2026/Whadio/issues/192); the available per-lab walkthroughs
+are linked in the [labs index](#labs-index).
 
 ## Running the API
 
@@ -292,8 +315,10 @@ only in the creation response and is stored only as a SHA-256 hash.
 - [Team Charter](TeamCharter.md)
 - [Project Description](Project-Description.md)
 
-## Requirements Artifacts
+## Requirements Artifacts (Артефакти вимог)
 All requirements documentation is maintained in the [`/docs/requirements/`](docs/requirements/) directory.
+- [Proposal mini-specification](Project-Description.md#mini-technical-specification) — goal,
+  functions, quality requirements and constraints from the proposal stage
 - [User Stories](docs/requirements/user-stories.md)
 - [Requirements](docs/requirements/requirements.md)
 - [Requirements Traceability Matrix (RTM)](docs/requirements/rtm.md)
@@ -303,12 +328,14 @@ All API documentation is maintained in the [`/docs/api/`](docs/api/) directory a
 [GitHub Pages](https://ukma-fin-ssdm-2026.github.io/Whadio/).
 - [API Design](docs/api/api-design.md) — resource model, conventions and design decisions
 - [OpenAPI specification](docs/api/openapi-generated.yaml) — generated from the code
+- [OpenAPI JSON](docs/api/openapi-generated.json) and its [browser viewer](docs/api/index.html)
 - [Quality Attributes](docs/api/quality-attributes.md) — measurable API quality targets with failure conditions
 
 ## Architecture Artifacts
 All architecture documentation is maintained in the [`/docs/architecture/`](docs/architecture/) directory.
 - [High-Level Design](docs/architecture/high-level-design.md) — overall architecture: chosen style, components, and interfaces
 - [Traceability Matrix](docs/architecture/traceability-matrix.md) — requirements ↔ components, verification methods, and quality attribute scenarios
+- [Database implementation](docs/architecture/database.md)
 - [Data Model](docs/architecture/data-model.md)
 - [Threat Model](docs/architecture/threat-model.md) — STRIDE analysis on the deployment diagram
 - [UML Diagrams](docs/architecture/uml/) — in `.puml` format
@@ -326,7 +353,27 @@ Testing policy and evidence are maintained in [`/docs/testing/`](docs/testing/).
 - [Unit Testing and Coverage](docs/testing/testing.md) — implemented tests, edge cases and coverage results
 - [Debugging Log](docs/testing/debugging-log.md) — retry-limit fault, regression tests and lessons
 - [Boundary Cases](docs/testing/boundary-cases.md) — boundary value tests of the numeric and length limits
+- [Test Doubles](docs/testing/test-doubles.md) — doubles used at each test boundary
 - [Coverage Report](htmlcov/index.html) — browsable line coverage for the current baseline
+
+## Validation Artifacts
+
+Validation evidence is maintained in [`/docs/validation/`](docs/validation/).
+
+- [Test Plan](docs/validation/test-plan.md) — planned and executed cases with measured results
+- [Review Log](docs/validation/review-log.md) — requirements and test-plan review findings
+
+## Labs Index
+
+| Lab | Artifacts | Video links |
+|---|---|---|
+| 1 — Proposal | [Project description](Project-Description.md), [Team Charter](TeamCharter.md) | [Andrii](Labs/Lab01/video_Andrii.txt), [Denys](Labs/Lab01/video_Denys.txt), [Valeriia](Labs/Lab01/video_Valeriia.txt), [Zlata](Labs/Lab01/video_Zlata.txt) |
+| 2 — Requirements | [User stories](docs/requirements/user-stories.md), [requirements](docs/requirements/requirements.md), [RTM](docs/requirements/rtm.md) | [Andrii](Labs/Lab02/video_Andrii.txt), [Denys](Labs/Lab02/video_Denys.txt), [Valeriia](Labs/Lab02/video_Valeriia.txt), [Zlata](Labs/Lab02/video_Zlata.txt) |
+| 3 — Architecture and UML | [HLD](docs/architecture/high-level-design.md), [architecture traceability](docs/architecture/traceability-matrix.md), [data model](docs/architecture/data-model.md), [ER diagram](docs/architecture/uml/er-model.svg), [threat model](docs/architecture/threat-model.md), [UML](docs/architecture/uml/), [ADRs](docs/architecture/decisions/) | [Andrii](Labs/Lab03/video_Andrii.txt), [Denys](Labs/Lab03/video_Denys.txt), [Valeriia](Labs/Lab03/video_Valeriia.txt), [Zlata](Labs/Lab03/video_Zlata.txt) |
+| 4 — API and quality attributes | [API design](docs/api/api-design.md), [OpenAPI](docs/api/openapi-generated.yaml), [quality attributes](docs/api/quality-attributes.md) | [Andrii](Labs/Lab04/video_Andrii.txt), [Denys](Labs/Lab04/video_Denys.txt), [Valeriia](Labs/Lab04/video_Valeriia.txt), [Zlata](Labs/Lab04/video_Zlata.txt) |
+| 5 — Code quality and review | [Progress](docs/code-quality/progress.md), [static analysis](docs/code-quality/static-analysis.md), [review report](docs/code-quality/review-report.md), [database implementation](docs/architecture/database.md) | [Andrii](Labs/Lab05/video_Andrii.txt), [Denys](Labs/Lab05/video_Denys.txt), [Valeriia](Labs/Lab05/video_Valeriia.txt), [Zlata](Labs/Lab05/video_Zlata.txt) |
+| 6 — Unit testing and debugging | [Testing strategy](docs/testing/testing-strategy.md), [testing and coverage](docs/testing/testing.md), [coverage](htmlcov/index.html), [boundary cases](docs/testing/boundary-cases.md), [test doubles](docs/testing/test-doubles.md), [debugging log](docs/testing/debugging-log.md) | [Andrii](Labs/Lab06/video_Andrii.txt), [Denys](Labs/Lab06/video_Denys.txt), [Valeriia](Labs/Lab06/video_Valeriia.txt), [Zlata](Labs/Lab06/video_Zlata.txt) |
+| 7 — Test planning and peer review | [Test plan](docs/validation/test-plan.md), [review log](docs/validation/review-log.md) | [Andrii](Labs/Lab07/video_Andrii.txt), [Denys](Labs/Lab07/video_Denys.txt), [Valeriia](Labs/Lab07/video_Valeriia.txt), [Zlata](Labs/Lab07/video_Zlata.txt) |
 
 ## AI usage
 The document was prepared with the help of Claude Code (Claude Opus 5 model) and OpenAI Codex based on the team's decisions; the content was manually checked and edited, and the document is reviewed via a pull request before merging.
