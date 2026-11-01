@@ -23,9 +23,7 @@ function serveWorkspace(changes: Partial<Schemas["WorkspaceRead"]> = {}) {
 }
 
 function renderSettings() {
-  return renderWithProviders(
-    <WorkspaceSettings workspaceId="workspace" assistantSettings={<p>Assistant keys</p>} />,
-  );
+  return renderWithProviders(<WorkspaceSettings workspaceId="workspace" />);
 }
 
 async function choosePreset(label: string) {
@@ -34,7 +32,7 @@ async function choosePreset(label: string) {
   await user.click(screen.getByRole("option", { name: label }));
 }
 
-test("opens on the workspace section", async () => {
+test("names the settings of the workspace", async () => {
   // Arrange
   serveWorkspace();
 
@@ -71,43 +69,6 @@ test("a loading failure is reported", async () => {
 
   // Assert
   expect(await screen.findByRole("alert")).toHaveTextContent("No such workspace");
-});
-
-test("choosing AI assistant shows the assistant settings", async () => {
-  // Arrange
-  serveWorkspace();
-  const { user } = renderSettings();
-
-  // Act
-  await user.click(screen.getByRole("button", { name: "AI assistant" }));
-
-  // Assert
-  expect(screen.getByText("Assistant keys")).toBeInTheDocument();
-});
-
-test("choosing AI assistant hides the workspace settings", async () => {
-  // Arrange
-  serveWorkspace();
-  const { user } = renderSettings();
-  await screen.findByText("Notes provider");
-
-  // Act
-  await user.click(screen.getByRole("button", { name: "AI assistant" }));
-
-  // Assert
-  expect(screen.queryByText("Notes provider")).not.toBeInTheDocument();
-});
-
-test("marks the chosen section as current", async () => {
-  // Arrange
-  serveWorkspace();
-  const { user } = renderSettings();
-
-  // Act
-  await user.click(screen.getByRole("button", { name: "AI assistant" }));
-
-  // Assert
-  expect(screen.getByRole("button", { current: true })).toHaveTextContent(/^AI assistant$/);
 });
 
 test("an owner's preset choice is saved", async () => {

@@ -800,6 +800,14 @@ describe.for(["/meetings", "/workspaces/workspace"])("the filters of %s", (path)
   });
 });
 
+test("the assistant settings have their own address", async () => {
+  // Act
+  open("/settings/assistant");
+
+  // Assert
+  expect(await screen.findByRole("heading", { name: "AI assistant access" })).toBeInTheDocument();
+});
+
 describe("transcript search", () => {
   async function searchThenSwitchRevision() {
     const { user } = open(REVISION_LINK);
