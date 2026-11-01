@@ -1,11 +1,10 @@
 import { renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import type { Schemas } from "@/shared/api/types";
-import { denySessionStorage } from "@/shared/testing/deny-storage";
 import { createTestQueryClient, TestProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
-import { readSignedInUser, storeSignedInUser } from "../session-storage";
+import { currentUserQuery } from "./current-user";
 import { useSignIn, useSignOut } from "./session";
 
 const USER: Schemas["UserRead"] = {
@@ -26,10 +25,6 @@ function renderWithClient<T>(hook: () => T) {
   return { ...renderHook(hook, { wrapper }), queryClient };
 }
 
-beforeEach(() => {
-  sessionStorage.clear();
-});
-
 describe("sign-in", () => {
   test("asks for a browser session with the credentials", async () => {
     // Arrange
@@ -49,20 +44,20 @@ describe("sign-in", () => {
     expect(bodies).toEqual([{ ...CREDENTIALS, kind: "browser" }]);
   });
 
-  test("keeps the signed-in user for the tab", async () => {
+  test("remembers the signed-in user without asking the API again", async () => {
     // Arrange
     server.use(
       http.post("/api/v1/sessions", ({ response }) =>
         response(201).json({ kind: "browser", expires_at: USER.created_at, user: USER }),
       ),
     );
-    const { result } = renderWithClient(useSignIn);
+    const { result, queryClient } = renderWithClient(useSignIn);
 
     // Act
     await result.current.mutateAsync(CREDENTIALS);
 
     // Assert
-    expect(readSignedInUser()).toEqual({ id: USER.id, email: USER.email, name: USER.name });
+    expect(queryClient.getQueryData(currentUserQuery().queryKey)).toEqual(USER);
   });
 });
 
@@ -76,8 +71,8 @@ describe.for([
         response.untyped(new Response(null, { status })),
       ),
     );
-    storeSignedInUser(USER);
     const rendered = renderWithClient(useSignOut);
+    rendered.queryClient.setQueryData(currentUserQuery().queryKey, USER);
     rendered.queryClient.setQueryData(["accounts", "mcp-keys"], { items: [] });
     return rendered;
   }
@@ -85,54 +80,6 @@ describe.for([
   test("clears the query cache", async () => {
     // Arrange
     const { result, queryClient } = signOut();
-
-    // Act
-    await result.current.mutateAsync().catch(() => undefined);
-
-    // Assert
-    expect(queryClient.getQueryCache().getAll()).toEqual([]);
-  });
-
-  test("forgets the signed-in user", async () => {
-    // Arrange
-    const { result } = signOut();
-
-    // Act
-    await result.current.mutateAsync().catch(() => undefined);
-
-    // Assert
-    expect(readSignedInUser()).toBeNull();
-  });
-});
-
-describe("when storage is denied", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  test("signing in still succeeds", async () => {
-    // Arrange
-    server.use(
-      http.post("/api/v1/sessions", ({ response }) =>
-        response(201).json({ kind: "browser", expires_at: USER.created_at, user: USER }),
-      ),
-    );
-    const { result } = renderWithClient(useSignIn);
-    denySessionStorage();
-
-    // Act
-    const session = await result.current.mutateAsync(CREDENTIALS);
-
-    // Assert
-    expect(session.user).toEqual(USER);
-  });
-
-  test("signing out still clears the query cache", async () => {
-    // Arrange
-    server.use(http.delete("/api/v1/sessions/current", ({ response }) => response(204).empty()));
-    const { result, queryClient } = renderWithClient(useSignOut);
-    queryClient.setQueryData(["accounts", "mcp-keys"], { items: [] });
-    denySessionStorage();
 
     // Act
     await result.current.mutateAsync().catch(() => undefined);

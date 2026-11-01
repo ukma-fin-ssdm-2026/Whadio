@@ -2,10 +2,10 @@ import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import { Box, CircularProgress, IconButton, Stack, Tooltip } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
+import { currentUserQuery } from "@/features/accounts/api/current-user";
 import { McpKeyPanel } from "@/features/accounts/components/McpKeyPanel";
 import { SignInForm } from "@/features/accounts/components/SignInForm";
 import { SignOutButton } from "@/features/accounts/components/SignOutButton";
-import { clearSignedInUser, readSignedInUser } from "@/features/accounts/session-storage";
 import { ExportMenu } from "@/features/export/components/ExportMenu";
 import { isMeetingGone, meetingQueries } from "@/features/meetings/api/meetings";
 import { MeetingDetail } from "@/features/meetings/detail/MeetingDetail";
@@ -27,18 +27,13 @@ import "@/styles.css";
 
 export function App() {
   const [signedOut, setSignedOut] = useState(false);
-  const [user, setUser] = useState(readSignedInUser);
   const [signInError, setSignInError] = useState("");
 
-  const endSession = useCallback(() => {
-    clearSignedInUser();
-    setUser(null);
-    setSignedOut(true);
-  }, []);
+  const endSession = useCallback(() => setSignedOut(true), []);
 
-  const handleSignedIn = (signedInUser) => {
+  // Sign-in leaves the URL alone, so the signed-in app opens the page the user asked for.
+  const handleSignedIn = () => {
     setSignInError("");
-    setUser(signedInUser);
     setSignedOut(false);
   };
 
@@ -52,21 +47,23 @@ export function App() {
       {signedOut ? (
         <SignInForm onSignedIn={handleSignedIn} externalError={signInError} />
       ) : (
-        <SignedInApp user={user} onSignedOut={endSession} onLoadFailed={handleLoadFailed} />
+        <SignedInApp onSignedOut={endSession} onLoadFailed={handleLoadFailed} />
       )}
     </AppProviders>
   );
 }
 
-function SignedInApp({ user, onSignedOut, onLoadFailed }) {
-  const { data: workspaces, error } = useQuery(workspaceQueries.list());
+function SignedInApp({ onSignedOut, onLoadFailed }) {
+  const { data: user, error: userError } = useQuery(currentUserQuery());
+  const { data: workspaces, error: workspacesError } = useQuery(workspaceQueries.list());
+  const error = (!user && userError) || (!workspaces && workspacesError);
 
   useEffect(() => {
     // A 401 already ended the session through the query client.
-    if (!workspaces && error && error.status !== 401) onLoadFailed(error.message);
-  }, [workspaces, error, onLoadFailed]);
+    if (error && error.status !== 401) onLoadFailed(error.message);
+  }, [error, onLoadFailed]);
 
-  if (!workspaces) {
+  if (!user || !workspaces) {
     return (
       <Box className="auth-screen">
         <CircularProgress />

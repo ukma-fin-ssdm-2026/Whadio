@@ -18,19 +18,25 @@ const meetingInProgress = {
   source_type: "upload",
 };
 
+const MEMBER = {
+  id: "member",
+  email: "member@example.com",
+  name: "Member",
+  is_administrator: false,
+  created_at: "2026-10-25T10:00:00Z",
+};
+
 function serveSession(meetings: () => Response) {
   const workspaceReads: string[] = [];
   window.history.replaceState(null, "", "/whadio/");
-  sessionStorage.clear();
   server.use(
     http.get("/api/v1/workspaces", ({ request }) => {
       workspaceReads.push(request.url);
       return HttpResponse.json(page([workspaceSummary()]));
     }),
     http.get("/api/v1/workspaces/workspace/meetings", meetings),
-    http.post("/api/v1/sessions", () =>
-      HttpResponse.json({ user: { id: "member", email: "member@example.com", name: "Member" } }),
-    ),
+    http.get("/api/v1/users/me", () => HttpResponse.json(MEMBER)),
+    http.post("/api/v1/sessions", () => HttpResponse.json({ user: MEMBER })),
   );
   return workspaceReads;
 }
@@ -87,4 +93,75 @@ test("signing back in after a 401 reads the workspaces again", async () => {
 
   // Assert
   expect(workspaceReads).toHaveLength(2);
+});
+
+test("a reload names the signed-in user from the API", async () => {
+  // Arrange
+  serveSession(() => HttpResponse.json(page([])));
+
+  const user = userEvent.setup();
+  render(<App />);
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "Open navigation" }));
+
+  // Assert
+  expect(screen.getByText("member@example.com")).toBeInTheDocument();
+});
+
+test("a 401 from the signed-in user returns to sign-in", async () => {
+  // Arrange
+  serveSession(() => HttpResponse.json(page([])));
+  server.use(http.get("/api/v1/users/me", sessionExpired));
+
+  // Act
+  render(<App />);
+
+  // Assert
+  expect(await screen.findByLabelText(/^Email/)).toBeInTheDocument();
+});
+
+test("a signed-in user that fails to load returns to sign-in with its message", async () => {
+  // Arrange
+  serveSession(() => HttpResponse.json(page([])));
+  server.use(
+    http.get("/api/v1/users/me", () =>
+      HttpResponse.json(errorBody("INSUFFICIENT_ROLE", "Not allowed here"), { status: 403 }),
+    ),
+  );
+
+  // Act
+  render(<App />);
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent("Not allowed here");
+});
+
+test("signing in names the user without asking the API again", async () => {
+  // Arrange
+  const userReads: string[] = [];
+  serveSession(() => HttpResponse.json(page([])));
+  let signedIn = false;
+  server.use(
+    http.get("/api/v1/users/me", ({ request }) => {
+      userReads.push(request.url);
+      return signedIn ? HttpResponse.json(MEMBER) : sessionExpired();
+    }),
+    http.post("/api/v1/sessions", () => {
+      signedIn = true;
+      return HttpResponse.json({ user: MEMBER });
+    }),
+  );
+  const user = userEvent.setup();
+  render(<App />);
+  await user.type(await screen.findByLabelText(/^Email/), "member@example.com");
+  await user.type(screen.getByLabelText(/^Password/), "test-password");
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Sign in" }));
+  await user.click(await screen.findByRole("button", { name: "Open navigation" }));
+
+  // Assert
+  expect(screen.getByText("member@example.com")).toBeInTheDocument();
+  expect(userReads).toHaveLength(1);
 });

@@ -26,6 +26,13 @@ const REFUSALS = [
   [403, "INSUFFICIENT_ROLE", "Access denied"],
 ] as const;
 const SERVER_FAILURE = [500, "INTERNAL_ERROR", "Unexpected server error"] as const;
+const SIGNED_IN_USER = {
+  id: "member",
+  email: "member@example.com",
+  name: "Demo Member",
+  is_administrator: false,
+  created_at: "2026-10-25T10:00:00Z",
+};
 
 type ApiTraffic = { requests: string[]; signIns: unknown[] };
 
@@ -75,10 +82,12 @@ function serveApi(signedIn: boolean): ApiTraffic {
     http.post("/api/v1/sessions", async ({ request }) => {
       traffic.signIns.push(await request.json());
       authenticated = true;
-      return HttpResponse.json({
-        user: { id: "member", email: "member@example.com", name: "Demo Member" },
-      });
+      return HttpResponse.json({ user: SIGNED_IN_USER });
     }),
+    http.get(
+      "/api/v1/users/me",
+      member(() => SIGNED_IN_USER),
+    ),
     http.get(
       "/api/v1/workspaces",
       member(() => ({
@@ -127,7 +136,6 @@ function serveApi(signedIn: boolean): ApiTraffic {
 
 async function renderSignedOut() {
   window.history.replaceState(null, "", DEEP_LINK);
-  sessionStorage.clear();
   const traffic = serveApi(false);
   render(<App />);
   await screen.findByLabelText(/^Email/);
@@ -136,7 +144,6 @@ async function renderSignedOut() {
 
 async function openDeepLink(signedIn: boolean) {
   window.history.replaceState(null, "", DEEP_LINK);
-  sessionStorage.clear();
   const traffic = serveApi(signedIn);
   const user = userEvent.setup();
   render(<App />);
@@ -164,7 +171,6 @@ async function goBackToCurrent(signedIn: boolean) {
 
 function startSession(path = "/whadio/") {
   window.history.replaceState(null, "", path);
-  sessionStorage.clear();
   return serveApi(true);
 }
 
@@ -335,8 +341,7 @@ test("Home requests no workspace details", async () => {
 
 test("a workspace list failure returns to sign-in with its message", async () => {
   // Arrange
-  window.history.replaceState(null, "", "/whadio/");
-  sessionStorage.clear();
+  startSession();
   server.use(
     http.get("/api/v1/workspaces", () =>
       HttpResponse.json(errorBody("INSUFFICIENT_ROLE", "Not allowed here"), { status: 403 }),
