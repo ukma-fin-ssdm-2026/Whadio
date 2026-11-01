@@ -127,6 +127,17 @@ def test_settings_with_an_unknown_provider_are_refused(monkeypatch: pytest.Monke
         load_notes_worker_settings()
 
 
+def test_settings_with_an_empty_claude_model_are_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    monkeypatch.setenv("WHADIO_NOTES__LLM__MODEL", "")
+
+    # Act / Assert
+    with pytest.raises(ValidationError, match="model"):
+        load_notes_worker_settings()
+
+
 def test_settings_with_an_empty_api_key_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
     monkeypatch.setenv("WHADIO_NOTES__LLM__API_KEY", "")
