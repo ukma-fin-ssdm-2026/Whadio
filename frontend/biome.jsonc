@@ -80,7 +80,13 @@
               "options": {
                 "patterns": [
                   {
-                    "group": ["@/features/**", "@/app/**", "../../**"],
+                    "group": [
+                      "@/features/**",
+                      "@/app/**",
+                      "@/routes/**",
+                      "@/routeTree.gen",
+                      "../../**"
+                    ],
                     "message": "A feature imports its own files relatively and never another feature or the app; the app composes features."
                   }
                 ]
@@ -100,7 +106,13 @@
               "options": {
                 "patterns": [
                   {
-                    "group": ["@/features/**", "@/app/**", "../**"],
+                    "group": [
+                      "@/features/**",
+                      "@/app/**",
+                      "@/routes/**",
+                      "@/routeTree.gen",
+                      "../**"
+                    ],
                     "message": "A feature imports its own files relatively and never another feature or the app; the app composes features."
                   }
                 ]
@@ -120,8 +132,15 @@
               "options": {
                 "patterns": [
                   {
-                    // The test fills the export slot the way app/App.jsx does, to check it resets per revision.
-                    "group": ["@/features/**", "!@/features/export/**", "@/app/**", "../../**"],
+                    // The test fills the export slot the way app/pages/MeetingPage.tsx does, to check it resets per revision.
+                    "group": [
+                      "@/features/**",
+                      "!@/features/export/**",
+                      "@/app/**",
+                      "@/routes/**",
+                      "@/routeTree.gen",
+                      "../../**"
+                    ],
                     "message": "A feature imports its own files relatively and never another feature or the app; the app composes features."
                   }
                 ]
@@ -141,7 +160,13 @@
               "options": {
                 "patterns": [
                   {
-                    "group": ["@/features/**", "@/app/**", "../../**"],
+                    "group": [
+                      "@/features/**",
+                      "@/app/**",
+                      "@/routes/**",
+                      "@/routeTree.gen",
+                      "../../**"
+                    ],
                     "message": "Shared code never imports a feature or the app."
                   }
                 ]
