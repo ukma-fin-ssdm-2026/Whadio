@@ -3,9 +3,9 @@ import { Box, Button, Card, Typography } from "@mui/material";
 import { type UseFormSetError, useForm } from "react-hook-form";
 import { z } from "zod";
 import type { ApiError } from "@/shared/api/errors";
+import type { Schemas } from "@/shared/api/types";
 import { FormTextField } from "@/shared/ui/FormTextField";
 import { type Credentials, useSignIn } from "../api/session";
-import type { SignedInUser } from "../session-storage";
 
 const credentials = z.object({
   email: z.string().min(1, "Enter your email address").pipe(z.email("Enter a valid email address")),
@@ -24,7 +24,7 @@ function showServerError(error: ApiError, setError: UseFormSetError<Credentials>
 }
 
 interface SignInFormProps {
-  onSignedIn: (user: SignedInUser) => void;
+  onSignedIn: (user: Schemas["UserRead"]) => void;
   externalError?: string;
 }
 

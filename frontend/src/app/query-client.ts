@@ -24,16 +24,13 @@ interface QueryClientHandlers {
 
 export function createQueryClient({ onUnauthorized }: QueryClientHandlers): QueryClient {
   const handleError = (error: unknown) => {
-    if (!endsSession(error)) return;
-    queryClient.clear();
-    onUnauthorized();
+    if (endsSession(error)) onUnauthorized();
   };
-  const queryClient = new QueryClient({
+  return new QueryClient({
     queryCache: new QueryCache({ onError: handleError }),
     mutationCache: new MutationCache({ onError: handleError }),
     defaultOptions: {
       queries: { retry: retryUnlessClientError, staleTime: 30_000 },
     },
   });
-  return queryClient;
 }

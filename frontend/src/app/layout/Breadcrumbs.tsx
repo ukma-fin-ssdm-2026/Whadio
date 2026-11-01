@@ -1,36 +1,19 @@
-import { Link, Breadcrumbs as MuiBreadcrumbs, Typography } from "@mui/material";
-import type { Page } from "../navigation/page";
+import { Breadcrumbs as MuiBreadcrumbs, Typography } from "@mui/material";
+import { TextLink } from "../navigation/links";
 
 interface BreadcrumbsProps {
-  page: Page;
-  workspace: { id: string; name: string } | undefined;
-  meeting: { title: string } | undefined;
-  onHome: () => void;
-  onWorkspace: (id: string) => void;
+  workspace?: { id: string; name: string } | undefined;
+  current: string;
 }
 
-export function Breadcrumbs({ page, workspace, meeting, onHome, onWorkspace }: BreadcrumbsProps) {
-  if (page === "home") return null;
-  const current =
-    page === "meetings"
-      ? "Meetings"
-      : page === "meeting"
-        ? (meeting?.title ?? "Meeting")
-        : (workspace?.name ?? "Workspace");
+export function Breadcrumbs({ workspace, current }: BreadcrumbsProps) {
   return (
     <MuiBreadcrumbs aria-label="Breadcrumb">
-      <Link component="button" variant="body2" underline="hover" onClick={onHome}>
-        Home
-      </Link>
-      {page === "meeting" && workspace && (
-        <Link
-          component="button"
-          variant="body2"
-          underline="hover"
-          onClick={() => onWorkspace(workspace.id)}
-        >
+      <TextLink to="/">Home</TextLink>
+      {workspace && (
+        <TextLink to="/workspaces/$workspaceId" params={{ workspaceId: workspace.id }}>
           {workspace.name}
-        </Link>
+        </TextLink>
       )}
       <Typography variant="body2" color="textPrimary" aria-current="page">
         {current}

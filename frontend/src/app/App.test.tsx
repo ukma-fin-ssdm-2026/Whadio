@@ -1,19 +1,24 @@
 import { focusManager } from "@tanstack/react-query";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { type UserEvent, userEvent } from "@testing-library/user-event";
-import { HttpResponse, type HttpResponseResolver, http, type JsonBodyType } from "msw";
+import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { POLL_INTERVAL_MS } from "@/features/meetings/api/meetings";
 import type { Schemas } from "@/shared/api/types";
 import { errorBody, meetingRead, meetingSummary, noteRead, page } from "@/shared/testing/fixtures";
 import { server } from "@/shared/testing/server";
 import { App } from "./App";
+import {
+  CURRENT_WORDING,
+  LINKED_TITLE,
+  ORIGINAL_WORDING,
+  serveApi,
+  signIn,
+  transcript,
+} from "./testing";
 
-const DEEP_LINK = "/whadio/meetings/meeting?revision_id=original";
-const CURRENT_LINK = "/whadio/meetings/meeting";
-const ORIGINAL_WORDING = "Original uncorrected wording";
-const CURRENT_WORDING = "Current corrected wording";
-const LINKED_TITLE = "Linked meeting outside the first page";
+const DEEP_LINK = "/meetings/meeting?revision_id=original";
+const CURRENT_LINK = "/meetings/meeting";
 const IN_PROGRESS = ["recording", "queued", "processing"] as const;
 const BEFORE_TRANSCRIPTION = ["recording", "queued"] as const;
 const FAILURE_REASON = "transcription_failed";
@@ -27,107 +32,13 @@ const REFUSALS = [
 ] as const;
 const SERVER_FAILURE = [500, "INTERNAL_ERROR", "Unexpected server error"] as const;
 
-type ApiTraffic = { requests: string[]; signIns: unknown[] };
-
 afterEach(() => {
   focusManager.setFocused(undefined);
   vi.useRealTimers();
 });
 
-function transcript(original: boolean) {
-  return {
-    revision: {
-      id: original ? "original" : "edited",
-      revision_type: original ? "original" : "edited",
-    },
-    original_revision_id: "original",
-    is_edited: true,
-    speakers: [{ id: "speaker", display_name: "Demo speaker" }],
-    segments: [
-      {
-        id: "segment",
-        speaker_id: "speaker",
-        start_seconds: 0,
-        end_seconds: 5,
-        text: original ? ORIGINAL_WORDING : CURRENT_WORDING,
-      },
-    ],
-  };
-}
-
-function serveApi(signedIn: boolean): ApiTraffic {
-  let authenticated = signedIn;
-  const traffic: ApiTraffic = { requests: [], signIns: [] };
-  const member = (body: (url: URL) => JsonBodyType): HttpResponseResolver => {
-    return ({ request }) =>
-      authenticated
-        ? HttpResponse.json(body(new URL(request.url)))
-        : HttpResponse.json(
-            { error: { code: "UNAUTHENTICATED", message: "Sign in required" } },
-            { status: 401 },
-          );
-  };
-  server.use(
-    http.all("*", ({ request }) => {
-      const url = new URL(request.url);
-      traffic.requests.push(`${request.method} ${url.pathname}${url.search}`);
-    }),
-    http.post("/api/v1/sessions", async ({ request }) => {
-      traffic.signIns.push(await request.json());
-      authenticated = true;
-      return HttpResponse.json({
-        user: { id: "member", email: "member@example.com", name: "Demo Member" },
-      });
-    }),
-    http.get(
-      "/api/v1/workspaces",
-      member(() => ({
-        items: [
-          {
-            id: "workspace",
-            name: "Demo Workspace",
-            my_role: "Owner",
-            member_count: 1,
-            notes_provider: "Whadio",
-          },
-        ],
-      })),
-    ),
-    http.get(
-      "/api/v1/workspaces/workspace",
-      member(() => ({ default_preset: "summary" })),
-    ),
-    http.get(
-      "/api/v1/workspaces/workspace/meetings",
-      member(() => page([])),
-    ),
-    http.get(
-      "/api/v1/meetings/meeting",
-      member(() => ({
-        id: "meeting",
-        workspace_id: "workspace",
-        name: LINKED_TITLE,
-        recorded_at: "2026-10-25T10:00:00Z",
-        processing_state: "processed",
-        duration_seconds: 5,
-        source_type: "upload",
-      })),
-    ),
-    http.get(
-      "/api/v1/meetings/meeting/notes",
-      member(() => ({ items: [] })),
-    ),
-    http.get(
-      "/api/v1/meetings/meeting/transcript",
-      member((url) => transcript(url.searchParams.get("revision_id") === "original")),
-    ),
-  );
-  return traffic;
-}
-
 async function renderSignedOut() {
   window.history.replaceState(null, "", DEEP_LINK);
-  sessionStorage.clear();
   const traffic = serveApi(false);
   render(<App />);
   await screen.findByLabelText(/^Email/);
@@ -136,15 +47,10 @@ async function renderSignedOut() {
 
 async function openDeepLink(signedIn: boolean) {
   window.history.replaceState(null, "", DEEP_LINK);
-  sessionStorage.clear();
   const traffic = serveApi(signedIn);
   const user = userEvent.setup();
   render(<App />);
-  if (!signedIn) {
-    await user.type(await screen.findByLabelText(/^Email/), "member@example.com");
-    await user.type(screen.getByLabelText(/^Password/), "test-password");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
-  }
+  if (!signedIn) await signIn(user);
   await screen.findByText(ORIGINAL_WORDING);
   return { traffic, user };
 }
@@ -162,9 +68,8 @@ async function goBackToCurrent(signedIn: boolean) {
   await screen.findByText(CURRENT_WORDING);
 }
 
-function startSession(path = "/whadio/") {
+function startSession(path = "/") {
   window.history.replaceState(null, "", path);
-  sessionStorage.clear();
   return serveApi(true);
 }
 
@@ -203,12 +108,12 @@ describe("signed-out original deep link", () => {
     expect(traffic.requests.filter((request) => request.includes("/transcript"))).toEqual([]);
   });
 
-  test("keeps the revision in the URL", async () => {
+  test("keeps the revision in the way back", async () => {
     // Act
     await renderSignedOut();
 
     // Assert
-    expect(window.location.search).toBe("?revision_id=original");
+    expect(new URLSearchParams(window.location.search).get("redirect")).toBe(DEEP_LINK);
   });
 
   test("signs in with the entered browser credentials", async () => {
@@ -333,10 +238,9 @@ test("Home requests no workspace details", async () => {
   expect(traffic.requests.filter((request) => /workspaces\/workspace$/.test(request))).toEqual([]);
 });
 
-test("a workspace list failure returns to sign-in with its message", async () => {
+test("a workspace list failure says why", async () => {
   // Arrange
-  window.history.replaceState(null, "", "/whadio/");
-  sessionStorage.clear();
+  startSession();
   server.use(
     http.get("/api/v1/workspaces", () =>
       HttpResponse.json(errorBody("INSUFFICIENT_ROLE", "Not allowed here"), { status: 403 }),
@@ -384,7 +288,7 @@ test("a failure reason survives a trip through the list, which lacks it", async 
   await screen.findByText(FAILURE_TEXT);
 
   // Act
-  await user.click(screen.getByRole("button", { name: "Demo Workspace" }));
+  await user.click(screen.getByRole("link", { name: "Demo Workspace" }));
   await user.click(await screen.findByRole("button", { name: /Weekly sync/ }));
 
   // Assert
@@ -407,7 +311,7 @@ test("an available recording survives a trip through the list, which lacks it", 
   );
   const user = userEvent.setup();
   render(<App />);
-  await user.click(await screen.findByRole("button", { name: "Demo Workspace" }));
+  await user.click(await screen.findByRole("link", { name: "Demo Workspace" }));
   await user.click(await screen.findByRole("button", { name: /Weekly sync/ }));
 
   // Act
@@ -682,7 +586,7 @@ describe("a meeting that finishes while it is open", () => {
     screen.getByRole("alert");
 
     // Act
-    await user.click(screen.getByRole("button", { name: "Home" }));
+    await user.click(screen.getByRole("link", { name: "Home" }));
 
     // Assert
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();

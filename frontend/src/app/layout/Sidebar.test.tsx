@@ -1,90 +1,97 @@
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { expect, test, vi } from "vitest";
+import { renderAtPath } from "../testing";
 import { Sidebar } from "./Sidebar";
 
-function renderSidebar(changes: Partial<ComponentProps<typeof Sidebar>> = {}) {
-  render(
+async function renderSidebar(path = "/", changes: Partial<ComponentProps<typeof Sidebar>> = {}) {
+  const router = renderAtPath(
     <Sidebar
       user={{ name: "Demo Member", email: "member@example.com" }}
       workspaces={[
         { id: "alpha", name: "Alpha" },
         { id: "beta", name: "Beta" },
       ]}
-      page="home"
-      workspaceId="alpha"
-      onHome={() => {}}
-      onMeetings={() => {}}
-      onWorkspace={() => {}}
       signOutAction={null}
       onNavigate={() => {}}
       {...changes}
     />,
+    path,
   );
-  return within(screen.getByRole("navigation", { name: "Main" }));
+  const nav = await screen.findByRole("navigation", { name: "Main" });
+  return { nav: within(nav), router };
 }
 
-test("navigation offers Home, Meetings and each workspace", () => {
+const currentItems = (links: HTMLElement[]) =>
+  links.filter((item) => item.ariaCurrent === "page").map((item) => item.textContent);
+
+test("navigation offers Home, Meetings and each workspace", async () => {
   // Arrange
-  const nav = renderSidebar();
+  const { nav } = await renderSidebar();
 
   // Act
-  const items = nav.getAllByRole("button").map((item) => item.textContent);
+  const items = nav.getAllByRole("link").map((item) => item.textContent);
 
   // Assert
   expect(items).toEqual(["Home", "Meetings", "Alpha", "Beta"]);
 });
 
-test("marks the open workspace as the current page", () => {
-  // Arrange
-  const nav = renderSidebar({ page: "workspace", workspaceId: "beta" });
-
+test.for([
+  ["Home", "/"],
+  ["Meetings", "/meetings"],
+  ["Beta", "/workspaces/beta"],
+  ["Beta", "/workspaces/beta/settings"],
+] as const)("marks %s as the current page at %s", async ([label, path]) => {
   // Act
-  const current = nav.getAllByRole("button").filter((item) => item.ariaCurrent === "page");
+  const { nav } = await renderSidebar(path);
 
   // Assert
-  expect(current.map((item) => item.textContent)).toEqual(["Beta"]);
+  expect(currentItems(nav.getAllByRole("link"))).toEqual([label]);
 });
 
-test("a workspace entry shows its name without a meeting count", () => {
+test("selects the current item", async () => {
+  // Act
+  const { nav } = await renderSidebar("/workspaces/beta");
+
+  // Assert
+  expect(nav.getByRole("link", { name: "Beta" })).toHaveClass("Mui-selected");
+});
+
+test("a workspace entry shows its name without a meeting count", async () => {
   // Arrange
-  const nav = renderSidebar();
+  const { nav } = await renderSidebar();
 
   // Act
-  const entry = nav.getByRole("button", { name: /^Beta/ });
+  const entry = nav.getByRole("link", { name: /^Beta/ });
 
   // Assert
   expect(entry).toHaveTextContent(/^Beta$/);
 });
 
-test("marks no item as current on a meeting page", () => {
+test("marks no item as current on a meeting page", async () => {
   // Act
-  const nav = renderSidebar({ page: "meeting", workspaceId: "beta" });
+  const { nav } = await renderSidebar("/meetings/meeting");
 
   // Assert
-  expect(nav.queryByRole("button", { current: true })).not.toBeInTheDocument();
+  expect(currentItems(nav.getAllByRole("link"))).toEqual([]);
 });
 
 test("choosing a workspace opens it", async () => {
   // Arrange
-  const onWorkspace = vi.fn();
-  const nav = renderSidebar({ onWorkspace });
+  const { nav } = await renderSidebar();
 
-  // Act
-  await userEvent.click(nav.getByRole("button", { name: /^Beta/ }));
-
-  // Assert
-  expect(onWorkspace).toHaveBeenCalledExactlyOnceWith("beta");
+  // Act & Assert
+  expect(nav.getByRole("link", { name: /^Beta/ })).toHaveAttribute("href", "/workspaces/beta");
 });
 
 test("choosing an item reports the navigation", async () => {
   // Arrange
   const onNavigate = vi.fn();
-  const nav = renderSidebar({ onNavigate });
+  const { nav } = await renderSidebar("/", { onNavigate });
 
   // Act
-  await userEvent.click(nav.getByRole("button", { name: "Meetings" }));
+  await userEvent.click(nav.getByRole("link", { name: "Meetings" }));
 
   // Assert
   expect(onNavigate).toHaveBeenCalledOnce();
