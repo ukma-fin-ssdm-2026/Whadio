@@ -156,6 +156,9 @@ class WorkspaceSummary(Output):
 
 class WorkspaceRead(WorkspaceSummary):
     default_preset: Preset = Field(description="Notes preset used when none is chosen")
+    notes_model: str = Field(
+        description="The model behind `notes_provider`", examples=["gemma4:12b-it-qat"]
+    )
 
 
 class InvitationCreate(Input):

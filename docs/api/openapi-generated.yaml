@@ -6282,6 +6282,12 @@ components:
         default_preset:
           $ref: '#/components/schemas/Preset'
           description: Notes preset used when none is chosen
+        notes_model:
+          type: string
+          title: Notes Model
+          description: The model behind `notes_provider`
+          examples:
+          - gemma4:12b-it-qat
       type: object
       required:
       - id
@@ -6292,6 +6298,7 @@ components:
       - notes_provider
       - created_at
       - default_preset
+      - notes_model
       title: WorkspaceRead
     WorkspaceSummary:
       properties:

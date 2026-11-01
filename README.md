@@ -259,7 +259,8 @@ take jobs from RabbitMQ and publish their results to `processing.results`.
   [ADR-007](docs/architecture/decisions/ADR-007.md).
 - Without an NVIDIA GPU, write notes with Claude instead: switch to the Anthropic lines of
   `.env.example`, with `WHADIO_NOTES__LLM__PROVIDER=anthropic`, a Claude model and
-  `WHADIO_NOTES__LLM__API_KEY`. Transcripts then leave the deployment for the Anthropic API.
+  `WHADIO_NOTES__LLM__API_KEY`. Transcripts then leave the deployment for the Anthropic API, and
+  every workspace's settings say so.
 - The ASR worker's first start downloads its models into the `asr-models` volume, which takes a
   few minutes.
 - Diarization runs on the CPU by default, which is enough for development, but transcription then

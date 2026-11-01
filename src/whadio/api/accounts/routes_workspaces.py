@@ -43,6 +43,7 @@ def workspace_read(found: MemberWorkspace, llm: NotesLlm) -> WorkspaceRead:
         notes_provider=Provider(llm.reported_provider),
         created_at=found.created_at,
         default_preset=Preset(found.default_template.value),
+        notes_model=llm.model,
     )
 
 

@@ -24,7 +24,12 @@ export function workspaceSummary(
 export function workspaceRead(
   changes: Partial<Schemas["WorkspaceRead"]> = {},
 ): Schemas["WorkspaceRead"] {
-  return { ...workspaceSummary(), default_preset: "summary", ...changes };
+  return {
+    ...workspaceSummary(),
+    default_preset: "summary",
+    notes_model: "gemma4:12b-it-qat",
+    ...changes,
+  };
 }
 
 export function meetingSummary(

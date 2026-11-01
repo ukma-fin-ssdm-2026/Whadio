@@ -110,6 +110,7 @@ sub-resource, such as `…/cancel`, `…/complete` or `…/approve`.
   - `notes_provider` (enum): `whadio` | `anthropic` | `openai` | `google`, the provider the notes
     worker is configured with: `whadio` is the built-in model, and every workspace reports the same
     value until a workspace can choose its own
+  - `notes_model` (string): the model behind `notes_provider`, only where one workspace is returned
 - **Relations:** has members, invitations, folders, glossary terms and meetings; has at most
   one notes provider configuration.
 
