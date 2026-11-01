@@ -84,7 +84,12 @@ export function MeetingDetail({
 
       <Box role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${tab}-tab`}>
         {tab === "notes" ? (
-          <NotesPanel meeting={meeting} notes={notes} loading={notesResult.isLoading} />
+          <NotesPanel
+            meeting={meeting}
+            notes={notes}
+            loading={notesResult.isLoading}
+            failed={notesResult.isError}
+          />
         ) : (
           <Box
             sx={{
@@ -101,6 +106,7 @@ export function MeetingDetail({
               transcript={transcript}
               missing={transcriptAnswer === null}
               loading={transcriptResult.isLoading}
+              failed={transcriptResult.isError}
               query={transcriptQuery}
               onQuery={onTranscriptQuery}
               onRevision={onRevision}

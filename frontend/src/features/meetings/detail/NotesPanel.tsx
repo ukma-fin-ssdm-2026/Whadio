@@ -6,9 +6,10 @@ interface NotesPanelProps {
   meeting: Meeting;
   notes: NoteRead | null;
   loading: boolean;
+  failed: boolean;
 }
 
-function NotesContent({ meeting, notes, loading }: NotesPanelProps) {
+function NotesContent({ meeting, notes, loading }: Omit<NotesPanelProps, "failed">) {
   if (isInProgress(meeting.state)) {
     return (
       <Stack className="processing-panel" direction="row" sx={{ gap: 1.5, alignItems: "center" }}>
@@ -47,7 +48,8 @@ function NotesContent({ meeting, notes, loading }: NotesPanelProps) {
   );
 }
 
-export function NotesPanel(props: NotesPanelProps) {
+export function NotesPanel({ failed, ...props }: NotesPanelProps) {
+  if (failed && !props.notes && props.meeting.state === "processed") return null;
   return (
     <Card sx={{ p: { xs: 2, md: 3 } }}>
       <NotesContent {...props} />
