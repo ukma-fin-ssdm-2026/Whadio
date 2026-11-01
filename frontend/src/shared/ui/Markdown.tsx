@@ -155,12 +155,16 @@ const components: Components = {
   td: ({ children, style }) => <TableCell style={style}>{children}</TableCell>,
 };
 
+// Without //, a browser resolves http:settings against a page of the same scheme, so it is a
+// relative link even though new URL() with no base reads it as the host "settings".
+const ABSOLUTE_HTTP = /^https?:\/\//i;
+
 const safeUrl: UrlTransform = (url, _key, node) => {
   if (url.startsWith("#")) {
     const { dataFootnoteRef, dataFootnoteBackref } = node.properties;
     return dataFootnoteRef === undefined && dataFootnoteBackref === undefined ? null : url;
   }
-  const protocol = URL.canParse(url) ? new URL(url).protocol : "";
+  const protocol = ABSOLUTE_HTTP.test(url) && URL.canParse(url) ? new URL(url).protocol : "";
   return protocol === "http:" || protocol === "https:" ? url : null;
 };
 
