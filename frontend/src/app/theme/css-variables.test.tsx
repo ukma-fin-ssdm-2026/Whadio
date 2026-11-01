@@ -59,6 +59,7 @@ const valueSources = (node: ts.Node, constants: Map<string, ts.Node[]>): readonl
 
 // Reads only what reaches sx: `sx` attributes and keys, and the same-file constants they name.
 // Imports, calls, callbacks, `.` and `[]` access and array spreads are not followed.
+// Constants resolve by name, ignoring scope, so a same-named parameter counts as the constant.
 const paletteValues = (path: string, text: string) => {
   const constants = new Map<string, ts.Node[]>();
   const sxValues: ts.Node[] = [];
@@ -77,15 +78,17 @@ const paletteValues = (path: string, text: string) => {
   collect(ts.createSourceFile(path, text, ts.ScriptTarget.Latest));
 
   const values: { prop: string; value: string }[] = [];
-  const read = (node: ts.Node, enclosing?: string) => {
+  const read = (node: ts.Node, enclosing?: string, trail: readonly string[] = []) => {
+    if (ts.isIdentifier(node) && trail.includes(node.text)) return;
+    const nextTrail = ts.isIdentifier(node) ? [...trail, node.text] : trail;
     if (ts.isStringLiteralLike(node)) {
       if (enclosing) values.push({ prop: enclosing, value: node.text });
     } else if (ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node)) {
       const prop = ts.isIdentifier(node.name) ? node.name.text : "";
       const value = ts.isPropertyAssignment(node) ? node.initializer : node.name;
-      read(value, PALETTE_PROPS.has(prop) ? prop : enclosing);
+      read(value, PALETTE_PROPS.has(prop) ? prop : enclosing, nextTrail);
     } else {
-      for (const source of valueSources(node, constants)) read(source, enclosing);
+      for (const source of valueSources(node, constants)) read(source, enclosing, nextTrail);
     }
   };
   for (const value of sxValues) read(value);
@@ -210,6 +213,15 @@ test.each<[string, string, string[]]>([
   ["a constant value", `const a = "divider"; <a sx={{ color: a }} />`, ["divider"]],
   ["a shorthand value", `const color = "divider"; <a sx={{ color }} />`, ["divider"]],
   ["a slot's sx", `<a slotProps={{ b: { color: "c", sx: { color: "d" } } }} />`, ["d"]],
+  ["a constant in two sx", `const a = { color: "b" }; <a sx={a} />; <c sx={a} />`, ["b", "b"]],
+  ["a constant in two keys", `const a = "b"; <a sx={{ color: a, bgcolor: a }} />`, ["b", "b"]],
+  [
+    "names that point at each other",
+    `function a(y: string) { const x = y; return x; }
+     function b(x: string) { const y = x; return { sx: { color: y } }; }`,
+    [],
+  ],
+  ["a constant that holds itself", `const a = { color: a }; <a sx={a} />`, []],
   ["a call's arguments", `<a sx={{ bgcolor: alpha("#000", 0.1) }} />`, []],
   ["a props object", `const chip = { label: "x", color: "success" as const };`, []],
   ["an object not passed to sx", `const a = { color: "b" }; <a style={a} />`, []],
