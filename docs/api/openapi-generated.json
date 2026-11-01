@@ -7413,7 +7413,7 @@
             "title": "Model Name",
             "description": "Model that wrote them",
             "examples": [
-              "gemma-3-12b-it"
+              "gemma4:12b-it-qat"
             ]
           },
           "content": {
