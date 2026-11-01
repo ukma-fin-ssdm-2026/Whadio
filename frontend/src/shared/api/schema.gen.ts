@@ -1819,7 +1819,7 @@ export interface components {
             /**
              * Model Name
              * @description Model that wrote them
-             * @example gemma-3-12b-it
+             * @example gemma4:12b-it-qat
              */
             model_name: string;
             /**
