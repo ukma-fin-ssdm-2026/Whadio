@@ -221,6 +221,8 @@ describe("links", () => {
     ["http", "[Whadio login](http://evil.example/)", "Whadio login (evil.example)"],
     ["subdomain", "[Brief](https://docs.example.com/a)", "Brief (docs.example.com)"],
     ["credentials", "[Brief](https://google.com@evil.example/)", "Brief (evil.example)"],
+    ["extra slash", "[Brief](http:///evil.example)", "Brief (evil.example)"],
+    ["upper-case", "[Brief](HTTP://EXAMPLE.COM)", "Brief (example.com)"],
     ["internationalised", "[Вхід](https://пример.example/)", "Вхід (xn--e1afmkfd.example)"],
     ["linked image", "[![Board](https://e.com/a.png)](https://e.com)", "Board (e.com)"],
   ] as const)("a %s link names its host beside the label", ([, notes, name]) => {
@@ -276,6 +278,13 @@ describe("links", () => {
     ["relative path", "[Brief](../settings)"],
     ["fragment", "[Brief](#top)"],
     ["protocol-relative", "[Brief](//example.com/brief)"],
+    ["scheme-relative path", "[Brief](http:/settings)"],
+    ["scheme-relative word", "[Brief](http:settings)"],
+    ["https scheme-relative word", "[Brief](https:settings)"],
+    ["scheme-relative label", "[http:settings](http:settings)"],
+    ["scheme-relative autolink", "<http:settings>"],
+    ["backslashed", "[Brief](http:\\\\evil.example)"],
+    ["slash and backslash", "[Brief](http:/\\evil.example)"],
     ["reference", "[Brief][ref]\n\n[ref]: javascript:alert(1)"],
   ] as const)("a %s link is plain text", ([, notes]) => {
     // Act
