@@ -1,6 +1,5 @@
 import { createRouter } from "@tanstack/react-router";
 import { sessionQueries } from "@/features/accounts/api/session";
-import type { MeetingTab } from "@/features/meetings/model";
 import { routeTree } from "@/routeTree.gen";
 import { LoadingScreen } from "./layout/CenteredScreen";
 import { NotFoundPage } from "./layout/NotFoundPage";
@@ -16,7 +15,6 @@ declare module "@tanstack/react-router" {
 
 declare module "@tanstack/history" {
   interface HistoryState {
-    meetingTab?: MeetingTab;
     sessionRefused?: boolean;
   }
 }
