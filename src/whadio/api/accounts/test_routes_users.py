@@ -10,7 +10,6 @@ from conftest import AsyncDatabase
 from ...accounts.enums import SessionKind
 from ...accounts.models import User
 from ..core.errors import ErrorResponse
-from .auth import user_read
 from .schemas import SessionRead, UserRead
 
 pytestmark = pytest.mark.slow
@@ -40,7 +39,14 @@ def test_signed_in_user_is_returned_for_the_session_cookie(async_database: Async
             # Act
             response = await client.get("/api/v1/users/me")
             found = UserRead.model_validate_json(response.content)
-            return response.status_code, found, user_read(user)
+            expected = UserRead(
+                id=user.user_id,
+                email=user.email,
+                name=user.name,
+                is_administrator=False,
+                created_at=user.created_at,
+            )
+            return response.status_code, found, expected
 
     status, found, expected = async_database.run(scenario)
     # Assert
