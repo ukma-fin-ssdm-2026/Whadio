@@ -130,6 +130,14 @@ describe("structure", () => {
     expect(container.querySelector("pre code")).toHaveTextContent("uv run task check");
   });
 
+  test("note text keeps its loose line spacing", () => {
+    // Act
+    const { container } = renderNotes("Domovylys");
+
+    // Assert
+    expect(container.firstElementChild).toHaveStyle({ lineHeight: "1.75" });
+  });
+
   test("emphasis renders", () => {
     // Act
     renderNotes("Keep **this** one");

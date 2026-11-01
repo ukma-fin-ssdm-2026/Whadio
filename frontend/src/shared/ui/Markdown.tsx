@@ -16,6 +16,7 @@ import remarkGfm from "remark-gfm";
 const MONOSPACE = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
 
 const prose: SxProps<Theme> = {
+  lineHeight: 1.75,
   overflowWrap: "anywhere",
   "& > :last-child": { mb: 0 },
   "& * + :is(h2, h3, h4, h5, h6)": { mt: 3 },
