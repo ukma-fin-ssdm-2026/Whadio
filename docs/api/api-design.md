@@ -120,7 +120,7 @@ sub-resource, such as `…/cancel`, `…/complete` or `…/approve`.
 - **Attributes:**
   - member: `user_id`, `name`, `email`, `role`, `joined_at`
   - invitation: `id`, `email`, `role` (`member` | `moderator`), `status`
-    (`pending` | `accepted` | `declined` | `cancelled`), `expires_at` (7 days),
+    (`pending` | `accepted` | `declined` | `cancelled`), `created_at`, `expires_at` (7 days),
     `link_active`
 - **Relations:** an invitation belongs to a workspace and to the Moderator who created it.
 
@@ -456,6 +456,8 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - `409 ALREADY_MEMBER`: the address belongs to a member.
   - `429 INVITATION_LIMIT`: the caller reached 20 addresses today.
   - `429 INVITATION_COOLDOWN`: this address was invited to this workspace in the last day.
+  - `503 INTEGRATION_UNAVAILABLE`: `WHADIO_PUBLIC_URL` is unset, or verified-mode email
+    delivery is unavailable until #188. No invitation is created or replaced in either case.
 
 #### `POST /workspaces/{workspace_id}/invitations/{invitation_id}/cancel` · Cancel
 
