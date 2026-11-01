@@ -27,12 +27,22 @@ def web(
         str, typer.Option(help="Interface to bind; use 0.0.0.0 inside a container")
     ] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="Port to listen on")] = 3000,
+    forwarded_allow_ips: Annotated[
+        str,
+        typer.Option(help="Comma-separated proxy addresses whose forwarded headers are trusted"),
+    ] = "127.0.0.1",
 ) -> None:
     import asyncio
 
     import uvicorn
 
-    config = uvicorn.Config("whadio.api.main:app", host=host, port=port)
+    config = uvicorn.Config(
+        "whadio.api.main:app",
+        host=host,
+        port=port,
+        proxy_headers=True,
+        forwarded_allow_ips=forwarded_allow_ips,
+    )
     server = uvicorn.Server(config)
     asyncio.run(server.serve(), loop_factory=asyncio.SelectorEventLoop)
 

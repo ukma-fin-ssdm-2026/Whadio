@@ -13,6 +13,65 @@ Whadio is an open-source meeting recording and transcription service focused on 
 | Valeriia Missirova | @v-missirova | Documentation Lead, Integration Lead, Debugging Lead, AI Code Reviewer |
 | Zlata Tsepkalo | @t-zlata | Repository Maintainer, Quality Lead, Data & Threat Modeler, API Documentation Lead, Code Reviewer, Test Strategist, Review Manager, AI Code Reviewer |
 
+# Deploying
+
+The production stack needs a Linux host with Docker Engine and Compose v2, a DNS name that points
+to the host, and a trusted TLS certificate for that name. Ports 80 and 443 must reach the host.
+Clone the repository, create the configuration and place the certificate where the template
+expects it:
+
+```bash
+git clone https://github.com/ukma-fin-ssdm-2026/Whadio.git
+cd Whadio
+cp .env.production.example .env
+mkdir -p certs
+cp /path/to/fullchain.pem certs/fullchain.pem
+cp /path/to/privkey.pem certs/privkey.pem
+sudo chown 101:101 certs/privkey.pem
+sudo chmod 600 certs/privkey.pem
+```
+
+Replace every `change-me` value and the example host name in `.env`. The default production
+template runs CPU transcription and writes notes through Anthropic; the provider key and the
+Hugging Face token are secrets. Generate every database, broker and storage password independently
+with `openssl rand -hex 32`; broker passwords must be URL-safe because they are embedded in AMQP
+URLs. The nginx image runs as uid 101, so the private key stays owner-readable only after the
+ownership change above. Then build and start the complete stack:
+
+```bash
+docker compose config --quiet
+docker compose up --detach --build --wait
+docker compose ps
+```
+
+`migrate` applies the database schema once. `web` and `scheduler` wait for it to succeed, and nginx
+waits for `web` to become healthy. Open `https://<your-host>/`; plain HTTP redirects there. To
+create the first account in the default `invite-only` mode, issue a link from the running web
+container and hand it to the named recipient privately:
+
+```bash
+docker compose exec web whadio links registration --email person@example.com
+```
+
+After the recipient completes that link, grant the first account administrator access:
+
+```bash
+docker compose exec web whadio admin grant --email person@example.com
+```
+
+No SMTP relay is required in `invite-only` mode. To use verified registration, uncomment and fill
+the SMTP settings before changing `WHADIO_REGISTRATION_MODE=verified`. For a local Ollama model,
+change the notes provider settings and add `ollama` to `COMPOSE_PROFILES`; for NVIDIA-accelerated
+ASR also set `COMPOSE_FILE=compose.yaml:compose.cuda.yaml` (`;` instead of `:` on Windows). The ASR
+worker otherwise uses the CPU image and does not start Ollama. Update with `git pull`, then repeat
+the `docker compose up --detach --build --wait` command; volumes preserve application data.
+
+The template starts the bundled SeaweedFS through the `storage` profile. To use AWS S3 or another
+S3-compatible service, remove `storage` from `COMPOSE_PROFILES`, set
+`WHADIO_STORAGE__ENDPOINT_URL` and the storage credentials (plus region and bucket when needed),
+and leave `WHADIO_STORAGE__PUBLIC_ENDPOINT_URL` unset so presigned playback links point directly
+to that HTTPS endpoint.
+
 
 # Development
 
@@ -27,6 +86,10 @@ cp .env.example .env             # local credentials for the Compose stack
 uv run task infra:up             # PostgreSQL, RabbitMQ, SeaweedFS and Mailpit
 uv run task dev                  # the API on http://localhost:3000, with auto-reload
 ```
+
+Before playing a recording locally, map `seaweedfs` to `127.0.0.1` in the system hosts file
+(`/etc/hosts` on Linux and macOS, or `C:\Windows\System32\drivers\etc\hosts` on Windows). The
+browser then resolves the same storage host used to sign links for the Compose ASR worker.
 
 ## Running the API
 

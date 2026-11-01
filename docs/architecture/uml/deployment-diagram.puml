@@ -14,19 +14,20 @@ node "User's computer" as pc {
 }
 
 node "Main host\n<<Linux VM, CPU only>>" as main {
-  node "Docker Compose — profile: core" as composeCore {
+  node "Docker Compose — profile: core; optional: storage" as composeCore {
     component "nginx\n<<reverse proxy, TLS, SPA static>>" as nginx
+    component "migrate\n<<one-shot container>>" as migrate
     component "web\n<<container>>" as web
     component "scheduler\n<<container>>" as scheduler
     component "notes-worker\n<<container>>" as notesWorker
     queue "rabbitmq\n<<container>>" as mq
     database "postgres\n<<container, volume>>" as db
-    database "object-storage\n<<container, volume, S3-compatible>>" as store
+    database "object-storage\n<<profile: storage, volume, S3-compatible>>" as store
   }
 }
 
 node "GPU host\n<<Linux, NVIDIA GPU>>" as gpu {
-  node "Docker Compose — profile: gpu" as composeGpu {
+  node "Docker Compose — profiles: gpu, optional ollama" as composeGpu {
     component "asr-worker\n<<container>>" as asrWorker
     component "llm-runtime\n<<container: Ollama>>" as llm
   }
@@ -43,6 +44,8 @@ ext .left.> meet : DOM read\n(names, active speaker)\n[TB-2]
 
 ' --- Inside the main host ---
 nginx --> web : HTTP\n[TB-3]
+nginx --> store : HTTP GET/HEAD\npresigned URL\n[TB-4]
+migrate --> db : SQL schema upgrade\n[TB-4]
 web --> db : SQL\n[TB-4]
 web --> store : S3 API\n[TB-4]
 web --> mq : AMQP\n[TB-5]
@@ -70,7 +73,7 @@ note bottom of gpu
 end note
 
 note bottom of main
-  Only nginx (443) and the private network's endpoint
+  Only nginx (80 redirect, 443 HTTPS) and the private network's endpoint
   are exposed. Single-host deployment runs both Compose
   profiles on one GPU machine, without the private network.
 end note

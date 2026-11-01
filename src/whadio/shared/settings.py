@@ -9,6 +9,7 @@ class PublicUrlSettings(BaseSettings):
         env_prefix="WHADIO_",
         env_nested_delimiter="__",
         env_file=".env",
+        env_ignore_empty=True,
         extra="ignore",
         hide_input_in_errors=True,
     )
