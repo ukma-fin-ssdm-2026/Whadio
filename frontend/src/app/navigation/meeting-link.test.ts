@@ -17,6 +17,14 @@ test("a regular meeting link selects the current version", () => {
   expect(link).toEqual({ meetingId: "meeting", revisionId: null });
 });
 
+test("an empty revision selects the current version", () => {
+  // Act
+  const link = readMeetingLink("https://example.com/meetings/meeting?revision_id=");
+
+  // Assert
+  expect(link).toEqual({ meetingId: "meeting", revisionId: null });
+});
+
 test("a deployment prefix survives meeting and revision navigation", () => {
   // Act
   const path = meetingPath(

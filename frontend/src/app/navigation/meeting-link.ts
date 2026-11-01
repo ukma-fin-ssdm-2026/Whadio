@@ -8,7 +8,7 @@ export function readMeetingLink(href: string): MeetingLink | null {
   const match = url.pathname.match(/\/meetings\/([^/]+)\/?$/);
   const meetingId = match?.[1];
   if (meetingId === undefined) return null;
-  return { meetingId, revisionId: url.searchParams.get("revision_id") };
+  return { meetingId, revisionId: url.searchParams.get("revision_id") || null };
 }
 
 export function meetingPath(
