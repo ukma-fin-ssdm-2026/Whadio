@@ -15,6 +15,7 @@ from ...accounts.models import Invitation, User, WorkspaceMembership
 from ...audit.enums import AuditAction
 from ...audit.models import AuditEvent
 from ...meetings.models import Folder
+from ..core.errors import ErrorResponse
 from .schemas import InvitationCreated, WorkspaceRead
 
 pytestmark = pytest.mark.slow
@@ -224,6 +225,36 @@ def test_invalid_registration_keeps_invitation_pending(
 
     # Assert
     assert async_database.run(scenario) == (422, InvitationStatus.PENDING, True)
+
+
+@pytest.mark.parametrize("password", ["shortA1", "lowercase123456", "UppercaseOnly", "A1" * 65])
+def test_weak_password_is_a_field_error_and_keeps_invitation_pending(
+    async_database: AsyncDatabase, password: str
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, str | None, InvitationStatus, bool]:
+        async with AsyncDatabase.api_client(session) as client:
+            email = f"{uuid4()}@example.com"
+            _, invitation_id, token = await issue(client, session, email)
+            await client.delete("/api/v1/sessions/current")
+            # Act
+            response = await client.post(
+                f"/api/v1/invitations/{invitation_id}/register",
+                json={
+                    "token": token,
+                    "name": "New member",
+                    "password": password,
+                    "accept_terms": True,
+                },
+            )
+            error = ErrorResponse.model_validate_json(response.content).error
+            invitation = await session.get(Invitation, invitation_id)
+            assert invitation is not None
+            account = await session.scalar(select(User).where(User.email == email))
+            return response.status_code, error.details[0].field, invitation.status, account is None
+
+    # Assert
+    assert async_database.run(scenario) == (422, "password", InvitationStatus.PENDING, True)
 
 
 @pytest.mark.parametrize(
