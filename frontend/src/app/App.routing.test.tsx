@@ -567,6 +567,105 @@ describe("a meeting's link", () => {
   });
 });
 
+describe("a meeting's tab in the URL", () => {
+  const selectedTab = () => screen.findByRole("tab", { selected: true });
+
+  async function clickThroughTabs() {
+    const { user } = open(MEETING_LINK);
+    await user.click(await screen.findByRole("tab", { name: "Transcript" }));
+    await user.click(screen.getByRole("tab", { name: "Recording" }));
+    await waitFor(() => expect(window.location.search).toBe("?tab=recording"));
+  }
+
+  test("a deep link opens that tab", async () => {
+    // Act
+    open(`${MEETING_LINK}?tab=recording`);
+
+    // Assert
+    expect(await selectedTab()).toHaveTextContent(/^Recording$/);
+  });
+
+  test("a bad value falls back to the notes", async () => {
+    // Act
+    open(`${MEETING_LINK}?tab=settings`);
+
+    // Assert
+    expect(await selectedTab()).toHaveTextContent(/^Notes$/);
+  });
+
+  test("a bad value falls back to the transcript for a revision", async () => {
+    // Act
+    open(`${REVISION_LINK}&tab=settings`);
+
+    // Assert
+    expect(await selectedTab()).toHaveTextContent(/^Transcript$/);
+  });
+
+  test("opening a meeting adds no entry for the default tab", async () => {
+    // Arrange
+    const entries = window.history.length;
+
+    // Act
+    open(MEETING_LINK);
+    await selectedTab();
+
+    // Assert
+    expect(window.history.length).toBe(entries);
+  });
+
+  test("the default tab stays out of the URL", async () => {
+    // Arrange
+    const { user } = open(`${MEETING_LINK}?tab=transcript`);
+
+    // Act
+    await user.click(await screen.findByRole("tab", { name: "Notes" }));
+
+    // Assert
+    await waitFor(() => expect(currentPath()).toBe(MEETING_LINK));
+  });
+
+  test("choosing a tab keeps the scroll position", async () => {
+    // Arrange
+    const { user } = open(MEETING_LINK);
+    const tab = await screen.findByRole("tab", { name: "Transcript" });
+    vi.mocked(window.scrollTo).mockClear();
+
+    // Act
+    await user.click(tab);
+    await waitFor(() => expect(window.location.search).toBe("?tab=transcript"));
+    await screen.findByPlaceholderText("Search transcript");
+
+    // Assert
+    expect(window.scrollTo).not.toHaveBeenCalled();
+  });
+
+  test("Back restores the previous tab", async () => {
+    // Arrange
+    await clickThroughTabs();
+
+    // Act
+    window.history.back();
+
+    // Assert
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { selected: true })).toHaveTextContent(/^Transcript$/),
+    );
+  });
+
+  test("a chosen revision keeps its place in the URL beside the tab", async () => {
+    // Arrange
+    const { user } = open(REVISION_LINK);
+
+    // Act
+    await user.click(await screen.findByRole("tab", { name: "Notes" }));
+
+    // Assert
+    await waitFor(() =>
+      expect(currentPath()).toBe(`${MEETING_LINK}?tab=notes&revision_id=original`),
+    );
+  });
+});
+
 describe("transcript search", () => {
   async function searchThenSwitchRevision() {
     const { user } = open(REVISION_LINK);
@@ -631,7 +730,7 @@ describe("under a deployment prefix", () => {
     await screen.findByText(CURRENT_WORDING);
 
     // Assert
-    expect(currentPath()).toBe(`/whadio${MEETING_LINK}`);
+    expect(currentPath()).toBe(`/whadio${MEETING_LINK}?tab=transcript`);
   });
 
   test("links carry the prefix", async () => {

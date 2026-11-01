@@ -174,7 +174,7 @@ describe.for([
     await showRevision(user, "View current transcript", CURRENT_WORDING);
 
     // Assert
-    expect(currentPath()).toBe(CURRENT_LINK);
+    expect(currentPath()).toBe(`${CURRENT_LINK}?tab=transcript`);
   });
 
   test("switching to the current transcript requests it", async () => {
@@ -216,7 +216,7 @@ describe.for([
     await goBackToCurrent(signedIn);
 
     // Assert
-    expect(currentPath()).toBe(CURRENT_LINK);
+    expect(currentPath()).toBe(`${CURRENT_LINK}?tab=transcript`);
   });
 
   test("Back hides the original wording", async () => {

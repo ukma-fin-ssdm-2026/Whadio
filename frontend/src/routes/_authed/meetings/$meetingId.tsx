@@ -1,28 +1,40 @@
-import { createFileRoute, useLocation } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { MeetingPage } from "@/app/pages/MeetingPage";
+import { MEETING_TABS, type MeetingTab } from "@/features/meetings/model";
 
 export const Route = createFileRoute("/_authed/meetings/$meetingId")({
-  validateSearch: z.object({ revision_id: z.string().optional().catch(undefined) }),
+  validateSearch: z.object({
+    tab: z.enum(MEETING_TABS).optional().catch(undefined),
+    revision_id: z.string().optional().catch(undefined),
+  }),
   component: MeetingRoute,
 });
+
+const defaultTab = (revisionId: string | null): MeetingTab => (revisionId ? "transcript" : "notes");
 
 function MeetingRoute() {
   const navigate = Route.useNavigate();
   const { meetingId } = Route.useParams();
-  const { revision_id: revisionId } = Route.useSearch();
-  const linkedTab = useLocation({ select: (location) => location.state.meetingTab });
+  const { tab, revision_id: linkedRevision } = Route.useSearch();
+  const revisionId = linkedRevision || null;
+
+  const showTab = (next: MeetingTab, revision: string | null) =>
+    navigate({
+      search: {
+        tab: next === defaultTab(revision) ? undefined : next,
+        revision_id: revision ?? undefined,
+      },
+      resetScroll: false,
+    });
+
   return (
     <MeetingPage
       meetingId={meetingId}
-      revisionId={revisionId || null}
-      linkedTab={linkedTab}
-      onRevision={(revision) =>
-        navigate({
-          search: revision ? { revision_id: revision } : {},
-          state: (state) => ({ ...state, meetingTab: "transcript" }),
-        })
-      }
+      revisionId={revisionId}
+      tab={tab ?? defaultTab(revisionId)}
+      onTab={(next) => showTab(next, revisionId)}
+      onRevision={(revision) => showTab("transcript", revision)}
     />
   );
 }

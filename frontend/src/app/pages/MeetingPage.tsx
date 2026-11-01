@@ -11,23 +11,21 @@ import { Breadcrumbs } from "../layout/Breadcrumbs";
 interface MeetingPageProps {
   meetingId: string;
   revisionId: string | null;
-  linkedTab: MeetingTab | undefined;
+  tab: MeetingTab;
+  onTab: (tab: MeetingTab) => void;
   onRevision: (revisionId: string | null) => void;
 }
 
-export function MeetingPage({ meetingId, revisionId, linkedTab, onRevision }: MeetingPageProps) {
+export function MeetingPage({ meetingId, revisionId, tab, onTab, onRevision }: MeetingPageProps) {
   const opened = useQuery(meetingQueries.detail(meetingId));
   const { data: workspaces } = useQuery(workspaceQueries.list());
   const meeting = isMeetingGone(opened.error) ? undefined : opened.data;
 
-  const initialTab = linkedTab ?? (revisionId ? "transcript" : "notes");
-  const [tab, setTab] = useState<MeetingTab>(initialTab);
   const [transcriptQuery, setTranscriptQuery] = useState("");
   const link = `${meetingId}/${revisionId}`;
   const [shownLink, setShownLink] = useState(link);
   if (link !== shownLink) {
     setShownLink(link);
-    setTab(initialTab);
     setTranscriptQuery("");
   }
 
@@ -52,7 +50,7 @@ export function MeetingPage({ meetingId, revisionId, linkedTab, onRevision }: Me
           tab={tab}
           transcriptQuery={transcriptQuery}
           onTranscriptQuery={setTranscriptQuery}
-          onTab={setTab}
+          onTab={onTab}
           onRevision={onRevision}
           renderExport={({ transcript, notes }) => (
             <ExportMenu meetingId={meeting.id} tab={tab} transcript={transcript} notes={notes} />

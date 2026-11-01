@@ -6,7 +6,9 @@ type ProcessingState = Schemas["ProcessingState"];
 type InProgressState = Exclude<ProcessingState, "processed" | "failed">;
 
 export type StateFilter = "all" | ProcessingState;
-export type MeetingTab = "notes" | "transcript" | "recording";
+
+export const MEETING_TABS = ["notes", "transcript", "recording"] as const;
+export type MeetingTab = (typeof MEETING_TABS)[number];
 
 export interface Meeting {
   id: string;
