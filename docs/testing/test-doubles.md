@@ -24,6 +24,7 @@ fake when a test checks only the result, and a mock when the test asserts on the
 | Audit log | `RecordingAuditWriter`, an `IContentAuditWriter` that keeps the events written | mock | `src/whadio/audit/fakes.py` |
 | LLM (Anthropic) | `_Model` and `_FixedModel`, which return a fixed answer; `httpx2.MockTransport` under `ClaudeChatModel` | stub | `src/whadio/workers/notes/test_handler.py`, `test_main.py`, `test_claude.py` |
 | LLM, shared | `ScriptedChatModel` (**planned**, in a later PR with the chunked notes) | stub | `src/whadio/workers/notes/` |
+| The REST API, in the frontend's tests | A Mock Service Worker `server` with handlers typed from the OpenAPI types | stub; mock when a test asserts on the requests `serveApi` recorded | `frontend/src/shared/testing/server.ts`, `frontend/src/app/testing.tsx` |
 | SMTP | A recording mail sender (**planned**, in the Notifications PR) | mock | `src/whadio/notifications/` |
 | Password hasher | None: the real `Argon2PasswordHasher` | (real) | `src/whadio/accounts/passwords.py` |
 
