@@ -34,12 +34,13 @@ test("navigation offers Home, Meetings and each workspace", async () => {
   const items = nav.getAllByRole("link").map((item) => item.textContent);
 
   // Assert
-  expect(items).toEqual(["Home", "Meetings", "Alpha", "Beta"]);
+  expect(items).toEqual(["Home", "Meetings", "AI assistant", "Alpha", "Beta"]);
 });
 
 test.for([
   ["Home", "/"],
   ["Meetings", "/meetings"],
+  ["AI assistant", "/settings/assistant"],
   ["Beta", "/workspaces/beta"],
   ["Beta", "/workspaces/beta/settings"],
 ] as const)("marks %s as the current page at %s", async ([label, path]) => {

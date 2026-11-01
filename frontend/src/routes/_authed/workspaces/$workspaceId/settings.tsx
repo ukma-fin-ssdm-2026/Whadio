@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { McpKeyPanel } from "@/features/accounts/components/McpKeyPanel";
 import { WorkspaceSettings } from "@/features/workspaces/components/WorkspaceSettings";
 
 export const Route = createFileRoute("/_authed/workspaces/$workspaceId/settings")({
@@ -8,5 +7,5 @@ export const Route = createFileRoute("/_authed/workspaces/$workspaceId/settings"
 
 function WorkspaceSettingsRoute() {
   const { workspaceId } = Route.useParams();
-  return <WorkspaceSettings workspaceId={workspaceId} assistantSettings={<McpKeyPanel />} />;
+  return <WorkspaceSettings workspaceId={workspaceId} />;
 }

@@ -1,5 +1,6 @@
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import NotesOutlinedIcon from "@mui/icons-material/NotesOutlined";
+import SmartToyOutlinedIcon from "@mui/icons-material/SmartToyOutlined";
 import {
   Avatar,
   Divider,
@@ -56,6 +57,9 @@ export function Sidebar({ user, workspaces, signOutAction, onNavigate }: Sidebar
         </ListItemLink>
         <ListItemLink to="/meetings" activeOptions={{ exact: true }} {...navLink}>
           <NavLabel label="Meetings" icon={<NotesOutlinedIcon />} />
+        </ListItemLink>
+        <ListItemLink to="/settings/assistant" {...navLink}>
+          <NavLabel label="AI assistant" icon={<SmartToyOutlinedIcon />} />
         </ListItemLink>
         <ListSubheader component="div" disableSticky sx={{ mt: 1 }}>
           Workspaces

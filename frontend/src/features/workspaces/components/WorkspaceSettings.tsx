@@ -1,29 +1,20 @@
 import {
   Alert,
-  Box,
   Chip,
   CircularProgress,
   Divider,
-  List,
-  ListItemButton,
   MenuItem,
   Paper,
   Stack,
   TextField,
 } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useState } from "react";
 import type { Schemas } from "@/shared/api/types";
 import { titleCase } from "@/shared/lib/format";
 import { useNotify } from "@/shared/ui/NotifyProvider";
 import { SectionHeader } from "@/shared/ui/SectionHeader";
 import { SettingsRow } from "@/shared/ui/SettingsRow";
 import { useUpdateWorkspace, workspaceQueries } from "../api/workspaces";
-
-const SECTIONS = [
-  ["workspace", "Workspace"],
-  ["assistant", "AI assistant"],
-] as const;
 
 const PRESETS: Schemas["Preset"][] = ["summary", "detailed", "interview"];
 
@@ -96,47 +87,10 @@ function WorkspaceDefaults({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-interface WorkspaceSettingsProps {
-  workspaceId: string;
-  assistantSettings: ReactNode;
-}
-
-export function WorkspaceSettings({ workspaceId, assistantSettings }: WorkspaceSettingsProps) {
-  const [section, setSection] = useState<(typeof SECTIONS)[number][0]>("workspace");
-
+export function WorkspaceSettings({ workspaceId }: { workspaceId: string }) {
   return (
-    <Paper variant="outlined" sx={{ display: "flex", flexDirection: { xs: "column", md: "row" } }}>
-      <List
-        component="nav"
-        aria-label="Settings sections"
-        sx={{
-          flexShrink: 0,
-          width: { md: 220 },
-          p: 1,
-          borderStyle: "solid",
-          borderColor: "divider",
-          borderWidth: { xs: "0 0 1px", md: "0 1px 0 0" },
-        }}
-      >
-        {SECTIONS.map(([value, label]) => (
-          <ListItemButton
-            key={value}
-            selected={section === value}
-            aria-current={section === value ? "true" : undefined}
-            onClick={() => setSection(value)}
-            sx={{ borderRadius: 1 }}
-          >
-            {label}
-          </ListItemButton>
-        ))}
-      </List>
-      <Box sx={{ flexGrow: 1, minWidth: 0, p: { xs: 2, md: 3 } }}>
-        {section === "workspace" ? (
-          <WorkspaceDefaults workspaceId={workspaceId} />
-        ) : (
-          assistantSettings
-        )}
-      </Box>
+    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 } }}>
+      <WorkspaceDefaults workspaceId={workspaceId} />
     </Paper>
   );
 }
