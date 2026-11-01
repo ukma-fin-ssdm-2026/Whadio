@@ -20,20 +20,21 @@ const endsSession = (error: unknown) =>
 
 interface QueryClientHandlers {
   onUnauthorized: () => void;
+  onDataLoaded: () => void;
 }
 
-export function createQueryClient({ onUnauthorized }: QueryClientHandlers): QueryClient {
+export function createQueryClient({
+  onUnauthorized,
+  onDataLoaded,
+}: QueryClientHandlers): QueryClient {
   const handleError = (error: unknown) => {
-    if (!endsSession(error)) return;
-    queryClient.clear();
-    onUnauthorized();
+    if (endsSession(error)) onUnauthorized();
   };
-  const queryClient = new QueryClient({
-    queryCache: new QueryCache({ onError: handleError }),
+  return new QueryClient({
+    queryCache: new QueryCache({ onError: handleError, onSuccess: onDataLoaded }),
     mutationCache: new MutationCache({ onError: handleError }),
     defaultOptions: {
       queries: { retry: retryUnlessClientError, staleTime: 30_000 },
     },
   });
-  return queryClient;
 }

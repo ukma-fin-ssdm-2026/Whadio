@@ -22,8 +22,12 @@ from ..access_policy.services import (
 from ..accounts.administrators import AdministratorRepository, AdministratorService
 from ..accounts.contracts import UserProfile
 from ..accounts.enums import NotesTemplate, RegistrationMode
+from ..accounts.password_resets import PasswordResetService
 from ..accounts.passwords import Argon2PasswordHasher
+from ..accounts.redemption import RedemptionService
+from ..accounts.redemption_repository import RedemptionRepository
 from ..accounts.repositories import (
+    InvitationRepository,
     McpKeyRepository,
     MembershipRepository,
     RegistrationRepository,
@@ -31,7 +35,9 @@ from ..accounts.repositories import (
     WorkspaceRepository,
     WorkspaceSettingsRepository,
 )
+from ..accounts.reset_repository import PasswordResetRepository
 from ..accounts.services import (
+    InvitationService,
     McpKeyService,
     RegistrationService,
     SignInService,
@@ -115,6 +121,9 @@ class CompositionRoot:
             public_settings if public_settings is not None else PublicUrlSettings.model_validate({})
         )
         self.public_url: str = str(settings.public_url or "http://localhost:3000")
+        self.invitation_url: str | None = (
+            str(settings.public_url) if settings.public_url is not None else None
+        )
         self.api_public_url: str = str(settings.api_public_url or self.public_url)
         self._web_settings: WebSettings = (
             web_settings if web_settings is not None else WebSettings.model_validate({})
@@ -487,6 +496,15 @@ def registration_service(session: Session) -> RegistrationService:
 Registrations = Annotated[RegistrationService, Depends(registration_service)]
 
 
+def password_reset_service(session: Session) -> PasswordResetService:
+    return PasswordResetService(
+        PasswordResetRepository(session), SessionRepository(session), Argon2PasswordHasher()
+    )
+
+
+PasswordResets = Annotated[PasswordResetService, Depends(password_reset_service)]
+
+
 def mcp_key_service(session: Session) -> McpKeyService:
     return McpKeyService(McpKeyRepository(session), AuditWriter(session))
 
@@ -504,6 +522,30 @@ def workspace_service(session: Session) -> WorkspaceService:
 
 
 Workspaces = Annotated[WorkspaceService, Depends(workspace_service)]
+
+
+def invitation_service(session: Session) -> InvitationService:
+    return InvitationService(
+        InvitationRepository(session),
+        WorkspaceMembershipService(MembershipRepository(session)),
+        AuditWriter(session),
+    )
+
+
+Invitations = Annotated[InvitationService, Depends(invitation_service)]
+
+
+def redemption_service(session: Session, registrations: Registrations) -> RedemptionService:
+    return RedemptionService(
+        RedemptionRepository(session),
+        RegistrationRepository(session),
+        SessionRepository(session),
+        registrations,
+        AuditWriter(session),
+    )
+
+
+Redemptions = Annotated[RedemptionService, Depends(redemption_service)]
 
 
 def capture_storage() -> IChunkStorage:
@@ -552,6 +594,10 @@ def connect_integrations(app: FastAPI, integrations: RuntimeIntegrations) -> Non
 
 
 def export_public_url() -> str:
+    raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+
+
+def invitation_public_url() -> str:
     raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
 
 

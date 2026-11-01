@@ -1,0 +1,4 @@
+{
+  // The extension follows the frontend's rules; Biome itself is installed in frontend/node_modules.
+  "extends": ["../frontend/biome.jsonc"]
+}

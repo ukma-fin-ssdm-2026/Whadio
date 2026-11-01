@@ -1,6 +1,6 @@
-import { api, originPattern, signIn, signOut, signedIn } from "./server.js";
+import { api, insecureServer, originPattern, signedIn, signIn, signOut } from "./api.js";
 
-const MEET_CALL = /^https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}(?:[/?#]|$)/;
+const MEET_CALL = /^https:\/\/meet\.google\.com\/(?:meet\/)?[a-z]{3}-[a-z]{4}-[a-z]{3}(?:[/?#]|$)/;
 
 const sections = ["not-meet", "idle", "recording"].map((id) => document.getElementById(id));
 const signInForm = document.getElementById("sign-in");
@@ -39,21 +39,33 @@ function showRecording(startedAt) {
 
 async function showAccount() {
   if (!(await signedIn())) {
+    const { server } = await chrome.storage.local.get("server");
+    if (server) {
+      document.getElementById("server").value = server;
+    }
     signInForm.hidden = false;
     account.hidden = true;
     return false;
   }
   signInForm.hidden = true;
   account.hidden = false;
-  const { name, destination: chosen } = await chrome.storage.local.get(["name", "destination"]);
+  const { name } = await chrome.storage.session.get("name");
+  const { destination: chosen } = await chrome.storage.local.get("destination");
   document.getElementById("name").textContent = name ?? "";
   const page = await api("GET", "/captures/destinations?limit=100");
+  // A folder chosen under another account, or since deleted, falls back to the personal default.
+  const known = page.items.some((workspace) =>
+    workspace.folders.some((folder) => folder.id === chosen?.folder_id),
+  );
   destination.replaceChildren(
     ...page.items.flatMap((workspace) =>
       workspace.folders.map((folder) => {
-        const value = JSON.stringify({ workspace_id: workspace.workspace_id, folder_id: folder.id });
+        const value = JSON.stringify({
+          workspace_id: workspace.workspace_id,
+          folder_id: folder.id,
+        });
         const option = new Option(`${workspace.name} / ${folder.name}`, value);
-        option.selected = chosen
+        option.selected = known
           ? chosen.folder_id === folder.id
           : workspace.is_personal && folder.is_default;
         return option;
@@ -68,13 +80,21 @@ signInForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   showError("");
   const server = new URL(document.getElementById("server").value).origin;
+  if (insecureServer(server)) {
+    showError("Use an https:// address. Plain http:// works only for localhost and 127.0.0.1.");
+    return;
+  }
   // Asked inside the click, as Chrome requires, and only for the server the user names.
   if (!(await chrome.permissions.request({ origins: [originPattern(server)] }))) {
     showError("Whadio needs access to the server to upload recordings.");
     return;
   }
   try {
-    await signIn(server, document.getElementById("email").value, document.getElementById("password").value);
+    await signIn(
+      server,
+      document.getElementById("email").value,
+      document.getElementById("password").value,
+    );
     // Every section is hidden only on a Meet call that is not recording, which signing in makes ready.
     if ((await showAccount()) && sections.every((section) => section.hidden)) {
       show("idle");
@@ -89,7 +109,9 @@ document.getElementById("sign-out").addEventListener("click", async () => {
   await showAccount();
 });
 
-destination.addEventListener("change", () => chrome.storage.local.set({ destination: JSON.parse(destination.value) }));
+destination.addEventListener("change", () =>
+  chrome.storage.local.set({ destination: JSON.parse(destination.value) }),
+);
 
 // --- Recording ---
 
@@ -107,7 +129,7 @@ if (!tab?.url || !MEET_CALL.test(tab.url)) {
 } else {
   await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["recorder.js"] });
   await chrome.tabs.sendMessage(tab.id, { type: "hide-card" });
-  const { startedAt } = await chrome.tabs.sendMessage(tab.id, { type: "status" });
+  const { startedAt } = await chrome.runtime.sendMessage({ type: "recording", tabId: tab.id });
   if (startedAt) {
     showRecording(startedAt);
   } else if (ready) {
@@ -122,11 +144,14 @@ consent.addEventListener("change", () => {
 start.addEventListener("click", async () => {
   showError("");
   start.disabled = true;
-  const streamId = await chrome.tabCapture.getMediaStreamId({
-    targetTabId: tab.id,
-    consumerTabId: tab.id,
-  });
-  const reply = await chrome.tabs.sendMessage(tab.id, { type: "start", streamId });
+  let reply;
+  try {
+    // Left without a consumer tab, the capture is the extension's own, for its offscreen document to record.
+    const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
+    reply = await chrome.runtime.sendMessage({ type: "record", tabId: tab.id, streamId });
+  } catch (failure) {
+    reply = { error: failure.message };
+  }
   if (reply.error) {
     showError(reply.error);
     start.disabled = false;
@@ -137,6 +162,6 @@ start.addEventListener("click", async () => {
 
 stop.addEventListener("click", async () => {
   stop.disabled = true;
-  await chrome.tabs.sendMessage(tab.id, { type: "stop" });
+  await chrome.runtime.sendMessage({ type: "stop-recording", tabId: tab.id });
   window.close();
 });

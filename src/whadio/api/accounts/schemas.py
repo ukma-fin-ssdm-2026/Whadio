@@ -19,6 +19,18 @@ class Role(StrEnum):
     OWNER = "owner"
 
 
+class InvitedRole(StrEnum):
+    MEMBER = "member"
+    MODERATOR = "moderator"
+
+
+class InvitationState(StrEnum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
+    CANCELLED = "cancelled"
+
+
 class SessionKind(StrEnum):
     BROWSER = "browser"
     EXTENSION = "extension"
@@ -146,6 +158,31 @@ class WorkspaceRead(WorkspaceSummary):
     default_preset: Preset = Field(description="Notes preset used when none is chosen")
 
 
+class InvitationCreate(Input):
+    email: EmailStr = Field(
+        max_length=254, description="Email address to invite", examples=["bob@whadio.dev"]
+    )
+    role: InvitedRole = Field(description="Workspace role granted when the invitation is accepted")
+
+
+class InvitationRead(Output):
+    id: UUID = Field(description="Invitation identifier")
+    email: str = Field(description="Invited email address")
+    role: InvitedRole = Field(description="Role offered by this invitation")
+    status: InvitationState = Field(description="Current invitation state")
+    created_at: datetime = Field(description="When this invitation was most recently issued")
+    expires_at: datetime = Field(description="When this invitation becomes unusable")
+    link_active: bool = Field(
+        description="Whether the link can currently be accepted, including inviter authority"
+    )
+
+
+class InvitationCreated(InvitationRead):
+    link: str | None = Field(
+        description="One-time invitation link in invite-only mode; never returned by list"
+    )
+
+
 class RegistrationComplete(Input):
     # Per-field StringConstraints cannot preserve whitespace on SecretStr in both validation modes.
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", str_strip_whitespace=False)
@@ -163,3 +200,15 @@ class RegistrationComplete(Input):
 class InstanceRead(Output):
     registration_mode: RegistrationMode = Field(description="How this instance admits accounts")
     api_version: str = Field(description="Version of the Web API")
+
+
+class PasswordResetComplete(Input):
+    # Per-field StringConstraints cannot preserve whitespace on SecretStr in both validation modes.
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    token: SecretStr = Field(description="Secret from the password-reset link fragment")
+    password: SecretStr = Field(
+        min_length=12,
+        max_length=128,
+        description="12 to 128 characters, a digit and an uppercase letter",
+    )

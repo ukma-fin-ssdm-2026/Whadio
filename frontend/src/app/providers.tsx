@@ -1,8 +1,7 @@
 import { CssBaseline, ThemeProvider } from "@mui/material";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { lazy, type ReactNode, Suspense, useLayoutEffect, useRef, useState } from "react";
+import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { lazy, type ReactNode, Suspense } from "react";
 import { NotifyProvider } from "@/shared/ui/NotifyProvider";
-import { createQueryClient } from "./query-client";
 import { theme } from "./theme";
 
 const ReactQueryDevtools =
@@ -15,19 +14,11 @@ const ReactQueryDevtools =
     : null;
 
 interface AppProvidersProps {
-  onUnauthorized: () => void;
+  queryClient: QueryClient;
   children: ReactNode;
 }
 
-export function AppProviders({ onUnauthorized, children }: AppProvidersProps) {
-  // The client lives as long as the app, so it reads the handler through a ref to call the latest.
-  const latestOnUnauthorized = useRef(onUnauthorized);
-  useLayoutEffect(() => {
-    latestOnUnauthorized.current = onUnauthorized;
-  });
-  const [queryClient] = useState(() =>
-    createQueryClient({ onUnauthorized: () => latestOnUnauthorized.current() }),
-  );
+export function AppProviders({ queryClient, children }: AppProvidersProps) {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider theme={theme}>

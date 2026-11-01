@@ -9,6 +9,7 @@ class PublicUrlSettings(BaseSettings):
         env_prefix="WHADIO_",
         env_nested_delimiter="__",
         env_file=".env",
+        env_ignore_empty=True,
         extra="ignore",
         hide_input_in_errors=True,
     )
@@ -16,7 +17,7 @@ class PublicUrlSettings(BaseSettings):
     public_url: HttpUrl | None = Field(
         default=None,
         description="Public application base URL, including an optional deployment path; "
-        "used in exports and required with an SMTP relay",
+        "used in exports and required for invitation links and with an SMTP relay",
     )
     api_public_url: HttpUrl | None = Field(
         default=None,

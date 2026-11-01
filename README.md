@@ -13,6 +13,65 @@ Whadio is an open-source meeting recording and transcription service focused on 
 | Valeriia Missirova | @v-missirova | Documentation Lead, Integration Lead, Debugging Lead, AI Code Reviewer |
 | Zlata Tsepkalo | @t-zlata | Repository Maintainer, Quality Lead, Data & Threat Modeler, API Documentation Lead, Code Reviewer, Test Strategist, Review Manager, AI Code Reviewer |
 
+# Deploying
+
+The production stack needs a Linux host with Docker Engine and Compose v2, a DNS name that points
+to the host, and a trusted TLS certificate for that name. Ports 80 and 443 must reach the host.
+Clone the repository, create the configuration and place the certificate where the template
+expects it:
+
+```bash
+git clone https://github.com/ukma-fin-ssdm-2026/Whadio.git
+cd Whadio
+cp .env.production.example .env
+mkdir -p certs
+cp /path/to/fullchain.pem certs/fullchain.pem
+cp /path/to/privkey.pem certs/privkey.pem
+sudo chown 101:101 certs/privkey.pem
+sudo chmod 600 certs/privkey.pem
+```
+
+Replace every `change-me` value and the example host name in `.env`. The default production
+template runs CPU transcription and writes notes through Anthropic; the provider key and the
+Hugging Face token are secrets. Generate every database, broker and storage password independently
+with `openssl rand -hex 32`; broker passwords must be URL-safe because they are embedded in AMQP
+URLs. The nginx image runs as uid 101, so the private key stays owner-readable only after the
+ownership change above. Then build and start the complete stack:
+
+```bash
+docker compose config --quiet
+docker compose up --detach --build --wait
+docker compose ps
+```
+
+`migrate` applies the database schema once. `web` and `scheduler` wait for it to succeed, and nginx
+waits for `web` to become healthy. Open `https://<your-host>/`; plain HTTP redirects there. To
+create the first account in the default `invite-only` mode, issue a link from the running web
+container and hand it to the named recipient privately:
+
+```bash
+docker compose exec web whadio links registration --email person@example.com
+```
+
+After the recipient completes that link, grant the first account administrator access:
+
+```bash
+docker compose exec web whadio admin grant --email person@example.com
+```
+
+No SMTP relay is required in `invite-only` mode. To use verified registration, uncomment and fill
+the SMTP settings before changing `WHADIO_REGISTRATION_MODE=verified`. For a local Ollama model,
+change the notes provider settings and add `ollama` to `COMPOSE_PROFILES`; for NVIDIA-accelerated
+ASR also set `COMPOSE_FILE=compose.yaml:compose.cuda.yaml` (`;` instead of `:` on Windows). The ASR
+worker otherwise uses the CPU image and does not start Ollama. Update with `git pull`, then repeat
+the `docker compose up --detach --build --wait` command; volumes preserve application data.
+
+The template starts the bundled SeaweedFS through the `storage` profile. To use AWS S3 or another
+S3-compatible service, remove `storage` from `COMPOSE_PROFILES`, set
+`WHADIO_STORAGE__ENDPOINT_URL` and the storage credentials (plus region and bucket when needed),
+and leave `WHADIO_STORAGE__PUBLIC_ENDPOINT_URL` unset so presigned playback links point directly
+to that HTTPS endpoint.
+
 
 # Development
 
@@ -27,6 +86,10 @@ cp .env.example .env             # local credentials for the Compose stack
 uv run task infra:up             # PostgreSQL, RabbitMQ, SeaweedFS and Mailpit
 uv run task dev                  # the API on http://localhost:3000, with auto-reload
 ```
+
+Before playing a recording locally, map `seaweedfs` to `127.0.0.1` in the system hosts file
+(`/etc/hosts` on Linux and macOS, or `C:\Windows\System32\drivers\etc\hosts` on Windows). The
+browser then resolves the same storage host used to sign links for the Compose ASR worker.
 
 ## Running the API
 
@@ -59,11 +122,12 @@ npm run dev
 
 Biome formats and lints the frontend: `npm run check` reports problems and `npm run check:fix`
 fixes what it can. `npm test` runs the Vitest tests and `npm run typecheck` the TypeScript
-compiler. The commit hook runs all three whenever a commit touches `frontend/`.
+compiler. The commit hook runs Biome whenever a commit touches `frontend/`, the push hook runs the
+compiler and the tests the branch can affect, and CI runs everything.
 
 The API's TypeScript types in `frontend/src/shared/api/schema.gen.ts` are generated from
-`docs/api/openapi-generated.json` by `npm run gen:api`. The commit hook regenerates them whenever
-the specification or `frontend/` changes, and fails until the regenerated file is staged.
+`docs/api/openapi-generated.json` by `npm run gen:api`. The push hook regenerates them whenever
+the specification or `frontend/` changes, and fails until the regenerated file is committed.
 
 Open <http://localhost:5173>. Vite proxies `/api` requests to the local API, so browser sessions
 and uploads use the backend without a separate CORS setup. Set `VITE_API_ORIGIN` (such as
@@ -78,7 +142,7 @@ uv run whadio links registration --email person@example.com
 
 The command prints a single-use link valid for 24 hours. Hand it to its intended recipient
 privately; issuing another link for the same address invalidates the earlier one. Only the token's
-hash is stored. An existing account is refused; password-reset support is a separate milestone.
+hash is stored. An existing account is refused; use `whadio links password-reset` to recover it.
 
 The registration page is not available yet. To redeem the link through the API, take the
 registration ID from `/registrations/<id>` and the token from `#token=<token>`, then send:
@@ -93,6 +157,37 @@ Replace the placeholders and use a password of 12 to 128 characters with a digit
 letter. A successful request returns `201` and sets the browser session cookie. The scheduler
 removes unused registration links once their 24-hour lifetime expires.
 
+To make an account an administrator, grant the permission by its sign-in address, in any case:
+
+```bash
+uv run whadio admin grant --email person@example.com
+```
+
+`whadio admin revoke` takes the same option, and both commands accept `--user-id` instead. The
+address must belong to an existing account. A revocation takes effect on the account's next
+request; its sessions stay signed in.
+
+An existing account can be recovered with an operator-issued reset link:
+
+```bash
+uv run whadio links password-reset --email person@example.com
+```
+
+The reset link is single-use and valid for one hour, in either registration mode. Reissuing it
+invalidates the previous link. The reset page is pending the SPA milestone. To redeem the link
+through the API, take the reset ID from `/password-resets/<id>` and the token from
+`#token=<token>`, then send:
+
+```bash
+curl -i -X POST 'http://localhost:3000/api/v1/password-resets/<id>/complete' \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"<token>","password":"<your-password>"}'
+```
+
+The new password follows the registration rule. A successful request ends every browser and
+extension session; MCP keys keep working, and the user signs in again. Neither operator command
+sends email.
+
 `whadio dev-user` remains a local development shortcut:
 
 ```bash
@@ -101,6 +196,32 @@ uv run whadio dev-user --email margaret@whadio.dev
 
 The command asks for a password without storing it in the repository and also creates the
 account's personal workspace and default meeting folder.
+
+## Installing the Chrome extension
+
+The extension in [`extension/`](extension/) records a Google Meet call, the other participants
+and your microphone, and uploads it to a Whadio server. You need desktop Chrome 116 or newer, a
+Whadio server it can reach (`https://`, or `http://localhost` and `http://127.0.0.1`), and a
+Meet call with at least one other participant.
+
+1. Get the extension. Open the latest passing CI run on `main` under Actions and download its
+   `whadio-extension-<version>.zip` artifact, then unzip it into a folder. Downloading needs a
+   GitHub sign-in, and artifacts expire after 30 days. To build the archive yourself, run
+   `uv run --no-project python -I .github/scripts/package_extension.py extension .`; to try your
+   own changes, load `extension/` itself.
+2. Open `chrome://extensions`, turn on Developer mode, choose Load unpacked and pick the folder.
+3. Click Whadio in the toolbar, enter the server address and sign in with your Whadio account.
+   Choose the folder recordings go to.
+4. Join the call, open the popup, confirm that everyone agreed to be recorded and press Start
+   recording. Alt+Shift+R starts and stops a recording too, but it reads the consent box on the
+   card in the Meet page, not the popup's: if that box isn't ticked, the first press shows the
+   card and asks you to tick it.
+5. The first time, nothing is recorded yet: Whadio opens a tab that asks for your microphone.
+   Allow it, close that tab and press Start recording again. Chrome remembers the choice, so later
+   recordings start at once.
+6. Stop from the popup. The meeting appears in the web app; it's transcribed and gets notes once
+   the [workers](#running-the-workers) are running. If the upload fails, the extension saves the
+   recording as a `.webm` file in your downloads instead.
 
 ## Running the workers
 

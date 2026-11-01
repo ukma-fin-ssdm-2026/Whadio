@@ -1,111 +1,45 @@
-import { render, screen } from "@testing-library/react";
+import { focusManager } from "@tanstack/react-query";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { type UserEvent, userEvent } from "@testing-library/user-event";
-import { HttpResponse, type HttpResponseResolver, http, type JsonBodyType } from "msw";
-import { describe, expect, test } from "vitest";
+import { HttpResponse, http } from "msw";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { POLL_INTERVAL_MS } from "@/features/meetings/api/meetings";
+import type { Schemas } from "@/shared/api/types";
+import { errorBody, meetingRead, meetingSummary, noteRead, page } from "@/shared/testing/fixtures";
 import { server } from "@/shared/testing/server";
 import { App } from "./App";
+import {
+  CURRENT_WORDING,
+  LINKED_TITLE,
+  ORIGINAL_WORDING,
+  serveApi,
+  signIn,
+  transcript,
+} from "./testing";
 
-const DEEP_LINK = "/whadio/meetings/meeting?revision_id=original";
-const CURRENT_LINK = "/whadio/meetings/meeting";
-const ORIGINAL_WORDING = "Original uncorrected wording";
-const CURRENT_WORDING = "Current corrected wording";
+const DEEP_LINK = "/meetings/meeting?revision_id=original";
+const CURRENT_LINK = "/meetings/meeting";
+const IN_PROGRESS = ["recording", "queued", "processing"] as const;
+const BEFORE_TRANSCRIPTION = ["recording", "queued"] as const;
+const FAILURE_REASON = "transcription_failed";
+const FAILURE_TEXT = "This recording could not be transcribed.";
+const GENERATED_NOTES = "Decisions from the weekly sync";
+const STALE_MS = 30_000;
+const RETRIES_MS = 4_000;
+const POLL_WAIT_MS = 3_000;
+const REFUSALS = [
+  [404, "NOT_FOUND", "Meeting not found"],
+  [403, "INSUFFICIENT_ROLE", "Access denied"],
+] as const;
+const SERVER_FAILURE = [500, "INTERNAL_ERROR", "Unexpected server error"] as const;
 
-type ApiTraffic = { requests: string[]; signIns: unknown[] };
-
-function transcript(original: boolean) {
-  return {
-    revision: {
-      id: original ? "original" : "edited",
-      revision_type: original ? "original" : "edited",
-    },
-    original_revision_id: "original",
-    is_edited: true,
-    speakers: [{ id: "speaker", display_name: "Demo speaker" }],
-    segments: [
-      {
-        id: "segment",
-        speaker_id: "speaker",
-        start_seconds: 0,
-        end_seconds: 5,
-        text: original ? ORIGINAL_WORDING : CURRENT_WORDING,
-      },
-    ],
-  };
-}
-
-function serveApi(signedIn: boolean): ApiTraffic {
-  let authenticated = signedIn;
-  const traffic: ApiTraffic = { requests: [], signIns: [] };
-  const member = (body: (url: URL) => JsonBodyType): HttpResponseResolver => {
-    return ({ request }) =>
-      authenticated
-        ? HttpResponse.json(body(new URL(request.url)))
-        : HttpResponse.json(
-            { error: { code: "UNAUTHENTICATED", message: "Sign in required" } },
-            { status: 401 },
-          );
-  };
-  server.use(
-    http.all("*", ({ request }) => {
-      const url = new URL(request.url);
-      traffic.requests.push(`${request.method} ${url.pathname}${url.search}`);
-    }),
-    http.post("/api/v1/sessions", async ({ request }) => {
-      traffic.signIns.push(await request.json());
-      authenticated = true;
-      return HttpResponse.json({
-        user: { id: "member", email: "member@example.com", name: "Demo Member" },
-      });
-    }),
-    http.get(
-      "/api/v1/workspaces",
-      member(() => ({
-        items: [
-          {
-            id: "workspace",
-            name: "Demo Workspace",
-            my_role: "Owner",
-            member_count: 1,
-            notes_provider: "Whadio",
-          },
-        ],
-      })),
-    ),
-    http.get(
-      "/api/v1/workspaces/workspace",
-      member(() => ({ default_preset: "summary" })),
-    ),
-    http.get(
-      "/api/v1/workspaces/workspace/meetings",
-      member(() => ({ items: [] })),
-    ),
-    http.get(
-      "/api/v1/meetings/meeting",
-      member(() => ({
-        id: "meeting",
-        workspace_id: "workspace",
-        name: "Linked meeting outside the first page",
-        recorded_at: "2026-10-25T10:00:00Z",
-        processing_state: "processed",
-        duration_seconds: 5,
-        source_type: "upload",
-      })),
-    ),
-    http.get(
-      "/api/v1/meetings/meeting/notes",
-      member(() => ({ items: [] })),
-    ),
-    http.get(
-      "/api/v1/meetings/meeting/transcript",
-      member((url) => transcript(url.searchParams.get("revision_id") === "original")),
-    ),
-  );
-  return traffic;
-}
+afterEach(() => {
+  focusManager.setFocused(undefined);
+  vi.useRealTimers();
+});
 
 async function renderSignedOut() {
   window.history.replaceState(null, "", DEEP_LINK);
-  sessionStorage.clear();
   const traffic = serveApi(false);
   render(<App />);
   await screen.findByLabelText(/^Email/);
@@ -114,15 +48,10 @@ async function renderSignedOut() {
 
 async function openDeepLink(signedIn: boolean) {
   window.history.replaceState(null, "", DEEP_LINK);
-  sessionStorage.clear();
   const traffic = serveApi(signedIn);
   const user = userEvent.setup();
   render(<App />);
-  if (!signedIn) {
-    await user.type(await screen.findByLabelText(/^Email/), "member@example.com");
-    await user.type(screen.getByLabelText(/^Password/), "test-password");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
-  }
+  if (!signedIn) await signIn(user);
   await screen.findByText(ORIGINAL_WORDING);
   return { traffic, user };
 }
@@ -139,6 +68,19 @@ async function goBackToCurrent(signedIn: boolean) {
   window.history.back();
   await screen.findByText(CURRENT_WORDING);
 }
+
+function startSession(path = "/") {
+  window.history.replaceState(null, "", path);
+  return serveApi(true);
+}
+
+function renderHome() {
+  const traffic = startSession();
+  render(<App />);
+  return traffic;
+}
+
+type MeetingFailure = readonly [number, Parameters<typeof errorBody>[0], string];
 
 const currentPath = () => window.location.pathname + window.location.search;
 
@@ -167,12 +109,12 @@ describe("signed-out original deep link", () => {
     expect(traffic.requests.filter((request) => request.includes("/transcript"))).toEqual([]);
   });
 
-  test("keeps the revision in the URL", async () => {
+  test("keeps the revision in the way back", async () => {
     // Act
     await renderSignedOut();
 
     // Assert
-    expect(window.location.search).toBe("?revision_id=original");
+    expect(new URLSearchParams(window.location.search).get("redirect")).toBe(DEEP_LINK);
   });
 
   test("signs in with the entered browser credentials", async () => {
@@ -232,7 +174,7 @@ describe.for([
     await showRevision(user, "View current transcript", CURRENT_WORDING);
 
     // Assert
-    expect(currentPath()).toBe(CURRENT_LINK);
+    expect(currentPath()).toBe(`${CURRENT_LINK}?tab=transcript`);
   });
 
   test("switching to the current transcript requests it", async () => {
@@ -274,7 +216,7 @@ describe.for([
     await goBackToCurrent(signedIn);
 
     // Assert
-    expect(currentPath()).toBe(CURRENT_LINK);
+    expect(currentPath()).toBe(`${CURRENT_LINK}?tab=transcript`);
   });
 
   test("Back hides the original wording", async () => {
@@ -284,4 +226,547 @@ describe.for([
     // Assert
     expect(screen.queryByText(ORIGINAL_WORDING)).not.toBeInTheDocument();
   });
+});
+
+test("Home requests no workspace details", async () => {
+  // Arrange
+  const traffic = renderHome();
+
+  // Act
+  await screen.findByRole("button", { name: /Demo Workspace.*Owner · 1 member/ });
+
+  // Assert
+  expect(traffic.requests.filter((request) => /workspaces\/workspace$/.test(request))).toEqual([]);
+});
+
+test("a workspace list failure says why", async () => {
+  // Arrange
+  startSession();
+  server.use(
+    http.get("/api/v1/workspaces", () =>
+      HttpResponse.json(errorBody("INSUFFICIENT_ROLE", "Not allowed here"), { status: 403 }),
+    ),
+  );
+
+  // Act
+  render(<App />);
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent("Not allowed here");
+});
+
+test("a deep link to a meeting outside every list opens it", async () => {
+  // Act
+  await openDeepLink(true);
+
+  // Assert
+  expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(LINKED_TITLE);
+});
+
+test("a deep link names the meeting in the breadcrumbs", async () => {
+  // Act
+  await openDeepLink(true);
+
+  // Assert
+  expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(LINKED_TITLE);
+});
+
+test("a failure reason survives a trip through the list, which lacks it", async () => {
+  // Arrange
+  startSession(CURRENT_LINK);
+  server.use(
+    http.get("/api/v1/meetings/meeting", () =>
+      HttpResponse.json(
+        meetingRead({ processing_state: "failed", failure_reason: FAILURE_REASON }),
+      ),
+    ),
+    http.get("/api/v1/workspaces/workspace/meetings", () =>
+      HttpResponse.json(page([meetingSummary({ processing_state: "failed" })])),
+    ),
+  );
+  const user = userEvent.setup();
+  render(<App />);
+  await screen.findByText(FAILURE_TEXT);
+
+  // Act
+  await user.click(screen.getByRole("link", { name: "Demo Workspace" }));
+  await user.click(await screen.findByRole("button", { name: /Weekly sync/ }));
+
+  // Assert
+  expect(await screen.findByText(FAILURE_TEXT)).toBeInTheDocument();
+});
+
+test("an available recording survives a trip through the list, which lacks it", async () => {
+  // Arrange
+  startSession(CURRENT_LINK);
+  server.use(
+    http.get("/api/v1/meetings/meeting", () =>
+      HttpResponse.json(meetingRead({ recording_available: true })),
+    ),
+    http.get("/api/v1/meetings/meeting/recording", () =>
+      HttpResponse.json({ url: "", expires_at: "2026-10-25T10:05:00Z" }),
+    ),
+    http.get("/api/v1/workspaces/workspace/meetings", () =>
+      HttpResponse.json(page([meetingSummary()])),
+    ),
+  );
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByRole("link", { name: "Demo Workspace" }));
+  await user.click(await screen.findByRole("button", { name: /Weekly sync/ }));
+
+  // Act
+  await user.click(await screen.findByRole("tab", { name: "Recording" }));
+
+  // Assert
+  expect(await screen.findByText("Loading recording...")).toBeInTheDocument();
+});
+
+test("a deep link to a meeting the user cannot read says why", async () => {
+  // Arrange
+  startSession(CURRENT_LINK);
+  server.use(
+    http.get("/api/v1/meetings/meeting", () =>
+      HttpResponse.json(errorBody("NOT_FOUND", "Meeting not found"), { status: 404 }),
+    ),
+  );
+
+  // Act
+  render(<App />);
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent("Meeting not found");
+});
+
+async function returnToTheWindow() {
+  await act(() => vi.advanceTimersByTimeAsync(STALE_MS + 1));
+  focusManager.setFocused(false);
+  focusManager.setFocused(true);
+  await act(() => vi.advanceTimersByTimeAsync(0));
+}
+
+describe("a meeting that finishes while it is open", () => {
+  async function watchMeeting(
+    initial: Schemas["ProcessingState"] = "processing",
+    transcribed = false,
+  ) {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    startSession(CURRENT_LINK);
+    const live = {
+      state: initial,
+      transcribed,
+      polls: 0,
+      content: [] as string[],
+      failure: null as MeetingFailure | null,
+    };
+    server.use(
+      http.get("/api/v1/meetings/meeting", () => {
+        live.polls += 1;
+        if (live.failure) {
+          const [status, code, message] = live.failure;
+          return HttpResponse.json(errorBody(code, message), { status });
+        }
+        return HttpResponse.json(
+          meetingRead({
+            processing_state: live.state,
+            failure_reason: live.state === "failed" ? FAILURE_REASON : null,
+          }),
+        );
+      }),
+      http.get("/api/v1/meetings/meeting/notes", () => {
+        live.content.push("notes");
+        return HttpResponse.json(page([noteRead({ content: GENERATED_NOTES })]));
+      }),
+      http.get("/api/v1/meetings/meeting/transcript", () => {
+        live.content.push("transcript");
+        return live.transcribed
+          ? HttpResponse.json(transcript(false))
+          : HttpResponse.json(errorBody("NOT_TRANSCRIBED", "Not transcribed"), { status: 409 });
+      }),
+    );
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<App />);
+    await screen.findByText(/when processing finishes/);
+    return { live, user };
+  }
+
+  async function watchTranscriptTab(transcribed = false) {
+    const watch = await watchMeeting("processing", transcribed);
+    await watch.user.click(screen.getByRole("tab", { name: "Transcript" }));
+    await screen.findByText(transcribed ? CURRENT_WORDING : "Transcript is not available yet.");
+    return watch;
+  }
+
+  async function nextPoll() {
+    await act(() => vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS));
+  }
+
+  // Each answer restarts the poll's timer, so a fixed advance can outrun a slow answer.
+  async function pollUntil(condition: () => boolean) {
+    await vi.waitFor(
+      async () => {
+        await nextPoll();
+        expect(condition()).toBe(true);
+      },
+      { timeout: POLL_WAIT_MS },
+    );
+  }
+
+  async function failPoll(failure: MeetingFailure) {
+    const watch = await watchMeeting();
+    watch.live.failure = failure;
+    await nextPoll();
+    await act(() => vi.advanceTimersByTimeAsync(RETRIES_MS));
+    return watch;
+  }
+
+  test.for(BEFORE_TRANSCRIPTION)("requests no transcript or notes while %s", async (state) => {
+    // Arrange
+    const { live } = await watchMeeting(state);
+
+    // Act
+    await nextPoll();
+
+    // Assert
+    expect(live.content).toEqual([]);
+  });
+
+  test("keeps asking for a transcript that does not exist yet at the poll's pace", async () => {
+    // Arrange
+    const { live } = await watchMeeting();
+
+    // Act
+    await pollUntil(() => live.content.length >= 3);
+
+    // Assert
+    expect(live.content).toEqual(["transcript", "transcript", "transcript"]);
+  });
+
+  test("shows a transcript that arrives while processing without a reload", async () => {
+    // Arrange
+    const { live } = await watchTranscriptTab();
+
+    // Act
+    live.transcribed = true;
+    await nextPoll();
+
+    // Assert
+    expect(await screen.findByText(CURRENT_WORDING)).toBeInTheDocument();
+  });
+
+  test("stops asking once the transcript has arrived", async () => {
+    // Arrange
+    const { live } = await watchTranscriptTab();
+    live.transcribed = true;
+    await nextPoll();
+    await screen.findByText(CURRENT_WORDING);
+    const requests = live.content.length;
+
+    // Act
+    await nextPoll();
+    await nextPoll();
+
+    // Assert
+    expect(live.content).toHaveLength(requests);
+  });
+
+  test("does not refetch a loaded transcript on each poll", async () => {
+    // Arrange
+    const { live } = await watchTranscriptTab(true);
+
+    // Act
+    await nextPoll();
+    await nextPoll();
+
+    // Assert
+    expect(live.content).toEqual(["transcript"]);
+  });
+
+  test("does not ask again for a loaded transcript once the meeting is processed", async () => {
+    // Arrange
+    const { live } = await watchTranscriptTab(true);
+
+    // Act
+    live.state = "processed";
+    await nextPoll();
+
+    // Assert
+    expect(live.content.filter((request) => request === "transcript")).toHaveLength(1);
+  });
+
+  test.for(IN_PROGRESS)("keeps polling while %s", async (state) => {
+    // Arrange
+    const { live } = await watchMeeting(state);
+    const polls = live.polls;
+
+    // Act
+    await nextPoll();
+
+    // Assert
+    expect(live.polls).toBe(polls + 1);
+  });
+
+  test("shows its notes without a reload", async () => {
+    // Arrange
+    const { live } = await watchMeeting();
+
+    // Act
+    live.state = "processed";
+    await nextPoll();
+
+    // Assert
+    expect(await screen.findByText(GENERATED_NOTES)).toBeInTheDocument();
+  });
+
+  test.for(["processed", "failed"] as const)(
+    "shows its transcript without a reload once %s",
+    async (state) => {
+      // Arrange
+      const { live } = await watchTranscriptTab();
+
+      // Act
+      live.transcribed = true;
+      live.state = state;
+      await nextPoll();
+
+      // Assert
+      expect(await screen.findByText(CURRENT_WORDING)).toBeInTheDocument();
+    },
+  );
+
+  test("shows its failure without a reload", async () => {
+    // Arrange
+    const { live } = await watchMeeting();
+
+    // Act
+    live.state = "failed";
+    await nextPoll();
+
+    // Assert
+    expect(await screen.findByRole("alert")).toHaveTextContent(FAILURE_TEXT);
+  });
+
+  test("a failure ends the requests for the transcript and never asks for the notes", async () => {
+    // Arrange
+    const { live } = await watchMeeting();
+    live.state = "failed";
+    await nextPoll();
+    await screen.findByRole("alert");
+    const requests = live.content.length;
+
+    // Act
+    await nextPoll();
+    await nextPoll();
+
+    // Assert
+    expect(live.content).toEqual(Array(requests).fill("transcript"));
+  });
+
+  test.for(REFUSALS)("a poll refused with %i says why", async (refusal) => {
+    // Act
+    await failPoll(refusal);
+
+    // Assert
+    expect(screen.getByRole("alert")).toHaveTextContent(refusal[2]);
+  });
+
+  test.for(REFUSALS)("a poll refused with %i leaves no cached page", async (refusal) => {
+    // Act
+    await failPoll(refusal);
+
+    // Assert
+    expect(screen.queryByRole("tabpanel")).not.toBeInTheDocument();
+  });
+
+  test.for(REFUSALS)("a poll refused with %i ends the polling", async (refusal) => {
+    // Arrange
+    const { live } = await failPoll(refusal);
+    const polls = live.polls;
+
+    // Act
+    await nextPoll();
+    await nextPoll();
+
+    // Assert
+    expect(live.polls).toBe(polls);
+  });
+
+  test("a refused meeting can be left", async () => {
+    // Arrange
+    const { user } = await failPoll(REFUSALS[0]);
+    screen.getByRole("alert");
+
+    // Act
+    await user.click(screen.getByRole("link", { name: "Home" }));
+
+    // Assert
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("a failed poll keeps the page", async () => {
+    // Act
+    await failPoll(SERVER_FAILURE);
+
+    // Assert
+    expect(screen.getByRole("tabpanel")).toBeInTheDocument();
+  });
+
+  test("a failed poll says so above the page", async () => {
+    // Act
+    await failPoll(SERVER_FAILURE);
+
+    // Assert
+    expect(screen.getByRole("alert")).toHaveTextContent(SERVER_FAILURE[2]);
+  });
+
+  test("a failed poll leaves the polling on", async () => {
+    // Arrange
+    const { live } = await failPoll(SERVER_FAILURE);
+    const polls = live.polls;
+
+    // Act
+    await nextPoll();
+
+    // Assert
+    expect(live.polls).toBeGreaterThan(polls);
+  });
+
+  test("the next good poll clears a failed poll's banner", async () => {
+    // Arrange
+    const { live } = await failPoll(SERVER_FAILURE);
+    screen.getByRole("alert");
+    live.failure = null;
+
+    // Act
+    await nextPoll();
+
+    // Assert
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("a failed refetch of a finished meeting shows the banner", async () => {
+    // Arrange
+    const { live } = await watchMeeting();
+    live.state = "processed";
+    await nextPoll();
+    live.failure = SERVER_FAILURE;
+
+    // Act
+    await returnToTheWindow();
+    await act(() => vi.advanceTimersByTimeAsync(RETRIES_MS));
+
+    // Assert
+    expect(screen.getByRole("alert")).toHaveTextContent(SERVER_FAILURE[2]);
+  });
+
+  test("a session that ends during a poll returns to sign-in", async () => {
+    // Act
+    await failPoll([401, "UNAUTHENTICATED", "Sign in required"]);
+
+    // Assert
+    expect(await screen.findByLabelText(/^Email/)).toBeInTheDocument();
+  });
+
+  test.for(["processed", "failed"] as const)("stops polling once %s", async (state) => {
+    // Arrange
+    const { live } = await watchMeeting();
+    live.state = state;
+    await nextPoll();
+    const polls = live.polls;
+
+    // Act
+    await nextPoll();
+    await nextPoll();
+
+    // Assert
+    expect(live.polls).toBe(polls);
+  });
+});
+
+describe("a recording that retention deletes while it is open", () => {
+  async function watchRecording() {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    startSession(CURRENT_LINK);
+    const live = { available: true };
+    server.use(
+      http.get("/api/v1/meetings/meeting", () =>
+        HttpResponse.json(meetingRead({ recording_available: live.available })),
+      ),
+      http.get("/api/v1/meetings/meeting/recording", () =>
+        HttpResponse.json({
+          url: "https://storage.example/link",
+          expires_at: "2026-10-25T10:05:00Z",
+        }),
+      ),
+    );
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<App />);
+    await user.click(await screen.findByRole("tab", { name: "Recording" }));
+    await screen.findByLabelText("Weekly sync recording");
+    return live;
+  }
+
+  test("coming back to the window takes the player away", async () => {
+    // Arrange
+    const live = await watchRecording();
+
+    // Act
+    live.available = false;
+    await returnToTheWindow();
+
+    // Assert
+    expect(await screen.findByText("Recording is not available")).toBeInTheDocument();
+  });
+});
+
+test("a session that expires while reading meetings returns to sign-in", async () => {
+  // Arrange
+  startSession();
+  server.use(
+    http.get("/api/v1/workspaces/workspace/meetings", () =>
+      HttpResponse.json(errorBody("UNAUTHENTICATED", "Sign in required"), { status: 401 }),
+    ),
+  );
+
+  // Act
+  render(<App />);
+
+  // Assert
+  expect(await screen.findByLabelText(/^Email/)).toBeInTheDocument();
+});
+
+test("Home reads each workspace's meetings once", async () => {
+  // Arrange
+  const traffic = renderHome();
+
+  // Act
+  await screen.findByText(/0 meetings, 0 active/);
+
+  // Assert
+  expect(traffic.requests.filter((request) => request.includes("/meetings"))).toEqual([
+    "GET /api/v1/workspaces/workspace/meetings?limit=100",
+  ]);
+});
+
+test("a finished upload opens the new meeting", async () => {
+  // Arrange
+  startSession();
+  server.use(
+    http.post("/api/v1/workspaces/workspace/meetings", () =>
+      HttpResponse.json(meetingRead({ id: "meeting" }), { status: 201 }),
+    ),
+  );
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: /Demo Workspace.*Owner/ }));
+  await user.click(await screen.findByRole("button", { name: "Upload" }));
+  const input = document.querySelector("input[type=file]");
+  if (!(input instanceof HTMLInputElement)) throw new Error("The dialog has no file input.");
+  await user.upload(input, new File(["RIFF"], "standup.wav", { type: "audio/wav" }));
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Queue processing" }));
+
+  // Assert
+  await waitFor(() => expect(currentPath()).toBe(CURRENT_LINK));
 });

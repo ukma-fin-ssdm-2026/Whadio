@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 from collections.abc import AsyncGenerator, Awaitable, Callable, Generator, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -16,7 +17,8 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import Session
 
-from whadio.accounts.enums import NotesTemplate, WorkspaceRole
+from whadio.accounts.enums import NotesTemplate, SessionKind, WorkspaceRole
+from whadio.accounts.models import Session as SignInSession
 from whadio.accounts.models import User, Workspace, WorkspaceMembership
 from whadio.accounts.passwords import Argon2PasswordHasher
 from whadio.api.app import create_app
@@ -116,6 +118,28 @@ class AsyncDatabase:
         session.add(user)
         await session.flush()
         return user
+
+    @staticmethod
+    async def add_session(
+        session: AsyncSession,
+        user: User,
+        kind: SessionKind,
+        expires_in: timedelta = timedelta(days=1),
+    ) -> str:
+        """A sign-in session for `user`, returning its token; a negative `expires_in` expired."""
+        token = uuid4().hex
+        now = datetime.now(UTC)
+        session.add(
+            SignInSession(
+                user_id=user.user_id,
+                kind=kind,
+                token_hash=hashlib.sha256(token.encode()).hexdigest(),
+                created_at=now + expires_in - timedelta(days=1),
+                expires_at=now + expires_in,
+            )
+        )
+        await session.flush()
+        return token
 
     @staticmethod
     @asynccontextmanager

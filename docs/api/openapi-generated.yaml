@@ -25,6 +25,244 @@ info:
     - **Time:** ISO 8601 with an offset; returned in UTC.
   version: 0.1.0
 paths:
+  /api/v1/invitations/{invitation_id}/preview:
+    post:
+      tags:
+      - workspaces
+      summary: Preview an invitation
+      description: Validates the invitation token from the request body and returns
+        the workspace, offered role and whether the invited address already has an
+        account. No session is required.
+      operationId: preview_api_v1_invitations__invitation_id__preview_post
+      parameters:
+      - name: invitation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Invitation identifier from the link
+          title: Invitation Id
+        description: Invitation identifier from the link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkToken'
+      responses:
+        '200':
+          description: The workspace, invited address, offered role and account existence
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewRead'
+        '400':
+          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
+            valid JSON'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 'LINK_INVALID: invalid or expired link'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security: []
+  /api/v1/invitations/{invitation_id}/accept:
+    post:
+      tags:
+      - workspaces
+      summary: Accept an invitation
+      description: Requires a browser session with the invited email address. Consumes
+        the valid invitation and grants membership; repeating acceptance returns the
+        existing membership.
+      operationId: accept_api_v1_invitations__invitation_id__accept_post
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: invitation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Invitation identifier from the link
+          title: Invitation Id
+        description: Invitation identifier from the link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkToken'
+      responses:
+        '200':
+          description: The granted workspace membership
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipRead'
+        '400':
+          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
+            valid JSON'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 'LINK_INVALID: invalid or expired link'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'EMAIL_MISMATCH: sign in with the invited address'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: ALREADY_MEMBER
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/invitations/{invitation_id}/decline:
+    post:
+      tags:
+      - workspaces
+      summary: Decline an invitation
+      description: Validates the invitation token from the request body and marks
+        the pending invitation declined. No session is required; the link cannot be
+        used afterwards.
+      operationId: decline_api_v1_invitations__invitation_id__decline_post
+      parameters:
+      - name: invitation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Invitation identifier from the link
+          title: Invitation Id
+        description: Invitation identifier from the link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkToken'
+      responses:
+        '200':
+          description: The declined invitation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationRead'
+        '400':
+          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
+            valid JSON'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 'LINK_INVALID: invalid or expired link'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security: []
+  /api/v1/invitations/{invitation_id}/register:
+    post:
+      tags:
+      - workspaces
+      summary: Register through an invitation
+      description: Creates an account for the invited address, its personal workspace
+        and default folder, and the invited membership atomically. Requires a valid
+        invitation token, a strong password and Terms acceptance; consumes the link
+        and sets the browser session cookie.
+      operationId: register_api_v1_invitations__invitation_id__register_post
+      parameters:
+      - name: invitation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Invitation identifier from the link
+          title: Invitation Id
+        description: Invitation identifier from the link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationComplete'
+      responses:
+        '201':
+          description: The new user and granted workspace membership
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisteredRead'
+        '400':
+          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
+            valid JSON'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 'LINK_INVALID: invalid or expired link'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 'ACCOUNT_EXISTS: sign in and accept'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security: []
   /api/v1/instance:
     get:
       tags:
@@ -73,6 +311,55 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserRead'
+        '400':
+          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
+            valid JSON'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 'LINK_INVALID: unknown, expired, replaced or used link'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security: []
+  /api/v1/password-resets/{reset_id}/complete:
+    post:
+      tags:
+      - accounts
+      summary: Set a new password from a reset link
+      description: Public in either registration mode. Consumes the single-use link,
+        changes the password and ends every browser and extension session atomically.
+        MCP keys remain active.
+      operationId: complete_api_v1_password_resets__reset_id__complete_post
+      parameters:
+      - name: reset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Password-reset identifier from the link
+          title: Reset Id
+        description: Password-reset identifier from the link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetComplete'
+      responses:
+        '204':
+          description: Password changed; sign in again with the new password
         '400':
           description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
             valid JSON'
@@ -160,6 +447,29 @@ paths:
       security:
       - sessionCookie: []
       - extensionToken: []
+  /api/v1/users/me:
+    get:
+      tags:
+      - accounts
+      summary: Get the signed-in user
+      description: Returns the user behind the browser session cookie. The extension's
+        bearer token is not accepted.
+      operationId: get_signed_in_user_api_v1_users_me_get
+      responses:
+        '200':
+          description: The signed-in user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRead'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - sessionCookie: []
   /api/v1/users/me/mcp-keys:
     get:
       tags:
@@ -301,6 +611,247 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/workspaces/{workspace_id}/invitations:
+    get:
+      tags:
+      - workspaces
+      summary: List pending invitations
+      description: Moderator or Owner only. Lists pending invitations newest first.
+        Secrets and links are never returned.
+      operationId: list_invitations_api_v1_workspaces__workspace_id__invitations_get
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Maximum number of items to return
+          default: 20
+          title: Limit
+        description: Maximum number of items to return
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 4096
+          - type: 'null'
+          description: Opaque `next_cursor` from the previous page; omit for the first
+            page
+          title: Cursor
+        description: Opaque `next_cursor` from the previous page; omit for the first
+          page
+      responses:
+        '200':
+          description: A page of pending invitations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_InvitationRead_'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: '`INSUFFICIENT_ROLE`: Moderator or Owner required'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`NOT_FOUND`: no such workspace, invitation, or caller membership'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - workspaces
+      summary: Invite a workspace member
+      description: Moderator or Owner only. Creates a seven-day, single-use invitation.
+        Issuing another pending invitation to the same email replaces it and invalidates
+        its old link.
+      operationId: create_invitation_api_v1_workspaces__workspace_id__invitations_post
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationCreate'
+      responses:
+        '201':
+          description: The invitation and its one-time link
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationCreated'
+        '200':
+          description: Replaced pending invitation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationCreated'
+        '400':
+          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
+            valid JSON'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: '`INSUFFICIENT_ROLE`: Moderator or Owner required'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`NOT_FOUND`: no such workspace, invitation, or caller membership'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`PERSONAL_WORKSPACE`, or `ALREADY_MEMBER`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: '`INVITATION_LIMIT` or `INVITATION_COOLDOWN`; see `Retry-After`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`INTEGRATION_UNAVAILABLE`: public URL is unset or verified-mode
+            email delivery is unavailable'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/workspaces/{workspace_id}/invitations/{invitation_id}/cancel:
+    post:
+      tags:
+      - workspaces
+      summary: Cancel an invitation
+      description: Moderator or Owner only. Cancels a pending invitation and invalidates
+        its link.
+      operationId: cancel_invitation_api_v1_workspaces__workspace_id__invitations__invitation_id__cancel_post
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      - name: invitation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Invitation identifier
+          title: Invitation Id
+        description: Invitation identifier
+      responses:
+        '200':
+          description: The cancelled invitation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationRead'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: '`INSUFFICIENT_ROLE`: Moderator or Owner required'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`NOT_FOUND`: no such workspace, invitation, or caller membership'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`INVITATION_NOT_PENDING`: the invitation was already answered
+            or cancelled'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/v1/workspaces:
     get:
       tags:
@@ -3812,6 +4363,8 @@ components:
     ErrorCode:
       type: string
       enum:
+      - EMAIL_MISMATCH
+      - ACCOUNT_EXISTS
       - NO_NOTES
       - INTEGRATION_UNAVAILABLE
       - TRANSCRIPT_EXISTS
@@ -3835,6 +4388,10 @@ components:
       - NOT_FOUND
       - METHOD_NOT_ALLOWED
       - PERSONAL_WORKSPACE
+      - ALREADY_MEMBER
+      - INVITATION_LIMIT
+      - INVITATION_COOLDOWN
+      - INVITATION_NOT_PENDING
       - NOT_TRANSCRIBED
       - NOTES_IN_PROGRESS
       - RECORDING_NOT_READY
@@ -3993,6 +4550,131 @@ components:
       - registration_mode
       - api_version
       title: InstanceRead
+    InvitationCreate:
+      properties:
+        email:
+          type: string
+          maxLength: 254
+          format: email
+          title: Email
+          description: Email address to invite
+          examples:
+          - bob@whadio.dev
+        role:
+          $ref: '#/components/schemas/InvitedRole'
+          description: Workspace role granted when the invitation is accepted
+      additionalProperties: false
+      type: object
+      required:
+      - email
+      - role
+      title: InvitationCreate
+    InvitationCreated:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Invitation identifier
+        email:
+          type: string
+          title: Email
+          description: Invited email address
+        role:
+          $ref: '#/components/schemas/InvitedRole'
+          description: Role offered by this invitation
+        status:
+          $ref: '#/components/schemas/InvitationState'
+          description: Current invitation state
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: When this invitation was most recently issued
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+          description: When this invitation becomes unusable
+        link_active:
+          type: boolean
+          title: Link Active
+          description: Whether the link can currently be accepted, including inviter
+            authority
+        link:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Link
+          description: One-time invitation link in invite-only mode; never returned
+            by list
+      type: object
+      required:
+      - id
+      - email
+      - role
+      - status
+      - created_at
+      - expires_at
+      - link_active
+      - link
+      title: InvitationCreated
+    InvitationRead:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Invitation identifier
+        email:
+          type: string
+          title: Email
+          description: Invited email address
+        role:
+          $ref: '#/components/schemas/InvitedRole'
+          description: Role offered by this invitation
+        status:
+          $ref: '#/components/schemas/InvitationState'
+          description: Current invitation state
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: When this invitation was most recently issued
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+          description: When this invitation becomes unusable
+        link_active:
+          type: boolean
+          title: Link Active
+          description: Whether the link can currently be accepted, including inviter
+            authority
+      type: object
+      required:
+      - id
+      - email
+      - role
+      - status
+      - created_at
+      - expires_at
+      - link_active
+      title: InvitationRead
+    InvitationState:
+      type: string
+      enum:
+      - pending
+      - accepted
+      - declined
+      - cancelled
+      title: InvitationState
+    InvitedRole:
+      type: string
+      enum:
+      - member
+      - moderator
+      title: InvitedRole
     JobCounts:
       properties:
         job_type:
@@ -4168,6 +4850,19 @@ components:
       - notes
       title: JobType
     JsonValue: {}
+    LinkToken:
+      properties:
+        token:
+          type: string
+          format: password
+          title: Token
+          description: Secret from the invitation link fragment
+          writeOnly: true
+      additionalProperties: false
+      type: object
+      required:
+      - token
+      title: LinkToken
     McpKeyCreate:
       properties:
         expires_in_days:
@@ -4473,6 +5168,33 @@ components:
       additionalProperties: false
       type: object
       title: MeetingUpdate
+    MembershipRead:
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          title: User Id
+          description: Member account identifier
+        workspace_id:
+          type: string
+          format: uuid
+          title: Workspace Id
+          description: Workspace identifier
+        role:
+          $ref: '#/components/schemas/Role'
+          description: Granted workspace role
+        joined_at:
+          type: string
+          format: date-time
+          title: Joined At
+          description: When the membership began
+      type: object
+      required:
+      - user_id
+      - workspace_id
+      - role
+      - joined_at
+      title: MembershipRead
     MetricsRead:
       properties:
         generated_at:
@@ -4613,6 +5335,21 @@ components:
       - items
       - pagination
       title: Page[FolderRead]
+    Page_InvitationRead_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/InvitationRead'
+          type: array
+          title: Items
+          description: Items of this page, in the documented order
+        pagination:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - pagination
+      title: Page[InvitationRead]
     Page_JobSnapshot_:
       properties:
         items:
@@ -4748,6 +5485,28 @@ components:
       - items
       - pagination
       title: Page[WorkspaceSummary]
+    PasswordResetComplete:
+      properties:
+        token:
+          type: string
+          format: password
+          title: Token
+          description: Secret from the password-reset link fragment
+          writeOnly: true
+        password:
+          type: string
+          maxLength: 128
+          minLength: 12
+          format: password
+          title: Password
+          description: 12 to 128 characters, a digit and an uppercase letter
+          writeOnly: true
+      additionalProperties: false
+      type: object
+      required:
+      - token
+      - password
+      title: PasswordResetComplete
     PlaybackLink:
       properties:
         url:
@@ -4771,6 +5530,36 @@ components:
       - detailed
       - interview
       title: Preset
+    PreviewRead:
+      properties:
+        workspace_id:
+          type: string
+          format: uuid
+          title: Workspace Id
+          description: Workspace being joined
+        workspace_name:
+          type: string
+          title: Workspace Name
+          description: Workspace display name
+        email:
+          type: string
+          title: Email
+          description: Invited email address
+        role:
+          $ref: '#/components/schemas/InvitedRole'
+          description: Offered workspace role
+        account_exists:
+          type: boolean
+          title: Account Exists
+          description: Whether to sign in instead of registering
+      type: object
+      required:
+      - workspace_id
+      - workspace_name
+      - email
+      - role
+      - account_exists
+      title: PreviewRead
     ProcessingState:
       type: string
       enum:
@@ -4794,6 +5583,19 @@ components:
       - complete
       - partial
       title: RecordingStatus
+    RegisteredRead:
+      properties:
+        user:
+          $ref: '#/components/schemas/UserRead'
+          description: Newly registered account
+        membership:
+          $ref: '#/components/schemas/MembershipRead'
+          description: Membership created through the invitation
+      type: object
+      required:
+      - user
+      - membership
+      title: RegisteredRead
     RegistrationComplete:
       properties:
         token:

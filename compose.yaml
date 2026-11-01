@@ -1,6 +1,7 @@
 name: whadio
 
-# Every service needs a profile (`core`: main host, `gpu`: GPU host); .env sets COMPOSE_PROFILES.
+# Every service needs a profile (`core`: main host, `gpu`: ASR host, `ollama`: local LLM);
+# .env sets COMPOSE_PROFILES.
 
 x-healthcheck: &healthcheck
   interval: 5s
@@ -8,14 +9,24 @@ x-healthcheck: &healthcheck
   retries: 20
   start_period: 20s
 
+x-logging: &logging
+  driver: local
+  options:
+    max-size: 10m
+    max-file: "5"
+
 x-worker: &worker
   build: .
   image: whadio:dev
   init: true
+  logging: *logging
   # A worker exits with an error when it can no longer take jobs, and starts again here.
   restart: on-failure
   # Longer than the workers' shutdown grace of 1 minute, plus the time to stop a slot.
   stop_grace_period: 90s
+  healthcheck:
+    <<: *healthcheck
+    test: [CMD, python, -c, "import os; os.kill(1, 0)"]
   depends_on:
     rabbitmq:
       condition: service_healthy
@@ -25,10 +36,18 @@ x-worker: &worker
       condition: service_completed_successfully
       required: false
 
+x-runtime: &runtime
+  build: .
+  image: whadio:dev
+  init: true
+  logging: *logging
+  restart: unless-stopped
+
 services:
   postgres:
     image: postgres:18.6-trixie
-    profiles: [core]
+    profiles: [core, dev]
+    logging: *logging
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       WHADIO_DB_OWNER_PASSWORD: ${WHADIO_DB_OWNER_PASSWORD:?set WHADIO_DB_OWNER_PASSWORD in .env}
@@ -46,7 +65,8 @@ services:
 
   rabbitmq:
     image: rabbitmq:4.3.6-management
-    profiles: [core]
+    profiles: [core, dev]
+    logging: *logging
     # The broker stores its data under the node name, which comes from the hostname.
     hostname: rabbitmq
     environment:
@@ -65,7 +85,8 @@ services:
   # Runs once before the workers start and gives each of them a broker user of its own.
   rabbitmq-users:
     image: rabbitmq:4.3.6-management
-    profiles: [core]
+    profiles: [core, dev]
+    logging: *logging
     entrypoint: [sh, /users.sh]
     # The management API can come up a little after the port the health check probes.
     restart: on-failure
@@ -85,45 +106,198 @@ services:
 
   seaweedfs:
     image: chrislusf/seaweedfs:4.48
-    profiles: [core]
+    profiles: [storage]
+    logging: *logging
     # Without credentials SeaweedFS serves every bucket anonymously, so the keys are mandatory.
-    command: [mini, -dir=/data, -bucket=recordings]
+    command: [mini, -dir=/data, "-bucket=${WHADIO_STORAGE__BUCKET:-recordings}"]
     environment:
-      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in .env}
-      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
+      AWS_ACCESS_KEY_ID: ${WHADIO_STORAGE__ACCESS_KEY:?set WHADIO_STORAGE__ACCESS_KEY in .env}
+      AWS_SECRET_ACCESS_KEY: ${WHADIO_STORAGE__SECRET_KEY:?set WHADIO_STORAGE__SECRET_KEY in .env}
     volumes:
       - seaweedfs-data:/data
     ports:
-      # Presigned URLs are signed for host and port, so clients must use this same port. Sign the
-      # ASR worker's links for http://seaweedfs:8333, the name it reaches storage by.
-      - 127.0.0.1:8333:8333
+      # Host-run development reaches the bundled S3 service through this loopback-only port.
+      - 127.0.0.1:${SEAWEEDFS_PORT:-8333}:8333
     healthcheck:
       <<: *healthcheck
       test: [CMD, curl, -fsS, -o, /dev/null, http://localhost:8333/healthz]
 
   mailpit:
     image: axllent/mailpit:v1.31.6
-    profiles: [core]
+    profiles: [dev]
+    logging: *logging
     ports:
       - 127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025
       - 127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025
 
-  # No depends_on llm-runtime: workers:up enables the gpu profile on machines without an NVIDIA
-  # runtime too, where the runtime cannot start. A runtime that is down fails a job as retryable.
+  migrate:
+    build: .
+    image: whadio:dev
+    profiles: [core]
+    logging: *logging
+    command: [db-upgrade]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      WHADIO_DB_HOST: postgres
+      WHADIO_DB_PORT: 5432
+      WHADIO_DB_NAME: whadio
+      WHADIO_DB_OWNER_PASSWORD: ${WHADIO_DB_OWNER_PASSWORD:?set WHADIO_DB_OWNER_PASSWORD in .env}
+
+  web:
+    <<: *runtime
+    profiles: [core]
+    command:
+      [web, --host, 0.0.0.0, --forwarded-allow-ips, 172.30.0.0/24]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      rabbitmq-users:
+        condition: service_completed_successfully
+      seaweedfs:
+        condition: service_healthy
+        required: false
+    environment:
+      WHADIO_DB_HOST: postgres
+      WHADIO_DB_PORT: 5432
+      WHADIO_DB_NAME: whadio
+      WHADIO_DB_APP_PASSWORD: ${WHADIO_DB_APP_PASSWORD:?set WHADIO_DB_APP_PASSWORD in .env}
+      WHADIO_BROKER__URL: amqp://${RABBITMQ_USER:?set RABBITMQ_USER in .env}:${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in .env}@rabbitmq:5672/whadio
+      WHADIO_STORAGE__ENDPOINT_URL: ${COMPOSE_STORAGE_ENDPOINT_URL:-${WHADIO_STORAGE__ENDPOINT_URL:-http://seaweedfs:8333}}
+      WHADIO_STORAGE__PUBLIC_ENDPOINT_URL:
+      WHADIO_STORAGE__REGION:
+      WHADIO_STORAGE__BUCKET:
+      WHADIO_STORAGE__ACCESS_KEY: ${WHADIO_STORAGE__ACCESS_KEY:?set WHADIO_STORAGE__ACCESS_KEY in .env}
+      WHADIO_STORAGE__SECRET_KEY: ${WHADIO_STORAGE__SECRET_KEY:?set WHADIO_STORAGE__SECRET_KEY in .env}
+      WHADIO_PUBLIC_URL:
+      WHADIO_API_PUBLIC_URL:
+      WHADIO_REGISTRATION_MODE:
+      WHADIO_MEETINGS_HOSTED:
+      WHADIO_ASR_BROKER_USER: whadio-asr
+      WHADIO_NOTES_BROKER_USER: whadio-notes
+      WHADIO_SMTP__HOST: ${COMPOSE_SMTP_HOST:-}
+      WHADIO_SMTP__PORT:
+      WHADIO_SMTP__STARTTLS:
+      WHADIO_SMTP__FROM_ADDRESS:
+      WHADIO_SMTP__USERNAME:
+      WHADIO_SMTP__PASSWORD:
+      WHADIO_SMTP__TIMEOUT:
+    networks:
+      default:
+      proxy:
+        aliases:
+          # nginx uses this proxy-network-only name; Uvicorn trusts only this internal subnet.
+          - web-proxy
+    healthcheck:
+      <<: *healthcheck
+      test:
+        [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/health')"]
+
+  scheduler:
+    <<: *runtime
+    profiles: [core]
+    command: [scheduler]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      rabbitmq-users:
+        condition: service_completed_successfully
+      seaweedfs:
+        condition: service_healthy
+        required: false
+    environment:
+      WHADIO_DB_HOST: postgres
+      WHADIO_DB_PORT: 5432
+      WHADIO_DB_NAME: whadio
+      WHADIO_DB_APP_PASSWORD: ${WHADIO_DB_APP_PASSWORD:?set WHADIO_DB_APP_PASSWORD in .env}
+      WHADIO_STORAGE__ENDPOINT_URL: ${COMPOSE_STORAGE_ENDPOINT_URL:-${WHADIO_STORAGE__ENDPOINT_URL:-http://seaweedfs:8333}}
+      WHADIO_STORAGE__PUBLIC_ENDPOINT_URL:
+      WHADIO_STORAGE__REGION:
+      WHADIO_STORAGE__BUCKET:
+      WHADIO_STORAGE__ACCESS_KEY: ${WHADIO_STORAGE__ACCESS_KEY:?set WHADIO_STORAGE__ACCESS_KEY in .env}
+      WHADIO_STORAGE__SECRET_KEY: ${WHADIO_STORAGE__SECRET_KEY:?set WHADIO_STORAGE__SECRET_KEY in .env}
+      WHADIO_RETENTION_INTERVAL_SECONDS:
+      WHADIO_PUBLIC_URL:
+      WHADIO_SMTP__HOST: ${COMPOSE_SMTP_HOST:-}
+      WHADIO_SMTP__PORT:
+      WHADIO_SMTP__STARTTLS:
+      WHADIO_SMTP__FROM_ADDRESS:
+      WHADIO_SMTP__USERNAME:
+      WHADIO_SMTP__PASSWORD:
+      WHADIO_SMTP__TIMEOUT:
+      WHADIO_OUTBOX__BATCH_SIZE:
+      WHADIO_OUTBOX__RETRY_BACKOFF:
+      WHADIO_OUTBOX__MAX_RETRY_BACKOFF:
+      WHADIO_OUTBOX__MAX_ATTEMPTS:
+      WHADIO_OUTBOX__RETENTION:
+    healthcheck:
+      <<: *healthcheck
+      test: [CMD, python, -c, "import os; os.kill(1, 0)"]
+
+  nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    image: whadio-nginx:dev
+    profiles: [core]
+    logging: *logging
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - ${HTTP_PORT:-80}:8080
+      - ${HTTPS_PORT:-443}:8443
+    secrets:
+      - tls_certificate
+      - tls_private_key
+    networks:
+      default:
+      proxy:
+    healthcheck:
+      <<: *healthcheck
+      test:
+        [CMD, wget, --no-check-certificate, -q, -O, /dev/null, https://127.0.0.1:8443/health]
+
+  # No depends_on llm-runtime: an external provider or a runtime on another host needs no local
+  # container. A configured runtime that is down fails a job as retryable.
   notes-worker:
     <<: *worker
     profiles: [core]
     command: [notes-worker]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+        required: false
+      rabbitmq-users:
+        condition: service_completed_successfully
+        required: false
+      llm-pull:
+        condition: service_completed_successfully
+        required: false
     environment:
       WHADIO_BROKER__URL: amqp://whadio-notes:${RABBITMQ_NOTES_PASSWORD:-}@rabbitmq:5672/whadio
+      WHADIO_LOG_LEVEL:
       # `:-`, not `:?`: Compose reads the whole file, so `:?` would break every command.
       WHADIO_NOTES__LLM__API_KEY: ${WHADIO_NOTES__LLM__API_KEY:-}
       # Passed only when set in .env: both providers read MODEL, so no default fits both.
       WHADIO_NOTES__LLM__PROVIDER:
       WHADIO_NOTES__LLM__MODEL:
+      WHADIO_NOTES__LLM__EFFORT:
       WHADIO_NOTES__LLM__NUM_CTX:
       WHADIO_NOTES__LLM__KEEP_ALIVE:
       WHADIO_NOTES__CONCURRENCY:
+      WHADIO_NOTES__MAX_OUTPUT_TOKENS:
+      WHADIO_NOTES__MAX_INPUT_TOKENS:
+      WHADIO_NOTES__CHARS_PER_TOKEN:
+      WHADIO_NOTES__JOB_TIMEOUT:
+      WHADIO_NOTES__SHUTDOWN_GRACE:
       # Not BASE_URL from .env: that is the host's address, which a container cannot use.
       WHADIO_NOTES__LLM__BASE_URL: ${LLM_RUNTIME_URL:-http://llm-runtime:11434}
 
@@ -133,14 +307,33 @@ services:
     command: [asr-worker]
     environment:
       WHADIO_BROKER__URL: amqp://whadio-asr:${RABBITMQ_ASR_PASSWORD:-}@rabbitmq:5672/whadio
+      WHADIO_LOG_LEVEL:
       WHADIO_ASR__DIARIZATION__HF_TOKEN: ${WHADIO_ASR__DIARIZATION__HF_TOKEN:-}
       WHADIO_ASR__RECOGNIZER: ${WHADIO_ASR__RECOGNIZER:-parakeet}
+      WHADIO_ASR__PARAKEET__MODEL:
+      WHADIO_ASR__PARAKEET__QUANTIZATION:
+      WHADIO_ASR__WHISPER__MODEL:
+      WHADIO_ASR__WHISPER__COMPUTE_TYPE:
+      WHADIO_ASR__WHISPER__BEAM_SIZE:
+      WHADIO_ASR__DIARIZATION__MODEL:
+      WHADIO_ASR__DIARIZATION__EMBEDDING_BATCH_SIZE:
+      WHADIO_ASR__DIARIZATION__DEVICE:
+      WHADIO_ASR__LANGUAGES:
+      WHADIO_ASR__FALLBACK_LANGUAGE:
+      WHADIO_ASR__MAX_AUDIO_BYTES:
+      WHADIO_ASR__MAX_DURATION:
+      WHADIO_ASR__FETCH_TIMEOUT:
+      WHADIO_ASR__SLOTS:
+      WHADIO_ASR__JOB_TIMEOUT:
+      WHADIO_ASR__STARTUP_TIMEOUT:
+      WHADIO_ASR__SHUTDOWN_GRACE:
     volumes:
       - asr-models:/var/cache/huggingface
 
   llm-runtime:
     image: ollama/ollama:0.35.1
-    profiles: [gpu]
+    profiles: [ollama]
+    logging: *logging
     environment:
       OLLAMA_NUM_PARALLEL: "1"
       # The notes worker sends its own keep_alive with every request, which takes precedence.
@@ -163,7 +356,8 @@ services:
   # Runs once and pulls the model the notes worker is set to use.
   llm-pull:
     image: ollama/ollama:0.35.1
-    profiles: [gpu]
+    profiles: [ollama]
+    logging: *logging
     entrypoint: [sh, /pull.sh]
     depends_on:
       llm-runtime:
@@ -180,3 +374,17 @@ volumes:
   seaweedfs-data:
   asr-models:
   llm-models:
+
+networks:
+  default:
+  proxy:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+secrets:
+  tls_certificate:
+    file: ${TLS_CERTIFICATE:-./certs/fullchain.pem}
+  tls_private_key:
+    file: ${TLS_PRIVATE_KEY:-./certs/privkey.pem}

@@ -11,7 +11,7 @@ We chose the two backend modules with the weakest coverage:
 - **Access Policy** (`src/whadio/access_policy/`): who may open a meeting, restricted meetings, share links and access requests. Before this work it had no tests of its own for its services or repository. API tests reached it only indirectly.
 - **Meetings** (`src/whadio/meetings/services.py`): the meeting use cases, such as upload, folders, transcripts and their edits, notes, the glossary, and the views behind a share link. It had the most untested lines of any file (99).
 
-We added 116 tests in five files. The two `test_services_unit.py` files are unit tests: they replace every collaborator with an in-memory fake, need no running services and run in the commit hook. The other three are integration tests against PostgreSQL, marked `slow`.
+We added 116 tests in five files. The two `test_services_unit.py` files are unit tests: they replace every collaborator with an in-memory fake, need no running services and run in the push hook. The other three are integration tests against PostgreSQL, marked `slow`.
 
 | File | Tests | What they cover |
 |---|---|---|
@@ -95,14 +95,20 @@ uv run task db:upgrade
 export WHADIO_TEST_DATABASE_URL=postgresql+psycopg://whadio_app:whadio-dev-app@127.0.0.1:5432/whadio
 ```
 
-Then measure with the command that CI and the push hook run. `task test:cov` refuses to start without `WHADIO_TEST_DATABASE_URL`, so skipped database tests cannot quietly change the number. The second command also writes the HTML report to `htmlcov-ci/`:
+Invitation concurrency tests use independent committed transactions, including real audit writes.
+They also need `WHADIO_DB_OWNER_PASSWORD` from the environment or `.env` to clean up their own
+fixtures: the application role cannot delete append-only audit records. Cleanup connects to the
+host, port and database from `WHADIO_TEST_DATABASE_URL`; the tested use cases still run as
+`whadio_app`. Use a disposable test database.
+
+Then measure with the command that CI runs. `task test:cov` refuses to start without `WHADIO_TEST_DATABASE_URL`, so skipped database tests cannot quietly change the number. The second command also writes the HTML report to `htmlcov-ci/`:
 
 ```bash
 uv run task test:cov
 uv run task test:cov -- --cov-report=term-missing:skip-covered --cov-report=html
 ```
 
-The run fails below 85% coverage of lines and branches combined: an `if` counts as covered only when both of its sides ran. The threshold is set in one place, `[tool.coverage.report]` in `pyproject.toml`, so CI and the push hook always agree. Test files, migration revisions and the shared test doubles (`fakes.py`) are left out of the numbers.
+The run fails below 85% coverage of lines and branches combined: an `if` counts as covered only when both of its sides ran. The threshold is set in one place, `[tool.coverage.report]` in `pyproject.toml`. Test files, migration revisions and the shared test doubles (`fakes.py`) are left out of the numbers.
 
 Coverage also follows greenlets (`concurrency = ["greenlet", "thread"]`). SQLAlchemy's async layer runs every database call in a greenlet, and without this setting coverage.py does not see the code that runs after an awaited call return, so it reports that code as never run. Turning it on raised the first full run from 84.7% to 85.6%. Nearly all of the gain is in database-backed code: the session and workspace routes went from 67% and 91% to 100%, the MCP server from 72% to 91%, and the meeting routes from 73% to 83%.
 

@@ -228,13 +228,18 @@ Source: [uml/deployment-diagram.puml](uml/deployment-diagram.puml)
 | Node | Runs | Exposed |
 |---|---|---|
 | User's computer | Chrome with the extension, the Meet tab and the SPA; the user's MCP client | — |
-| Main host (Linux, CPU only) | Docker Compose profile `core`: nginx, `web`, `scheduler`, `notes-worker`, PostgreSQL, RabbitMQ, object storage | HTTPS 443 (nginx), the private network's endpoint |
-| GPU host (Linux, NVIDIA GPU) | Docker Compose profile `gpu`: `asr-worker`, `llm-runtime` | Nothing; it joins the private network from the inside |
+| Main host (Linux, CPU only) | Docker Compose profile `core`: nginx, one-shot `migrate`, `web`, `scheduler`, `notes-worker`, PostgreSQL and RabbitMQ; optional profile `storage`: bundled S3-compatible storage | HTTP 80 (redirect only), HTTPS 443 (nginx), the private network's endpoint |
+| GPU host (Linux, NVIDIA GPU) | Docker Compose profile `gpu`: `asr-worker`; optional profile `ollama`: `llm-runtime` | Nothing; it joins the private network from the inside |
 | Third parties | LLM provider API, SMTP relay | — |
 
-nginx terminates TLS, serves the SPA, proxies the Web, Capture and MCP interfaces to `web`, and
-enforces request-size and rate limits. There is no load balancer: one `web` instance is enough at
-the project's scale, and more can be added as an nginx upstream later.
+nginx redirects HTTP to HTTPS, terminates TLS, serves the SPA, proxies the Web, Capture and MCP
+interfaces to `web`, and, with bundled storage, proxies access-checked presigned recording GET and
+HEAD requests to object storage. With an external S3-compatible service, presigned HTTPS links
+point directly to that service. nginx streams recording and chunk request bodies without disk
+buffering, allows 501 MiB only on the recording-upload route and 9 MiB only on the chunk route,
+keeps a 1 MiB default elsewhere, and rate-limits sign-in attempts per client address. Only the
+isolated Compose proxy subnet is trusted to supply forwarded client headers. There is no load balancer: one `web`
+instance is enough at the project's scale, and more can be added as an nginx upstream later.
 
 The two hosts are joined by a private network: traffic between them is encrypted and never reaches
 a public port. The GPU host reaches the broker and object storage, and the notes worker reaches its
@@ -247,11 +252,13 @@ choice that does not change the architecture.
 
 - **Two hosts (reference production).** The layout above. The GPU host stays on so that NFR-002
   holds; starting it only when jobs are waiting would add boot and model-loading time to the
-  turnaround.
+  turnaround. The `ollama` profile is enabled only when the deployment uses the built-in model.
 - **One host (self-hosting, development).** Both Compose profiles run on a single machine with a
   GPU, with no private network. On a machine without a GPU, the quantized CPU models are used (see the
-  hardware assumptions in the [project description](../../Project-Description.md)), and NFR-002
-  does not hold.
+  hardware assumptions in the [project description](../../Project-Description.md)); the `gpu`
+  profile still names the ASR placement but reserves no GPU unless `compose.cuda.yaml` is selected.
+  An external notes provider leaves `ollama` disabled. Enable the `storage` profile for bundled
+  SeaweedFS, or configure any external S3-compatible endpoint. NFR-002 does not hold in this CPU layout.
 
 ### Registration modes
 

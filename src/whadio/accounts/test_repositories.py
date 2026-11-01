@@ -11,9 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from conftest import AsyncDatabase
 
 from ..shared.database import DatabaseSettings
-from .enums import WorkspaceRole
-from .models import PendingRegistration
-from .repositories import MembershipRepository, RegistrationRepository
+from .enums import InvitationRole, InvitationStatus, WorkspaceRole
+from .models import Invitation, PendingRegistration, WorkspaceMembership
+from .repositories import InvitationRepository, MembershipRepository, RegistrationRepository
 
 
 @dataclass(frozen=True)
@@ -149,3 +149,80 @@ def test_registration_cleanup_is_idempotent(async_database: AsyncDatabase) -> No
 
     # Assert
     assert async_database.run(scenario) == 0
+
+
+@pytest.mark.slow
+def test_invitation_cleanup_removes_all_expired_statuses_and_preserves_valid_rows(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, int, int]:
+        actor, _ = await AsyncDatabase.add_workspace(session)
+        workspace = await session.scalar(
+            select(WorkspaceMembership.workspace_id).where(WorkspaceMembership.user_id == actor)
+        )
+        now = datetime.now(UTC)
+        for status in InvitationStatus:
+            for offset in (-1, 0, 1):
+                session.add(
+                    Invitation(
+                        workspace_id=workspace,
+                        invited_email=f"{uuid4()}@example.com",
+                        role=InvitationRole.MEMBER,
+                        invited_by_user_id=actor,
+                        status=status,
+                        token_hash=uuid4().hex,
+                        created_at=now - timedelta(days=7),
+                        expires_at=now + timedelta(seconds=offset),
+                    )
+                )
+        await session.flush()
+        repository = InvitationRepository(session)
+        # Act
+        removed = await repository.delete_expired(now)
+        repeated = await repository.delete_expired(now)
+        remaining = len(
+            list(
+                await session.scalars(
+                    select(Invitation).where(Invitation.workspace_id == workspace)
+                )
+            )
+        )
+        return removed, repeated, remaining
+
+    # Assert
+    assert async_database.run(scenario) == (8, 0, 4)
+
+
+@pytest.mark.slow
+def test_inviter_lock_permits_foreign_key_checks_and_serializes_invites(
+    database_settings: DatabaseSettings, committed_workspace: tuple[UUID, UUID]
+) -> None:
+    # Arrange
+    actor, _ = committed_workspace
+
+    async def scenario() -> tuple[bool, bool]:
+        engine = create_async_engine(database_settings.application_url(), hide_parameters=True)
+        try:
+            async with AsyncSession(engine) as session, session.begin():
+                # Act
+                await InvitationRepository(session).lock_inviter(actor)
+                return (
+                    row_available(
+                        database_settings,
+                        'SELECT user_id FROM "user" WHERE user_id = :workspace '
+                        "FOR KEY SHARE NOWAIT",
+                        actor,
+                    ),
+                    row_available(
+                        database_settings,
+                        'SELECT user_id FROM "user" WHERE user_id = :workspace '
+                        "FOR NO KEY UPDATE NOWAIT",
+                        actor,
+                    ),
+                )
+        finally:
+            await engine.dispose()
+
+    # Assert
+    assert asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop) == (True, False)

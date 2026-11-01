@@ -1,23 +1,11 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
+import { stubViewportWidth } from "../testing";
 import { AppShell } from "./AppShell";
 
-function setViewportWidth(width: number) {
-  vi.stubGlobal("matchMedia", (query: string) => {
-    const min = /min-width:\s*([\d.]+)px/.exec(query)?.[1];
-    const max = /max-width:\s*([\d.]+)px/.exec(query)?.[1];
-    return {
-      matches: (!min || width >= Number(min)) && (!max || width <= Number(max)),
-      media: query,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    };
-  });
-}
-
 function renderShell(width: number) {
-  setViewportWidth(width);
+  stubViewportWidth(width);
   render(
     <AppShell
       renderSidebar={(onNavigate) => (

@@ -42,8 +42,14 @@ HEAD = b"\x1a\x45\xdf\xa3head"
 class _StackSettings(BaseSettings):
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    s3_access_key: SecretStr = Field(description="Access key of the Compose stack's SeaweedFS")
-    s3_secret_key: SecretStr = Field(description="Secret key of the Compose stack's SeaweedFS")
+    s3_access_key: SecretStr = Field(
+        validation_alias="WHADIO_STORAGE__ACCESS_KEY",
+        description="Access key of the Compose stack's SeaweedFS",
+    )
+    s3_secret_key: SecretStr = Field(
+        validation_alias="WHADIO_STORAGE__SECRET_KEY",
+        description="Secret key of the Compose stack's SeaweedFS",
+    )
 
 
 class TrackedStorage:

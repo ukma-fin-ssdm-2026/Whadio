@@ -118,9 +118,10 @@ sub-resource, such as `…/cancel`, `…/complete` or `…/approve`.
 - **Module:** Accounts & Workspaces
 - **Description:** a user's role in a workspace, and a pending offer of one.
 - **Attributes:**
-  - member: `user_id`, `name`, `email`, `role`, `joined_at`
+  - member directory entry: `user_id`, `name`, `email`, `role`, `joined_at`
+  - redemption membership: `user_id`, `workspace_id`, `role`, `joined_at`
   - invitation: `id`, `email`, `role` (`member` | `moderator`), `status`
-    (`pending` | `accepted` | `declined` | `cancelled`), `expires_at` (7 days),
+    (`pending` | `accepted` | `declined` | `cancelled`), `created_at`, `expires_at` (7 days),
     `link_active`
 - **Relations:** an invitation belongs to a workspace and to the Moderator who created it.
 
@@ -274,12 +275,18 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /password-resets/{reset_id}/complete` · Set a new password from a link
 
-- **Status:** Designed · **Caller:** public · **Success:** `204`
+- **Status:** Implemented · **Caller:** public · **Success:** `204`; clears the browser cookie
 - **Rules:**
   - Requires a new password of 12 to 128 characters with at least one digit and one uppercase
     letter.
   - Ends every session and extension token of the account, this browser's included. MCP keys keep
     working.
+  - Works in either mode, including after a mode switch. Operator links expire after one hour;
+    replacement invalidates the earlier token, and only its hash is stored.
+  - Password change, session revocation and link consumption share one transaction. Failed
+    validation leaves all three unchanged. Sign-in and reset serialize on the account row so
+    a sign-in using the old password cannot leave an active session after reset commits.
+  - The reset SPA page and the self-service request endpoint remain separate work.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used (section 6.3).
   - `422 VALIDATION_ERROR` on `password`: the password breaks the rule above.
@@ -306,7 +313,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /users/me` · Get the signed-in user
 
-- **Status:** Designed · **Caller:** any user · **Success:** `200`, the user
+- **Status:** Implemented · **Caller:** any user · **Success:** `200`, the user
 - **Errors:** common only.
 
 #### `GET /users/me/mcp-keys` · List my MCP keys
@@ -418,7 +425,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /workspaces/{workspace_id}/invitations` · List pending invitations
 
-- **Status:** Designed · **Caller:** Moderator or Owner · **Success:** `200`, a page of
+- **Status:** Implemented · **Caller:** Moderator or Owner · **Success:** `200`, a page of
   invitations, newest first
 - **Rules:** `link_active` becomes false once the link expires, or once its creator loses the
   Moderator role.
@@ -428,13 +435,16 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /workspaces/{workspace_id}/invitations` · Invite a person
 
-- **Status:** Designed · **Caller:** Moderator or Owner · **Success:** `201` for a new
+- **Status:** Implemented for `invite-only` ·
+  **Caller:** Moderator or Owner · **Success:** `201` for a new
   invitation; `200` when a pending one was replaced
 - **Rules:**
   - Creates a single-use link valid for 7 days (FR-006).
   - In `verified` mode the link is emailed. On an invite-only instance it is returned once in
     `link`, for the Moderator to hand over.
-  - The checks run in this order, and the first failure answers:
+  - After authentication, missing `WHADIO_PUBLIC_URL` returns `503 INTEGRATION_UNAVAILABLE`
+    before role, workspace, membership, business-limit and request-body validation checks.
+  - With the public URL configured, the checks run in this order, and the first failure answers:
     1. the workspace is not personal;
     2. the address does not belong to a member;
     3. the caller has invited fewer than 20 addresses today;
@@ -449,10 +459,12 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - `409 ALREADY_MEMBER`: the address belongs to a member.
   - `429 INVITATION_LIMIT`: the caller reached 20 addresses today.
   - `429 INVITATION_COOLDOWN`: this address was invited to this workspace in the last day.
+  - `503 INTEGRATION_UNAVAILABLE`: `WHADIO_PUBLIC_URL` is unset, or verified-mode email
+    delivery is unavailable until #188. No invitation is created or replaced in either case.
 
 #### `POST /workspaces/{workspace_id}/invitations/{invitation_id}/cancel` · Cancel
 
-- **Status:** Designed · **Caller:** Moderator or Owner · **Success:** `200`, the cancelled
+- **Status:** Implemented · **Caller:** Moderator or Owner · **Success:** `200`, the cancelled
   invitation
 - **Rules:** the link stops working. The invitation still counts towards the one-day wait for
   its address.
@@ -463,40 +475,50 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /invitations/{invitation_id}/preview` · Preview an invitation link
 
-- **Status:** Designed · **Caller:** public · **Success:** `200`, the workspace, the role,
-  and whether the address has an account
-- **Rules:** changes nothing. It is a `POST` although it only reads (section 6.3).
+- **Status:** Implemented · **Caller:** public · **Success:** `200`, `workspace_id`,
+  `workspace_name`, `email`, `role` and `account_exists`
+- **Rules:** changes nothing and takes no row locks. It is a `POST` although it only reads
+  (section 6.3). The response uses `Cache-Control: no-store`.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used.
 
 #### `POST /invitations/{invitation_id}/accept` · Accept an invitation
 
-- **Status:** Designed · **Caller:** the invited user, signed in · **Success:** `200`, the
-  membership
-- **Rules:** accepting again with the same account returns the same membership.
+- **Status:** Implemented · **Caller:** the invited user, signed in · **Success:** `200`, the
+  redemption membership (`user_id`, `workspace_id`, `role`, `joined_at`), with
+  `Cache-Control: no-store`
+- **Rules:** accepting again with the same account returns the same membership while the token
+  remains unexpired, its creator retains authority, and that membership has not been replaced.
+  Joining writes one `member_joined` audit event; retries do not repeat it.
 - **Errors:**
-  - `403 EMAIL_MISMATCH`: the signed-in account has a different address.
+  - `403 EMAIL_MISMATCH`: a pending link is valid, but the signed-in account has a different
+    address. A different account using an accepted link receives `404 LINK_INVALID`.
   - `404 LINK_INVALID`: the link cannot be used.
   - `409 ALREADY_MEMBER`: the account is already a member.
 
 #### `POST /invitations/{invitation_id}/register` · Create an account through an invitation
 
-- **Status:** Designed · **Caller:** public · **Success:** `201`, the user and the
-  membership; the session cookie is set
+- **Status:** Implemented · **Caller:** public · **Success:** `201`, `user` and `membership`,
+  where the latter has `user_id`, `workspace_id`, `role` and `joined_at`; the session cookie is
+  set and the response uses `Cache-Control: no-store`
 - **Rules:**
   - For an invited address without an account. It creates the account and its personal
     workspace, joins the workspace, and signs the browser in (FR-002).
   - Requires a password of 12 to 128 characters with at least one digit and one uppercase
     letter.
+  - Requires `accept_terms: true`. Account creation, personal workspace and default folder,
+    invited membership, link consumption, browser session and audit share one transaction.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used.
   - `409 ACCOUNT_EXISTS`: the address has an account, so sign in and accept instead.
-  - `422 VALIDATION_ERROR` on `password`: the password breaks the rule above.
+  - `422 VALIDATION_ERROR` on `password`, `name` or `accept_terms`: the password breaks the
+    rule above, the display name is invalid, or the Terms were not accepted.
 
 #### `POST /invitations/{invitation_id}/decline` · Decline an invitation
 
-- **Status:** Designed · **Caller:** public · **Success:** `200`, the declined invitation
-- **Rules:** needs no account. The link stops working.
+- **Status:** Implemented · **Caller:** public · **Success:** `200`, the declined invitation
+- **Rules:** needs no account. The link stops working. The response uses
+  `Cache-Control: no-store`.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used.
 
@@ -1015,7 +1037,7 @@ status, and which operations return it.
 - **`INVITE_ONLY_INSTANCE`:** registration or a password reset was requested on an invite-only
   instance (FR-001, FR-048). It is `403` because the feature exists but this instance does not
   offer it. Returned by `POST /registrations` and `POST /password-resets`.
-- **`EMAIL_MISMATCH`:** an invitation was accepted with a valid token, but the signed-in
+- **`EMAIL_MISMATCH`:** a pending invitation was accepted with a valid token, but the signed-in
   account has a different address. It is `403` because the link is fine, and this account may
   not use it. Returned by `POST /invitations/{id}/accept`.
 
@@ -1102,7 +1124,7 @@ status, and which operations return it.
 The specification is produced by FastAPI from route decorators and Pydantic models, so it
 matches what the server does. The server serves it at `/openapi.json`, renders Swagger UI at
 `/api-docs`, and writes `docs/api/openapi-generated.yaml` and `.json` on startup. Running
-`whadio openapi` writes the same files without starting the server. The commit hook and CI
+`whadio openapi` writes the same files without starting the server. The push hook and CI
 run it and fail when the committed files differ from the code, so the Pages deployment
 publishes a specification that matches the code.
 
@@ -1297,6 +1319,5 @@ and edited the content, and the document is reviewed through a pull request befo
 These PR #63 review revisions were assisted by OpenAI Codex. Everything was reviewed by me.
 
 The Export implementation and review changes were assisted by OpenAI Codex.
-
 
 Later revisions were assisted by OpenAI Codex and verified by author.

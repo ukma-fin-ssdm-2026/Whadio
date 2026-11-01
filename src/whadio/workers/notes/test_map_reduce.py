@@ -242,6 +242,7 @@ _BUDGETS: Final = st.builds(
 )
 
 
+@pytest.mark.slow
 @given(_LINES, _BUDGETS)
 def test_every_extract_prompt_is_refused_or_fits_the_budget(
     lines: list[tuple[str | None, str]], budget: ContextBudget

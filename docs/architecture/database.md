@@ -321,7 +321,8 @@ the ORM models; refusal tests may use raw SQL to exercise database safeguards. D
 `whadio_app` connection URL, then run `uv run task test`. Without that setting, database tests are
 skipped: a passing fast suite is not database verification. CI starts PostgreSQL using Compose,
 applies the packaged migrations as `whadio_owner`, checks schema drift, and runs the complete suite
-as `whadio_app`. Local push hooks require the same connection URL to run database tests.
+as `whadio_app`. `uv run task test:cov` and `uv run task ci` need the same connection URL locally;
+the push hook runs no database tests.
 
 Most fixtures roll their transaction back. Original-sealing tests commit their initial data to
 exercise a later transaction, then clean up only their own workspace and account. Never point

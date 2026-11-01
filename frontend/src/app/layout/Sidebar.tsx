@@ -1,55 +1,39 @@
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
-import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import NotesOutlinedIcon from "@mui/icons-material/NotesOutlined";
+import SmartToyOutlinedIcon from "@mui/icons-material/SmartToyOutlined";
 import {
   Avatar,
   Divider,
-  IconButton,
   List,
-  ListItemButton,
   ListItemIcon,
   ListItemText,
   ListSubheader,
   Stack,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import type { ReactNode } from "react";
-import type { Page } from "../navigation/page";
+import { ListItemLink } from "../navigation/links";
+
+const CURRENT = { selected: true };
+// `exact` alone also demands an identical search, so a filter in the URL would unmark the page.
+const THIS_PATH_ONLY = { exact: true, includeSearch: false };
 
 interface SidebarProps {
   user: { name?: string | null; email: string } | null;
   workspaces: { id: string; name: string }[];
-  page: Page;
-  workspaceId: string;
-  onHome: () => void;
-  onMeetings: () => void;
-  onWorkspace: (id: string) => void;
-  onSignOut: () => void;
+  signOutAction: ReactNode;
   onNavigate: () => void;
 }
 
-interface NavItemProps {
-  label: string;
-  icon?: ReactNode;
-  current: boolean;
-  onClick: () => void;
-}
-
-function NavItem({ label, icon, current, onClick }: NavItemProps) {
+function NavLabel({ label, icon }: { label: string; icon?: ReactNode }) {
   return (
-    <ListItemButton
-      selected={current}
-      aria-current={current ? "page" : undefined}
-      onClick={onClick}
-      sx={{ borderRadius: 1 }}
-    >
+    <>
       {icon && <ListItemIcon sx={{ minWidth: 36 }}>{icon}</ListItemIcon>}
       <ListItemText
         primary={label}
         slotProps={{ primary: { noWrap: true, variant: "subtitle2" } }}
       />
-    </ListItemButton>
+    </>
   );
 }
 
@@ -62,49 +46,35 @@ function initials(name: string) {
     .toUpperCase();
 }
 
-export function Sidebar({
-  user,
-  workspaces,
-  page,
-  workspaceId,
-  onHome,
-  onMeetings,
-  onWorkspace,
-  onSignOut,
-  onNavigate,
-}: SidebarProps) {
-  const navigate = (go: () => void) => () => {
-    go();
-    onNavigate();
-  };
+export function Sidebar({ user, workspaces, signOutAction, onNavigate }: SidebarProps) {
+  const navLink = { activeProps: CURRENT, onClick: onNavigate, sx: { borderRadius: 1 } };
   return (
     <Stack sx={{ height: "100%", p: 2, gap: 2 }}>
       <Typography variant="h3" component="p" sx={{ px: 1 }}>
         Whadio
       </Typography>
       <List component="nav" aria-label="Main" sx={{ flexGrow: 1, overflowY: "auto" }}>
-        <NavItem
-          label="Home"
-          icon={<HomeOutlinedIcon />}
-          current={page === "home"}
-          onClick={navigate(onHome)}
-        />
-        <NavItem
-          label="Meetings"
-          icon={<NotesOutlinedIcon />}
-          current={page === "meetings"}
-          onClick={navigate(onMeetings)}
-        />
+        <ListItemLink to="/" activeOptions={THIS_PATH_ONLY} {...navLink}>
+          <NavLabel label="Home" icon={<HomeOutlinedIcon />} />
+        </ListItemLink>
+        <ListItemLink to="/meetings" activeOptions={THIS_PATH_ONLY} {...navLink}>
+          <NavLabel label="Meetings" icon={<NotesOutlinedIcon />} />
+        </ListItemLink>
+        <ListItemLink to="/settings/assistant" {...navLink}>
+          <NavLabel label="AI assistant" icon={<SmartToyOutlinedIcon />} />
+        </ListItemLink>
         <ListSubheader component="div" disableSticky sx={{ mt: 1 }}>
           Workspaces
         </ListSubheader>
         {workspaces.map((workspace) => (
-          <NavItem
+          <ListItemLink
             key={workspace.id}
-            label={workspace.name}
-            current={page === "workspace" && workspace.id === workspaceId}
-            onClick={navigate(() => onWorkspace(workspace.id))}
-          />
+            to="/workspaces/$workspaceId"
+            params={{ workspaceId: workspace.id }}
+            {...navLink}
+          >
+            <NavLabel label={workspace.name} />
+          </ListItemLink>
         ))}
       </List>
       <Divider />
@@ -117,11 +87,7 @@ export function Sidebar({
           secondary={user?.email}
           slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }}
         />
-        <Tooltip title="Sign out" arrow>
-          <IconButton size="small" aria-label="Sign out" onClick={onSignOut}>
-            <LogoutOutlinedIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        {signOutAction}
       </Stack>
     </Stack>
   );

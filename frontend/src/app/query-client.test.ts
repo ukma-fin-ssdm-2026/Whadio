@@ -22,7 +22,7 @@ describe("an expired session", () => {
   test("in a query calls the unauthorized handler", async () => {
     // Arrange
     const onUnauthorized = vi.fn();
-    const client = createQueryClient({ onUnauthorized });
+    const client = createQueryClient({ onUnauthorized, onDataLoaded: () => {} });
 
     // Act
     await failQuery(client, SESSION_EXPIRED);
@@ -34,7 +34,7 @@ describe("an expired session", () => {
   test("in a mutation calls the unauthorized handler", async () => {
     // Arrange
     const onUnauthorized = vi.fn();
-    const client = createQueryClient({ onUnauthorized });
+    const client = createQueryClient({ onUnauthorized, onDataLoaded: () => {} });
 
     // Act
     await failMutation(client, SESSION_EXPIRED);
@@ -42,18 +42,18 @@ describe("an expired session", () => {
     // Assert
     expect(onUnauthorized).toHaveBeenCalledOnce();
   });
+});
 
-  test("clears the cached data", async () => {
-    // Arrange
-    const client = createQueryClient({ onUnauthorized: () => {} });
-    client.setQueryData(["accounts", "mcp-keys"], { items: [] });
+test("a successful query reports loaded data", async () => {
+  // Arrange
+  const onDataLoaded = vi.fn();
+  const client = createQueryClient({ onUnauthorized: () => {}, onDataLoaded });
 
-    // Act
-    await failMutation(client, SESSION_EXPIRED);
+  // Act
+  await client.query({ queryKey: ["loaded"], queryFn: () => "data" });
 
-    // Assert
-    expect(client.getQueryData(["accounts", "mcp-keys"])).toBeUndefined();
-  });
+  // Assert
+  expect(onDataLoaded).toHaveBeenCalledOnce();
 });
 
 test.for([
@@ -63,7 +63,7 @@ test.for([
 ] as const)("%s leaves the session alone", async ([, error]) => {
   // Arrange
   const onUnauthorized = vi.fn();
-  const client = createQueryClient({ onUnauthorized });
+  const client = createQueryClient({ onUnauthorized, onDataLoaded: () => {} });
 
   // Act
   await failMutation(client, error);

@@ -2,6 +2,8 @@ from enum import StrEnum
 
 
 class Failure(StrEnum):
+    EMAIL_MISMATCH = "EMAIL_MISMATCH"
+    ACCOUNT_EXISTS = "ACCOUNT_EXISTS"
     INTEGRATION_UNAVAILABLE = "INTEGRATION_UNAVAILABLE"
     NOT_FOUND = "NOT_FOUND"
     INSUFFICIENT_ROLE = "INSUFFICIENT_ROLE"
@@ -12,6 +14,10 @@ class Failure(StrEnum):
     ALREADY_PROCESSED = "ALREADY_PROCESSED"
     INVALID_CREDENTIALS = "INVALID_CREDENTIALS"
     PERSONAL_WORKSPACE = "PERSONAL_WORKSPACE"
+    ALREADY_MEMBER = "ALREADY_MEMBER"
+    INVITATION_LIMIT = "INVITATION_LIMIT"
+    INVITATION_COOLDOWN = "INVITATION_COOLDOWN"
+    INVITATION_NOT_PENDING = "INVITATION_NOT_PENDING"
     FOLDER_EXISTS = "FOLDER_EXISTS"
     TERM_EXISTS = "TERM_EXISTS"
     NOT_TRANSCRIBED = "NOT_TRANSCRIBED"
@@ -36,3 +42,9 @@ class UseCaseError(Exception):
     def __init__(self, code: Failure) -> None:
         self.code: Failure = code
         super().__init__(code.value)
+
+
+class RateLimitError(UseCaseError):
+    def __init__(self, code: Failure, retry_after: int) -> None:
+        super().__init__(code)
+        self.retry_after: int = retry_after

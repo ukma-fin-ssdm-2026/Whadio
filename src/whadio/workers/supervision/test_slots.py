@@ -24,6 +24,8 @@ from ...contracts.transcription import (
 from .jobs import RunFailure, WorkerSpec
 from .slots import ProcessSlot, SlotPool, SlotStartupError, slot_program
 
+pytestmark = pytest.mark.slow
+
 type _Result = TranscriptReady | TranscriptionFailed
 
 _AT = datetime(2026, 10, 9, 18, tzinfo=UTC)

@@ -1,57 +1,34 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { renderAtPath } from "../testing";
 import { Breadcrumbs } from "./Breadcrumbs";
 
-test("marks the meeting as the current page after its workspace", () => {
+test("marks the meeting as the current page after its workspace", async () => {
   // Arrange
-  render(
-    <Breadcrumbs
-      page="meeting"
-      workspace={{ id: "alpha", name: "Alpha" }}
-      meeting={{ title: "Weekly sync" }}
-      onHome={() => {}}
-      onWorkspace={() => {}}
-    />,
-  );
+  renderAtPath(<Breadcrumbs workspace={{ id: "alpha", name: "Alpha" }} current="Weekly sync" />);
 
   // Act
-  const crumbs = screen.getAllByRole("listitem").map((item) => item.textContent);
+  const crumbs = (await screen.findAllByRole("listitem")).map((item) => item.textContent);
 
   // Assert
   expect(crumbs).toEqual(["Home", "Alpha", "Weekly sync"]);
 });
 
-test("marks the last crumb as the current page", () => {
+test("links a workspace crumb to its page", async () => {
   // Act
-  render(
-    <Breadcrumbs
-      page="meetings"
-      workspace={undefined}
-      meeting={undefined}
-      onHome={() => {}}
-      onWorkspace={() => {}}
-    />,
-  );
+  renderAtPath(<Breadcrumbs workspace={{ id: "alpha", name: "Alpha" }} current="Weekly sync" />);
 
   // Assert
-  expect(screen.getByText("Meetings")).toHaveAttribute("aria-current", "page");
+  expect(await screen.findByRole("link", { name: "Alpha" })).toHaveAttribute(
+    "href",
+    "/workspaces/alpha",
+  );
 });
 
-test.each([
-  { page: "meeting", fallback: "Meeting" },
-  { page: "workspace", fallback: "Workspace" },
-] as const)("names the current crumb $fallback when its $page is missing", ({ page, fallback }) => {
+test("marks the last crumb as the current page", async () => {
   // Act
-  render(
-    <Breadcrumbs
-      page={page}
-      workspace={undefined}
-      meeting={undefined}
-      onHome={() => {}}
-      onWorkspace={() => {}}
-    />,
-  );
+  renderAtPath(<Breadcrumbs current="Meetings" />);
 
   // Assert
-  expect(screen.getByText(fallback)).toHaveAttribute("aria-current", "page");
+  expect(await screen.findByText("Meetings")).toHaveAttribute("aria-current", "page");
 });

@@ -21,6 +21,19 @@ def test_settings_without_an_smtp_section_have_no_relay() -> None:
     assert settings.smtp is None
 
 
+def test_empty_compose_smtp_variables_have_no_relay(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    monkeypatch.setenv("WHADIO_SMTP__HOST", "")
+    monkeypatch.setenv("WHADIO_SMTP__PORT", "")
+    monkeypatch.setenv("WHADIO_SMTP__FROM_ADDRESS", "")
+
+    # Act
+    settings = load_notification_settings()
+
+    # Assert
+    assert settings.smtp is None
+
+
 def test_settings_read_the_nested_smtp_variables(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
     monkeypatch.setenv("WHADIO_SMTP__HOST", "127.0.0.1")
