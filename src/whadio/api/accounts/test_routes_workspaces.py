@@ -10,12 +10,18 @@ from conftest import AsyncDatabase
 from ...accounts.enums import WorkspaceRole
 from ...accounts.models import Workspace, WorkspaceMembership
 from ...meetings.models import Folder, RecordingDeletion
+from ...shared.notes_llm import AnthropicLlm, NotesLlm, OllamaLlm
 from ..core.errors import ErrorResponse
-from .schemas import WorkspaceRead
+from ..core.schemas import Page
+from .schemas import Provider, WorkspaceRead, WorkspaceSummary
 
 pytestmark = pytest.mark.slow
 
 PASSWORD = uuid4().hex
+CONFIGURED_PROVIDERS = [
+    (OllamaLlm(provider="ollama", model="gemma4:12b-it-qat"), Provider.WHADIO),
+    (AnthropicLlm(), Provider.ANTHROPIC),
+]
 
 
 async def signed_in(client: AsyncClient, session: AsyncSession) -> UUID:
@@ -65,6 +71,43 @@ def test_created_workspace_is_listed(async_database: AsyncDatabase) -> None:
     workspace_id, listed = async_database.run(scenario)
     # Assert
     assert str(workspace_id) in listed
+
+
+@pytest.mark.parametrize(("llm", "provider"), CONFIGURED_PROVIDERS)
+def test_workspace_list_reports_the_configured_provider(
+    async_database: AsyncDatabase, llm: NotesLlm, provider: Provider
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> set[Provider]:
+        async with AsyncDatabase.api_client(session, llm) as client:
+            await signed_in(client, session)
+            await created(client)
+            # Act
+            response = await client.get("/api/v1/workspaces")
+            page = Page[WorkspaceSummary].model_validate_json(response.content)
+            return {item.notes_provider for item in page.items}
+
+    reported = async_database.run(scenario)
+    # Assert
+    assert reported == {provider}
+
+
+@pytest.mark.parametrize(("llm", "provider"), CONFIGURED_PROVIDERS)
+def test_workspace_detail_reports_the_configured_provider(
+    async_database: AsyncDatabase, llm: NotesLlm, provider: Provider
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> Provider:
+        async with AsyncDatabase.api_client(session, llm) as client:
+            await signed_in(client, session)
+            workspace = await created(client)
+            # Act
+            response = await client.get(f"/api/v1/workspaces/{workspace.id}")
+            return WorkspaceRead.model_validate_json(response.content).notes_provider
+
+    reported = async_database.run(scenario)
+    # Assert
+    assert reported is provider
 
 
 def test_workspace_of_others_is_not_found(async_database: AsyncDatabase) -> None:
