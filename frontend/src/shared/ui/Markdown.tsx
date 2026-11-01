@@ -18,7 +18,7 @@ const MONOSPACE = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mo
 const prose: SxProps<Theme> = {
   overflowWrap: "anywhere",
   "& > :last-child": { mb: 0 },
-  "& * + :is(h3, h4, h5, h6)": { mt: 3 },
+  "& * + :is(h2, h3, h4, h5, h6)": { mt: 3 },
   "& p": { mt: 0, mb: 1.5 },
   "& ul, & ol": { mt: 0, mb: 1.5, pl: 3 },
   "& li > p": { mb: 0.5 },
@@ -48,20 +48,24 @@ const prose: SxProps<Theme> = {
 };
 
 const heading =
-  (component: "h3" | "h4" | "h5" | "h6", variant: TypographyProps["variant"]): Components["h1"] =>
+  (
+    component: "h2" | "h3" | "h4" | "h5" | "h6",
+    variant: TypographyProps["variant"],
+  ): Components["h1"] =>
   ({ children }) => (
     <Typography component={component} variant={variant} sx={{ mb: 1 }}>
       {children}
     </Typography>
   );
 
-// The page owns h1 and h2, so a note's headings start at h3 and stay inside the type scale.
+// The page title is the h1 and a stored note holds only ## sections, because parse_notes strips
+// its # title, so sections start at h2 while keeping a look that fits inside the page.
 const components: Components = {
-  h1: heading("h3", "h3"),
-  h2: heading("h4", "h4"),
-  h3: heading("h5", "subtitle1"),
-  h4: heading("h6", "subtitle2"),
-  h5: heading("h6", "subtitle2"),
+  h1: heading("h2", "h3"),
+  h2: heading("h2", "h4"),
+  h3: heading("h3", "subtitle1"),
+  h4: heading("h4", "subtitle2"),
+  h5: heading("h5", "subtitle2"),
   h6: heading("h6", "subtitle2"),
   a: ({ href, children }) =>
     href ? (
