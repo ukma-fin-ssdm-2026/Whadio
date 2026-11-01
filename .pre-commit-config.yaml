@@ -87,7 +87,8 @@ repos:
         # Biome comes from frontend/node_modules; the script runs it from extension/, whose config
         # extends the frontend's.
         entry: npm --prefix frontend run check:extension:fix
-        files: ^extension/
+        # The frontend's Biome config and version decide the extension's result too.
+        files: ^(extension/|frontend/biome\.jsonc$|frontend/package\.json$)
         pass_filenames: false
         require_serial: true
 
