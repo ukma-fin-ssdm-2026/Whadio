@@ -1,5 +1,6 @@
 import { Box, Card, CircularProgress, Stack, Typography } from "@mui/material";
 import type { NoteRead } from "@/shared/api/types";
+import { ErrorBanner } from "@/shared/ui/ErrorBanner";
 import { Markdown } from "@/shared/ui/Markdown";
 import { describeFailure, IN_PROGRESS_LABELS, isInProgress, type Meeting } from "../model";
 
@@ -13,7 +14,16 @@ interface NotesPanelProps {
 function NotesContent({ meeting, notes, loading }: Omit<NotesPanelProps, "failed">) {
   if (isInProgress(meeting.state)) {
     return (
-      <Stack className="processing-panel" direction="row" sx={{ gap: 1.5, alignItems: "center" }}>
+      <Stack
+        direction="row"
+        sx={{
+          gap: 1.5,
+          alignItems: "center",
+          p: "1rem",
+          borderRadius: "0.5rem",
+          bgcolor: "background.subtle",
+        }}
+      >
         <CircularProgress size={22} thickness={5} />
         <Box>
           <Typography variant="subtitle1">{IN_PROGRESS_LABELS[meeting.state]}</Typography>
@@ -26,15 +36,11 @@ function NotesContent({ meeting, notes, loading }: Omit<NotesPanelProps, "failed
     );
   }
   if (meeting.state === "failed") {
-    return (
-      <Box className="error-banner" role="alert">
-        {describeFailure(meeting.failureReason)}
-      </Box>
-    );
+    return <ErrorBanner>{describeFailure(meeting.failureReason)}</ErrorBanner>;
   }
   if (loading) {
     return (
-      <Box className="content-loading">
+      <Box sx={{ display: "grid", minHeight: "8rem", placeItems: "center" }}>
         <CircularProgress size={24} />
       </Box>
     );

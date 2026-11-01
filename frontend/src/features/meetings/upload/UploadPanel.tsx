@@ -45,7 +45,14 @@ export function UploadPanel({ workspaceId, presetField, onUploaded }: UploadPane
   };
 
   return (
-    <Card className="upload-panel">
+    <Card
+      sx={{
+        p: "0.75rem 0.9rem",
+        bgcolor: "background.subtle",
+        // Paper's dark-scheme overlay would otherwise lighten the colour.
+        backgroundImage: "none",
+      }}
+    >
       <Stack
         direction={{ xs: "column", sm: "row" }}
         sx={{
@@ -66,6 +73,7 @@ export function UploadPanel({ workspaceId, presetField, onUploaded }: UploadPane
           variant="contained"
           startIcon={<CloudUploadOutlinedIcon />}
           onClick={() => setOpen(true)}
+          sx={{ minHeight: "2.25rem", p: "0.45rem 0.8rem" }}
         >
           Upload
         </Button>
@@ -84,10 +92,10 @@ export function UploadPanel({ workspaceId, presetField, onUploaded }: UploadPane
             />
             {presetField}
             <Button
-              className="file-picker-button"
               component="label"
               variant="outlined"
               startIcon={<CloudUploadOutlinedIcon />}
+              sx={{ minHeight: "3.25rem", borderStyle: "dashed", bgcolor: "background.subtle" }}
             >
               {file?.name ?? "Select file"}
               <input

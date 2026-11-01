@@ -2,7 +2,6 @@ import { CssBaseline, ThemeProvider } from "@mui/material";
 import type { PaletteOptions } from "@mui/material/styles";
 import { render } from "@testing-library/react";
 import { expect, test } from "vitest";
-import stylesheet from "@/styles.css?raw";
 import { theme } from "./index";
 import { darkPalette, lightPalette } from "./palette";
 
@@ -19,8 +18,14 @@ const colourVariables = (palette: PaletteOptions) => ({
   "--mui-palette-divider": palette.divider,
 });
 
-const referencedVariables = () =>
-  [...stylesheet.matchAll(/var\((--mui-[\w-]+)/g)].map(([, name = ""]) => name);
+// sx values are plain strings, so nothing else would notice a variable that doesn't exist.
+const styleSources = import.meta.glob<string>(
+  ["/src/**/*.{ts,tsx}", "!/src/**/*.test.{ts,tsx}", "!/src/**/*.gen.ts"],
+  { query: "?raw", import: "default", eager: true },
+);
+
+const referencedVariables = (text: string) =>
+  [...text.matchAll(/var\((--mui-[\w-]+)/g)].map(([, name = ""]) => name);
 
 const declaredIn = (css: string) =>
   Object.fromEntries(
@@ -43,6 +48,7 @@ const renderEmittedVariables = () => {
     (style) => style.textContent,
   ).join("");
   return {
+    css,
     defaults: declaredIn(css.replace(DARK_RULE, "")),
     dark: declaredIn(css.match(DARK_RULE)?.join("") ?? ""),
   };
@@ -82,25 +88,49 @@ test("the dark rule changes every palette colour from its default", () => {
   expect(unchanged).toEqual([]);
 });
 
-test("styles.css is read as text with MUI variable references in it", () => {
+test("the app's sources are read as text with MUI variable references in them", () => {
   // Arrange
-  const expected = "--mui-palette-divider";
+  const expected = "--mui-palette-error-mainChannel";
 
   // Act
-  const referenced = referencedVariables();
+  const referenced = Object.values(styleSources).flatMap(referencedVariables);
 
   // Assert
   expect(referenced).toContain(expected);
 });
 
-test("every MUI variable styles.css references is defined", () => {
+test("every MUI variable the app's sources and the baseline reference is defined", () => {
   // Arrange
-  const referenced = referencedVariables();
+  const sources = Object.values(styleSources).flatMap(referencedVariables);
 
   // Act
-  const { defaults } = renderEmittedVariables();
+  const { css, defaults } = renderEmittedVariables();
+  const referenced = [...sources, ...referencedVariables(css)];
   const missing = referenced.filter((name) => !(name in defaults));
 
   // Assert
   expect(missing).toEqual([]);
+});
+
+test("the body paints the primary tint over the page colour", () => {
+  // Arrange
+  const tint =
+    /body\{[^}]*background-image:linear-gradient\(135deg, rgb\(var\(--mui-palette-primary-mainChannel\) \/ 7%\)/;
+
+  // Act
+  const { css } = renderEmittedVariables();
+
+  // Assert
+  expect(css).toMatch(tint);
+});
+
+test("the body keeps its minimum width", () => {
+  // Arrange
+  const minimum = /body\{[^}]*min-width:320px/;
+
+  // Act
+  const { css } = renderEmittedVariables();
+
+  // Assert
+  expect(css).toMatch(minimum);
 });
