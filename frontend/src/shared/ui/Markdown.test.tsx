@@ -246,6 +246,18 @@ describe("links", () => {
     expect(screen.getByText("Brief")).toBeInTheDocument();
   });
 
+  test.for([
+    ["around an image with no alt text", "[![](https://example.com/a.png)](https://example.com)"],
+    ["with an empty label", "[](https://example.com)"],
+    ["with a blank label", "[ ](https://example.com)"],
+  ] as const)("a link %s renders nothing", ([, notes]) => {
+    // Act
+    const { container } = renderNotes(notes);
+
+    // Assert
+    expect(container.querySelector("a")).toBeNull();
+  });
+
   test("a bare email address is plain text", () => {
     // Act
     renderNotes("Write to team@example.com");

@@ -10,7 +10,8 @@ import {
   type TypographyProps,
 } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
-import ReactMarkdown, { type Components } from "react-markdown";
+import type { ComponentProps } from "react";
+import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 const MONOSPACE = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
@@ -48,6 +49,26 @@ const prose: SxProps<Theme> = {
   "& th, & td": { minWidth: "9rem", overflowWrap: "normal" },
 };
 
+type HtmlElement = NonNullable<ExtraProps["node"]>;
+
+function visibleText(node: HtmlElement | HtmlElement["children"][number]): string {
+  if (node.type === "text") return node.value;
+  if (node.type !== "element") return "";
+  if (node.tagName === "img") return String(node.properties.alt ?? "");
+  return node.children.map(visibleText).join("");
+}
+
+function NoteLink({ node, href, children }: ComponentProps<"a"> & ExtraProps) {
+  if (!href) return children;
+  const label = node ? visibleText(node).trim() : "";
+  if (!label) return null;
+  return (
+    <Link href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+    </Link>
+  );
+}
+
 const heading =
   (
     component: "h2" | "h3" | "h4" | "h5" | "h6",
@@ -68,14 +89,7 @@ const components: Components = {
   h4: heading("h4", "subtitle2"),
   h5: heading("h5", "subtitle2"),
   h6: heading("h6", "subtitle2"),
-  a: ({ href, children }) =>
-    href ? (
-      <Link href={href} target="_blank" rel="noopener noreferrer">
-        {children}
-      </Link>
-    ) : (
-      children
-    ),
+  a: NoteLink,
   // A remote image would make each reader's browser call a URL chosen by the note's author.
   img: ({ alt }) => alt,
   input: () => null,
