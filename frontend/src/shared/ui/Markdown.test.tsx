@@ -11,18 +11,40 @@ const TABLE = `
 const renderNotes = (notes: string) => render(<Markdown>{notes}</Markdown>);
 
 describe("structure", () => {
+  test("a stored note's sections continue straight from the page title", () => {
+    // Act
+    renderNotes("## Підсумок\n\nДомовились.\n\n## Рішення\n\n- Випустити в п'ятницю");
+
+    // Assert
+    expect(screen.getAllByRole("heading").map((heading) => heading.tagName)).toEqual(["H2", "H2"]);
+  });
+
   test.for([
-    ["# Title", 3],
-    ["## Title", 4],
-    ["### Title", 5],
-    ["#### Title", 6],
+    ["# Title", 2],
+    ["## Title", 2],
+    ["### Title", 3],
+    ["#### Title", 4],
+    ["##### Title", 5],
     ["###### Title", 6],
-  ] as const)("%s sits below the page's headings at level %i", ([notes, level]) => {
+  ] as const)("%s is a heading of level %i", ([notes, level]) => {
     // Act
     renderNotes(notes);
 
     // Assert
     expect(screen.getByRole("heading", { level })).toHaveTextContent("Title");
+  });
+
+  test.for([
+    ["# Title", "h3"],
+    ["## Title", "h4"],
+    ["### Title", "subtitle1"],
+    ["#### Title", "subtitle2"],
+  ] as const)("%s looks like the %s variant whatever its level", ([notes, variant]) => {
+    // Act
+    renderNotes(notes);
+
+    // Assert
+    expect(screen.getByRole("heading")).toHaveClass(`MuiTypography-${variant}`);
   });
 
   test("a bullet list renders its items", () => {
