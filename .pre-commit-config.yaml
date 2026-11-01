@@ -46,6 +46,11 @@ repos:
         entry: gitleaks git --redact --verbose
         stages: [manual]
 
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
   # Python tools run from the project environment, so their versions come from uv.lock.
   - repo: local
     hooks:
@@ -136,12 +141,6 @@ repos:
         language: unsupported
         entry: uv run --frozen check-jsonschema --builtin-schema vendor.dependabot
         files: ^\.github/dependabot\.yml$
-
-      - id: actionlint
-        name: actionlint
-        language: unsupported
-        entry: uv run --frozen actionlint
-        files: ^\.github/workflows/
 
       - id: zizmor
         name: zizmor (GitHub Actions security)
