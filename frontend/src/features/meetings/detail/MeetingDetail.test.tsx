@@ -156,16 +156,35 @@ test("tab panel is labelled by the selected tab", () => {
   expect(screen.getByRole("tabpanel")).toHaveAccessibleName("Transcript");
 });
 
-test("queued meeting notes panel is headed Queued", () => {
+test.for([
+  ["recording", /^Recording$/],
+  ["queued", /^Queued$/],
+  ["processing", /^Processing$/],
+] as const)("a %s meeting's notes panel is headed by its real state", ([state, label]) => {
   // Arrange
-  const { container } = renderDetail({ meeting: meeting({ processing_state: "queued" }) });
+  serveContent();
+  const { container } = renderDetail({ meeting: meeting({ processing_state: state }) });
 
   // Act
   const heading = container.querySelector(".processing-panel .MuiTypography-subtitle1");
 
   // Assert
-  expect(heading).toHaveTextContent(/^Queued$/);
+  expect(heading).toHaveTextContent(label);
 });
+
+test.for(["recording", "queued", "processing"] as const)(
+  "a %s meeting has no pause or resume button",
+  (state) => {
+    // Arrange
+    serveContent();
+
+    // Act
+    renderDetail({ meeting: meeting({ processing_state: state }) });
+
+    // Assert
+    expect(screen.queryByRole("button", { name: /pause|resume/i })).not.toBeInTheDocument();
+  },
+);
 
 test("in-progress notes panel offers no control", () => {
   // Arrange
