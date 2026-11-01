@@ -1,4 +1,4 @@
-import { api, signedIn } from "./server.js";
+import { api, signedIn } from "./api.js";
 
 // MediaRecorder hands over one slice a second; ten of them make one uploaded chunk.
 const SLICES_PER_CHUNK = 10;
