@@ -312,7 +312,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /users/me` · Get the signed-in user
 
-- **Status:** Designed · **Caller:** any user · **Success:** `200`, the user
+- **Status:** Implemented · **Caller:** any user · **Success:** `200`, the user
 - **Errors:** common only.
 
 #### `GET /users/me/mcp-keys` · List my MCP keys

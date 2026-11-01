@@ -209,6 +209,29 @@ paths:
       security:
       - sessionCookie: []
       - extensionToken: []
+  /api/v1/users/me:
+    get:
+      tags:
+      - accounts
+      summary: Get the signed-in user
+      description: Returns the user behind the browser session cookie. The extension's
+        bearer token is not accepted.
+      operationId: get_signed_in_user_api_v1_users_me_get
+      responses:
+        '200':
+          description: The signed-in user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRead'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - sessionCookie: []
   /api/v1/users/me/mcp-keys:
     get:
       tags:

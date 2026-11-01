@@ -15,7 +15,7 @@ from starlette.requests import Request
 from conftest import AsyncDatabase
 
 from ...accounts.enums import SessionKind
-from ...accounts.models import McpKey, Session, User
+from ...accounts.models import McpKey, User
 from ...audit.enums import AuditAction
 from ...audit.models import AuditEvent
 from ..core.schemas import Page
@@ -25,25 +25,9 @@ from .schemas import McpKeyCreated, McpKeyRead
 pytestmark = pytest.mark.slow
 
 
-async def _session_token(session: AsyncSession, user: User, kind: SessionKind) -> str:
-    token = uuid4().hex
-    now = datetime.now(UTC)
-    session.add(
-        Session(
-            user_id=user.user_id,
-            kind=kind,
-            token_hash=hashlib.sha256(token.encode()).hexdigest(),
-            created_at=now,
-            expires_at=now + timedelta(days=1),
-        )
-    )
-    await session.flush()
-    return token
-
-
 @asynccontextmanager
 async def _signed_in_client(session: AsyncSession, user: User) -> AsyncGenerator[AsyncClient]:
-    token = await _session_token(session, user, SessionKind.BROWSER)
+    token = await AsyncDatabase.add_session(session, user, SessionKind.BROWSER)
     async with AsyncDatabase.api_client(session) as client:
         client.cookies.set("whadio_session", token)
         yield client
@@ -369,7 +353,7 @@ def test_extension_session_cannot_manage_mcp_keys(async_database: AsyncDatabase)
     # Arrange
     async def scenario(session: AsyncSession) -> int:
         user = await AsyncDatabase.add_account(session, uuid4().hex)
-        token = await _session_token(session, user, SessionKind.EXTENSION)
+        token = await AsyncDatabase.add_session(session, user, SessionKind.EXTENSION)
         async with AsyncDatabase.api_client(session) as client:
             response = await client.get(
                 "/api/v1/users/me/mcp-keys", headers={"Authorization": f"Bearer {token}"}
