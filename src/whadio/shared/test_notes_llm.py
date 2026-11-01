@@ -44,6 +44,15 @@ def test_claude_without_a_model_uses_the_default(monkeypatch: pytest.MonkeyPatch
     assert llm == AnthropicLlm()
 
 
+def test_claude_with_an_empty_model_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    monkeypatch.setenv("WHADIO_NOTES__LLM__PROVIDER", "anthropic")
+    monkeypatch.setenv("WHADIO_NOTES__LLM__MODEL", "")
+    # Act / Assert
+    with pytest.raises(ValidationError, match="model"):
+        load_notes_llm()
+
+
 def test_ollama_without_a_model_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
     monkeypatch.setenv("WHADIO_NOTES__LLM__PROVIDER", "ollama")

@@ -10,7 +10,9 @@ class AnthropicLlm(BaseModel):
     provider: Literal["anthropic"] = Field(
         default="anthropic", description="Claude through the Anthropic API"
     )
-    model: str = Field(default="claude-sonnet-5-5", description="Claude model that writes notes")
+    model: str = Field(
+        default="claude-sonnet-5-5", min_length=1, description="Claude model that writes notes"
+    )
 
 
 class OllamaLlm(BaseModel):
