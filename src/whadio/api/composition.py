@@ -22,6 +22,7 @@ from ..access_policy.services import (
 from ..accounts.administrators import AdministratorRepository, AdministratorService
 from ..accounts.contracts import UserProfile
 from ..accounts.enums import NotesTemplate, RegistrationMode
+from ..accounts.password_resets import PasswordResetService
 from ..accounts.passwords import Argon2PasswordHasher
 from ..accounts.repositories import (
     McpKeyRepository,
@@ -31,6 +32,7 @@ from ..accounts.repositories import (
     WorkspaceRepository,
     WorkspaceSettingsRepository,
 )
+from ..accounts.reset_repository import PasswordResetRepository
 from ..accounts.services import (
     McpKeyService,
     RegistrationService,
@@ -485,6 +487,15 @@ def registration_service(session: Session) -> RegistrationService:
 
 
 Registrations = Annotated[RegistrationService, Depends(registration_service)]
+
+
+def password_reset_service(session: Session) -> PasswordResetService:
+    return PasswordResetService(
+        PasswordResetRepository(session), SessionRepository(session), Argon2PasswordHasher()
+    )
+
+
+PasswordResets = Annotated[PasswordResetService, Depends(password_reset_service)]
 
 
 def mcp_key_service(session: Session) -> McpKeyService:

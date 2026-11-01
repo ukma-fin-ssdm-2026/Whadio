@@ -12,8 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from conftest import AsyncDatabase
 
 from ..accounts.contracts import UserProfile
-from ..accounts.models import PendingRegistration
+from ..accounts.models import PasswordReset, PendingRegistration
 from ..accounts.repositories import RegistrationRepository
+from ..accounts.reset_repository import PasswordResetRepository
 from ..meetings.models import Meeting
 from ..notifications.fakes import InMemoryNotificationOutbox
 from ..notifications.models import NotificationOutbox
@@ -153,6 +154,33 @@ def test_scheduler_registration_job_deletes_expired_links(async_database: AsyncD
         # Act
         await jobs.remove_expired(now)
         return await session.get(PendingRegistration, registration_id) is None
+
+    # Assert
+    assert async_database.run(scenario)
+
+
+@pytest.mark.slow
+def test_scheduler_registration_job_deletes_expired_password_reset_links(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> bool:
+        now = datetime.now(UTC)
+        user = await AsyncDatabase.add_account(session, "OriginalPassword1")
+        reset_id = await PasswordResetRepository(session).issue(
+            user.user_id, uuid4().hex, now - timedelta(hours=2), now
+        )
+        live_user = await AsyncDatabase.add_account(session, "OriginalPassword1")
+        live_id = await PasswordResetRepository(session).issue(
+            live_user.user_id, uuid4().hex, now, now + timedelta(hours=1)
+        )
+        jobs = RegistrationCleanupJobs(SavepointTransactions(session))
+        # Act
+        await jobs.remove_expired_password_resets(now)
+        return (
+            await session.get(PasswordReset, reset_id) is None
+            and await session.get(PasswordReset, live_id) is not None
+        )
 
     # Assert
     assert async_database.run(scenario)

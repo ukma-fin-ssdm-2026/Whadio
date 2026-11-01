@@ -78,7 +78,7 @@ uv run whadio links registration --email person@example.com
 
 The command prints a single-use link valid for 24 hours. Hand it to its intended recipient
 privately; issuing another link for the same address invalidates the earlier one. Only the token's
-hash is stored. An existing account is refused; password-reset support is a separate milestone.
+hash is stored. An existing account is refused; use `whadio links password-reset` to recover it.
 
 The registration page is not available yet. To redeem the link through the API, take the
 registration ID from `/registrations/<id>` and the token from `#token=<token>`, then send:
@@ -102,6 +102,27 @@ uv run whadio admin grant --email person@example.com
 `whadio admin revoke` takes the same option, and both commands accept `--user-id` instead. The
 address must belong to an existing account. A revocation takes effect on the account's next
 request; its sessions stay signed in.
+
+An existing account can be recovered with an operator-issued reset link:
+
+```bash
+uv run whadio links password-reset --email person@example.com
+```
+
+The reset link is single-use and valid for one hour, in either registration mode. Reissuing it
+invalidates the previous link. The reset page is pending the SPA milestone. To redeem the link
+through the API, take the reset ID from `/password-resets/<id>` and the token from
+`#token=<token>`, then send:
+
+```bash
+curl -i -X POST 'http://localhost:3000/api/v1/password-resets/<id>/complete' \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"<token>","password":"<your-password>"}'
+```
+
+The new password follows the registration rule. A successful request ends every browser and
+extension session; MCP keys keep working, and the user signs in again. Neither operator command
+sends email.
 
 `whadio dev-user` remains a local development shortcut:
 

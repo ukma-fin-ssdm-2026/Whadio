@@ -1,7 +1,18 @@
-from typing import Annotated, Final
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Annotated, Final
 from uuid import UUID
 
 import typer
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+    from datetime import datetime
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from .accounts.password_resets import PasswordResetLink
+    from .accounts.services import RegistrationLink
 
 app = typer.Typer(no_args_is_help=True, help="Whadio runtime entry points.")
 MIN_PASSWORD_LENGTH: Final = 12
@@ -185,16 +196,21 @@ links_app = typer.Typer(help="Operator-only account links; requires deployment d
 app.add_typer(links_app, name="links")
 
 
-@links_app.command(help="Issue a registration link; a new link invalidates the earlier one.")
-def registration(email: Annotated[str, typer.Option(help="Address of the new account.")]) -> None:
+def _issue_link(
+    email: str,
+    issue_link: Callable[
+        [AsyncSession, str, datetime], Awaitable[RegistrationLink | PasswordResetLink]
+    ],
+    refusal: type[Exception],
+    refusal_message: str,
+    unavailable_message: str,
+) -> None:
     import asyncio
     from datetime import UTC, datetime
 
     from pydantic import EmailStr, TypeAdapter, ValidationError
     from sqlalchemy.exc import SQLAlchemyError
 
-    from .accounts.repositories import RegistrationRepository, SessionRepository
-    from .accounts.services import AccountAlreadyExistsError, RegistrationIssuer
     from .shared.database import Database, DatabaseSettings
     from .shared.settings import PublicUrlSettings
 
@@ -210,22 +226,63 @@ def registration(email: Annotated[str, typer.Option(help="Address of the new acc
         database = Database(DatabaseSettings.model_validate({}))
         try:
             async with database.transaction() as session:
-                link = await RegistrationIssuer(
-                    RegistrationRepository(session), SessionRepository(session)
-                ).issue(address, datetime.now(UTC))
+                link = await issue_link(session, address, datetime.now(UTC))
             return link.url(str(settings.public_url))
         finally:
             await database.close()
 
     try:
         link = asyncio.run(issue(), loop_factory=asyncio.SelectorEventLoop)
-    except AccountAlreadyExistsError:
-        typer.echo("An account already exists for this address.", err=True)
+    except refusal:
+        typer.echo(refusal_message, err=True)
         raise typer.Exit(code=1) from None
     except (SQLAlchemyError, ValidationError):
-        typer.echo("Registration database or configuration unavailable.", err=True)
+        typer.echo(unavailable_message, err=True)
         raise typer.Exit(code=1) from None
     except ValueError as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(code=1) from None
     typer.echo(link)
+
+
+@links_app.command(help="Issue a registration link; a new link invalidates the earlier one.")
+def registration(email: Annotated[str, typer.Option(help="Address of the new account.")]) -> None:
+    from .accounts.repositories import RegistrationRepository, SessionRepository
+    from .accounts.services import AccountAlreadyExistsError, RegistrationIssuer
+
+    async def issue(session: AsyncSession, address: str, now: datetime) -> RegistrationLink:
+        return await RegistrationIssuer(
+            RegistrationRepository(session), SessionRepository(session)
+        ).issue(address, now)
+
+    _issue_link(
+        email,
+        issue,
+        AccountAlreadyExistsError,
+        "An account already exists for this address.",
+        "Registration database or configuration unavailable.",
+    )
+
+
+@links_app.command(help="Issue a password-reset link; a new link invalidates the earlier one.")
+def password_reset(
+    email: Annotated[str, typer.Option(help="Address of the existing account.")],
+) -> None:
+    from .accounts.password_resets import PasswordResetService
+    from .accounts.passwords import Argon2PasswordHasher
+    from .accounts.repositories import SessionRepository
+    from .accounts.reset_repository import PasswordResetRepository
+    from .shared.errors import UseCaseError
+
+    async def issue(session: AsyncSession, address: str, now: datetime) -> PasswordResetLink:
+        return await PasswordResetService(
+            PasswordResetRepository(session), SessionRepository(session), Argon2PasswordHasher()
+        ).issue(address, now)
+
+    _issue_link(
+        email,
+        issue,
+        UseCaseError,
+        "Account not found; a reset requires an existing account.",
+        "Password-reset database or configuration unavailable.",
+    )
