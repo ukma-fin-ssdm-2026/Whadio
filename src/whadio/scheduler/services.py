@@ -58,10 +58,10 @@ class RetentionScheduler:
         if self._registrations is not None:
             try:
                 removed = await self._registrations.remove_expired(now)
-                logger.info("Registration cleanup: %d expired links deleted", removed)
+                logger.info("Account link cleanup: %d expired links deleted", removed)
             except SQLAlchemyError:
                 failed += 1
-                logger.warning("Registration cleanup could not access the database")
+                logger.warning("Account link cleanup could not access the database")
             try:
                 removed = await self._registrations.remove_expired_password_resets(now)
                 logger.info("Password-reset cleanup: %d expired links deleted", removed)

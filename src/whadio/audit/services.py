@@ -28,6 +28,23 @@ class WorkspaceDeleted:
 
 
 @dataclass(frozen=True)
+class MemberInvited:
+    actor_id: UUID
+    workspace_id: UUID
+    invitation_id: UUID
+    role: str
+    occurred_at: datetime
+
+
+@dataclass(frozen=True)
+class InvitationCancelled:
+    actor_id: UUID
+    workspace_id: UUID
+    invitation_id: UUID
+    occurred_at: datetime
+
+
+@dataclass(frozen=True)
 class McpKeyCreated:
     actor_id: UUID
     key_id: UUID
@@ -53,12 +70,25 @@ class IWorkspaceAuditWriter(Protocol):
     async def write(self, event: WorkspaceDeleted) -> None: ...
 
 
+class IInvitationAuditWriter(Protocol):
+    async def write(self, event: MemberInvited | InvitationCancelled) -> None: ...
+
+
 class AuditWriter:
     def __init__(self, session: AsyncSession) -> None:
         self._session: AsyncSession = session
 
     async def write(
-        self, event: MeetingMoved | WorkspaceDeleted | McpKeyCreated | McpKeyRevoked | ContentEvent
+        self,
+        event: (
+            MeetingMoved
+            | WorkspaceDeleted
+            | MemberInvited
+            | InvitationCancelled
+            | McpKeyCreated
+            | McpKeyRevoked
+            | ContentEvent
+        ),
     ) -> None:
         if isinstance(event, (McpKeyCreated, McpKeyRevoked)):
             self._session.add(
@@ -82,6 +112,23 @@ class AuditWriter:
                     actor_user_id=event.actor_id,
                     action=AuditAction.WORKSPACE_DELETED,
                     workspace_id=event.workspace_id,
+                )
+            )
+            await self._session.flush()
+            return
+        if isinstance(event, (MemberInvited, InvitationCancelled)):
+            self._session.add(
+                AuditEvent(
+                    occurred_at=event.occurred_at,
+                    actor_user_id=event.actor_id,
+                    action=(
+                        AuditAction.MEMBER_INVITED
+                        if isinstance(event, MemberInvited)
+                        else AuditAction.INVITATION_CANCELLED
+                    ),
+                    workspace_id=event.workspace_id,
+                    subject_id=event.invitation_id,
+                    details=({"role": event.role} if isinstance(event, MemberInvited) else None),
                 )
             )
             await self._session.flush()

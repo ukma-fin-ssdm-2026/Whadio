@@ -6,14 +6,28 @@ from enum import StrEnum
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import delete, func, or_, select, text
+from sqlalchemy import and_, delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from ..shared.pagination import ListWindow
 from .contracts import UserProfile
-from .enums import NotesTemplate, SessionKind, WorkspaceRole
-from .models import McpKey, PendingRegistration, Session, User, Workspace, WorkspaceMembership
+from .enums import (
+    InvitationRole,
+    InvitationStatus,
+    NotesTemplate,
+    SessionKind,
+    WorkspaceRole,
+)
+from .models import (
+    Invitation,
+    McpKey,
+    PendingRegistration,
+    Session,
+    User,
+    Workspace,
+    WorkspaceMembership,
+)
 
 
 class IWorkspaceSettingsRepository(Protocol):
@@ -426,6 +440,234 @@ class WorkspaceRepository:
     async def remove(self, workspace_id: UUID) -> None:
         # Folders and memberships go with it through ON DELETE CASCADE.
         await self._session.execute(delete(Workspace).where(Workspace.workspace_id == workspace_id))
+
+
+# --- Invitations ---
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceInvitation:
+    invitation_id: UUID
+    workspace_id: UUID
+    invited_email: str
+    role: InvitationRole
+    status: InvitationStatus
+    invited_by_user_id: UUID
+    created_at: datetime
+    expires_at: datetime
+    responded_at: datetime | None
+    inviter_role: WorkspaceRole | None
+
+    def link_active(self, now: datetime) -> bool:
+        return (
+            self.status is InvitationStatus.PENDING
+            and self.expires_at > now
+            and self.inviter_role in (WorkspaceRole.MODERATOR, WorkspaceRole.OWNER)
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class InvitationWindow:
+    count: int
+    earliest_created_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class InvitationIssue:
+    workspace_id: UUID
+    email: str
+    role: InvitationRole
+    inviter_id: UUID
+    token_hash: str
+    now: datetime
+    expires_at: datetime
+    inviter_role: WorkspaceRole
+
+
+class IInvitationRepository(Protocol):
+    async def delete_expired(self, now: datetime, /) -> int: ...
+
+    async def lock_inviter(self, user_id: UUID, /) -> None: ...
+
+    async def workspace_is_personal(self, workspace_id: UUID, /) -> bool: ...
+
+    async def email_is_member(self, workspace_id: UUID, email: str, /) -> bool: ...
+
+    async def inviter_window(self, inviter_id: UUID, since: datetime, /) -> InvitationWindow: ...
+
+    async def latest_created_at(self, workspace_id: UUID, email: str, /) -> datetime | None: ...
+
+    async def issue(self, issue: InvitationIssue, /) -> tuple[WorkspaceInvitation, bool]: ...
+
+    async def pending(
+        self, workspace_id: UUID, page: ListWindow, /
+    ) -> list[WorkspaceInvitation]: ...
+
+    async def cancel(
+        self, workspace_id: UUID, invitation_id: UUID, now: datetime, /
+    ) -> tuple[WorkspaceInvitation, bool] | None: ...
+
+
+class InvitationRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session: AsyncSession = session
+
+    async def lock_inviter(self, user_id: UUID) -> None:
+        await self._session.scalar(
+            select(User.user_id).where(User.user_id == user_id).with_for_update(key_share=True)
+        )
+
+    async def delete_expired(self, now: datetime) -> int:
+        deleted = await self._session.scalars(
+            delete(Invitation)
+            .where(Invitation.expires_at <= now)
+            .returning(Invitation.invitation_id)
+        )
+        return len(deleted.all())
+
+    async def workspace_is_personal(self, workspace_id: UUID) -> bool:
+        return bool(
+            await self._session.scalar(
+                select(Workspace.is_personal).where(Workspace.workspace_id == workspace_id)
+            )
+        )
+
+    async def email_is_member(self, workspace_id: UUID, email: str) -> bool:
+        return bool(
+            await self._session.scalar(
+                select(
+                    select(WorkspaceMembership.workspace_membership_id)
+                    .join(User, User.user_id == WorkspaceMembership.user_id)
+                    .where(
+                        WorkspaceMembership.workspace_id == workspace_id,
+                        func.lower(User.email) == email.lower(),
+                    )
+                    .exists()
+                )
+            )
+        )
+
+    async def inviter_window(self, inviter_id: UUID, since: datetime) -> InvitationWindow:
+        count, earliest = (
+            await self._session.execute(
+                select(func.count(), func.min(Invitation.created_at)).where(
+                    Invitation.invited_by_user_id == inviter_id,
+                    Invitation.created_at > since,
+                )
+            )
+        ).one()
+        return InvitationWindow(count, earliest)
+
+    async def latest_created_at(self, workspace_id: UUID, email: str) -> datetime | None:
+        return await self._session.scalar(
+            select(func.max(Invitation.created_at)).where(
+                Invitation.workspace_id == workspace_id,
+                func.lower(Invitation.invited_email) == email.lower(),
+            )
+        )
+
+    async def issue(self, issue: InvitationIssue) -> tuple[WorkspaceInvitation, bool]:
+        invitation = await self._session.scalar(
+            select(Invitation)
+            .where(
+                Invitation.workspace_id == issue.workspace_id,
+                func.lower(Invitation.invited_email) == issue.email.lower(),
+                Invitation.status == InvitationStatus.PENDING,
+            )
+            .with_for_update()
+        )
+        replaced = invitation is not None
+        if invitation is None:
+            invitation = Invitation(workspace_id=issue.workspace_id)
+            self._session.add(invitation)
+        invitation.invited_email = issue.email
+        invitation.role = issue.role
+        invitation.invited_by_user_id = issue.inviter_id
+        invitation.status = InvitationStatus.PENDING
+        invitation.token_hash = issue.token_hash
+        invitation.created_at = issue.now
+        invitation.expires_at = issue.expires_at
+        invitation.responded_at = None
+        await self._session.flush()
+        return self._read(invitation, issue.inviter_role), replaced
+
+    async def pending(self, workspace_id: UUID, page: ListWindow) -> list[WorkspaceInvitation]:
+        inviter = aliased(WorkspaceMembership)
+        statement = (
+            select(Invitation, inviter.role)
+            .outerjoin(
+                inviter,
+                and_(
+                    inviter.workspace_id == Invitation.workspace_id,
+                    inviter.user_id == Invitation.invited_by_user_id,
+                ),
+            )
+            .where(
+                Invitation.workspace_id == workspace_id,
+                Invitation.status == InvitationStatus.PENDING,
+            )
+        )
+        if page.after is not None:
+            created_at = datetime.fromisoformat(page.after.key)
+            statement = statement.where(
+                (Invitation.created_at < created_at)
+                | (
+                    (Invitation.created_at == created_at)
+                    & (Invitation.invitation_id < page.after.item_id)
+                )
+            )
+        found = await self._session.execute(
+            statement.order_by(Invitation.created_at.desc(), Invitation.invitation_id.desc()).limit(
+                page.limit
+            )
+        )
+        return [self._read(invitation, inviter_role) for invitation, inviter_role in found]
+
+    async def cancel(
+        self, workspace_id: UUID, invitation_id: UUID, now: datetime
+    ) -> tuple[WorkspaceInvitation, bool] | None:
+        inviter = aliased(WorkspaceMembership)
+        found = (
+            await self._session.execute(
+                select(Invitation, inviter.role)
+                .outerjoin(
+                    inviter,
+                    and_(
+                        inviter.workspace_id == Invitation.workspace_id,
+                        inviter.user_id == Invitation.invited_by_user_id,
+                    ),
+                )
+                .where(
+                    Invitation.workspace_id == workspace_id,
+                    Invitation.invitation_id == invitation_id,
+                )
+                .with_for_update(of=Invitation)
+            )
+        ).one_or_none()
+        if found is None:
+            return None
+        invitation, inviter_role = found
+        was_pending = invitation.status is InvitationStatus.PENDING
+        if was_pending:
+            invitation.status = InvitationStatus.CANCELLED
+            invitation.responded_at = now
+            await self._session.flush()
+        return self._read(invitation, inviter_role), was_pending
+
+    @staticmethod
+    def _read(invitation: Invitation, inviter_role: WorkspaceRole | None) -> WorkspaceInvitation:
+        return WorkspaceInvitation(
+            invitation_id=invitation.invitation_id,
+            workspace_id=invitation.workspace_id,
+            invited_email=invitation.invited_email,
+            role=invitation.role,
+            status=invitation.status,
+            invited_by_user_id=invitation.invited_by_user_id,
+            created_at=invitation.created_at,
+            expires_at=invitation.expires_at,
+            responded_at=invitation.responded_at,
+            inviter_role=inviter_role,
+        )
 
 
 # --- Registration ---

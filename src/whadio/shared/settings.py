@@ -16,7 +16,7 @@ class PublicUrlSettings(BaseSettings):
     public_url: HttpUrl | None = Field(
         default=None,
         description="Public application base URL, including an optional deployment path; "
-        "used in exports and required with an SMTP relay",
+        "used in exports and required for invitation links and with an SMTP relay",
     )
     api_public_url: HttpUrl | None = Field(
         default=None,

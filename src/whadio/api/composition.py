@@ -25,6 +25,7 @@ from ..accounts.enums import NotesTemplate, RegistrationMode
 from ..accounts.password_resets import PasswordResetService
 from ..accounts.passwords import Argon2PasswordHasher
 from ..accounts.repositories import (
+    InvitationRepository,
     McpKeyRepository,
     MembershipRepository,
     RegistrationRepository,
@@ -34,6 +35,7 @@ from ..accounts.repositories import (
 )
 from ..accounts.reset_repository import PasswordResetRepository
 from ..accounts.services import (
+    InvitationService,
     McpKeyService,
     RegistrationService,
     SignInService,
@@ -117,6 +119,9 @@ class CompositionRoot:
             public_settings if public_settings is not None else PublicUrlSettings.model_validate({})
         )
         self.public_url: str = str(settings.public_url or "http://localhost:3000")
+        self.invitation_url: str | None = (
+            str(settings.public_url) if settings.public_url is not None else None
+        )
         self.api_public_url: str = str(settings.api_public_url or self.public_url)
         self._web_settings: WebSettings = (
             web_settings if web_settings is not None else WebSettings.model_validate({})
@@ -517,6 +522,17 @@ def workspace_service(session: Session) -> WorkspaceService:
 Workspaces = Annotated[WorkspaceService, Depends(workspace_service)]
 
 
+def invitation_service(session: Session) -> InvitationService:
+    return InvitationService(
+        InvitationRepository(session),
+        WorkspaceMembershipService(MembershipRepository(session)),
+        AuditWriter(session),
+    )
+
+
+Invitations = Annotated[InvitationService, Depends(invitation_service)]
+
+
 def capture_storage() -> IChunkStorage:
     settings = MeetingSettings()
     if settings.storage is None:
@@ -563,6 +579,10 @@ def connect_integrations(app: FastAPI, integrations: RuntimeIntegrations) -> Non
 
 
 def export_public_url() -> str:
+    raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+
+
+def invitation_public_url() -> str:
     raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
 
 

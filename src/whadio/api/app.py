@@ -10,6 +10,7 @@ from . import meta
 from .access_policy import routes as access_routes
 from .accounts import (
     routes_instance,
+    routes_invitations,
     routes_mcp_keys,
     routes_password_resets,
     routes_registration,
@@ -26,6 +27,7 @@ from .composition import (
     connect_integrations,
     export_api_public_url,
     export_public_url,
+    invitation_public_url,
     registration_mode,
     runtime_database,
     transaction,
@@ -110,6 +112,7 @@ def create_app(
         routes_sessions.router,
         routes_users.router,
         routes_mcp_keys.router,
+        routes_invitations.router,
         routes_workspaces.router,
         meeting_routes.router,
         routes_content.router,
@@ -126,6 +129,13 @@ def create_app(
     app.dependency_overrides[api_version] = lambda: app.version
     app.dependency_overrides[registration_mode] = lambda: composition.registration_mode
     app.dependency_overrides[export_public_url] = lambda: composition.public_url
+
+    def configured_invitation_url() -> str:
+        if composition.invitation_url is None:
+            return invitation_public_url()
+        return composition.invitation_url
+
+    app.dependency_overrides[invitation_public_url] = configured_invitation_url
     app.dependency_overrides[export_api_public_url] = lambda: composition.api_public_url
     app.dependency_overrides[transaction] = composition.transaction
     app.dependency_overrides[runtime_database] = composition.database

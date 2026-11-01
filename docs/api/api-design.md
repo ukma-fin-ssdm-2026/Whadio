@@ -120,7 +120,7 @@ sub-resource, such as `…/cancel`, `…/complete` or `…/approve`.
 - **Attributes:**
   - member: `user_id`, `name`, `email`, `role`, `joined_at`
   - invitation: `id`, `email`, `role` (`member` | `moderator`), `status`
-    (`pending` | `accepted` | `declined` | `cancelled`), `expires_at` (7 days),
+    (`pending` | `accepted` | `declined` | `cancelled`), `created_at`, `expires_at` (7 days),
     `link_active`
 - **Relations:** an invitation belongs to a workspace and to the Moderator who created it.
 
@@ -424,7 +424,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /workspaces/{workspace_id}/invitations` · List pending invitations
 
-- **Status:** Designed · **Caller:** Moderator or Owner · **Success:** `200`, a page of
+- **Status:** Implemented · **Caller:** Moderator or Owner · **Success:** `200`, a page of
   invitations, newest first
 - **Rules:** `link_active` becomes false once the link expires, or once its creator loses the
   Moderator role.
@@ -434,13 +434,16 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /workspaces/{workspace_id}/invitations` · Invite a person
 
-- **Status:** Designed · **Caller:** Moderator or Owner · **Success:** `201` for a new
+- **Status:** Implemented for `invite-only` ·
+  **Caller:** Moderator or Owner · **Success:** `201` for a new
   invitation; `200` when a pending one was replaced
 - **Rules:**
   - Creates a single-use link valid for 7 days (FR-006).
   - In `verified` mode the link is emailed. On an invite-only instance it is returned once in
     `link`, for the Moderator to hand over.
-  - The checks run in this order, and the first failure answers:
+  - After authentication, missing `WHADIO_PUBLIC_URL` returns `503 INTEGRATION_UNAVAILABLE`
+    before role, workspace, membership, business-limit and request-body validation checks.
+  - With the public URL configured, the checks run in this order, and the first failure answers:
     1. the workspace is not personal;
     2. the address does not belong to a member;
     3. the caller has invited fewer than 20 addresses today;
@@ -455,10 +458,12 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - `409 ALREADY_MEMBER`: the address belongs to a member.
   - `429 INVITATION_LIMIT`: the caller reached 20 addresses today.
   - `429 INVITATION_COOLDOWN`: this address was invited to this workspace in the last day.
+  - `503 INTEGRATION_UNAVAILABLE`: `WHADIO_PUBLIC_URL` is unset, or verified-mode email
+    delivery is unavailable until #188. No invitation is created or replaced in either case.
 
 #### `POST /workspaces/{workspace_id}/invitations/{invitation_id}/cancel` · Cancel
 
-- **Status:** Designed · **Caller:** Moderator or Owner · **Success:** `200`, the cancelled
+- **Status:** Implemented · **Caller:** Moderator or Owner · **Success:** `200`, the cancelled
   invitation
 - **Rules:** the link stops working. The invitation still counts towards the one-day wait for
   its address.

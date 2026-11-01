@@ -12,8 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from conftest import AsyncDatabase
 
 from ..accounts.contracts import UserProfile
-from ..accounts.models import PasswordReset, PendingRegistration
-from ..accounts.repositories import RegistrationRepository
+from ..accounts.enums import InvitationRole, WorkspaceRole
+from ..accounts.models import Invitation, PasswordReset, PendingRegistration, WorkspaceMembership
+from ..accounts.repositories import InvitationIssue, InvitationRepository, RegistrationRepository
 from ..accounts.reset_repository import PasswordResetRepository
 from ..meetings.models import Meeting
 from ..notifications.fakes import InMemoryNotificationOutbox
@@ -181,6 +182,36 @@ def test_scheduler_registration_job_deletes_expired_password_reset_links(
             await session.get(PasswordReset, reset_id) is None
             and await session.get(PasswordReset, live_id) is not None
         )
+
+    # Assert
+    assert async_database.run(scenario)
+
+
+@pytest.mark.slow
+def test_scheduler_cleans_expired_invitations(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> bool:
+        actor, _ = await AsyncDatabase.add_workspace(session)
+        workspace = await session.scalar(
+            select(WorkspaceMembership.workspace_id).where(WorkspaceMembership.user_id == actor)
+        )
+        assert workspace is not None
+        now = datetime.now(UTC)
+        invitation, _ = await InvitationRepository(session).issue(
+            InvitationIssue(
+                workspace,
+                f"{uuid4()}@example.com",
+                InvitationRole.MEMBER,
+                actor,
+                uuid4().hex,
+                now - timedelta(days=7),
+                now,
+                WorkspaceRole.OWNER,
+            )
+        )
+        # Act
+        await RegistrationCleanupJobs(SavepointTransactions(session)).remove_expired(now)
+        return await session.get(Invitation, invitation.invitation_id) is None
 
     # Assert
     assert async_database.run(scenario)

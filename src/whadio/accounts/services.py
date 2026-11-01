@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import math
 import secrets
 from collections.abc import Collection
 from dataclasses import dataclass, field
@@ -9,22 +10,27 @@ from uuid import UUID
 
 from ..audit.services import (
     IAccountAuditWriter,
+    IInvitationAuditWriter,
+    InvitationCancelled,
     IWorkspaceAuditWriter,
     McpKeyCreated,
     McpKeyRevoked,
+    MemberInvited,
     WorkspaceDeleted,
 )
-from ..shared.errors import Failure, UseCaseError
+from ..shared.errors import Failure, RateLimitError, UseCaseError
 from ..shared.pagination import ListWindow
 from ..shared.text import display_text
 from .contracts import UserProfile
-from .enums import NotesTemplate, SessionKind, WorkspaceRole
+from .enums import InvitationRole, NotesTemplate, RegistrationMode, SessionKind, WorkspaceRole
 from .models import User
 from .passwords import IPasswordHasher, is_password_strong, password_rule_message
 from .repositories import (
     IIdentityRepository,
+    IInvitationRepository,
     IMcpKeyRepository,
     IMembershipRepository,
+    InvitationIssue,
     IRegistrationRepository,
     ISessionRepository,
     IWorkspaceRepository,
@@ -32,6 +38,7 @@ from .repositories import (
     McpKeyRevokeResult,
     MemberWorkspace,
     PersonalMcpKey,
+    WorkspaceInvitation,
 )
 from .tokens import generated_token_hash, supplied_token_hash
 
@@ -247,6 +254,132 @@ class WorkspaceService:
         return await self.get(user_id, workspace_id)
 
 
+# --- Invitations ---
+
+
+INVITATION_LIFETIME: Final = timedelta(days=7)
+INVITATION_WINDOW: Final = timedelta(days=1)
+INVITATION_DAILY_LIMIT: Final = 20
+
+
+@dataclass(frozen=True, slots=True)
+class IssuedInvitation:
+    invitation: WorkspaceInvitation
+    token: str = field(repr=False)
+    replaced: bool
+
+    def url(self, public_url: str) -> str:
+        return (
+            f"{public_url.rstrip('/')}/invitations/{self.invitation.invitation_id}"
+            f"#token={self.token}"
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class InvitationRequest:
+    email: str
+    role: InvitationRole
+    mode: RegistrationMode
+
+
+class InvitationService:
+    def __init__(
+        self,
+        invitations: IInvitationRepository,
+        memberships: IWorkspaceMembership,
+        audit: IInvitationAuditWriter,
+    ) -> None:
+        self._invitations: IInvitationRepository = invitations
+        self._memberships: IWorkspaceMembership = memberships
+        self._audit: IInvitationAuditWriter = audit
+
+    async def invite(
+        self,
+        actor_id: UUID,
+        workspace_id: UUID,
+        request: InvitationRequest,
+        now: datetime,
+    ) -> IssuedInvitation:
+        await self._invitations.lock_inviter(actor_id)
+        actor_role = await self._moderator(actor_id, workspace_id, lock=True)
+        normalized_email = request.email.lower()
+        if await self._invitations.workspace_is_personal(workspace_id):
+            raise UseCaseError(Failure.PERSONAL_WORKSPACE)
+        if await self._invitations.email_is_member(workspace_id, normalized_email):
+            raise UseCaseError(Failure.ALREADY_MEMBER)
+        since = now - INVITATION_WINDOW
+        window = await self._invitations.inviter_window(actor_id, since)
+        if window.count >= INVITATION_DAILY_LIMIT:
+            raise RateLimitError(
+                Failure.INVITATION_LIMIT,
+                self._retry_after(window.earliest_created_at, now),
+            )
+        if request.mode is RegistrationMode.VERIFIED:
+            latest = await self._invitations.latest_created_at(workspace_id, normalized_email)
+            if latest is not None and latest > since:
+                raise RateLimitError(Failure.INVITATION_COOLDOWN, self._retry_after(latest, now))
+            # Accountless email delivery is supplied by #188. Refuse instead of creating a link
+            # that the API would neither return nor send.
+            raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+        token = secrets.token_urlsafe(32)
+        invitation, replaced = await self._invitations.issue(
+            InvitationIssue(
+                workspace_id,
+                normalized_email,
+                request.role,
+                actor_id,
+                hashlib.sha256(token.encode()).hexdigest(),
+                now,
+                now + INVITATION_LIFETIME,
+                actor_role,
+            )
+        )
+        await self._audit.write(
+            MemberInvited(actor_id, workspace_id, invitation.invitation_id, request.role.value, now)
+        )
+        return IssuedInvitation(invitation, token, replaced)
+
+    async def list_pending(
+        self,
+        actor_id: UUID,
+        workspace_id: UUID,
+        page: ListWindow,
+    ) -> list[WorkspaceInvitation]:
+        await self._moderator(actor_id, workspace_id, lock=False)
+        return await self._invitations.pending(workspace_id, page)
+
+    async def cancel(
+        self, actor_id: UUID, workspace_id: UUID, invitation_id: UUID, now: datetime
+    ) -> WorkspaceInvitation:
+        await self._moderator(actor_id, workspace_id, lock=True)
+        result = await self._invitations.cancel(workspace_id, invitation_id, now)
+        if result is None:
+            raise UseCaseError(Failure.NOT_FOUND)
+        invitation, was_pending = result
+        if not was_pending:
+            raise UseCaseError(Failure.INVITATION_NOT_PENDING)
+        await self._audit.write(InvitationCancelled(actor_id, workspace_id, invitation_id, now))
+        return invitation
+
+    async def _moderator(self, actor_id: UUID, workspace_id: UUID, *, lock: bool) -> WorkspaceRole:
+        role = (
+            await self._memberships.lock_role(workspace_id, actor_id)
+            if lock
+            else await self._memberships.role(workspace_id, actor_id)
+        )
+        if role is None:
+            raise UseCaseError(Failure.NOT_FOUND)
+        if role is WorkspaceRole.MEMBER:
+            raise UseCaseError(Failure.INSUFFICIENT_ROLE)
+        return role
+
+    @staticmethod
+    def _retry_after(created_at: datetime | None, now: datetime) -> int:
+        if created_at is None:
+            return math.ceil(INVITATION_WINDOW.total_seconds())
+        return max(1, math.ceil((created_at + INVITATION_WINDOW - now).total_seconds()))
+
+
 # --- Registration ---
 
 
@@ -355,6 +488,14 @@ class RegistrationService:
             user.user_id, SessionKind.BROWSER, session_token, expires_at, now
         )
         return SignedIn(session_token, expires_at, user)
+
+
+class InvitationCleanupService:
+    def __init__(self, invitations: IInvitationRepository) -> None:
+        self._invitations: IInvitationRepository = invitations
+
+    async def remove_expired(self, now: datetime) -> int:
+        return await self._invitations.delete_expired(now)
 
 
 class RegistrationCleanupService:
