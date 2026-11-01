@@ -85,6 +85,7 @@ from ..processing.repositories import JobRepository
 from ..processing.services import ProcessingCollaborators, ProcessingNotice, ProcessingService
 from ..shared.database import Database, DatabaseSettings, IUseCaseTransactions
 from ..shared.errors import Failure, UseCaseError
+from ..shared.notes_llm import NotesLlm, load_notes_llm
 from ..shared.settings import PublicUrlSettings
 from ..shared.storage import IObjectStorage, connect_s3_storage
 from .settings import WebSettings
@@ -98,6 +99,13 @@ def api_version() -> str:
 
 def registration_mode() -> RegistrationMode:
     raise RuntimeError("Registration mode dependency has not been configured")
+
+
+def notes_llm() -> NotesLlm:
+    raise RuntimeError("Notes model dependency has not been configured")
+
+
+ConfiguredNotesLlm = Annotated[NotesLlm, Depends(notes_llm)]
 
 
 def validate_registration_startup(
@@ -127,6 +135,7 @@ class CompositionRoot:
             web_settings if web_settings is not None else WebSettings.model_validate({})
         )
         self.registration_mode: RegistrationMode = self._web_settings.registration_mode
+        self._notes_llm: NotesLlm | None = None
         self._database: Database | None = database
         self._storage: IObjectStorage | None = None
         # Present while jobs are being published; setting it publishes the ones just committed.
@@ -139,6 +148,11 @@ class CompositionRoot:
             except ValidationError:
                 raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE) from None
         return self._database
+
+    def notes_llm(self) -> NotesLlm:
+        if self._notes_llm is None:
+            raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+        return self._notes_llm
 
     async def transaction(self) -> AsyncGenerator[AsyncSession]:
         async with self.database().transaction() as session:
@@ -161,6 +175,7 @@ class CompositionRoot:
     async def lifespan(self, _app: FastAPI) -> AsyncGenerator[None]:
         settings, storage = self._web_settings, MeetingSettings().storage
         validate_registration_startup(settings, load_notification_settings())
+        self._notes_llm = load_notes_llm()
         stop = asyncio.Event()
         tasks: list[asyncio.Task[None]] = []
         try:

@@ -5,7 +5,8 @@ from fastapi import APIRouter, Query, Request, Response
 
 from ...accounts.enums import NotesTemplate
 from ...accounts.repositories import MemberWorkspace
-from ..composition import Workspaces
+from ...shared.notes_llm import NotesLlm
+from ..composition import ConfiguredNotesLlm, Workspaces
 from ..core.errors import (
     DOC_INVALID,
     DOC_MALFORMED,
@@ -32,15 +33,14 @@ _NOT_FOUND = "`NOT_FOUND`: no such workspace, or the caller is not a member"
 _OWNER_ONLY = f"`{ErrorCode.INSUFFICIENT_ROLE}`: only the Owner can do this"
 
 
-def workspace_read(found: MemberWorkspace) -> WorkspaceRead:
+def workspace_read(found: MemberWorkspace, llm: NotesLlm) -> WorkspaceRead:
     return WorkspaceRead(
         id=found.workspace_id,
         name=found.name,
         is_personal=found.is_personal,
         my_role=Role(found.role.value.lower()),
         member_count=found.member_count,
-        # Only the built-in model writes notes until workspaces can choose a provider.
-        notes_provider=Provider.WHADIO,
+        notes_provider=Provider(llm.reported_provider),
         created_at=found.created_at,
         default_preset=Preset(found.default_template.value),
     )
@@ -54,10 +54,13 @@ def workspace_read(found: MemberWorkspace) -> WorkspaceRead:
     responses=error_responses({401: DOC_UNAUTHENTICATED, 422: DOC_INVALID}),
 )
 async def list_workspaces(
-    query: Annotated[PageQuery, Query()], user: BrowserUser, workspaces: Workspaces
+    query: Annotated[PageQuery, Query()],
+    user: BrowserUser,
+    workspaces: Workspaces,
+    llm: ConfiguredNotesLlm,
 ) -> Page[WorkspaceSummary]:
     found: list[WorkspaceSummary] = [
-        workspace_read(item) for item in await workspaces.list_workspaces(user.id)
+        workspace_read(item, llm) for item in await workspaces.list_workspaces(user.id)
     ]
     return paginate(found, query)
 
@@ -85,6 +88,7 @@ async def create_workspace(
     payload: WorkspaceCreate,
     user: BrowserUser,
     workspaces: Workspaces,
+    llm: ConfiguredNotesLlm,
     request: Request,
     response: Response,
 ) -> WorkspaceRead:
@@ -94,7 +98,8 @@ async def create_workspace(
             payload.name,
             NotesTemplate(payload.default_preset.value),
             datetime.now(UTC),
-        )
+        ),
+        llm,
     )
     response.headers["Location"] = str(request.url_for("get_workspace", workspace_id=created.id))
     return created
@@ -108,9 +113,9 @@ async def create_workspace(
     responses=error_responses({401: DOC_UNAUTHENTICATED, 404: _NOT_FOUND, 422: DOC_INVALID}),
 )
 async def get_workspace(
-    workspace_id: WorkspaceId, user: BrowserUser, workspaces: Workspaces
+    workspace_id: WorkspaceId, user: BrowserUser, workspaces: Workspaces, llm: ConfiguredNotesLlm
 ) -> WorkspaceRead:
-    return workspace_read(await workspaces.get(user.id, workspace_id))
+    return workspace_read(await workspaces.get(user.id, workspace_id), llm)
 
 
 @router.patch(
@@ -134,6 +139,7 @@ async def update_workspace(
     payload: WorkspaceUpdate,
     user: BrowserUser,
     workspaces: Workspaces,
+    llm: ConfiguredNotesLlm,
 ) -> WorkspaceRead:
     return workspace_read(
         await workspaces.update(
@@ -141,7 +147,8 @@ async def update_workspace(
             workspace_id,
             payload.name,
             None if payload.default_preset is None else NotesTemplate(payload.default_preset.value),
-        )
+        ),
+        llm,
     )
 
 

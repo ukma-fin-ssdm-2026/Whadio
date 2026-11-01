@@ -177,6 +177,9 @@ services:
       WHADIO_API_PUBLIC_URL:
       WHADIO_REGISTRATION_MODE:
       WHADIO_MEETINGS_HOSTED:
+      # The web reports these two to every member; the API key stays with the notes worker.
+      WHADIO_NOTES__LLM__PROVIDER:
+      WHADIO_NOTES__LLM__MODEL:
       WHADIO_ASR_BROKER_USER: whadio-asr
       WHADIO_NOTES_BROKER_USER: whadio-notes
       WHADIO_SMTP__HOST: ${COMPOSE_SMTP_HOST:-}

@@ -33,7 +33,8 @@ sudo chmod 600 certs/privkey.pem
 
 Replace every `change-me` value and the example host name in `.env`. The default production
 template runs CPU transcription and writes notes through Anthropic; the provider key and the
-Hugging Face token are secrets. Generate every database, broker and storage password independently
+Hugging Face token are secrets. `web` also receives `WHADIO_NOTES__LLM__PROVIDER` and
+`WHADIO_NOTES__LLM__MODEL` to report them, never the key, and refuses to start without a provider. Generate every database, broker and storage password independently
 with `openssl rand -hex 32`; broker passwords must be URL-safe because they are embedded in AMQP
 URLs. The nginx image runs as uid 101, so the private key stays owner-readable only after the
 ownership change above. Then build and start the complete stack:
@@ -106,6 +107,9 @@ including what each error means, is in [`docs/api/api-design.md`](docs/api/api-d
   specification: <http://localhost:3000/openapi.json>)
 - Sign in with `POST /api/v1/sessions`; the browser keeps the session cookie for the other
   calls. Operator-issued links create accounts through the registration completion endpoint.
+- The API refuses to start without `WHADIO_NOTES__LLM__PROVIDER` and, for `ollama`,
+  `WHADIO_NOTES__LLM__MODEL`. It reads only these two of the notes worker's settings, to report
+  them, and never the API key. Give both the same values and restart both after changing them.
 - Starting the server writes the OpenAPI specification to `docs/api/openapi-generated.yaml`
   and `.json`; to regenerate it without a server, run `uv run whadio openapi`.
 
@@ -232,8 +236,9 @@ take jobs from RabbitMQ and publish their results to `processing.results`.
   follows them and `task workers:down` stops them.
 - The ASR worker needs `WHADIO_ASR__DIARIZATION__HF_TOKEN` in `.env`, from a Hugging Face account
   that accepted the conditions of `pyannote/speaker-diarization-community-1`.
-- The notes worker refuses to start without `WHADIO_NOTES__LLM__PROVIDER`. `.env.example` sets the
-  built-in model: `ollama` with `WHADIO_NOTES__LLM__MODEL=gemma4:12b-it-qat`. Run
+- The notes worker, like the API, refuses to start without `WHADIO_NOTES__LLM__PROVIDER`.
+  `.env.example` sets the built-in model: `ollama` with
+  `WHADIO_NOTES__LLM__MODEL=gemma4:12b-it-qat`. Run
   `uv run task llm:up` before `task workers:up`. It starts Ollama in Compose on an NVIDIA GPU (the
   NVIDIA Container Toolkit is required) at `127.0.0.1:11434` and pulls the model `.env` names into
   the `llm-models` volume; `task llm:logs` follows it. The notes worker in Compose reaches it as

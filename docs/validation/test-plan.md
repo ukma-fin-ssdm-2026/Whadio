@@ -107,7 +107,8 @@ runs, and record each run in [Results](#results).
 
 - **TC-PIPE-03.** Upload a 10-minute clip of a team meeting in the web app and wait for
   `processed`. Check the speakers, language and preset sections, and play the recording. Then set
-  `WHADIO_NOTES__LLM__PROVIDER=ollama` and a model, recreate the notes worker, and repeat; note the
+  `WHADIO_NOTES__LLM__PROVIDER=ollama` and a model, recreate the notes worker, restart the web, and
+  repeat; note the
   notes time and peak GPU memory.
 - **TC-ASR-02.** Add a term Parakeet got wrong in TC-PIPE-03 to the glossary, set
   `WHADIO_ASR__RECOGNIZER=whisper`, recreate the ASR worker, and transcribe a 3-minute clip that

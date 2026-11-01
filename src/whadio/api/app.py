@@ -28,6 +28,7 @@ from .composition import (
     export_api_public_url,
     export_public_url,
     invitation_public_url,
+    notes_llm,
     registration_mode,
     runtime_database,
     transaction,
@@ -128,6 +129,7 @@ def create_app(
     register_error_handlers(app)
     app.dependency_overrides[api_version] = lambda: app.version
     app.dependency_overrides[registration_mode] = lambda: composition.registration_mode
+    app.dependency_overrides[notes_llm] = composition.notes_llm
     app.dependency_overrides[export_public_url] = lambda: composition.public_url
 
     def configured_invitation_url() -> str:

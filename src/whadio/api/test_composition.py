@@ -20,7 +20,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
-from conftest import AsyncDatabase
+from conftest import BUILT_IN_LLM, AsyncDatabase
 
 from ..access_policy.contracts import MeetingScope
 from ..access_policy.repositories import AccessRepository
@@ -92,6 +92,7 @@ from .composition import (
     RuntimeIntegrations,
     folder_service,
     meeting_processing,
+    notes_llm,
     processing_service,
     recording_objects,
     share_notifications,
@@ -920,6 +921,7 @@ async def client_fixture(
             raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
         return RecordingObjects(storage)
 
+    app.dependency_overrides[notes_llm] = lambda: BUILT_IN_LLM
     if processing is not None:
         app.dependency_overrides[meeting_processing] = processing_dependency
     if storage is not None:
