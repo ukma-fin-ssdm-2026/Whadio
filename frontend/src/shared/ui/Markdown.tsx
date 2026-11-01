@@ -76,7 +76,8 @@ function jumpTo(id: string) {
   target.focus({ preventScroll: true });
 }
 
-// A label may look like a URL, so only exact equality with the destination hides the host.
+// A label may look like a URL, so only exact equality with the destination hides the host, and
+// credentials never do: in https://google.com@evil.example the user name reads as the host.
 function NoteLink({
   node,
   href,
@@ -104,14 +105,16 @@ function NoteLink({
   }
   const label = node ? visibleText(node).trim() : "";
   if (!label) return null;
+  const { hostname, username, password } = new URL(href);
+  const labelIsDestination = label === href && !username && !password;
   return (
     <Link href={href} target="_blank" rel="noopener noreferrer">
       {children}
-      {label !== href && (
+      {!labelIsDestination && (
         <>
           {" "}
           <Box component="span" sx={{ color: "text.secondary" }}>
-            ({new URL(href).hostname})
+            ({hostname})
           </Box>
         </>
       )}
