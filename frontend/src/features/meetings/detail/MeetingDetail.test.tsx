@@ -499,6 +499,73 @@ test("a notes failure shows its message", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent("Meeting not found");
 });
 
+function failTranscript() {
+  serveContent();
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}/transcript", ({ response }) =>
+      response(422).json(errorBody("VALIDATION_ERROR", "Invalid revision")),
+    ),
+  );
+}
+
+test("a failed transcript request does not promise a transcript", async () => {
+  // Arrange
+  failTranscript();
+
+  // Act
+  renderDetail({ tab: "transcript" });
+  await screen.findByRole("alert");
+
+  // Assert
+  expect(screen.queryByText("Transcript is not available yet.")).not.toBeInTheDocument();
+});
+
+test("a refused revision link does not promise a transcript", async () => {
+  // Arrange
+  refuseTranscript();
+
+  // Act
+  renderDetail({ tab: "transcript", revisionId: "original" });
+  await screen.findByRole("alert");
+
+  // Assert
+  expect(screen.queryByText("Transcript is not available yet.")).not.toBeInTheDocument();
+});
+
+function failNotes() {
+  serveContent();
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}/notes", ({ response }) =>
+      response(422).json(errorBody("VALIDATION_ERROR", "Invalid meeting")),
+    ),
+  );
+}
+
+test("a failed notes request does not promise notes", async () => {
+  // Arrange
+  failNotes();
+
+  // Act
+  renderDetail();
+  await screen.findByRole("alert");
+
+  // Assert
+  expect(screen.queryByText("No generated notes are available yet.")).not.toBeInTheDocument();
+});
+
+test("a meeting sent back to the queue shows its progress despite failed notes", async () => {
+  // Arrange
+  failNotes();
+  const { rerender } = renderDetail();
+  await screen.findByRole("alert");
+
+  // Act
+  rerender(detail({ meeting: meeting({ processing_state: "queued" }) }));
+
+  // Assert
+  expect(screen.getByText(/^Queued$/)).toBeInTheDocument();
+});
+
 test("transcript download menu closes when another revision is shown", async () => {
   // Arrange
   serveContent();

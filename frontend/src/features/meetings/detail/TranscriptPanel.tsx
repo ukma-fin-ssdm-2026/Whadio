@@ -6,6 +6,7 @@ interface TranscriptPanelProps {
   transcript: TranscriptRead | null;
   missing: boolean;
   loading: boolean;
+  failed: boolean;
   query: string;
   onQuery: (query: string) => void;
   onRevision: (revisionId: string | null) => void;
@@ -27,16 +28,24 @@ function matchingSegments(transcript: TranscriptRead | null, query: string) {
     );
 }
 
+function emptyMessage(transcript: TranscriptRead | null, missing: boolean, failed: boolean) {
+  if (transcript) return "No transcript matches your search.";
+  if (failed) return null;
+  return missing ? "This meeting has no transcript." : "Transcript is not available yet.";
+}
+
 export function TranscriptPanel({
   transcript,
   missing,
   loading,
+  failed,
   query,
   onQuery,
   onRevision,
 }: TranscriptPanelProps) {
   const segments = matchingSegments(transcript, query);
   const showsOriginal = transcript?.revision.revision_type === "original";
+  const empty = !loading && segments.length === 0 && emptyMessage(transcript, missing, failed);
 
   return (
     <Card sx={{ p: { xs: 2, md: 3 } }}>
@@ -75,15 +84,7 @@ export function TranscriptPanel({
               <Typography color="textSecondary">{item.text}</Typography>
             </Box>
           ))}
-          {!loading && segments.length === 0 && (
-            <Typography color="textSecondary">
-              {transcript
-                ? "No transcript matches your search."
-                : missing
-                  ? "This meeting has no transcript."
-                  : "Transcript is not available yet."}
-            </Typography>
-          )}
+          {empty && <Typography color="textSecondary">{empty}</Typography>}
         </Stack>
       </Stack>
     </Card>

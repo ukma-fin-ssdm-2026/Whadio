@@ -22,6 +22,7 @@ function renderPanel(changes: Partial<ComponentProps<typeof TranscriptPanel>> = 
       transcript={EDITED}
       missing={false}
       loading={false}
+      failed={false}
       query=""
       onQuery={() => {}}
       onRevision={() => {}}
@@ -132,4 +133,20 @@ test("a transcript that will never come says so", () => {
 
   // Assert
   expect(screen.getByText("This meeting has no transcript.")).toBeInTheDocument();
+});
+
+test("a failed request claims nothing about a transcript that was never read", () => {
+  // Act
+  renderPanel({ transcript: null, missing: true, failed: true });
+
+  // Assert
+  expect(screen.queryByText("This meeting has no transcript.")).not.toBeInTheDocument();
+});
+
+test("a failed refresh leaves the search over the shown transcript working", () => {
+  // Act
+  renderPanel({ query: "absent", failed: true });
+
+  // Assert
+  expect(screen.getByText("No transcript matches your search.")).toBeInTheDocument();
 });
