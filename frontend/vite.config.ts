@@ -6,12 +6,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [
     tanstackRouter({
-      target: "react",
       // A chunk's first import can outlast Testing Library's 1 s wait on a busy runner.
       autoCodeSplitting: !process.env.VITEST,
-      routeFileIgnorePattern: "\\.test\\.",
-      // The default header turns type checking off, a suppression the commit hook refuses.
-      routeTreeFileHeader: [],
     }),
     react(),
   ],

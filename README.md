@@ -134,7 +134,10 @@ The API's TypeScript types in `frontend/src/shared/api/schema.gen.ts` are genera
 the specification or `frontend/` changes, and fails until the regenerated file is committed.
 
 Each file in `frontend/src/routes/` is a page, and `frontend/src/routeTree.gen.ts` is generated
-from them and committed. Vite regenerates it while it runs.
+from them and committed. Vite regenerates it while it runs, and `npm run gen:routes` does so
+without a server, both with the options in `frontend/tsr.config.json`. The push hook and
+`uv run task check` regenerate it whenever `frontend/` changes, and fail until the regenerated
+file is committed.
 
 Open <http://localhost:5173>. Vite proxies `/api` requests to the local API, so browser sessions
 and uploads use the backend without a separate CORS setup. Set `VITE_API_ORIGIN` (such as
