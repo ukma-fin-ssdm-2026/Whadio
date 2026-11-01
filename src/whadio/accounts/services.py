@@ -468,6 +468,10 @@ class RegistrationService:
             or await self._sessions.by_email(pending.email) is not None
         ):
             raise UseCaseError(Failure.LINK_INVALID)
+        return await self.provision(pending.email, details, now)
+
+    async def provision(self, email: str, details: RegistrationDetails, now: datetime) -> SignedIn:
+        """Create an account after the caller has locked and proven its email."""
         if not is_password_strong(details.password):
             raise RegistrationValidationError("password", password_rule_message())
         if not details.accept_terms:
@@ -477,7 +481,7 @@ class RegistrationService:
         except ValueError as error:
             raise RegistrationValidationError("name", str(error)) from None
         password_hash = await asyncio.to_thread(self._passwords.hash, details.password)
-        user = await self._registrations.create_account(pending.email, name, password_hash, now)
+        user = await self._registrations.create_account(email, name, password_hash, now)
         workspace_id = await self._workspaces.add(
             name, NotesTemplate.DETAILED, user.user_id, now, personal=True
         )

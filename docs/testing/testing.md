@@ -95,6 +95,12 @@ uv run task db:upgrade
 export WHADIO_TEST_DATABASE_URL=postgresql+psycopg://whadio_app:whadio-dev-app@127.0.0.1:5432/whadio
 ```
 
+Invitation concurrency tests use independent committed transactions, including real audit writes.
+They also need `WHADIO_DB_OWNER_PASSWORD` from the environment or `.env` to clean up their own
+fixtures: the application role cannot delete append-only audit records. Cleanup connects to the
+host, port and database from `WHADIO_TEST_DATABASE_URL`; the tested use cases still run as
+`whadio_app`. Use a disposable test database.
+
 Then measure with the command that CI runs. `task test:cov` refuses to start without `WHADIO_TEST_DATABASE_URL`, so skipped database tests cannot quietly change the number. The second command also writes the HTML report to `htmlcov-ci/`:
 
 ```bash

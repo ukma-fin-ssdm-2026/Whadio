@@ -13,6 +13,7 @@ from .accounts import (
     routes_invitations,
     routes_mcp_keys,
     routes_password_resets,
+    routes_redemption,
     routes_registration,
     routes_sessions,
     routes_users,
@@ -106,6 +107,7 @@ def create_app(
     )
     v1 = APIRouter(prefix="/api/v1")
     for router in (
+        routes_redemption.router,
         routes_instance.router,
         routes_registration.router,
         routes_password_resets.router,

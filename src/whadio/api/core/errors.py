@@ -16,6 +16,8 @@ REQUEST_ID_HEADER = "X-Request-ID"
 
 
 class ErrorCode(StrEnum):
+    EMAIL_MISMATCH = "EMAIL_MISMATCH"
+    ACCOUNT_EXISTS = "ACCOUNT_EXISTS"
     NO_NOTES = "NO_NOTES"
     INTEGRATION_UNAVAILABLE = "INTEGRATION_UNAVAILABLE"
     TRANSCRIPT_EXISTS = "TRANSCRIPT_EXISTS"
@@ -134,6 +136,8 @@ _LOCATION = TypeAdapter(tuple[str | int, ...])
 _ECHOED_LOCATIONS: Final = frozenset({"query", "path"})
 
 _FAILURE_MESSAGES: Final[Mapping[Failure, str]] = {
+    Failure.EMAIL_MISMATCH: "Sign in with the invited email address",
+    Failure.ACCOUNT_EXISTS: "This address has an account; sign in and accept instead",
     Failure.INTEGRATION_UNAVAILABLE: "A service Whadio depends on is unavailable; try again later",
     Failure.NOT_FOUND: "Not found, or you have no access to it",
     Failure.INSUFFICIENT_ROLE: "Your role in this workspace does not allow this",
@@ -208,6 +212,7 @@ def _describe(exc: Exception) -> tuple[int, ErrorCode, str, list[ErrorDetail]]:
     match exc:
         case UseCaseError():
             statuses = {
+                Failure.EMAIL_MISMATCH: 403,
                 Failure.INVALID_CREDENTIALS: 401,
                 Failure.NOT_FOUND: 404,
                 Failure.LINK_INVALID: 404,

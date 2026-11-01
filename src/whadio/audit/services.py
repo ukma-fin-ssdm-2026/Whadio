@@ -45,6 +45,15 @@ class InvitationCancelled:
 
 
 @dataclass(frozen=True)
+class MemberJoined:
+    actor_id: UUID
+    workspace_id: UUID
+    member_id: UUID
+    role: str
+    occurred_at: datetime
+
+
+@dataclass(frozen=True)
 class McpKeyCreated:
     actor_id: UUID
     key_id: UUID
@@ -74,6 +83,10 @@ class IInvitationAuditWriter(Protocol):
     async def write(self, event: MemberInvited | InvitationCancelled) -> None: ...
 
 
+class IMemberJoinAuditWriter(Protocol):
+    async def write(self, event: MemberJoined) -> None: ...
+
+
 class AuditWriter:
     def __init__(self, session: AsyncSession) -> None:
         self._session: AsyncSession = session
@@ -85,6 +98,7 @@ class AuditWriter:
             | WorkspaceDeleted
             | MemberInvited
             | InvitationCancelled
+            | MemberJoined
             | McpKeyCreated
             | McpKeyRevoked
             | ContentEvent
@@ -116,7 +130,7 @@ class AuditWriter:
             )
             await self._session.flush()
             return
-        if isinstance(event, (MemberInvited, InvitationCancelled)):
+        if isinstance(event, (MemberInvited, InvitationCancelled, MemberJoined)):
             self._session.add(
                 AuditEvent(
                     occurred_at=event.occurred_at,
@@ -124,11 +138,19 @@ class AuditWriter:
                     action=(
                         AuditAction.MEMBER_INVITED
                         if isinstance(event, MemberInvited)
+                        else AuditAction.MEMBER_JOINED
+                        if isinstance(event, MemberJoined)
                         else AuditAction.INVITATION_CANCELLED
                     ),
                     workspace_id=event.workspace_id,
-                    subject_id=event.invitation_id,
-                    details=({"role": event.role} if isinstance(event, MemberInvited) else None),
+                    subject_id=(
+                        event.member_id if isinstance(event, MemberJoined) else event.invitation_id
+                    ),
+                    details=(
+                        {"role": event.role}
+                        if isinstance(event, (MemberInvited, MemberJoined))
+                        else None
+                    ),
                 )
             )
             await self._session.flush()

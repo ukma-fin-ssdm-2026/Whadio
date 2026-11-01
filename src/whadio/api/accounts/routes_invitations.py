@@ -5,7 +5,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Path, Query, Response
 
 from ...accounts.enums import InvitationRole, RegistrationMode
-from ...accounts.repositories import WorkspaceInvitation
 from ...accounts.services import InvitationRequest
 from ...shared.pagination import ListCursor
 from ..composition import Invitations, invitation_public_url, registration_mode
@@ -19,12 +18,11 @@ from ..core.errors import (
 from ..core.pagination import list_page, list_window
 from ..core.schemas import Page, PageQuery
 from .auth import BrowserUser
+from .invitation_mapping import invitation_read
 from .schemas import (
     InvitationCreate,
     InvitationCreated,
     InvitationRead,
-    InvitationState,
-    InvitedRole,
     WorkspaceId,
 )
 
@@ -32,18 +30,6 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/invitations", tags=["works
 
 _NOT_FOUND = "`NOT_FOUND`: no such workspace, invitation, or caller membership"
 _MODERATOR_ONLY = f"`{ErrorCode.INSUFFICIENT_ROLE}`: Moderator or Owner required"
-
-
-def _read(invitation: WorkspaceInvitation, now: datetime) -> InvitationRead:
-    return InvitationRead(
-        id=invitation.invitation_id,
-        email=invitation.invited_email,
-        role=InvitedRole(invitation.role.value.lower()),
-        status=InvitationState(invitation.status.value.lower()),
-        created_at=invitation.created_at,
-        expires_at=invitation.expires_at,
-        link_active=invitation.link_active(now),
-    )
 
 
 @router.get(
@@ -69,7 +55,12 @@ async def list_invitations(
     last = found[min(len(found), query.limit) - 1] if found else None
     cursor = None if last is None else ListCursor(last.created_at.isoformat(), last.invitation_id)
     now = datetime.now(UTC)
-    return list_page([_read(item, now) for item in found], query, scope, cursor)
+    return list_page(
+        [invitation_read(item, link_active=item.link_active(now)) for item in found],
+        query,
+        scope,
+        cursor,
+    )
 
 
 @router.post(
@@ -116,7 +107,7 @@ async def create_invitation(
     )
     if issued.replaced:
         response.status_code = 200
-    invitation = _read(issued.invitation, now)
+    invitation = invitation_read(issued.invitation, link_active=issued.invitation.link_active(now))
     return InvitationCreated(
         id=invitation.id,
         email=invitation.email,
@@ -151,4 +142,5 @@ async def cancel_invitation(
     invitations: Invitations,
 ) -> InvitationRead:
     now = datetime.now(UTC)
-    return _read(await invitations.cancel(user.id, workspace_id, invitation_id, now), now)
+    invitation = await invitations.cancel(user.id, workspace_id, invitation_id, now)
+    return invitation_read(invitation, link_active=invitation.link_active(now))

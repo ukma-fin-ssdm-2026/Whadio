@@ -6,6 +6,358 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/v1/invitations/{invitation_id}/preview": {
+      "post": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Preview an invitation",
+        "description": "Validates the invitation token from the request body and returns the workspace, offered role and whether the invited address already has an account. No session is required.",
+        "operationId": "preview_api_v1_invitations__invitation_id__preview_post",
+        "parameters": [
+          {
+            "name": "invitation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Invitation identifier from the link",
+              "title": "Invitation Id"
+            },
+            "description": "Invitation identifier from the link"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkToken"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The workspace, invited address, offered role and account existence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LINK_INVALID: invalid or expired link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/v1/invitations/{invitation_id}/accept": {
+      "post": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Accept an invitation",
+        "description": "Requires a browser session with the invited email address. Consumes the valid invitation and grants membership; repeating acceptance returns the existing membership.",
+        "operationId": "accept_api_v1_invitations__invitation_id__accept_post",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "invitation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Invitation identifier from the link",
+              "title": "Invitation Id"
+            },
+            "description": "Invitation identifier from the link"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkToken"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The granted workspace membership",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MembershipRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LINK_INVALID: invalid or expired link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "EMAIL_MISMATCH: sign in with the invited address",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ALREADY_MEMBER",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invitations/{invitation_id}/decline": {
+      "post": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Decline an invitation",
+        "description": "Validates the invitation token from the request body and marks the pending invitation declined. No session is required; the link cannot be used afterwards.",
+        "operationId": "decline_api_v1_invitations__invitation_id__decline_post",
+        "parameters": [
+          {
+            "name": "invitation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Invitation identifier from the link",
+              "title": "Invitation Id"
+            },
+            "description": "Invitation identifier from the link"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkToken"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The declined invitation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LINK_INVALID: invalid or expired link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/v1/invitations/{invitation_id}/register": {
+      "post": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Register through an invitation",
+        "description": "Creates an account for the invited address, its personal workspace and default folder, and the invited membership atomically. Requires a valid invitation token, a strong password and Terms acceptance; consumes the link and sets the browser session cookie.",
+        "operationId": "register_api_v1_invitations__invitation_id__register_post",
+        "parameters": [
+          {
+            "name": "invitation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Invitation identifier from the link",
+              "title": "Invitation Id"
+            },
+            "description": "Invitation identifier from the link"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationComplete"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new user and granted workspace membership",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisteredRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LINK_INVALID: invalid or expired link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ACCOUNT_EXISTS: sign in and accept",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
     "/api/v1/instance": {
       "get": {
         "tags": [
@@ -6285,6 +6637,8 @@
       "ErrorCode": {
         "type": "string",
         "enum": [
+          "EMAIL_MISMATCH",
+          "ACCOUNT_EXISTS",
           "NO_NOTES",
           "INTEGRATION_UNAVAILABLE",
           "TRANSCRIPT_EXISTS",
@@ -6941,6 +7295,23 @@
         "title": "JobType"
       },
       "JsonValue": {},
+      "LinkToken": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "format": "password",
+            "title": "Token",
+            "description": "Secret from the invitation link fragment",
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "title": "LinkToken"
+      },
       "McpKeyCreate": {
         "properties": {
           "expires_in_days": {
@@ -7360,6 +7731,40 @@
         "additionalProperties": false,
         "type": "object",
         "title": "MeetingUpdate"
+      },
+      "MembershipRead": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id",
+            "description": "Member account identifier"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id",
+            "description": "Workspace identifier"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role",
+            "description": "Granted workspace role"
+          },
+          "joined_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Joined At",
+            "description": "When the membership began"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "workspace_id",
+          "role",
+          "joined_at"
+        ],
+        "title": "MembershipRead"
       },
       "MetricsRead": {
         "properties": {
@@ -7819,6 +8224,44 @@
         ],
         "title": "Preset"
       },
+      "PreviewRead": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id",
+            "description": "Workspace being joined"
+          },
+          "workspace_name": {
+            "type": "string",
+            "title": "Workspace Name",
+            "description": "Workspace display name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email",
+            "description": "Invited email address"
+          },
+          "role": {
+            "$ref": "#/components/schemas/InvitedRole",
+            "description": "Offered workspace role"
+          },
+          "account_exists": {
+            "type": "boolean",
+            "title": "Account Exists",
+            "description": "Whether to sign in instead of registering"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "workspace_name",
+          "email",
+          "role",
+          "account_exists"
+        ],
+        "title": "PreviewRead"
+      },
       "ProcessingState": {
         "type": "string",
         "enum": [
@@ -7847,6 +8290,24 @@
           "partial"
         ],
         "title": "RecordingStatus"
+      },
+      "RegisteredRead": {
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/UserRead",
+            "description": "Newly registered account"
+          },
+          "membership": {
+            "$ref": "#/components/schemas/MembershipRead",
+            "description": "Membership created through the invitation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user",
+          "membership"
+        ],
+        "title": "RegisteredRead"
       },
       "RegistrationComplete": {
         "properties": {
