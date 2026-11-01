@@ -14,7 +14,7 @@ node "User's computer" as pc {
 }
 
 node "Main host\n<<Linux VM, CPU only>>" as main {
-  node "Docker Compose — profile: core" as composeCore {
+  node "Docker Compose — profile: core; optional: storage" as composeCore {
     component "nginx\n<<reverse proxy, TLS, SPA static>>" as nginx
     component "migrate\n<<one-shot container>>" as migrate
     component "web\n<<container>>" as web
@@ -22,7 +22,7 @@ node "Main host\n<<Linux VM, CPU only>>" as main {
     component "notes-worker\n<<container>>" as notesWorker
     queue "rabbitmq\n<<container>>" as mq
     database "postgres\n<<container, volume>>" as db
-    database "object-storage\n<<container, volume, S3-compatible>>" as store
+    database "object-storage\n<<profile: storage, volume, S3-compatible>>" as store
   }
 }
 
@@ -44,6 +44,7 @@ ext .left.> meet : DOM read\n(names, active speaker)\n[TB-2]
 
 ' --- Inside the main host ---
 nginx --> web : HTTP\n[TB-3]
+nginx --> store : HTTP GET/HEAD\npresigned URL\n[TB-4]
 migrate --> db : SQL schema upgrade\n[TB-4]
 web --> db : SQL\n[TB-4]
 web --> store : S3 API\n[TB-4]

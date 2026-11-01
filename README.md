@@ -27,12 +27,16 @@ cp .env.production.example .env
 mkdir -p certs
 cp /path/to/fullchain.pem certs/fullchain.pem
 cp /path/to/privkey.pem certs/privkey.pem
+sudo chown 101:101 certs/privkey.pem
+sudo chmod 600 certs/privkey.pem
 ```
 
 Replace every `change-me` value and the example host name in `.env`. The default production
 template runs CPU transcription and writes notes through Anthropic; the provider key and the
-Hugging Face token are secrets. Generate every database, broker and storage password independently.
-Then build and start the complete stack:
+Hugging Face token are secrets. Generate every database, broker and storage password independently
+with `openssl rand -hex 32`; broker passwords must be URL-safe because they are embedded in AMQP
+URLs. The nginx image runs as uid 101, so the private key stays owner-readable only after the
+ownership change above. Then build and start the complete stack:
 
 ```bash
 docker compose config --quiet
@@ -49,12 +53,24 @@ container and hand it to the named recipient privately:
 docker compose exec web whadio links registration --email person@example.com
 ```
 
+After the recipient completes that link, grant the first account administrator access:
+
+```bash
+docker compose exec web whadio admin grant --email person@example.com
+```
+
 No SMTP relay is required in `invite-only` mode. To use verified registration, uncomment and fill
 the SMTP settings before changing `WHADIO_REGISTRATION_MODE=verified`. For a local Ollama model,
 change the notes provider settings and add `ollama` to `COMPOSE_PROFILES`; for NVIDIA-accelerated
 ASR also set `COMPOSE_FILE=compose.yaml:compose.cuda.yaml` (`;` instead of `:` on Windows). The ASR
 worker otherwise uses the CPU image and does not start Ollama. Update with `git pull`, then repeat
 the `docker compose up --detach --build --wait` command; volumes preserve application data.
+
+The template starts the bundled SeaweedFS through the `storage` profile. To use AWS S3 or another
+S3-compatible service, remove `storage` from `COMPOSE_PROFILES`, set
+`WHADIO_STORAGE__ENDPOINT_URL` and the storage credentials (plus region and bucket when needed),
+and leave `WHADIO_STORAGE__PUBLIC_ENDPOINT_URL` unset so presigned playback links point directly
+to that HTTPS endpoint.
 
 
 # Development

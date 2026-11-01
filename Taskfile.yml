@@ -15,9 +15,6 @@ tasks:
 
   dev:
     desc: Run the API with auto-reload on http://localhost:3000
-    env:
-      # The container reaches Mailpit by service name; a host-run API uses its published port.
-      WHADIO_SMTP__HOST: 127.0.0.1
     cmds:
       - uv run --frozen fastapi dev --entrypoint whadio.api.main:app --port 3000
 
@@ -137,13 +134,13 @@ tasks:
   infra:down:
     desc: Stop the services and the workers, and keep their data
     cmds:
-      - docker compose --profile core --profile gpu --profile ollama --profile dev down
+      - docker compose --profile core --profile gpu --profile ollama --profile dev --profile storage down
 
   infra:reset:
     desc: Stop the services and the workers, and delete their data
     prompt: This deletes the local database, broker and storage data, and the downloaded models. Continue?
     cmds:
-      - docker compose --profile core --profile gpu --profile ollama --profile dev down --volumes
+      - docker compose --profile core --profile gpu --profile ollama --profile dev --profile storage down --volumes
 
   infra:logs:
     desc: Follow the services' logs

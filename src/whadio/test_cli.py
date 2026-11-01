@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
 import pytest
+import uvicorn
 from sqlalchemy import Engine, create_engine, delete, func, insert, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,6 +40,47 @@ def test_link_command_refuses_invalid_email(command: str) -> None:
     result = runner.invoke(app, ["links", command, "--email", "invalid"])
     # Assert
     assert (result.exit_code != 0, "must be an email address" in result.output) == (True, True)
+
+
+def _web_forwarded_allow_ips(
+    monkeypatch: pytest.MonkeyPatch, arguments: list[str]
+) -> tuple[int, list[str]]:
+    received: list[str] = []
+
+    class StoppedServer:
+        def __init__(self, config: uvicorn.Config) -> None:
+            received.append(str(config.forwarded_allow_ips))
+
+        async def serve(self) -> None:
+            return None
+
+    monkeypatch.setattr(uvicorn, "Server", StoppedServer)
+    result = CliRunner().invoke(app, ["web", *arguments])
+    return result.exit_code, received
+
+
+def test_web_passes_the_trusted_proxy_addresses_to_uvicorn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    arguments = ["--forwarded-allow-ips", "172.30.0.0/24"]
+
+    # Act
+    outcome = _web_forwarded_allow_ips(monkeypatch, arguments)
+
+    # Assert
+    assert outcome == (0, ["172.30.0.0/24"])
+
+
+def test_web_trusts_only_loopback_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    arguments: list[str] = []
+
+    # Act
+    outcome = _web_forwarded_allow_ips(monkeypatch, arguments)
+
+    # Assert
+    assert outcome == (0, ["127.0.0.1"])
 
 
 @pytest.mark.parametrize("command", ["registration", "password-reset"])
