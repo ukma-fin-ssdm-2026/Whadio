@@ -422,6 +422,7 @@ def test_context_meeting_that_fits_only_when_estimated_separately_is_left_out() 
     assert prompt.context_meeting_ids == ()
 
 
+@pytest.mark.slow
 @given(_REQUESTS, _BUDGETS)
 def test_built_prompt_is_refused_or_fits_the_budget(
     notes_request: NotesRequested, budget: ContextBudget

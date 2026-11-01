@@ -294,11 +294,11 @@ strict = true
 testpaths = ["src"]
 addopts = ["--import-mode=importlib"]
 markers = [
-    "slow: needs models or running services; left out of the commit hook",
+    "slow: needs models or running services, or takes over half a second; left out of the push hook",
     "models: needs downloaded ML models; CI leaves it out (mark such tests slow as well)",
 ]
 
-# Turned on by `task test:cov`, not addopts: the commit hook's fast suite stays below fail_under.
+# Turned on by `task test:cov`, not addopts: the push hook's fast suite stays below fail_under.
 [tool.coverage.run]
 source_pkgs = ["whadio"]
 branch = true
