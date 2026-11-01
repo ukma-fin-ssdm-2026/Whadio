@@ -29,16 +29,17 @@ if (!globalThis.whadioRecorder) {
         chrome.runtime.sendMessage({ type: "speakers", speakers, at });
       }
     };
-    // Meet draws icons as words, such as "devices", in the same notranslate elements as names. Words shaped
-    // like an icon name are skipped, and so is a name written that way; the first other span is the name.
-    const ICON_LIGATURE = /^[a-z]+(_[a-z]+)*$/;
+    // Meet puts icons in notranslate spans too. On a real call (#252) the name span had no class but
+    // notranslate and no aria-hidden; every icon span had more classes and aria-hidden="true".
     const tileName = (tile) => {
       for (const element of tile.querySelectorAll("span.notranslate")) {
         const text = element.textContent.trim();
         if (
           text &&
-          !tile.contains(element.closest('[aria-hidden="true"]')) &&
-          !ICON_LIGATURE.test(text)
+          // `devices` reached us as text and its markup is still unseen (#252).
+          text !== "devices" &&
+          element.classList.length === 1 &&
+          !tile.contains(element.closest('[aria-hidden="true"]'))
         ) {
           return text;
         }
