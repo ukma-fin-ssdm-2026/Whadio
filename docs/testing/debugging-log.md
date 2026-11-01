@@ -82,6 +82,8 @@ as agreed at the 2026-10-15 meeting. For this retry limit, that means checking t
 the fourth attempt allows a fifth attempt, while a failure at or above five allows no further
 attempt. We will check both the meeting's state and whether another worker request is published.
 
-**AI Usage:** Claude Code was used for the original exercise, checked by Denys Zabiiaka.
+## AI Usage
+
+Claude Code was used for the original exercise, checked by Denys Zabiiaka.
 OpenAI Codex revised this log, added the boundary tests and ran the verification reported here.
 Valeriia Missirova is responsible for reviewing the results and for the document.

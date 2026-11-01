@@ -2,8 +2,8 @@
 
 This document describes Whadio's HTTP API: what it exposes, how its resources are modelled,
 what each error means, and the decisions behind its conventions. It covers the **whole designed
-API**. The code in [`src/whadio/api/`](../../src/whadio/api/) implements one vertical slice of it as stubs
-(section 2).
+API**. The code in [`src/whadio/api/`](../../src/whadio/api/) implements the operations marked
+Implemented below; operations marked Designed remain contracts for later work (section 2).
 
 The API is written code-first: FastAPI builds the OpenAPI specification from the code, and
 nothing in it is written by hand. The generated specification is committed as
@@ -293,7 +293,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /sessions` · Sign in
 
-- **Status:** Stub · **Caller:** public · **Success:** `201`, the session and its user
+- **Status:** Implemented · **Caller:** public · **Success:** `201`, the session and its user
 - **Rules:**
   - `kind: browser`, the default, sets an `HttpOnly`, `Secure`, `SameSite=Strict` cookie valid
     for 14 days.
@@ -306,7 +306,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `DELETE /sessions/current` · Sign out
 
-- **Status:** Stub · **Caller:** anyone · **Success:** `204`
+- **Status:** Implemented · **Caller:** anyone · **Success:** `204`
 - **Rules:** ends the session presented by the cookie or the bearer token, and clears the
   cookie. It answers `204` even without a session, because signing out is idempotent.
 - **Errors:** none.
@@ -341,14 +341,14 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /workspaces` · List my workspaces
 
-- **Status:** Stub · **Caller:** any user · **Success:** `200`, a page of workspaces, oldest
+- **Status:** Implemented · **Caller:** any user · **Success:** `200`, a page of workspaces, oldest
   first
 - **Rules:** the personal workspace is included.
 - **Errors:** common only.
 
 #### `POST /workspaces` · Create a workspace
 
-- **Status:** Stub · **Caller:** any user · **Success:** `201`, the workspace; `Location`
+- **Status:** Implemented · **Caller:** any user · **Success:** `201`, the workspace; `Location`
   points to it
 - **Rules:** the caller becomes the Owner. The workspace gets one default folder and no
   meetings (FR-005).
@@ -356,13 +356,13 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /workspaces/{workspace_id}` · Get a workspace
 
-- **Status:** Stub · **Caller:** any member · **Success:** `200`, the workspace
+- **Status:** Implemented · **Caller:** any member · **Success:** `200`, the workspace
 - **Errors:**
   - `404 NOT_FOUND`: no such workspace, or the caller is not a member.
 
 #### `PATCH /workspaces/{workspace_id}` · Update workspace settings
 
-- **Status:** Stub · **Caller:** Owner · **Success:** `200`, the updated workspace
+- **Status:** Implemented · **Caller:** Owner · **Success:** `200`, the updated workspace
 - **Rules:** changes `name`, `default_preset`, or both. At least one is required.
 - **Errors:**
   - `403 INSUFFICIENT_ROLE`: the caller is a member, but not the Owner.
@@ -370,7 +370,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `DELETE /workspaces/{workspace_id}` · Delete a workspace
 
-- **Status:** Stub · **Caller:** Owner · **Success:** `204`
+- **Status:** Implemented · **Caller:** Owner · **Success:** `204`
 - **Rules:** deletes the folders, meetings, recordings, transcripts and notes with it
   (FR-008).
 - **Errors:**
@@ -526,7 +526,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET`, `POST /workspaces/{workspace_id}/folders` · List or create folders
 
-- **Status:** Designed · **Caller:** any member to list; Moderator or Owner to create ·
+- **Status:** Implemented · **Caller:** any member to list; Moderator or Owner to create ·
   **Success:** `200`, a page with the default folder first; `201`, the new folder
 - **Rules:** folders are flat and only organise meetings: they never grant or restrict
   access. A folder is the context set for notes (FR-019).
@@ -537,7 +537,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `PATCH`, `DELETE /workspaces/{workspace_id}/folders/{folder_id}` · Rename or delete
 
-- **Status:** Designed · **Caller:** Moderator or Owner · **Success:** `200`, the folder;
+- **Status:** Implemented · **Caller:** Moderator or Owner · **Success:** `200`, the folder;
   `204` on delete
 - **Rules:** deleting moves the folder's meetings to the default folder; no meeting is deleted
   (FR-034).
@@ -563,7 +563,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET`, `POST /workspaces/{workspace_id}/glossary-terms` · List or add terms
 
-- **Status:** Designed · **Caller:** any member · **Success:** `200`, a page in alphabetical
+- **Status:** Implemented · **Caller:** any member · **Success:** `200`, a page in alphabetical
   order; `201`, the new term
 - **Rules:** later transcriptions in the workspace use the terms (FR-029).
   `source_meeting_id` records the transcript correction the term came from (FR-030).
@@ -573,7 +573,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `PATCH`, `DELETE /workspaces/{workspace_id}/glossary-terms/{term_id}` · Edit or remove
 
-- **Status:** Designed · **Caller:** the term's author, a Moderator or the Owner ·
+- **Status:** Implemented · **Caller:** the term's author, a Moderator or the Owner ·
   **Success:** `200`, the term; `204` on delete
 - **Errors:**
   - `403 INSUFFICIENT_ROLE`: the caller is a plain member who did not add the term.
@@ -584,7 +584,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /workspaces/{workspace_id}/meetings` · List meetings
 
-- **Status:** Stub · **Caller:** any member · **Success:** `200`, a page of meetings, newest
+- **Status:** Implemented · **Caller:** any member · **Success:** `200`, a page of meetings, newest
   recording first
 - **Rules:**
   - Shows each meeting's processing state (FR-031).
@@ -597,7 +597,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /workspaces/{workspace_id}/meetings` · Upload a recording
 
-- **Status:** Stub · **Caller:** any member, with a browser session or the extension token ·
+- **Status:** Implemented · **Caller:** any member, with a browser session or the extension token ·
   **Success:** `201`, the meeting in state `queued`; `Location` points to it
 - **Rules:**
   - Multipart: an audio `file`, plus an optional `folder_id` and `name` (FR-013).
@@ -622,7 +622,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /meetings/{meeting_id}` · Get a meeting
 
-- **Status:** Stub · **Caller:** any member who can read it · **Success:** `200`, the meeting
+- **Status:** Implemented · **Caller:** any member who can read it · **Success:** `200`, the meeting
 - **Rules:** poll it while `processing_state` is `recording`, `queued` or `processing`
   (FR-014).
 - **Errors:**
@@ -630,7 +630,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `PATCH /meetings/{meeting_id}` · Rename or move a meeting
 
-- **Status:** Stub · **Caller:** any member who can read it · **Success:** `200`, the meeting
+- **Status:** Implemented · **Caller:** any member who can read it · **Success:** `200`, the meeting
 - **Rules:**
   - Renaming clears `name_is_generated`.
   - Moving keeps the recording, transcript and notes, and later notes use the new folder as
@@ -642,7 +642,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `DELETE /meetings/{meeting_id}` · Delete a meeting
 
-- **Status:** Stub · **Caller:** its recorder, a Moderator or the Owner · **Success:** `204`
+- **Status:** Implemented · **Caller:** its recorder, a Moderator or the Owner · **Success:** `204`
 - **Rules:** deletes the recording, transcript and notes (FR-036). Notes of other meetings
   that used it as context keep their text.
 - **Errors:**
@@ -652,7 +652,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /meetings/{meeting_id}/recording` · Get a playback link
 
-- **Status:** Designed · **Caller:** any member who can read it · **Success:** `200`, a
+- **Status:** Implemented · **Caller:** any member who can read it · **Success:** `200`, a
   presigned link valid for 5 minutes
 - **Rules:** the link is issued only after the access check. Storage paths are never exposed.
 - **Errors:**
@@ -663,7 +663,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /meetings/{meeting_id}/transcript` · Get the transcript
 
-- **Status:** Stub · **Caller:** any member who can read it · **Success:** `200`, the current
+- **Status:** Implemented · **Caller:** any member who can read it · **Success:** `200`, the current
   revision
 - **Rules:**
   - Timestamped segments with speaker labels (FR-027).
@@ -675,7 +675,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET`, `POST /meetings/{meeting_id}/transcript/revisions` · List revisions or edit
 
-- **Status:** Designed · **Caller:** any member who can read it · **Success:** `200`, a page
+- **Status:** Implemented · **Caller:** any member who can read it · **Success:** `200`, a page
   of revisions, newest first; `201`, the new current revision
 - **Rules:**
   - An edit applies text corrections and speaker renames as a new revision. Earlier revisions,
@@ -693,7 +693,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /meetings/{meeting_id}/notes` · List the notes
 
-- **Status:** Stub · **Caller:** any member who can read it · **Success:** `200`, a page of
+- **Status:** Implemented · **Caller:** any member who can read it · **Success:** `200`, a page of
   versions, newest first; the first is current
 - **Rules:** each version lists the meetings used as context (FR-020). A meeting without notes
   answers with an empty page.
@@ -702,7 +702,8 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /meetings/{meeting_id}/notes` · Regenerate the notes
 
-- **Status:** Designed; outside the MVP. The server answers every request that passes the read
+- **Status:** Implemented as an explicit refusal; regeneration is outside the MVP. The server
+  answers every request that passes the read
   check with `503 INTEGRATION_UNAVAILABLE`, and its OpenAPI specification documents only that.
   What follows is the planned behaviour.
 - **Caller:** any member who can read it · **Success:** `202`, the queued job; `Location`
@@ -762,7 +763,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET`, `PUT /meetings/{meeting_id}/access` · Who can read a meeting
 
-- **Status:** Designed · **Caller:** any member who can read it, to read; Moderator or Owner,
+- **Status:** Implemented · **Caller:** any member who can read it, to read; Moderator or Owner,
   to change · **Success:** `200`, the access setting
 - **Rules:**
   - `PUT` replaces the whole setting (FR-037). A `restricted` meeting needs a non-empty
@@ -776,7 +777,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET`, `POST /meetings/{meeting_id}/shares` · List or create shares
 
-- **Status:** Designed · **Caller:** any member who can read it · **Success:** `200`, a page
+- **Status:** Implemented · **Caller:** any member who can read it · **Success:** `200`, a page
   of shares, revoked ones included; `201`, the new share with its link, shown once
 - **Rules:**
   - Opening the link grants nothing by itself. The recipient signs in and requests access,
@@ -788,7 +789,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `DELETE /shares/{share_id}` · Revoke a share
 
-- **Status:** Designed · **Caller:** the share's creator · **Success:** `204`
+- **Status:** Implemented · **Caller:** the share's creator · **Success:** `204`
 - **Rules:** the link and the bound recipient lose access at once. Revoking twice is harmless.
 - **Errors:**
   - `403 INSUFFICIENT_ROLE`: the caller can read the meeting, but did not create the share.
@@ -796,7 +797,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /shares/{share_id}/access-requests` · Request access with a share link
 
-- **Status:** Designed · **Caller:** any signed-in user · **Success:** `201`, the pending
+- **Status:** Implemented · **Caller:** any signed-in user · **Success:** `201`, the pending
   request
 - **Rules:**
   - The body carries the link's token.
@@ -810,7 +811,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /shares/{share_id}/access-requests` · List requests for a share
 
-- **Status:** Designed · **Caller:** the share's creator · **Success:** `200`, a page of
+- **Status:** Implemented · **Caller:** the share's creator · **Success:** `200`, a page of
   requests, newest first
 - **Errors:**
   - `403 INSUFFICIENT_ROLE`: the caller did not create the share.
@@ -818,7 +819,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /share-access-requests/{request_id}/approve` and `…/decline` · Decide a request
 
-- **Status:** Designed · **Caller:** the share's creator · **Success:** `200`, the decided
+- **Status:** Implemented · **Caller:** the share's creator · **Success:** `200`, the decided
   request
 - **Rules:**
   - Approving binds the share to the requester's account. Any other account opening the link
@@ -833,7 +834,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /shares/{share_id}/transcript` and `/shares/{share_id}/notes` · Read as a recipient
 
-- **Status:** Designed · **Caller:** the account the share is bound to · **Success:** `200`,
+- **Status:** Implemented · **Caller:** the account the share is bound to · **Success:** `200`,
   the transcript, or a page of notes
 - **Rules:** with redaction, speaker names are replaced in both.
 - **Errors:**
@@ -843,7 +844,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /users/me/shares` · Meetings shared with me
 
-- **Status:** Designed · **Caller:** any user · **Success:** `200`, a page of shares bound to
+- **Status:** Implemented · **Caller:** any user · **Success:** `200`, a page of shares bound to
   the caller and not revoked
 - **Errors:** common only.
 
@@ -936,7 +937,7 @@ All capture operations accept the extension's bearer token as well as the browse
 
 #### `GET /health` · Liveness probe
 
-- **Status:** Stub · **Caller:** public · **Success:** `200`, `{"status": "ok"}`
+- **Status:** Implemented · **Caller:** public · **Success:** `200`, `{"status": "ok"}`
 - **Rules:** for uptime monitoring. Not versioned.
 - **Errors:** none.
 
@@ -1153,10 +1154,11 @@ Rules that follow from this:
   read meetings.
 - **State-changing requests from a foreign `Origin` are refused** with `403 ORIGIN_REJECTED`,
   unless they carry a bearer token. This is the CSRF defence for cookie requests. *Designed;
-  not in the stub.*
+  not implemented.*
 - **MCP uses personal keys** (FR-043), shown once and stored hashed.
 
-The stub accepts one demo account and a fixed session token.
+The earlier prototype accepted one demo account and a fixed session token; the implementation now
+stores Argon2id password hashes and server-side sessions in PostgreSQL.
 
 ### 6.3 Link tokens: identifier in the path, token in the body
 
@@ -1225,7 +1227,7 @@ three reasons:
 - an item created between two pages is not shown twice.
 
 Cursors are opaque, and every list uses the same style. The designed cursor encodes the sort
-key of the last item. The stub's cursor is the position of the next item, which is enough for
+key of the last item. The implementation's cursor is the position of the next item, which is enough for
 fixed data.
 
 ### 6.7 Long-running work
@@ -1249,7 +1251,7 @@ Transcription and notes run in workers, not in the request:
   `Idempotent-Replayed: true`. Keys are scoped to the presented credential, so one client can
   never replay another's response. This matters most for starting a capture, uploading, and
   regenerating notes, where a retried request would otherwise use up one of the limited
-  regenerations. *Designed; not in the stub.*
+  regenerations. *Designed; regeneration currently returns the documented refusal.*
 
 ### 6.9 Status codes for success
 
@@ -1312,7 +1314,7 @@ tool set over automatic conversion.
 
 This document and the API code were prepared with the assistance of Claude Code (Claude Opus
 5.5). The design follows the Backend Lead's decisions taken in working sessions on 2026-10-03
-and 2026-10-04, and the requirements merged in PR #46. The stub code was checked with a type
+and 2026-10-04, and the requirements merged in PR #46. The original prototype was checked with a type
 checker and with scripted requests against every implemented operation. The author reviewed
 and edited the content, and the document is reviewed through a pull request before merging.
 

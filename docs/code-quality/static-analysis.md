@@ -1,6 +1,6 @@
 # Static Analysis
 
-Commit analysed: `2d2c949` on `main` (PR #68 merged).
+Commit analysed: `46af4d7` on `main`; tools run on 2026-11-01.
 
 ## What runs and where
 
@@ -24,9 +24,43 @@ Every tool below runs in CI (`.github/workflows/ci.yml`), and `.pre-commit-confi
 
 Command: `uv run bandit -c pyproject.toml -r src`
 
-- **Coverage:** all of `src/`, 182 Python files, 17 678 lines, tests included. No file is skipped.
+- **Coverage:** all of `src/`, tests included. No file is skipped.
 - **Configuration:** one exception in `pyproject.toml`: `B101` (`assert`) is skipped in `*/test_*.py`, because pytest asserts with `assert`.
-- **Result on `2d2c949`:** no issues, at any severity.
+- **Result on `46af4d7`:** no issues, at any severity.
+
+Raw output:
+
+```text
+[main] INFO profile include tests: None
+[main] INFO profile exclude tests: None
+[main] INFO cli include tests: None
+[main] INFO cli exclude tests: None
+[main] INFO using config: pyproject.toml
+[main] INFO running on Python 3.13.2
+Working... ---------------------------------------- 100% 0:00:02
+Run started:2026-11-01 19:48:36.638383+00:00
+
+Test results:
+    No issues identified.
+
+Code scanned:
+    Total lines of code: 33823
+    Total lines skipped (#nosec): 0
+    Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
+
+Run metrics:
+    Total issues (by severity):
+        Undefined: 0
+        Low: 0
+        Medium: 0
+        High: 0
+    Total issues (by confidence):
+        Undefined: 0
+        Low: 0
+        Medium: 0
+        High: 0
+Files skipped (0):
+```
 
 ### What the hook stopped
 
@@ -133,7 +167,12 @@ WRN leaks found: 1
 
 ## Dependency audit (bonus)
 
-- **uv audit**, in CI: 0 known vulnerabilities in 215 packages.
+- **uv audit**, run on 2026-11-01: no known vulnerabilities or adverse project statuses in 246
+  packages.
+- **npm audit**, run on 2026-11-01: three moderate findings in the development-time OpenAPI
+  generator dependency chain. They do not meet the configured `high` failure threshold. The only
+  automatic fix npm proposes is a breaking downgrade of `openapi-typescript`, so it is not applied
+  without verifying generated API compatibility.
 - **Dependabot:** its first two update pull requests, for the GitHub Actions and for `uv-build`,
   are merged.
 - **Accepted finding.** deptry reports `torchaudio` and `torchcodec` as declared but never
@@ -141,6 +180,30 @@ WRN leaks found: 1
   - We declare them only to pin them to torch's CPU index, because mismatched torch builds abort
     the process.
   - The exception and its reason are in `pyproject.toml`.
+
+Raw `npm audit --prefix frontend --audit-level=high` output:
+
+```text
+# npm audit report
+
+minimatch  <11.0.1
+Severity: moderate
+minimatch has potential denial of service via globparts amplification - https://github.com/advisories/GHSA-g3hv-75wg-m249
+fix available via `npm audit fix --force`
+Will install openapi-typescript@6.7.6, which is a breaking change
+node_modules/minimatch
+  @redocly/openapi-core  <=2.6.0
+  Depends on vulnerable versions of minimatch
+  node_modules/@redocly/openapi-core
+    openapi-typescript  >=7.0.0-next.0
+    Depends on vulnerable versions of @redocly/openapi-core
+    node_modules/openapi-typescript
+
+3 moderate severity vulnerabilities
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+```
 
 ## Conclusions
 
@@ -158,3 +221,6 @@ Drafted with Claude Code (Claude Opus 5.5) from the repository's configuration, 
 
 The sections from "Further findings" on were drafted with Claude Code (Claude Opus 5.5), which
 also ran the tools; checked by Andrii Shalaiev.
+
+OpenAI Codex refreshed the Bandit, `uv audit` and `npm audit` results on 2026-11-01; the changes
+require author review through a pull request.
