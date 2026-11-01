@@ -1,4 +1,5 @@
 import {
+  Box,
   Link,
   Table,
   TableBody,
@@ -58,6 +59,7 @@ function visibleText(node: HtmlElement | HtmlElement["children"][number]): strin
   return node.children.map(visibleText).join("");
 }
 
+// A label may look like a URL, so only exact equality with the destination hides the host.
 function NoteLink({ node, href, children }: ComponentProps<"a"> & ExtraProps) {
   if (!href) return children;
   const label = node ? visibleText(node).trim() : "";
@@ -65,6 +67,14 @@ function NoteLink({ node, href, children }: ComponentProps<"a"> & ExtraProps) {
   return (
     <Link href={href} target="_blank" rel="noopener noreferrer">
       {children}
+      {label !== href && (
+        <>
+          {" "}
+          <Box component="span" sx={{ color: "text.secondary" }}>
+            ({new URL(href).hostname})
+          </Box>
+        </>
+      )}
     </Link>
   );
 }
