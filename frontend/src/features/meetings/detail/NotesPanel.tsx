@@ -16,7 +16,8 @@ function NotesContent({ meeting, notes, loading }: NotesPanelProps) {
         <Box>
           <Typography variant="subtitle1">{IN_PROGRESS_LABELS[meeting.state]}</Typography>
           <Typography color="textSecondary">
-            Transcript and notes appear here when processing finishes.
+            Notes appear here when processing finishes. The transcript appears in its tab as soon as
+            it is ready.
           </Typography>
         </Box>
       </Stack>

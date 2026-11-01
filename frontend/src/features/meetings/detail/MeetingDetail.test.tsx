@@ -178,6 +178,18 @@ test("in-progress notes panel offers no control", () => {
   expect(controls).toHaveLength(0);
 });
 
+test("in-progress notes panel says the transcript comes first, on its own tab", () => {
+  // Act
+  renderDetail({ meeting: meeting({ processing_state: "queued" }) });
+
+  // Assert
+  expect(
+    screen.getByText(
+      "Notes appear here when processing finishes. The transcript appears in its tab as soon as it is ready.",
+    ),
+  ).toBeInTheDocument();
+});
+
 test("a processed meeting loads its notes", async () => {
   // Arrange
   serveContent();
