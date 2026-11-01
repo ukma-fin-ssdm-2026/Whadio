@@ -45,8 +45,7 @@ separate "Web API" component.
 Access Policy, Meetings and Retention now have PostgreSQL-backed services. Meeting lists,
 folders, glossary, transcript revisions, notes, restrictions, shares, recipient share lists and
 recording playback use stored authorization. Folder deletion can be undone through its restore
-operation. Other operations below retain their design contracts; their Status labels describe
-the original design milestone and are not an assertion that every Designed operation is absent.
+operation. Other operations below retain their design contracts.
 
 Sign-in, sign-out and workspace administration use stored accounts and sessions. An upload is
 stored and queued for transcription and notes, which the workers run; without a broker and
@@ -1229,9 +1228,8 @@ three reasons:
 - its cost does not grow with depth;
 - an item created between two pages is not shown twice.
 
-Cursors are opaque, and every list uses the same style. The designed cursor encodes the sort
-key of the last item. The implementation's cursor is the position of the next item, which is enough for
-fixed data.
+Cursors are opaque, and every list uses the same style. A cursor encodes the list it belongs to,
+the last item's sort key and its identifier, so a deleted item does not invalidate later pages.
 
 ### 6.7 Long-running work
 
@@ -1254,7 +1252,7 @@ Transcription and notes run in workers, not in the request:
   `Idempotent-Replayed: true`. Keys are scoped to the presented credential, so one client can
   never replay another's response. This matters most for starting a capture, uploading, and
   regenerating notes, where a retried request would otherwise use up one of the limited
-  regenerations. *Designed; regeneration currently returns the documented refusal.*
+  regenerations. *Designed; not implemented.*
 
 ### 6.9 Status codes for success
 

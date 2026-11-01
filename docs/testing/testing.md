@@ -114,7 +114,14 @@ Coverage also follows greenlets (`concurrency = ["greenlet", "thread"]`). SQLAlc
 
 Why 85: the full run measures 87.5% of lines and branches combined. The testing strategy and this gate settled on 85 together, as a compromise: it sits close to the measured figure, so a real drop fails the run, while it leaves room for the ASR code that only runs with downloaded models, which CI cannot run (about 1.2 points), and for normal churn.
 
-The HTML report colours each line green (run) or red (not run). `htmlcov-before/` shows the state before the new tests and `htmlcov/` the state after; both are snapshots kept for Lab 6. They, and the before-and-after figures below, were measured before coverage followed greenlets, so they undercount the database-backed modules. CI writes a fresh report on every run and uploads it with the JUnit XML as the `test-reports` artifact, and the job summary shows the coverage table and the failed tests.
+The HTML report colours each line green (run) or red (not run). The Lab 6
+[`htmlcov-before/`](https://github.com/ukma-fin-ssdm-2026/Whadio/tree/lab06-g5-deadline-2026-10-20/htmlcov-before)
+and [`htmlcov/`](https://github.com/ukma-fin-ssdm-2026/Whadio/tree/lab06-g5-deadline-2026-10-20/htmlcov)
+snapshots are preserved at tag `lab06-g5-deadline-2026-10-20`. They, and the before-and-after
+figures below, were measured before coverage followed greenlets, so they undercount the
+database-backed modules. The repository's current `htmlcov/` is the latest midterm baseline. CI
+writes a fresh report on every run and uploads it with the JUnit XML as the `test-reports`
+artifact, and the job summary shows the coverage table and the failed tests.
 
 ### Before and after
 

@@ -136,7 +136,7 @@ The deployable processes, all but the off-the-shelf services built from the same
 | Unit | Runs | Host | Instances |
 |---|---|---|---|
 | `web` | All backend modules except Retention; consumes `processing.results` | Main host | 1, stateless; more can run behind nginx |
-| `scheduler` | Retention and recording deletion, deleting expired registration, invitation and password-reset links, and sending or removing notification outbox entries | Main host | Exactly 1 |
+| `scheduler` | Retention and recording deletion, deleting expired registration, invitation and password-reset links, and sending or removing notification outbox entries; finalising interrupted captures is designed, not built yet | Main host | Exactly 1 |
 | `notes-worker` | Notes pipeline | Main host (CPU only) | 1 or more, competing consumers |
 | `asr-worker` | Transcription pipeline | GPU host | 1 per GPU |
 | `llm-runtime` | The built-in language model, on Ollama | GPU host | 1 |
@@ -185,16 +185,18 @@ Source: [uml/sequence-meeting-pipeline.puml](uml/sequence-meeting-pipeline.puml)
 1. **Capture.** After the member confirms consent, the extension opens a capture and streams audio
    chunks together with the speaker events it reads from the Meet page. Each acknowledged chunk is
    stored at once.
-2. **Interrupted capture.** If the connection is lost or the tab is closed, acknowledged chunks
-   stay stored, but the current scheduler does not finalise the incomplete capture. Only an
-   explicit completion request assembles and queues a recording.
+2. **Interrupted capture.** If the connection is lost or the tab is closed, the chunks already
+   acknowledged stay stored. Once the capture has been idle past a timeout, the scheduler assembles
+   what was received into a partial recording and queues it like any other. *Designed; not built
+   yet: today only an explicit completion request assembles and queues a recording.*
 3. **Transcription.** The ASR worker takes the job, reports that it started, fetches the audio,
    and returns the transcript with numbered speakers. The backend names them from the speaker
    events the extension sent where the match is unambiguous, saves it, and the member can read it
    while the notes are still being generated.
-4. **Notes.** The backend selects the preset and configured provider and queues the transcript in
-   the notes job. The notes worker returns the notes and a proposed meeting name. Cross-meeting
-   context and per-workspace provider configuration remain designed work.
+4. **Notes.** The backend assembles the preset, the provider and the context set, excluding
+   restricted meetings, and queues the notes job. The notes worker returns the notes, the proposed
+   name and the meetings used as context. *The per-workspace provider is designed; not built yet:
+   today each deployment sets the provider on the notes worker.*
 5. **Delivery.** The backend saves the notes, applies the proposed name as the meeting's name,
    marked as generated, marks the meeting processed and reserves an email to the member in the
    same transaction; the scheduler sends it. The SPA shows the transcript and notes and prompts
@@ -209,11 +211,11 @@ How the architecture meets fault tolerance (NFR-015) and recoverability (NFR-014
 |---|---|---|
 | GPU host or ASR worker down | Everything except new transcripts; recordings keep arriving. | Jobs wait in `transcription.requests` and run when a worker returns. |
 | LLM runtime or notes worker down | Transcripts are readable. | Notes jobs wait in `notes.requests`; the meeting shows its transcript while processing. |
-| The configured provider fails | Transcripts are readable. | The job is retried for a temporary failure; a permanent or exhausted failure marks the meeting failed with its cause. |
+| The configured provider fails | Transcripts are readable. | The job is retried for a temporary failure; a permanent or exhausted failure marks the meeting failed with its cause. Offering generation with the built-in model (FR-023) is designed, not built yet. |
 | Notes generation fails, so no name is proposed | The transcript and the meeting itself. | The meeting keeps a default name built from its date and time until the member names it or notes are regenerated (FR-033). |
 | A job fails repeatedly | Everything else. | Past the delivery limit, the meeting is failed with the cause and the member is notified (FR-014, FR-024). |
-| The extension loses its connection | Acknowledged chunks stay stored. | The incomplete capture remains unfinalised; automatic partial recovery is not implemented. |
-| Broker down | Reading, editing, sharing, export. | A new upload or capture completion returns `503 INTEGRATION_UNAVAILABLE`; work already published stays in RabbitMQ until a worker returns. |
+| The extension loses its connection | Acknowledged chunks stay stored. | The scheduler finalises a partial recording. *Designed; not built yet:* today the capture stays unfinalised. |
+| Broker down | Reading, editing, sharing, export. | Meetings stay `queued`; `web` keeps retrying their unpublished jobs and publishes them once the broker is back. |
 | SMTP relay down | Everything except email; existing accounts sign in as usual. | Registration, invitation and password-reset links cannot be delivered, so new registrations and resets in `verified` mode cannot complete; notifications are not delivered. The operator can still issue registration and reset links from the command line (FR-049). |
 | Main host down | Nothing. | Availability is deliberately not among the requirements: a single main host cannot guarantee it. |
 
@@ -228,8 +230,8 @@ Source: [uml/deployment-diagram.puml](uml/deployment-diagram.puml)
 | Node | Runs | Exposed |
 |---|---|---|
 | User's computer | Chrome with the extension, the Meet tab and the SPA; the user's MCP client | — |
-| Production host (Linux; CPU by default) | Docker Compose profiles `core,gpu,storage`: nginx, one-shot `migrate`, `web`, `scheduler`, both workers, PostgreSQL, RabbitMQ and bundled SeaweedFS. `ollama` is optional; an external S3-compatible service can replace `storage` | HTTP 80 (redirect only), HTTPS 443 (nginx) |
-| Optional worker host (Linux, normally with an NVIDIA GPU) | The `gpu` profile's `asr-worker`, and optionally the `ollama` profile's `llm-runtime`; this split needs private routing to the main host's broker and storage | No public application port |
+| Main host (Linux, CPU only) | Docker Compose profile `core`: nginx, one-shot `migrate`, `web`, `scheduler`, `notes-worker`, PostgreSQL and RabbitMQ; optional profile `storage`: bundled S3-compatible storage | HTTP 80 (redirect only), HTTPS 443 (nginx), the private network's endpoint |
+| GPU host (Linux, NVIDIA GPU) | Docker Compose profile `gpu`: `asr-worker`; optional profile `ollama`: `llm-runtime` | Nothing; it joins the private network from the inside |
 | Third parties | LLM provider API, SMTP relay | — |
 
 nginx redirects HTTP to HTTPS, terminates TLS, serves the SPA, proxies the Web, Capture and MCP
@@ -241,24 +243,26 @@ keeps a 1 MiB default elsewhere, and rate-limits sign-in attempts per client add
 isolated Compose proxy subnet is trusted to supply forwarded client headers. There is no load balancer: one `web`
 instance is enough at the project's scale, and more can be added as an nginx upstream later.
 
-In the shipped production template every service runs on one Compose host. The default network
-carries application, database, broker, worker and storage traffic; the separate internal `proxy`
-subnet connects only nginx and `web`, and is the only source Uvicorn trusts for forwarded client
-headers. Database, broker management, storage and Ollama host ports bind to loopback. A two-host
-installation may run the `gpu` and `ollama` profiles on a private worker host, but the operator must
-provide private routing and names for RabbitMQ, storage and the optional Ollama endpoint; Compose
-does not create that cross-host network.
+The two hosts are joined by a private network: traffic between them is encrypted and never reaches
+a public port. The GPU host reaches the broker and object storage, and the notes worker reaches its
+LLM runtime, only over this network, and the GPU host holds no database or storage credentials. The
+private network must work with the GPU host behind NAT, so that it can be a team member's computer;
+its implementation, such as a WireGuard tunnel or a Tailscale or Headscale mesh, is a deployment
+choice that does not change the architecture.
 
 ### Deployment profiles
 
-- **One host (the shipped production template).** `.env.production.example` enables
-  `core,gpu,storage`. The `gpu` name identifies the ASR placement, not a hardware requirement: the
-  worker uses CPU packages unless `compose.cuda.yaml` is added. The template uses an external notes
-  provider, so `ollama` stays disabled. NFR-002 does not hold in this CPU layout.
-- **One host with acceleration or local notes.** Add `compose.cuda.yaml` for NVIDIA ASR and enable
-  `ollama` for the built-in model. `storage` may be replaced by an external S3-compatible endpoint.
-- **Two hosts (optional).** Move `gpu` and, if needed, `ollama` to a private worker host. This is an
-  operator topology rather than an automatically provisioned Compose network.
+- **Two hosts (reference production).** The layout above. The GPU host stays on so that NFR-002
+  holds; starting it only when jobs are waiting would add boot and model-loading time to the
+  turnaround. The `ollama` profile is enabled only when the deployment uses the built-in model.
+- **One host (self-hosting, development).** Both Compose profiles run on a single machine with a
+  GPU, with no private network. On a machine without a GPU, the quantized CPU models are used (see the
+  hardware assumptions in the [project description](../../Project-Description.md)); the `gpu`
+  profile still names the ASR placement but reserves no GPU unless `compose.cuda.yaml` is selected.
+  An external notes provider leaves `ollama` disabled. Enable the `storage` profile for bundled
+  SeaweedFS, or configure any external S3-compatible endpoint. NFR-002 does not hold in this CPU
+  layout. This is the layout `.env.production.example` ships. Compose does not create the
+  cross-host network of the two-host layout; the operator provides it.
 
 ### Registration modes
 

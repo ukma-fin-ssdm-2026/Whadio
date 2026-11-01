@@ -222,5 +222,5 @@ Drafted with Claude Code (Claude Opus 5.5) from the repository's configuration, 
 The sections from "Further findings" on were drafted with Claude Code (Claude Opus 5.5), which
 also ran the tools; checked by Andrii Shalaiev.
 
-OpenAI Codex refreshed the Bandit, `uv audit` and `npm audit` results on 2026-11-01; the changes
-require author review through a pull request.
+OpenAI Codex refreshed the Bandit, `uv audit` and `npm audit` results on 2026-11-01. Andrii
+Shalaiev reproduced the three tool results and checked the recorded findings in pull request #255.

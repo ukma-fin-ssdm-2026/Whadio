@@ -12,10 +12,10 @@ irreversible deletion, auditability and processing recovery take priority over p
 behaviour. Tests should detect a regression close to the layer that introduced it and remain fast
 and deterministic enough to run continuously.
 
-The latest recorded non-model line coverage is **88%** overall. The focused modules reached 98% for
-`access_policy/services.py`, 97% for `meetings/services.py`, 100% for
-`access_policy/repositories.py` and 87% for `meetings/repositories.py`. The committed
-[`htmlcov/`](../../htmlcov/index.html) report and [coverage report](testing.md) are the baseline.
+The latest recorded non-model line and branch coverage is **92.42%** overall, from successful
+[CI run 41335159391](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/41335159391).
+The committed [`htmlcov/`](../../htmlcov/index.html) report and [coverage report](testing.md) are
+the current baseline.
 The remaining lines are mainly defensive re-raises and concurrency guards that require genuine
 multi-transaction tests; two ordinary gaps remain: successful glossary rename and the happy path
 of `processing_snapshot`. Model tests are excluded from routine coverage because they require
@@ -126,8 +126,8 @@ between the parts were never counted. The fix and its exact-boundary regression 
   pull request and on `main`.
 - **Why 85%:** it was the measured total (85.6%) when the gate was introduced, after turning on
   greenlet tracing so that SQLAlchemy's async code counts as run. A gate must pass on the day it is
-  introduced; 85% stops coverage from slipping below what the suite already proves, and can be raised
-  as coverage grows towards the 88% recorded above.
+  introduced; 85% stops coverage from slipping below what the suite already proves, and can be
+  raised while coverage remains above the 92.42% recorded above.
 - **CI:** the job summary shows the coverage table and the failed tests; the JUnit and HTML reports
   are uploaded as an artifact.
 - **A green run:** [run 39311660739](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/39311660739)

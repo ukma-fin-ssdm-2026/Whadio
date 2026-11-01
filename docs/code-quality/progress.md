@@ -26,16 +26,16 @@ ASR, and an optional Ollama profile supplies the built-in notes model.
 
 | Feature area | Built | Partial or missing |
 |---|---|---|
-| Accounts and workspaces | Stored accounts and Argon2id passwords; browser and extension sessions; workspace create, read, update and delete; operator registration and password-reset links; invitation creation, preview, acceptance, registration, decline and cancellation | Self-service registration and reset requests by email; SPA pages for registration, reset, invitations and member management; member role/removal API |
+| Accounts and workspaces | Stored accounts and Argon2id passwords; browser and extension sessions; workspace create, read, update and delete; operator registration and password-reset links; invitation creation, preview, acceptance, registration, decline and cancellation | Self-service registration and reset requests by email; SPA pages for workspace creation and deletion, registration, reset, invitations and member management; member role/removal API |
 | Capture and upload | Chrome extension consent flow, tab and microphone recording, chunk upload and completion; existing-file upload; storage validation and queued processing | Interrupted captures are not finalised by the scheduler; extension publication to the Chrome Web Store is out of scope |
 | Processing and workers | Transactional job outbox, least-privilege broker users, retries and failure reasons; Parakeet or Whisper recognition; pyannote diarization; Claude or Ollama notes; CPU and CUDA configurations | The planned full-system CI cases TC-PIPE-01, TC-PIPE-02 and TC-NFR-01 do not exist yet; the public CPU-host timing required by #182 has not been run |
-| Meetings and organisation | Meeting lists, name/date filters, rename, delete, playback, folders with restore, glossary CRUD, transcript revisions and speaker renaming | Folder and glossary management are API-only; notes regeneration is deliberately refused for the MVP; cross-meeting context is not implemented |
+| Meetings and organisation | Meeting lists, name/date filters, rename, delete, playback, folders with restore, glossary CRUD, transcript revisions and speaker renaming; notes context from the folder's other readable meetings | Meeting rename, move and delete, folder and glossary management, transcript editing and speaker renaming are API-only; the SPA does not show which meetings were used as context; notes regeneration is deliberately refused for the MVP |
 | Access and sharing | Workspace and restricted access, explicit grants, shares, access requests and decisions, recipient content views, redacted speaker labels, authorization shared by HTTP and MCP | Sharing and access management have no SPA screens |
 | Notes and export | Notes rendered safely as Markdown; current/original transcript export to Markdown or VTT; notes export to Markdown | Workspace-specific provider-key management is designed but not implemented; editable notes are out of scope |
 | MCP | Personal keys shown once and stored hashed; meeting search/list, transcript and notes tools enforce the same access policy | Authentication rate limiting remains a tracked security follow-up |
 | Retention and notifications | Recording expiry and deletion, deletion warnings, processing outcome notices, transactional notification outbox and SMTP delivery; expired registration, invitation and reset-link cleanup | No SMTP relay means notices remain unsent by design in `invite-only` mode |
 | Administration | Admin permission CLI; API job list and aggregate metrics with no meeting content | No administrator SPA dashboard; host/model telemetry is not collected |
-| Web SPA | Sign-in/out, workspace and all-meeting libraries, filters in the URL, upload, processing-state polling, playback, notes, transcript revision viewing and search, export, workspace defaults and MCP key management | The account, membership, folder, glossary, sharing, access and administrator surfaces listed above remain API-only |
+| Web SPA | Sign-in/out, workspace and all-meeting libraries, filters in the URL, upload, processing-state polling, playback, notes, transcript revision viewing and search, export, workspace defaults and MCP key management | The account, workspace creation and deletion, membership, meeting rename, move and delete, transcript editing, folder, glossary, sharing, access and administrator surfaces listed above remain API-only |
 | Deployment and operations | Development and production Compose configurations, TLS nginx proxy, health checks, one-shot migrations, external or bundled S3-compatible storage, CPU/CUDA ASR and local/external notes provider choices | `https://whadio.com`, automated deployment/rollback and the operating note remain under #182 |
 
 ## Quality evidence
@@ -63,4 +63,5 @@ ASR, and an optional Ollama profile supplies the built-in notes model.
 
 The original document was drafted with Claude Code (Claude Opus 5.5). OpenAI Codex updated the
 2026-11-01 status from the repository, generated OpenAPI specification, CI coverage artifact and
-test-plan evidence. The changes require author review through a pull request.
+test-plan evidence. Andrii Shalaiev checked the feature statuses and evidence against the code,
+test plan and CI artifact in pull request #255.

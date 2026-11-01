@@ -13,18 +13,23 @@ node "User's computer" as pc {
   component "AI assistant\n<<MCP client>>" as mcpClient
 }
 
-node "Production host\n<<Linux VM, CPU by default>>" as main {
-  node "Docker Compose — profiles: core, gpu, storage; optional: ollama" as composeCore {
+node "Main host\n<<Linux VM, CPU only>>" as main {
+  node "Docker Compose — profile: core; optional: storage" as composeCore {
     component "nginx\n<<reverse proxy, TLS, SPA static>>" as nginx
     component "migrate\n<<one-shot container>>" as migrate
     component "web\n<<container>>" as web
     component "scheduler\n<<container>>" as scheduler
     component "notes-worker\n<<container>>" as notesWorker
-    component "asr-worker\n<<container; CPU or CUDA override>>" as asrWorker
-    component "llm-runtime\n<<optional container: Ollama>>" as llm
     queue "rabbitmq\n<<container>>" as mq
     database "postgres\n<<container, volume>>" as db
     database "object-storage\n<<profile: storage, volume, S3-compatible>>" as store
+  }
+}
+
+node "GPU host\n<<Linux, NVIDIA GPU>>" as gpu {
+  node "Docker Compose — profiles: gpu, optional ollama" as composeGpu {
+    component "asr-worker\n<<container>>" as asrWorker
+    component "llm-runtime\n<<container: Ollama>>" as llm
   }
 }
 
@@ -48,20 +53,27 @@ scheduler --> db : SQL\n[TB-4]
 scheduler --> store : S3 API\n[TB-4]
 notesWorker --> mq : AMQP\n[TB-5]
 
-' --- Workers on the Compose network ---
+' --- Between the hosts: everything travels over the private network ---
+gpu == main : <<private network>>
 asrWorker --> mq : AMQP\n[TB-6]
-asrWorker --> store : HTTP GET, presigned URL\n[TB-6]
+asrWorker --> store : HTTPS GET, presigned URL\n[TB-6]
 notesWorker --> llm : HTTP /api/chat\n[TB-6]
 
 ' --- Egress to third parties ---
 notesWorker --> provider : HTTPS\nonly when the Owner configured a key\n[TB-7]
 scheduler --> smtp : SMTP + STARTTLS\n[TB-8]
 
+note bottom of gpu
+  The GPU host opens no public ports and reaches
+  the main host only over the private network.
+  It holds no database or storage credentials:
+  audio is fetched through presigned URLs.
+end note
+
 note bottom of main
-  The shipped production template runs every service on this host.
-  Only nginx exposes public ports (80 redirect, 443 HTTPS).
-  Database, broker, storage and optional Ollama ports bind to loopback.
-  Adding compose.cuda.yaml gives the ASR worker GPU access.
+  Only nginx (80 redirect, 443 HTTPS) and the private network's endpoint
+  are exposed. Single-host deployment runs both Compose
+  profiles on one GPU machine, without the private network.
 end note
 
 legend right
@@ -70,7 +82,7 @@ legend right
   [TB-3] TLS-terminating proxy to internal web app
   [TB-4] Application services to persistent stores
   [TB-5] Application services/workers to message broker
-  [TB-6] Workers to broker, storage and optional local model on the Compose network
+  [TB-6] Main host to lower-trust GPU host over private mesh
   [TB-7] Whadio to external BYOK LLM provider
   [TB-8] Whadio to external SMTP relay
 endlegend
