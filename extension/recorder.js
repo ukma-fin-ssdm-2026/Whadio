@@ -84,7 +84,7 @@ if (!globalThis.whadioRecorder) {
           track.stop();
         }
       }
-      context.close();
+      void context.close();
     };
     began(Date.now(), finish);
     tab.getAudioTracks()[0].addEventListener("ended", () => {
@@ -302,19 +302,19 @@ if (!globalThis.whadioRecorder) {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === "status") {
       sendResponse({ startedAt: session?.startedAt ?? null, consented: banner.consent.checked });
-      return false;
+      return;
     }
     if (message.type === "hide-card") {
       // The toolbar popup took over, so the card stays away for the rest of this call.
       dismissed = true;
       banner.host.remove();
-      return false;
+      return;
     }
     if (message.type === "ask-sign-in") {
       // Asked for with the shortcut, so the sign-in card shows even after "Don't show again".
       dismissed = false;
       banner.refresh().then(() => document.body.append(banner.host));
-      return false;
+      return;
     }
     if (message.type === "ask-consent") {
       dismissed = false;
@@ -326,24 +326,24 @@ if (!globalThis.whadioRecorder) {
         })
         // Fails only once the extension is reloaded under this page, when nothing here can reach it.
         .catch(() => {});
-      return false;
+      return;
     }
     if (message.type === "show-error") {
       dismissed = false;
       document.body.append(banner.host);
       banner.showError(message.error);
-      return false;
+      return;
     }
     // The offscreen document records; the background reports when it started and when it ended.
     if (message.type === "started") {
       began(message.startedAt, () => chrome.runtime.sendMessage({ type: "stop-recording" }));
-      return false;
+      return;
     }
     if (message.type === "stopped") {
       if (session) {
         stop(true);
       }
-      return false;
+      return;
     }
     if (message.type === "stop") {
       if (session) {
@@ -351,6 +351,5 @@ if (!globalThis.whadioRecorder) {
       }
       sendResponse({});
     }
-    return false;
   });
 }

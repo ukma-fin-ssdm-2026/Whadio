@@ -55,8 +55,8 @@ async function record(tabId, streamId) {
           track.stop();
         }
       }
-      context.close();
-      sent.then(() => port.disconnect());
+      void context.close();
+      void sent.then(() => port.disconnect());
     },
     { once: true },
   );
