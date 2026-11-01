@@ -1,5 +1,6 @@
 import hashlib
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
@@ -311,9 +312,10 @@ def test_cancellation_is_scoped_to_workspace(async_database: AsyncDatabase) -> N
 
 
 def test_missing_public_url_refuses_without_writes(
-    async_database: AsyncDatabase, monkeypatch: pytest.MonkeyPatch
+    async_database: AsyncDatabase, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # Arrange
+    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("WHADIO_PUBLIC_URL")
 
     async def scenario(session: AsyncSession) -> tuple[int, str, int | None]:
