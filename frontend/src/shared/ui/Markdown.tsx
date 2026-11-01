@@ -12,7 +12,12 @@ import {
 } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
 import type { ComponentProps } from "react";
-import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
+import ReactMarkdown, {
+  type Components,
+  type ExtraProps,
+  type Options,
+  type UrlTransform,
+} from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 const MONOSPACE = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
@@ -48,6 +53,8 @@ const prose: SxProps<Theme> = {
     bgcolor: "action.hover",
   },
   "& th, & td": { minWidth: "9rem", overflowWrap: "normal" },
+  "& sup": { lineHeight: 0 },
+  "& [data-footnotes]": { mt: 3, pt: 2, borderTop: 1, borderColor: "divider" },
 };
 
 type HtmlElement = NonNullable<ExtraProps["node"]>;
@@ -59,9 +66,42 @@ function visibleText(node: HtmlElement | HtmlElement["children"][number]): strin
   return node.children.map(visibleText).join("");
 }
 
+// Not a browser fragment navigation: that fires popstate, which the app answers by remounting the
+// page, losing the jump and any tab or search state. Centring also clears the sticky meeting tabs.
+function jumpTo(id: string) {
+  const target = document.getElementById(id);
+  if (!target) return;
+  target.scrollIntoView({ block: "center" });
+  if (target.tabIndex < 0) target.tabIndex = -1;
+  target.focus({ preventScroll: true });
+}
+
 // A label may look like a URL, so only exact equality with the destination hides the host.
-function NoteLink({ node, href, children }: ComponentProps<"a"> & ExtraProps) {
+function NoteLink({
+  node,
+  href,
+  id,
+  children,
+  "aria-label": ariaLabel,
+  "aria-describedby": ariaDescribedBy,
+}: ComponentProps<"a"> & ExtraProps) {
   if (!href) return children;
+  if (href.startsWith("#")) {
+    return (
+      <Link
+        href={href}
+        id={id}
+        aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
+        onClick={(event) => {
+          event.preventDefault();
+          jumpTo(href.slice(1));
+        }}
+      >
+        {children}
+      </Link>
+    );
+  }
   const label = node ? visibleText(node).trim() : "";
   if (!label) return null;
   return (
@@ -115,17 +155,33 @@ const components: Components = {
   td: ({ children, style }) => <TableCell style={style}>{children}</TableCell>,
 };
 
-function httpUrlOnly(url: string): string | null {
+const safeUrl: UrlTransform = (url, _key, node) => {
+  if (url.startsWith("#")) {
+    const { dataFootnoteRef, dataFootnoteBackref } = node.properties;
+    return dataFootnoteRef === undefined && dataFootnoteBackref === undefined ? null : url;
+  }
   const protocol = URL.canParse(url) ? new URL(url).protocol : "";
   return protocol === "http:" || protocol === "https:" ? url : null;
-}
+};
 
 const plugins = [remarkGfm];
+
+// Hidden rather than dropped: each footnote reference points at this label through
+// aria-describedby, which also reads hidden text.
+const footnotes: Options["remarkRehypeOptions"] = {
+  footnoteLabelTagName: "span",
+  footnoteLabelProperties: { hidden: true },
+};
 
 export function Markdown({ children }: { children: string }) {
   return (
     <Typography component="div" sx={prose}>
-      <ReactMarkdown remarkPlugins={plugins} components={components} urlTransform={httpUrlOnly}>
+      <ReactMarkdown
+        remarkPlugins={plugins}
+        remarkRehypeOptions={footnotes}
+        components={components}
+        urlTransform={safeUrl}
+      >
         {children}
       </ReactMarkdown>
     </Typography>
