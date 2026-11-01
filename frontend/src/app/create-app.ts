@@ -17,13 +17,18 @@ declare module "@tanstack/react-router" {
 declare module "@tanstack/history" {
   interface HistoryState {
     meetingTab?: MeetingTab;
+    sessionRefused?: boolean;
   }
 }
 
 const SPINNER_DELAY_MS = 200;
 
 export function createApp(basepath = import.meta.env.BASE_URL) {
+  let signInUnproven = false;
+
   const endSession = () => {
+    const sessionRefused = signInUnproven;
+    signInUnproven = false;
     queryClient.setQueryData(sessionQueries.me().queryKey, null);
     const location = router.latestLocation;
     // The queries still mounted while the page leaves can answer 401 a second time.
@@ -33,17 +38,28 @@ export function createApp(basepath = import.meta.env.BASE_URL) {
       .navigate({
         to: "/sign-in",
         search: returnSearch(location),
+        state: (state) => ({ ...state, sessionRefused }),
         replace: true,
       })
       .then(() => queryClient.clear());
   };
 
-  const queryClient = createQueryClient({ onUnauthorized: endSession });
+  const queryClient = createQueryClient({
+    onUnauthorized: endSession,
+    onDataLoaded: () => {
+      signInUnproven = false;
+    },
+  });
 
   const router = createRouter({
     routeTree,
     basepath,
-    context: { queryClient },
+    context: {
+      queryClient,
+      onSignedIn: () => {
+        signInUnproven = true;
+      },
+    },
     defaultNotFoundComponent: NotFoundPage,
     defaultErrorComponent: RouteError,
     defaultPendingComponent: LoadingScreen,

@@ -19,6 +19,7 @@ const SIGN_IN_FORM = /^Email/;
 const MEETING_LINK = "/meetings/meeting";
 const REVISION_LINK = `${MEETING_LINK}?revision_id=original`;
 const RETRIES_MS = 4_000;
+const SESSION_REFUSED = /did not accept the session/;
 const SIGN_IN_REQUIRED = errorBody("UNAUTHENTICATED", "Sign in required");
 const LIST_ROW = /Weekly sync/;
 
@@ -223,6 +224,50 @@ describe("a session that ends", () => {
     // Assert
     expect(window.history.length).toBe(entries);
   });
+});
+
+describe("a 401 straight after signing in", () => {
+  async function signInToRefusedSession() {
+    const { user } = open("/", false);
+    server.use(http.get("/api/v1/workspaces", expired));
+    await signIn(user);
+  }
+
+  test("says so on the form", async () => {
+    // Act
+    await signInToRefusedSession();
+
+    // Assert
+    expect(await screen.findByRole("alert")).toHaveTextContent(SESSION_REFUSED);
+  });
+
+  test("does not outlive the next good sign-in", async () => {
+    // Arrange
+    await signInToRefusedSession();
+    await screen.findByRole("alert");
+    const user = userEvent.setup();
+    server.resetHandlers();
+    serveApi(true);
+
+    // Act
+    await signIn(user);
+
+    // Assert
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+});
+
+test("a 401 after the first data loaded says nothing on the form", async () => {
+  // Arrange
+  const { user } = open("/", false);
+  server.use(http.get("/api/v1/workspaces/workspace/meetings", expired));
+
+  // Act
+  await signIn(user);
+  await screen.findByLabelText(SIGN_IN_FORM);
+
+  // Assert
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
 describe("signing out", () => {
