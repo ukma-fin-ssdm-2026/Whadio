@@ -16,7 +16,7 @@ function downloaded(downloadId) {
   });
 }
 
-// The offscreen document records the calls and stays open, since closing it would end every recording.
+// The offscreen document records the calls; it is closed once nothing is recording, starting or saving.
 async function offscreen() {
   if (!(await chrome.offscreen.hasDocument())) {
     await chrome.offscreen.createDocument({
@@ -60,6 +60,7 @@ async function saveLocally(startedAt, slices) {
 
 async function record(tabId, streamId) {
   pending += 1;
+  let failed = true;
   try {
     await offscreen();
     const reply = await chrome.runtime.sendMessage({
@@ -80,9 +81,14 @@ async function record(tabId, streamId) {
         throw failure;
       }
     }
+    failed = Boolean(reply.error);
     return reply;
   } finally {
     pending -= 1;
+    // A start that failed leaves nothing in the document; a live recording closes it when it ends.
+    if (failed) {
+      await closeOffscreenIfIdle().catch(() => {});
+    }
   }
 }
 

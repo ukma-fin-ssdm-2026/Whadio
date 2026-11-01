@@ -71,6 +71,12 @@ async function record(tabId, streamId) {
       recorder.stop();
     }
   });
+  // A restarted service worker has lost this recording's upload, so nothing could stop it or take its audio.
+  port.onDisconnect.addListener(() => {
+    if (recorder.state !== "inactive") {
+      recorder.stop();
+    }
+  });
   recorder.start(1000);
   recordings.set(tabId, recorder);
   return { startedAt: Date.now() };
