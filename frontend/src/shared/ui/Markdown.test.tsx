@@ -256,6 +256,42 @@ describe("links", () => {
   });
 
   test.for([
+    ["a bare address", "See https://google.com@evil.example today"],
+    ["an autolink", "See <https://google.com@evil.example> today"],
+    [
+      "a label equal to its URL",
+      "[https://google.com@evil.example](https://google.com@evil.example)",
+    ],
+  ] as const)("%s with credentials still names its host", ([, notes]) => {
+    // Act
+    renderNotes(notes);
+
+    // Assert
+    expect(screen.getByRole("link")).toHaveTextContent(
+      /^https:\/\/google\.com@evil\.example \(evil\.example\)$/,
+    );
+  });
+
+  test("a password with no user name still names the host", () => {
+    // Act
+    renderNotes("See <https://:secret@evil.example> today");
+
+    // Assert
+    expect(screen.getByRole("link")).toHaveTextContent(/\(evil\.example\)$/);
+  });
+
+  test.for(["https://example.com/@user", "https://example.com/?by=@user"])(
+    "the @ in %s adds no host",
+    (url) => {
+      // Act
+      renderNotes(`See <${url}> today`);
+
+      // Assert
+      expect(screen.getByRole("link").textContent).toBe(url);
+    },
+  );
+
+  test.for([
     ["a bare address", "See https://example.com/brief today"],
     ["an autolink", "See <https://example.com/brief> today"],
     ["a label equal to its URL", "[https://example.com/brief](https://example.com/brief)"],
