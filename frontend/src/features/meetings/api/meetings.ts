@@ -58,6 +58,10 @@ async function fetchTranscript(
   }
 }
 
+// Unlike a transient failure, this means the cached copy must not stay on screen.
+export const isMeetingGone = (error: ApiError | null) =>
+  error?.status === 403 || error?.status === 404;
+
 const pollWhileInProgress = (items: Pick<Schemas["MeetingSummary"], "processing_state">[]) =>
   items.some((item) => isInProgress(item.processing_state)) ? POLL_INTERVAL_MS : false;
 
@@ -89,7 +93,8 @@ export const meetingQueries = {
             signal,
           }),
         ),
-      refetchInterval: ({ state }) => pollWhileInProgress(state.data ? [state.data] : []),
+      refetchInterval: ({ state }) =>
+        isMeetingGone(state.error) ? false : pollWhileInProgress(state.data ? [state.data] : []),
       select: mapMeeting,
     }),
   transcript: (

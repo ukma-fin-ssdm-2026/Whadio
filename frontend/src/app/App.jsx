@@ -7,7 +7,7 @@ import { SignInForm } from "@/features/accounts/components/SignInForm";
 import { SignOutButton } from "@/features/accounts/components/SignOutButton";
 import { clearSignedInUser, readSignedInUser } from "@/features/accounts/session-storage";
 import { ExportControls } from "@/features/export/components/ExportControls";
-import { meetingQueries } from "@/features/meetings/api/meetings";
+import { isMeetingGone, meetingQueries } from "@/features/meetings/api/meetings";
 import { MeetingDetail } from "@/features/meetings/detail/MeetingDetail";
 import { AllMeetings } from "@/features/meetings/library/AllMeetings";
 import { WorkspaceMeetings } from "@/features/meetings/library/WorkspaceMeetings";
@@ -91,7 +91,7 @@ function Workbench({ user, workspaces, onSignedOut }) {
     ...meetingQueries.detail(meetingId),
     enabled: view === "meeting" && Boolean(meetingId),
   });
-  const selectedMeeting = opened.data;
+  const selectedMeeting = isMeetingGone(opened.error) ? undefined : opened.data;
 
   useEffect(() => {
     if (view === "meeting" && selectedMeeting) setWorkspaceId(selectedMeeting.workspaceId);
@@ -203,7 +203,7 @@ function Workbench({ user, workspaces, onSignedOut }) {
           />
         )}
 
-        {view === "meeting" && opened.isLoadingError && (
+        {view === "meeting" && opened.isError && (
           <Box className="error-banner" role="alert">
             {opened.error.message}
           </Box>
