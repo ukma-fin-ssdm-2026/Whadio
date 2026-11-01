@@ -192,6 +192,14 @@ repos:
         pass_filenames: false
         stages: [pre-push, manual]
 
+      - id: frontend-route-tree
+        name: frontend route tree matches the route files
+        language: unsupported
+        entry: npm --prefix frontend run gen:routes
+        files: ^frontend/
+        pass_filenames: false
+        stages: [pre-push, manual]
+
       - id: openapi-lint
         name: redocly lint (OpenAPI specification)
         language: unsupported
