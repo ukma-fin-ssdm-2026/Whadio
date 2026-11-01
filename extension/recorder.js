@@ -1,6 +1,7 @@
-// Runs in the Meet tab, where the call already holds the microphone permission, so recording asks for no
-// extra permission. It is both a declared content script and injected by the popup into tabs opened before
-// the extension was installed; the flag keeps a single copy per page.
+// Runs in the Meet tab. A recording started from the popup or the shortcut runs in the extension's offscreen
+// document; this script then only notes who is speaking. A recording started from the card runs here, where
+// the call already holds the microphone permission. It is both a declared content script and injected by the
+// popup into tabs opened before the extension was installed; the flag keeps a single copy per page.
 if (!globalThis.whadioRecorder) {
   globalThis.whadioRecorder = true;
 
@@ -9,12 +10,53 @@ if (!globalThis.whadioRecorder) {
 
   // --- Recording ---
 
-  async function start(tab, playBack) {
+  // Each tile's level bars move while that participant talks and rest on the quiet class otherwise; the
+  // names heard each second go to the background whenever they differ from the second before.
+  function listen() {
+    const began = performance.now();
+    const heard = new Set();
+    let previous = "";
+    let secondBegan = began;
+    let ticks = 0;
+    const flush = () => {
+      const speakers = [...heard].sort();
+      heard.clear();
+      // The names belong to when the second began in the audio.
+      const at = (secondBegan - began) / 1000;
+      secondBegan = performance.now();
+      if (speakers.join("\n") !== previous) {
+        previous = speakers.join("\n");
+        chrome.runtime.sendMessage({ type: "speakers", speakers, at });
+      }
+    };
+    const interval = setInterval(() => {
+      for (const tile of document.querySelectorAll("[data-participant-id]")) {
+        const level = tile.querySelector('[jsname="QgSmzd"]');
+        const name = tile.querySelector("span.notranslate")?.textContent.trim();
+        if (level && name && !level.classList.contains("gjg47c")) {
+          heard.add(name);
+        }
+      }
+      ticks += 1;
+      if (ticks % 4 === 0) {
+        flush();
+      }
+    }, 250);
+    return { interval, flush };
+  }
+
+  function began(startedAt, finish) {
+    session = { startedAt, finish, listening: listen() };
+    banner.host.remove();
+  }
+
+  // The card's picker leaves the tab audible, so unlike a tab capture its audio needs no playing back here.
+  async function start(tab) {
     let microphone;
     try {
-      microphone = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // With gain control on, this stream and Meet's would both move the system microphone volume.
+      microphone = await navigator.mediaDevices.getUserMedia({ audio: { autoGainControl: false } });
     } catch (failure) {
-      // A tab captured through tabCapture stays silenced until its tracks stop.
       for (const track of tab.getTracks()) {
         track.stop();
       }
@@ -23,12 +65,7 @@ if (!globalThis.whadioRecorder) {
 
     const context = new AudioContext();
     const mix = context.createMediaStreamDestination();
-    const call = context.createMediaStreamSource(tab);
-    if (playBack) {
-      // A tab captured through tabCapture is silenced for the user; playing it back keeps the call audible.
-      call.connect(context.destination);
-    }
-    call.connect(mix);
+    context.createMediaStreamSource(tab).connect(mix);
     context.createMediaStreamSource(microphone).connect(mix);
 
     // The audio goes to the background as it is recorded, so closing the tab cannot lose it; the background
@@ -36,49 +73,30 @@ if (!globalThis.whadioRecorder) {
     // stopped or the page went away.
     const port = chrome.runtime.connect({ name: "recording" });
     let sent = Promise.resolve();
-
-    // Each tile's level bars move while that participant talks and rest on the quiet class otherwise;
-    // names heard during a slice go with it whenever they differ from the previous slice.
-    const heard = new Set();
-    let previous = "";
-    const listening = setInterval(() => {
-      for (const tile of document.querySelectorAll("[data-participant-id]")) {
-        const level = tile.querySelector('[jsname="QgSmzd"]');
-        const name = tile.querySelector("span.notranslate")?.textContent.trim();
-        if (level && name && !level.classList.contains("gjg47c")) {
-          heard.add(name);
-        }
-      }
-    }, 250);
-
     const recorder = new MediaRecorder(mix.stream, { mimeType: "audio/webm;codecs=opus" });
-    // The names heard during a slice belong to when it began in the audio, not to when it arrived.
-    let sliceBegan = 0;
     recorder.addEventListener("dataavailable", (event) => {
-      const at = (sliceBegan - recordingBegan) / 1000;
-      sliceBegan = performance.now();
-      const speakers = [...heard].sort();
-      heard.clear();
-      const changed = speakers.join("\n") !== previous;
-      previous = speakers.join("\n");
-      sent = sent.then(async () => {
-        const audio = base64(await event.data.arrayBuffer());
-        port.postMessage(changed ? { audio, speakers, at } : { audio });
-      });
+      sent = sent.then(async () =>
+        port.postMessage({ audio: base64(await event.data.arrayBuffer()) }),
+      );
     });
     recorder.addEventListener("stop", () => sent.then(() => port.disconnect()), { once: true });
     recorder.start(1000);
-    const recordingBegan = performance.now();
-    sliceBegan = recordingBegan;
 
-    session = { recorder, context, listening, streams: [tab, microphone], startedAt: Date.now() };
+    const finish = () => {
+      recorder.stop();
+      for (const stream of [tab, microphone]) {
+        for (const track of stream.getTracks()) {
+          track.stop();
+        }
+      }
+      void context.close();
+    };
+    began(Date.now(), finish);
     tab.getAudioTracks()[0].addEventListener("ended", () => {
-      if (session) {
+      if (session?.finish === finish) {
         stop();
       }
     });
-    banner.host.remove();
-    return { startedAt: session.startedAt };
   }
 
   function base64(buffer) {
@@ -88,12 +106,6 @@ if (!globalThis.whadioRecorder) {
       binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
     }
     return btoa(binary);
-  }
-
-  function captureWithStreamId(streamId) {
-    return navigator.mediaDevices.getUserMedia({
-      audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } },
-    });
   }
 
   async function captureWithPicker() {
@@ -112,20 +124,17 @@ if (!globalThis.whadioRecorder) {
     return stream;
   }
 
-  function stop() {
-    const { recorder, context, listening, streams } = session;
+  // A recording that already ended elsewhere, such as in the offscreen document, needs no finishing.
+  function stop(ended = false) {
+    const { finish, listening } = session;
     session = null;
-    clearInterval(listening);
+    clearInterval(listening.interval);
     // Recorded once already, so the card stays away for the rest of this call.
     dismissed = true;
-    recorder.stop();
-    for (const stream of streams) {
-      for (const track of stream.getTracks()) {
-        track.stop();
-      }
+    if (!ended) {
+      listening.flush();
+      finish();
     }
-    context.close();
-    return Promise.resolve({});
   }
 
   // --- Banner offering to record, or to sign in first ---
@@ -233,7 +242,7 @@ if (!globalThis.whadioRecorder) {
         return;
       }
       try {
-        await start(await captureWithPicker(), false);
+        await start(await captureWithPicker());
       } catch (failure) {
         showError(failure.message);
         startButton.disabled = false;
@@ -298,20 +307,20 @@ if (!globalThis.whadioRecorder) {
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === "status") {
-      sendResponse({ startedAt: session?.startedAt ?? null, consented: banner.consent.checked });
-      return false;
+      sendResponse({ consented: banner.consent.checked });
+      return;
     }
     if (message.type === "hide-card") {
       // The toolbar popup took over, so the card stays away for the rest of this call.
       dismissed = true;
       banner.host.remove();
-      return false;
+      return;
     }
     if (message.type === "ask-sign-in") {
       // Asked for with the shortcut, so the sign-in card shows even after "Don't show again".
       dismissed = false;
       banner.refresh().then(() => document.body.append(banner.host));
-      return false;
+      return;
     }
     if (message.type === "ask-consent") {
       dismissed = false;
@@ -323,16 +332,36 @@ if (!globalThis.whadioRecorder) {
         })
         // Fails only once the extension is reloaded under this page, when nothing here can reach it.
         .catch(() => {});
-      return false;
+      return;
     }
-    const handled =
-      message.type === "start"
-        ? captureWithStreamId(message.streamId).then((tab) => start(tab, true))
-        : stop();
-    handled.then(sendResponse, (failure) => {
-      banner.showError(failure.message);
-      sendResponse({ error: failure.message });
-    });
-    return true;
+    if (message.type === "show-error") {
+      dismissed = false;
+      document.body.append(banner.host);
+      banner.showError(message.error);
+      return;
+    }
+    // The offscreen document records; the background reports when it started and when it ended.
+    if (message.type === "started") {
+      began(message.startedAt, () => chrome.runtime.sendMessage({ type: "stop-recording" }));
+      // Held for as long as this page lives: its disconnect on a reload or a navigation ends the recording.
+      chrome.runtime.connect({ name: "page" });
+      return;
+    }
+    if (message.type === "flush-speakers") {
+      session?.listening.flush();
+      return;
+    }
+    if (message.type === "stopped") {
+      if (session) {
+        stop(true);
+      }
+      return;
+    }
+    if (message.type === "stop") {
+      if (session) {
+        stop();
+      }
+      sendResponse({});
+    }
   });
 }
