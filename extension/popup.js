@@ -1,4 +1,4 @@
-import { api, insecureServer, originPattern, signIn, signOut, signedIn } from "./server.js";
+import { api, insecureServer, originPattern, signedIn, signIn, signOut } from "./server.js";
 
 const MEET_CALL = /^https:\/\/meet\.google\.com\/(?:meet\/)?[a-z]{3}-[a-z]{4}-[a-z]{3}(?:[/?#]|$)/;
 
@@ -54,13 +54,20 @@ async function showAccount() {
   document.getElementById("name").textContent = name ?? "";
   const page = await api("GET", "/captures/destinations?limit=100");
   // A folder chosen under another account, or since deleted, falls back to the personal default.
-  const known = page.items.some((workspace) => workspace.folders.some((folder) => folder.id === chosen?.folder_id));
+  const known = page.items.some((workspace) =>
+    workspace.folders.some((folder) => folder.id === chosen?.folder_id),
+  );
   destination.replaceChildren(
     ...page.items.flatMap((workspace) =>
       workspace.folders.map((folder) => {
-        const value = JSON.stringify({ workspace_id: workspace.workspace_id, folder_id: folder.id });
+        const value = JSON.stringify({
+          workspace_id: workspace.workspace_id,
+          folder_id: folder.id,
+        });
         const option = new Option(`${workspace.name} / ${folder.name}`, value);
-        option.selected = known ? chosen.folder_id === folder.id : workspace.is_personal && folder.is_default;
+        option.selected = known
+          ? chosen.folder_id === folder.id
+          : workspace.is_personal && folder.is_default;
         return option;
       }),
     ),
@@ -83,7 +90,11 @@ signInForm.addEventListener("submit", async (event) => {
     return;
   }
   try {
-    await signIn(server, document.getElementById("email").value, document.getElementById("password").value);
+    await signIn(
+      server,
+      document.getElementById("email").value,
+      document.getElementById("password").value,
+    );
     // Every section is hidden only on a Meet call that is not recording, which signing in makes ready.
     if ((await showAccount()) && sections.every((section) => section.hidden)) {
       show("idle");
@@ -98,7 +109,9 @@ document.getElementById("sign-out").addEventListener("click", async () => {
   await showAccount();
 });
 
-destination.addEventListener("change", () => chrome.storage.local.set({ destination: JSON.parse(destination.value) }));
+destination.addEventListener("change", () =>
+  chrome.storage.local.set({ destination: JSON.parse(destination.value) }),
+);
 
 // --- Recording ---
 

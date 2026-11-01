@@ -13,7 +13,10 @@ export class ServerError extends Error {
 
 async function failure(response) {
   const body = await response.json().catch(() => null);
-  return new ServerError(response.status, body?.error?.message ?? `The server answered ${response.status}`);
+  return new ServerError(
+    response.status,
+    body?.error?.message ?? `The server answered ${response.status}`,
+  );
 }
 
 export async function api(method, path, body) {
@@ -38,7 +41,10 @@ export async function api(method, path, body) {
 // Passwords travel only over HTTPS; plain HTTP is allowed for a server on this computer.
 export function insecureServer(server) {
   const url = new URL(server);
-  return url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname));
+  return (
+    url.protocol !== "https:" &&
+    !(url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname))
+  );
 }
 
 // Chrome's match patterns cover every port of a host, so the pattern leaves the port out.
