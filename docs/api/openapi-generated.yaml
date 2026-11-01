@@ -30,6 +30,9 @@ paths:
       tags:
       - workspaces
       summary: Preview
+      description: Validates the invitation token from the request body and returns
+        the workspace, offered role and whether the invited address already has an
+        account. No session is required.
       operationId: preview_api_v1_invitations__invitation_id__preview_post
       parameters:
       - name: invitation_id
@@ -78,6 +81,9 @@ paths:
       tags:
       - workspaces
       summary: Accept
+      description: Requires a browser session with the invited email address. Consumes
+        the valid invitation and grants membership; repeating acceptance returns the
+        existing membership.
       operationId: accept_api_v1_invitations__invitation_id__accept_post
       security:
       - sessionCookie: []
@@ -145,6 +151,9 @@ paths:
       tags:
       - workspaces
       summary: Decline
+      description: Validates the invitation token from the request body and marks
+        the pending invitation declined. No session is required; the link cannot be
+        used afterwards.
       operationId: decline_api_v1_invitations__invitation_id__decline_post
       parameters:
       - name: invitation_id
@@ -193,6 +202,10 @@ paths:
       tags:
       - workspaces
       summary: Register
+      description: Creates an account for the invited address, its personal workspace
+        and default folder, and the invited membership atomically. Requires a valid
+        invitation token, a strong password and Terms acceptance; consumes the link
+        and sets the browser session cookie.
       operationId: register_api_v1_invitations__invitation_id__register_post
       parameters:
       - name: invitation_id

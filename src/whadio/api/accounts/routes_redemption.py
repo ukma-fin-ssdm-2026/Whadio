@@ -79,7 +79,13 @@ _ERRORS = error_responses(
 )
 
 
-@router.post("/preview", openapi_extra={"security": []}, responses=_ERRORS)
+@router.post(
+    "/preview",
+    description="Validates the invitation token from the request body and returns the workspace, "
+    "offered role and whether the invited address already has an account. No session is required.",
+    openapi_extra={"security": []},
+    responses=_ERRORS,
+)
 async def preview(
     invitation_id: InvitationId, payload: LinkToken, service: Redemptions, response: Response
 ) -> PreviewRead:
@@ -98,6 +104,8 @@ async def preview(
 
 @router.post(
     "/accept",
+    description="Requires a browser session with the invited email address. Consumes the valid "
+    "invitation and grants membership; repeating acceptance returns the existing membership.",
     responses={
         **_ERRORS,
         **error_responses(
@@ -123,7 +131,13 @@ async def accept(
     return _member(member)
 
 
-@router.post("/decline", openapi_extra={"security": []}, responses=_ERRORS)
+@router.post(
+    "/decline",
+    description="Validates the invitation token from the request body and marks the pending "
+    "invitation declined. No session is required; the link cannot be used afterwards.",
+    openapi_extra={"security": []},
+    responses=_ERRORS,
+)
 async def decline(
     invitation_id: InvitationId, payload: LinkToken, service: Redemptions, response: Response
 ) -> InvitationRead:
@@ -137,6 +151,9 @@ async def decline(
 @router.post(
     "/register",
     status_code=201,
+    description="Creates an account for the invited address, its personal workspace and default "
+    "folder, and the invited membership atomically. Requires a valid invitation token, a strong "
+    "password and Terms acceptance; consumes the link and sets the browser session cookie.",
     openapi_extra={"security": []},
     responses={**_ERRORS, **error_responses({409: "ACCOUNT_EXISTS: sign in and accept"})},
 )

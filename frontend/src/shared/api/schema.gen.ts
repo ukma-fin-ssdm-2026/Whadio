@@ -13,7 +13,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Preview */
+        /**
+         * Preview
+         * @description Validates the invitation token from the request body and returns the workspace, offered role and whether the invited address already has an account. No session is required.
+         */
         post: operations["preview_api_v1_invitations__invitation_id__preview_post"];
         delete?: never;
         options?: never;
@@ -30,7 +33,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Accept */
+        /**
+         * Accept
+         * @description Requires a browser session with the invited email address. Consumes the valid invitation and grants membership; repeating acceptance returns the existing membership.
+         */
         post: operations["accept_api_v1_invitations__invitation_id__accept_post"];
         delete?: never;
         options?: never;
@@ -47,7 +53,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Decline */
+        /**
+         * Decline
+         * @description Validates the invitation token from the request body and marks the pending invitation declined. No session is required; the link cannot be used afterwards.
+         */
         post: operations["decline_api_v1_invitations__invitation_id__decline_post"];
         delete?: never;
         options?: never;
@@ -64,7 +73,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Register */
+        /**
+         * Register
+         * @description Creates an account for the invited address, its personal workspace and default folder, and the invited membership atomically. Requires a valid invitation token, a strong password and Terms acceptance; consumes the link and sets the browser session cookie.
+         */
         post: operations["register_api_v1_invitations__invitation_id__register_post"];
         delete?: never;
         options?: never;
