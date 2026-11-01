@@ -3,8 +3,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-# Tool configuration that Chrome does not need.
-LEFT_OUT = {"biome.jsonc"}
+DEV_ONLY_FILES = {"biome.jsonc"}
 
 
 def package(source: Path, destination: Path) -> Path:
@@ -15,7 +14,7 @@ def package(source: Path, destination: Path) -> Path:
             sys.exit("manifest.json has no version")
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
         for path in sorted(source.rglob("*")):
-            if path.is_file() and path.name not in LEFT_OUT:
+            if path.is_file() and path.name not in DEV_ONLY_FILES:
                 bundle.write(path, path.relative_to(source))
     return archive
 
