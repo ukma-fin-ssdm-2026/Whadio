@@ -1,31 +1,26 @@
 from datetime import timedelta
-from typing import Annotated, ClassVar, Final, Literal, Self
+from typing import Annotated, ClassVar, Final, Self
 
 from pydantic import BaseModel, Field, HttpUrl, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ...shared.broker import BrokerSettings
 from ...shared.logs import LogLevel
+from ...shared.notes_llm import AnthropicLlm, OllamaLlm
 from .claude import Effort
 
 _MIN_PROMPT_TOKENS: Final = 1_000
 
 
-class AnthropicSettings(BaseModel):
-    provider: Literal["anthropic"] = Field(
-        default="anthropic", description="Claude through the Anthropic API"
-    )
+class AnthropicSettings(AnthropicLlm):
     api_key: SecretStr = Field(min_length=1, description="Anthropic API key of the deployment")
-    model: str = Field(default="claude-sonnet-5-5", description="Claude model that writes notes")
     effort: Effort = Field(default="medium", description="How much the model thinks per answer")
 
 
-class OllamaSettings(BaseModel):
-    provider: Literal["ollama"] = Field(description="A model served by a self-hosted Ollama")
+class OllamaSettings(OllamaLlm):
     base_url: HttpUrl = Field(
         default=HttpUrl("http://localhost:11434"), description="Address of the Ollama server"
     )
-    model: str = Field(min_length=1, description="Tag of a pulled model, such as gemma3:12b")
     num_ctx: int = Field(
         default=32_768,
         ge=2_048,
@@ -92,7 +87,11 @@ class NotesSettings(BaseModel):
 
 class NotesWorkerSettings(BaseSettings):
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
-        env_prefix="WHADIO_", env_nested_delimiter="__", env_file=".env", extra="ignore"
+        env_prefix="WHADIO_",
+        env_nested_delimiter="__",
+        env_file=".env",
+        extra="ignore",
+        hide_input_in_errors=True,
     )
 
     log_level: LogLevel = Field(default="INFO", description="Lowest level of logged records")

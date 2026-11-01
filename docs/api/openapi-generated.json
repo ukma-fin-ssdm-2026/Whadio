@@ -7818,7 +7818,7 @@
             "title": "Model Name",
             "description": "Model that wrote them",
             "examples": [
-              "gemma-3-12b-it"
+              "gemma4:12b-it-qat"
             ]
           },
           "content": {
@@ -9232,6 +9232,14 @@
           "default_preset": {
             "$ref": "#/components/schemas/Preset",
             "description": "Notes preset used when none is chosen"
+          },
+          "notes_model": {
+            "type": "string",
+            "title": "Notes Model",
+            "description": "The model behind `notes_provider`",
+            "examples": [
+              "gemma4:12b-it-qat"
+            ]
           }
         },
         "type": "object",
@@ -9243,7 +9251,8 @@
           "member_count",
           "notes_provider",
           "created_at",
-          "default_preset"
+          "default_preset",
+          "notes_model"
         ],
         "title": "WorkspaceRead"
       },

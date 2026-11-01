@@ -56,6 +56,74 @@ test("describes the workspace it loaded", async () => {
   expect(await screen.findByText(/defaults for Alpha\./)).toBeInTheDocument();
 });
 
+test("names the built-in model that writes notes", async () => {
+  // Arrange
+  serveWorkspace({ notes_provider: "whadio", notes_model: "gemma4:12b-it-qat" });
+
+  // Act
+  renderSettings();
+
+  // Assert
+  expect(
+    await screen.findByText("Whadio gemma4:12b-it-qat is used for generated notes."),
+  ).toBeInTheDocument();
+});
+
+test("names the external model that writes notes", async () => {
+  // Arrange
+  serveWorkspace({ notes_provider: "anthropic", notes_model: "claude-sonnet-5-5" });
+
+  // Act
+  renderSettings();
+
+  // Assert
+  expect(
+    await screen.findByText(/^Anthropic claude-sonnet-5-5 is used for generated notes\./),
+  ).toBeInTheDocument();
+});
+
+test("states that transcripts go to an external provider", async () => {
+  // Arrange
+  serveWorkspace({ notes_provider: "anthropic", notes_model: "claude-sonnet-5-5" });
+
+  // Act
+  renderSettings();
+
+  // Assert
+  expect(
+    await screen.findByText(/Transcripts in the context set are sent to Anthropic\.$/),
+  ).toBeInTheDocument();
+});
+
+test("a member is told that transcripts go to an external provider", async () => {
+  // Arrange
+  serveWorkspace({
+    my_role: "member",
+    notes_provider: "anthropic",
+    notes_model: "claude-sonnet-5-5",
+  });
+
+  // Act
+  renderSettings();
+
+  // Assert
+  expect(
+    await screen.findByText(/Transcripts in the context set are sent to Anthropic\.$/),
+  ).toBeInTheDocument();
+});
+
+test("says nothing about sending transcripts for the built-in model", async () => {
+  // Arrange
+  serveWorkspace({ notes_provider: "whadio" });
+
+  // Act
+  renderSettings();
+  await screen.findByText(/is used for generated notes\./);
+
+  // Assert
+  expect(screen.queryByText(/Transcripts in the context set/)).not.toBeInTheDocument();
+});
+
 test("a loading failure is reported", async () => {
   // Arrange
   server.use(

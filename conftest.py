@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable, Generator, Mapp
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import ClassVar
+from typing import ClassVar, Final
 from uuid import UUID, uuid4
 
 import hypothesis
@@ -22,7 +22,7 @@ from whadio.accounts.models import Session as SignInSession
 from whadio.accounts.models import User, Workspace, WorkspaceMembership
 from whadio.accounts.passwords import Argon2PasswordHasher
 from whadio.api.app import create_app
-from whadio.api.composition import transaction
+from whadio.api.composition import notes_llm, transaction
 from whadio.meetings.enums import (
     AccessMode,
     MeetingSource,
@@ -40,6 +40,7 @@ from whadio.meetings.models import (
 )
 from whadio.shared.broker import BrokerSettings
 from whadio.shared.database import DatabaseSettings
+from whadio.shared.notes_llm import NotesLlm, OllamaLlm
 
 
 class ContinuousIntegrationSettings(BaseSettings):
@@ -80,6 +81,9 @@ def database_settings() -> DatabaseSettings:
         name=url.database or "whadio",
         app_password=SecretStr(url.password),
     )
+
+
+BUILT_IN_LLM: Final = OllamaLlm(provider="ollama", model="test-model")
 
 
 class AsyncDatabase:
@@ -143,7 +147,9 @@ class AsyncDatabase:
 
     @staticmethod
     @asynccontextmanager
-    async def api_client(session: AsyncSession) -> AsyncGenerator[AsyncClient]:
+    async def api_client(
+        session: AsyncSession, llm: NotesLlm = BUILT_IN_LLM
+    ) -> AsyncGenerator[AsyncClient]:
         """The API, with each request in a savepoint of `session`."""
         app = create_app()
 
@@ -152,6 +158,7 @@ class AsyncDatabase:
                 yield session
 
         app.dependency_overrides[transaction] = savepoint
+        app.dependency_overrides[notes_llm] = lambda: llm
         async with AsyncClient(
             transport=ASGITransport(app), base_url="https://example.test"
         ) as client:

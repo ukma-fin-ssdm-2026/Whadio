@@ -1819,7 +1819,7 @@ export interface components {
             /**
              * Model Name
              * @description Model that wrote them
-             * @example gemma-3-12b-it
+             * @example gemma4:12b-it-qat
              */
             model_name: string;
             /**
@@ -2596,6 +2596,12 @@ export interface components {
             created_at: string;
             /** @description Notes preset used when none is chosen */
             default_preset: components["schemas"]["Preset"];
+            /**
+             * Notes Model
+             * @description The model behind `notes_provider`
+             * @example gemma4:12b-it-qat
+             */
+            notes_model: string;
         };
         /** WorkspaceSummary */
         WorkspaceSummary: {

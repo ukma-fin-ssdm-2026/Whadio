@@ -8,6 +8,7 @@ from pydantic import SecretStr, ValidationError
 
 from conftest import refused_fields
 
+from ...shared.notes_llm import load_notes_llm
 from .settings import (
     AnthropicSettings,
     NotesSettings,
@@ -79,6 +80,18 @@ def test_settings_without_a_provider_are_refused(monkeypatch: pytest.MonkeyPatch
         load_notes_worker_settings()
 
 
+def test_refused_settings_do_not_show_the_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    monkeypatch.delenv("WHADIO_NOTES__LLM__PROVIDER")
+
+    # Act
+    with pytest.raises(ValidationError) as failure:
+        load_notes_worker_settings()
+
+    # Assert
+    assert "sk-ant-test" not in str(failure.value)
+
+
 @pytest.mark.usefixtures("ollama")
 def test_ollama_provider_reads_the_ollama_settings() -> None:
     # Act
@@ -88,12 +101,40 @@ def test_ollama_provider_reads_the_ollama_settings() -> None:
     assert settings.notes.llm == OllamaSettings(provider="ollama", model="gemma3:12b")
 
 
+def test_web_reader_matches_the_worker_for_claude_with_no_model_set() -> None:
+    # Act
+    worker, web = load_notes_worker_settings().notes.llm, load_notes_llm()
+
+    # Assert
+    assert (web.provider, web.model) == (worker.provider, worker.model)
+
+
+@pytest.mark.usefixtures("ollama")
+def test_web_reader_matches_the_worker_for_ollama() -> None:
+    # Act
+    worker, web = load_notes_worker_settings().notes.llm, load_notes_llm()
+
+    # Assert
+    assert (web.provider, web.model) == (worker.provider, worker.model)
+
+
 def test_settings_with_an_unknown_provider_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
     monkeypatch.setenv("WHADIO_NOTES__LLM__PROVIDER", "olama")
 
     # Act / Assert
     with pytest.raises(ValidationError, match="union_tag_invalid"):
+        load_notes_worker_settings()
+
+
+def test_settings_with_an_empty_claude_model_are_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    monkeypatch.setenv("WHADIO_NOTES__LLM__MODEL", "")
+
+    # Act / Assert
+    with pytest.raises(ValidationError, match="model"):
         load_notes_worker_settings()
 
 

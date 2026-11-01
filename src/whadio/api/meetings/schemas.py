@@ -188,7 +188,7 @@ class NoteRead(Output):
     id: UUID = Field(description="Notes identifier")
     preset: Preset = Field(description="Preset the notes follow")
     provider: Provider = Field(description="Model provider that wrote them")
-    model_name: str = Field(description="Model that wrote them", examples=["gemma-3-12b-it"])
+    model_name: str = Field(description="Model that wrote them", examples=["gemma4:12b-it-qat"])
     content: str = Field(description="Notes in Markdown")
     created_at: datetime = Field(description="When they were generated")
     created_by_user_id: UUID | None = Field(

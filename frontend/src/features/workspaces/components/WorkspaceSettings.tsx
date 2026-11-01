@@ -50,6 +50,14 @@ function PresetSelect({ workspace }: { workspace: Schemas["WorkspaceRead"] }) {
   );
 }
 
+function notesDescription({ notes_provider, notes_model }: Schemas["WorkspaceRead"]) {
+  const provider = titleCase(notes_provider);
+  const written = `${provider} ${notes_model} is used for generated notes.`;
+  return notes_provider === "whadio"
+    ? written
+    : `${written} Transcripts in the context set are sent to ${provider}.`;
+}
+
 function WorkspaceDefaults({ workspaceId }: { workspaceId: string }) {
   const { data: workspace, error } = useQuery(workspaceQueries.detail(workspaceId));
   if (!workspace) {
@@ -68,7 +76,7 @@ function WorkspaceDefaults({ workspaceId }: { workspaceId: string }) {
       <Stack divider={<Divider />} sx={{ mt: 1 }}>
         <SettingsRow
           title="Notes provider"
-          description="Whadio gemma-3-12b-it is used for generated notes."
+          description={notesDescription(workspace)}
           control={<Chip label={titleCase(workspace.notes_provider)} variant="outlined" />}
         />
         <SettingsRow

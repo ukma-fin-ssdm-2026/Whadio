@@ -4,6 +4,7 @@ import anthropic
 from anthropic.types.beta import BetaTextBlock
 
 from ...contracts.notes import NotesFailure, NotesProvider
+from ...shared.notes_llm import AnthropicLlm
 from .errors import NotesError
 from .llm import Completion
 from .prompt import Prompt
@@ -32,7 +33,7 @@ class ClaudeChatModel:
 
     @property
     def provider(self) -> NotesProvider:
-        return NotesProvider.ANTHROPIC
+        return NotesProvider(AnthropicLlm.reported_provider)
 
     async def complete(self, prompt: Prompt) -> Completion:
         try:
