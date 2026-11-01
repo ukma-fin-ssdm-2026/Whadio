@@ -8,14 +8,17 @@ from ..access_policy.repositories import AccessRepository
 from ..access_policy.services import AccessPolicy
 from ..accounts.contracts import UserProfile
 from ..accounts.password_resets import PasswordResetCleanupService
-from ..accounts.repositories import MembershipRepository, RegistrationRepository
-from ..accounts.reset_repository import PasswordResetRepository
 from ..accounts.repositories import (
     InvitationRepository,
     MembershipRepository,
     RegistrationRepository,
 )
-from ..accounts.services import RegistrationCleanupService, WorkspaceMembershipService
+from ..accounts.reset_repository import PasswordResetRepository
+from ..accounts.services import (
+    InvitationCleanupService,
+    RegistrationCleanupService,
+    WorkspaceMembershipService,
+)
 from ..meetings.models import Meeting
 from ..meetings.repositories import MeetingRepository
 from ..meetings.retention import IRetentionMeetings, RetentionMeetings
@@ -105,7 +108,9 @@ class RegistrationCleanupJobs:
             registrations = await RegistrationCleanupService(
                 RegistrationRepository(session)
             ).remove_expired(now)
-            invitations = await InvitationRepository(session).delete_expired(now)
+            invitations = await InvitationCleanupService(
+                InvitationRepository(session)
+            ).remove_expired(now)
             return registrations + invitations
 
     async def remove_expired_password_resets(self, now: datetime) -> int:

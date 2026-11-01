@@ -12,12 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from conftest import AsyncDatabase
 
 from ..accounts.contracts import UserProfile
-from ..accounts.models import PasswordReset, PendingRegistration
-from ..accounts.repositories import RegistrationRepository
-from ..accounts.reset_repository import PasswordResetRepository
 from ..accounts.enums import InvitationRole, WorkspaceRole
-from ..accounts.models import Invitation, PendingRegistration, WorkspaceMembership
+from ..accounts.models import Invitation, PasswordReset, PendingRegistration, WorkspaceMembership
 from ..accounts.repositories import InvitationIssue, InvitationRepository, RegistrationRepository
+from ..accounts.reset_repository import PasswordResetRepository
 from ..meetings.models import Meeting
 from ..notifications.fakes import InMemoryNotificationOutbox
 from ..notifications.models import NotificationOutbox

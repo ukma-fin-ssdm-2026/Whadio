@@ -515,8 +515,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '503':
-          description: '`INTEGRATION_UNAVAILABLE`: verified-mode email delivery is
-            unavailable'
+          description: '`INTEGRATION_UNAVAILABLE`: public URL is unset or verified-mode
+            email delivery is unavailable'
           content:
             application/json:
               schema:

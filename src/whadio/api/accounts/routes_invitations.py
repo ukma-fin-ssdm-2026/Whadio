@@ -90,7 +90,8 @@ async def list_invitations(
                 409: "`PERSONAL_WORKSPACE`, or `ALREADY_MEMBER`",
                 422: DOC_INVALID,
                 429: "`INVITATION_LIMIT` or `INVITATION_COOLDOWN`; see `Retry-After`",
-                503: "`INTEGRATION_UNAVAILABLE`: verified-mode email delivery is unavailable",
+                503: "`INTEGRATION_UNAVAILABLE`: public URL is unset or verified-mode email "
+                "delivery is unavailable",
             }
         ),
     },

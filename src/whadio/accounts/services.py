@@ -490,6 +490,14 @@ class RegistrationService:
         return SignedIn(session_token, expires_at, user)
 
 
+class InvitationCleanupService:
+    def __init__(self, invitations: IInvitationRepository) -> None:
+        self._invitations: IInvitationRepository = invitations
+
+    async def remove_expired(self, now: datetime) -> int:
+        return await self._invitations.delete_expired(now)
+
+
 class RegistrationCleanupService:
     def __init__(self, registrations: IRegistrationRepository) -> None:
         self._registrations: IRegistrationRepository = registrations

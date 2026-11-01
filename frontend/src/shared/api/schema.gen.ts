@@ -2995,7 +2995,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `INTEGRATION_UNAVAILABLE`: verified-mode email delivery is unavailable */
+            /** @description `INTEGRATION_UNAVAILABLE`: public URL is unset or verified-mode email delivery is unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;

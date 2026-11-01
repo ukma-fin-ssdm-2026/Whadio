@@ -399,3 +399,91 @@ def test_pagination_and_moderator_management(async_database: AsyncDatabase) -> N
 
     # Assert
     assert async_database.run(scenario) == (True, True, 422, 201, 200)
+
+
+@pytest.mark.parametrize("reissue", [False, True])
+def test_invitation_expiry_is_seven_days_after_each_issue(
+    async_database: AsyncDatabase, *, reissue: bool
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[bool, timedelta]:
+        async with AsyncDatabase.api_client(session) as client:
+            _, workspace = await _owner_workspace(client, session)
+            path = f"/api/v1/workspaces/{workspace}/invitations"
+            payload = {"email": "expiry@example.com", "role": "member"}
+            if reissue:
+                first = await client.post(path, json=payload)
+                original = InvitationCreated.model_validate_json(first.content)
+                stored = await session.get_one(Invitation, original.id)
+                stored.created_at -= timedelta(days=2)
+                stored.expires_at -= timedelta(days=2)
+                await session.flush()
+            # Act
+            response = await client.post(path, json=payload)
+            issued = InvitationCreated.model_validate_json(response.content)
+            persisted = await session.get_one(Invitation, issued.id, populate_existing=True)
+            return (
+                persisted.expires_at == issued.expires_at,
+                issued.expires_at - issued.created_at,
+            )
+
+    # Assert
+    assert async_database.run(scenario) == (True, timedelta(days=7))
+
+
+@pytest.mark.parametrize("removed", [False, True])
+def test_list_reports_inactive_link_after_creator_loses_authority(
+    async_database: AsyncDatabase, *, removed: bool
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[bool, bool]:
+        async with AsyncDatabase.api_client(session) as client:
+            owner_id, workspace = await _owner_workspace(client, session)
+            owner = await session.get_one(User, owner_id)
+            moderator = await AsyncDatabase.add_account(session, PASSWORD)
+            membership = WorkspaceMembership(
+                workspace_id=workspace,
+                user_id=moderator.user_id,
+                role=WorkspaceRole.MODERATOR,
+            )
+            session.add(membership)
+            await session.flush()
+            await client.post(
+                "/api/v1/sessions", json={"email": moderator.email, "password": PASSWORD}
+            )
+            path = f"/api/v1/workspaces/{workspace}/invitations"
+            await client.post(path, json={"email": "authority@example.com", "role": "member"})
+            await client.post("/api/v1/sessions", json={"email": owner.email, "password": PASSWORD})
+            before = Page[InvitationRead].model_validate_json((await client.get(path)).content)
+            if removed:
+                await session.delete(membership)
+            else:
+                membership.role = WorkspaceRole.MEMBER
+            await session.flush()
+            # Act
+            after = Page[InvitationRead].model_validate_json((await client.get(path)).content)
+            return before.items[0].link_active, after.items[0].link_active
+
+    # Assert
+    assert async_database.run(scenario) == (True, False)
+
+
+def test_owner_role_cannot_be_offered_by_invitation(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, str, int | None]:
+        async with AsyncDatabase.api_client(session) as client:
+            _, workspace = await _owner_workspace(client, session)
+            # Act
+            response = await client.post(
+                f"/api/v1/workspaces/{workspace}/invitations",
+                json={"email": "owner@example.com", "role": "owner"},
+            )
+            count = await session.scalar(
+                select(func.count())
+                .select_from(Invitation)
+                .where(Invitation.workspace_id == workspace)
+            )
+            return response.status_code, _error(response.content), count
+
+    # Assert
+    assert async_database.run(scenario) == (422, "VALIDATION_ERROR", 0)

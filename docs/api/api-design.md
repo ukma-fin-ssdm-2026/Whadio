@@ -441,7 +441,9 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - Creates a single-use link valid for 7 days (FR-006).
   - In `verified` mode the link is emailed. On an invite-only instance it is returned once in
     `link`, for the Moderator to hand over.
-  - The checks run in this order, and the first failure answers:
+  - After authentication, missing `WHADIO_PUBLIC_URL` returns `503 INTEGRATION_UNAVAILABLE`
+    before role, workspace, membership, business-limit and request-body validation checks.
+  - With the public URL configured, the checks run in this order, and the first failure answers:
     1. the workspace is not personal;
     2. the address does not belong to a member;
     3. the caller has invited fewer than 20 addresses today;

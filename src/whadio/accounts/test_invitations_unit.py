@@ -17,6 +17,10 @@ NOW = datetime(2026, 10, 30, 12, 0, tzinfo=UTC)
 
 
 class Invitations:
+    async def delete_expired(self, now: datetime) -> int:
+        del now
+        return 0
+
     def __init__(self) -> None:
         self.personal: bool = False
         self.member: bool = False
