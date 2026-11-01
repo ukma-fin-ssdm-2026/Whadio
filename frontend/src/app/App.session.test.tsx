@@ -20,9 +20,11 @@ const meetingInProgress = {
 
 function serveSession(meetings: () => Response) {
   const workspaceReads: string[] = [];
-  window.history.replaceState(null, "", "/whadio/");
-  sessionStorage.clear();
+  window.history.replaceState(null, "", "/");
   server.use(
+    http.get("/api/v1/users/me", () =>
+      HttpResponse.json({ id: "member", email: "member@example.com", name: "Member" }),
+    ),
     http.get("/api/v1/workspaces", ({ request }) => {
       workspaceReads.push(request.url);
       return HttpResponse.json(page([workspaceSummary()]));

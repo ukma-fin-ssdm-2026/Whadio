@@ -4,7 +4,6 @@ import {
   Avatar,
   Divider,
   List,
-  ListItemButton,
   ListItemIcon,
   ListItemText,
   ListSubheader,
@@ -12,41 +11,26 @@ import {
   Typography,
 } from "@mui/material";
 import type { ReactNode } from "react";
-import type { Page } from "../navigation/page";
+import { ListItemLink } from "../navigation/links";
+
+const CURRENT = { selected: true };
 
 interface SidebarProps {
   user: { name?: string | null; email: string } | null;
   workspaces: { id: string; name: string }[];
-  page: Page;
-  workspaceId: string;
-  onHome: () => void;
-  onMeetings: () => void;
-  onWorkspace: (id: string) => void;
   signOutAction: ReactNode;
   onNavigate: () => void;
 }
 
-interface NavItemProps {
-  label: string;
-  icon?: ReactNode;
-  current: boolean;
-  onClick: () => void;
-}
-
-function NavItem({ label, icon, current, onClick }: NavItemProps) {
+function NavLabel({ label, icon }: { label: string; icon?: ReactNode }) {
   return (
-    <ListItemButton
-      selected={current}
-      aria-current={current ? "page" : undefined}
-      onClick={onClick}
-      sx={{ borderRadius: 1 }}
-    >
+    <>
       {icon && <ListItemIcon sx={{ minWidth: 36 }}>{icon}</ListItemIcon>}
       <ListItemText
         primary={label}
         slotProps={{ primary: { noWrap: true, variant: "subtitle2" } }}
       />
-    </ListItemButton>
+    </>
   );
 }
 
@@ -59,49 +43,32 @@ function initials(name: string) {
     .toUpperCase();
 }
 
-export function Sidebar({
-  user,
-  workspaces,
-  page,
-  workspaceId,
-  onHome,
-  onMeetings,
-  onWorkspace,
-  signOutAction,
-  onNavigate,
-}: SidebarProps) {
-  const navigate = (go: () => void) => () => {
-    go();
-    onNavigate();
-  };
+export function Sidebar({ user, workspaces, signOutAction, onNavigate }: SidebarProps) {
+  const navLink = { activeProps: CURRENT, onClick: onNavigate, sx: { borderRadius: 1 } };
   return (
     <Stack sx={{ height: "100%", p: 2, gap: 2 }}>
       <Typography variant="h3" component="p" sx={{ px: 1 }}>
         Whadio
       </Typography>
       <List component="nav" aria-label="Main" sx={{ flexGrow: 1, overflowY: "auto" }}>
-        <NavItem
-          label="Home"
-          icon={<HomeOutlinedIcon />}
-          current={page === "home"}
-          onClick={navigate(onHome)}
-        />
-        <NavItem
-          label="Meetings"
-          icon={<NotesOutlinedIcon />}
-          current={page === "meetings"}
-          onClick={navigate(onMeetings)}
-        />
+        <ListItemLink to="/" activeOptions={{ exact: true }} {...navLink}>
+          <NavLabel label="Home" icon={<HomeOutlinedIcon />} />
+        </ListItemLink>
+        <ListItemLink to="/meetings" activeOptions={{ exact: true }} {...navLink}>
+          <NavLabel label="Meetings" icon={<NotesOutlinedIcon />} />
+        </ListItemLink>
         <ListSubheader component="div" disableSticky sx={{ mt: 1 }}>
           Workspaces
         </ListSubheader>
         {workspaces.map((workspace) => (
-          <NavItem
+          <ListItemLink
             key={workspace.id}
-            label={workspace.name}
-            current={page === "workspace" && workspace.id === workspaceId}
-            onClick={navigate(() => onWorkspace(workspace.id))}
-          />
+            to="/workspaces/$workspaceId"
+            params={{ workspaceId: workspace.id }}
+            {...navLink}
+          >
+            <NavLabel label={workspace.name} />
+          </ListItemLink>
         ))}
       </List>
       <Divider />

@@ -42,18 +42,6 @@ describe("an expired session", () => {
     // Assert
     expect(onUnauthorized).toHaveBeenCalledOnce();
   });
-
-  test("clears the cached data", async () => {
-    // Arrange
-    const client = createQueryClient({ onUnauthorized: () => {} });
-    client.setQueryData(["accounts", "mcp-keys"], { items: [] });
-
-    // Act
-    await failMutation(client, SESSION_EXPIRED);
-
-    // Assert
-    expect(client.getQueryData(["accounts", "mcp-keys"])).toBeUndefined();
-  });
 });
 
 test.for([

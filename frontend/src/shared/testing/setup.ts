@@ -1,7 +1,7 @@
 import type { TestingLibraryMatchers } from "@testing-library/jest-dom/matchers";
 import * as matchers from "@testing-library/jest-dom/matchers";
-import { cleanup } from "@testing-library/react";
-import { afterAll, afterEach, beforeAll, expect } from "vitest";
+import { cleanup, configure } from "@testing-library/react";
+import { afterAll, afterEach, beforeAll, expect, vi } from "vitest";
 import { server } from "./server";
 
 // jest-dom 7.0.1's "/vitest" entry augments Assertion<T>, which no longer type-checks against
@@ -13,8 +13,13 @@ declare module "vitest" {
 
 expect.extend(matchers);
 
+// A whole app's first render outlasts the default 1 s when every test file runs at once.
+configure({ asyncUtilTimeout: 3_000 });
+
 beforeAll(() => {
   server.listen({ onUnhandledFrame: "error" });
+  // jsdom prints "not implemented" for this, and the router calls it after each navigation.
+  window.scrollTo = vi.fn();
 });
 
 // Testing Library only registers its own cleanup when Vitest globals are on, and they are off.
