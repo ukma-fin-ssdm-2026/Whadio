@@ -45,7 +45,7 @@ def enum_type(enum: type[StrEnum], name: str) -> Enum:
 
 class ConnectionSettings(BaseSettings):
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
-        env_prefix="WHADIO_DB_", env_file=".env", extra="ignore"
+        env_prefix="WHADIO_DB_", env_file=".env", extra="ignore", hide_input_in_errors=True
     )
 
     host: str = Field(default="localhost", description="PostgreSQL hostname.")
