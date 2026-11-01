@@ -39,9 +39,15 @@ test("navigation offers Home, Meetings and each workspace", async () => {
 
 test.for([
   ["Home", "/"],
+  ["Home", "/?q=weekly"],
   ["Meetings", "/meetings"],
+  ["Meetings", "/meetings?q=weekly"],
+  ["Meetings", "/meetings?state=failed"],
+  ["Meetings", "/meetings?q=weekly&state=failed"],
   ["AI assistant", "/settings/assistant"],
   ["Beta", "/workspaces/beta"],
+  ["Beta", "/workspaces/beta?q=weekly"],
+  ["Beta", "/workspaces/beta?state=failed"],
   ["Beta", "/workspaces/beta/settings"],
 ] as const)("marks %s as the current page at %s", async ([label, path]) => {
   // Act
@@ -51,12 +57,15 @@ test.for([
   expect(currentItems(nav.getAllByRole("link"))).toEqual([label]);
 });
 
-test("selects the current item", async () => {
+test.for([
+  ["Beta", "/workspaces/beta"],
+  ["Meetings", "/meetings?q=weekly"],
+] as const)("selects %s at %s", async ([label, path]) => {
   // Act
-  const { nav } = await renderSidebar("/workspaces/beta");
+  const { nav } = await renderSidebar(path);
 
   // Assert
-  expect(nav.getByRole("link", { name: "Beta" })).toHaveClass("Mui-selected");
+  expect(nav.getByRole("link", { name: label })).toHaveClass("Mui-selected");
 });
 
 test("a workspace entry shows its name without a meeting count", async () => {
@@ -70,13 +79,16 @@ test("a workspace entry shows its name without a meeting count", async () => {
   expect(entry).toHaveTextContent(/^Beta$/);
 });
 
-test("marks no item as current on a meeting page", async () => {
-  // Act
-  const { nav } = await renderSidebar("/meetings/meeting");
+test.for(["/meetings/meeting", "/meetings/meeting?tab=transcript"])(
+  "marks no item as current at %s",
+  async (path) => {
+    // Act
+    const { nav } = await renderSidebar(path);
 
-  // Assert
-  expect(currentItems(nav.getAllByRole("link"))).toEqual([]);
-});
+    // Assert
+    expect(currentItems(nav.getAllByRole("link"))).toEqual([]);
+  },
+);
 
 test("choosing a workspace opens it", async () => {
   // Arrange

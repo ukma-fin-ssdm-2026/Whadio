@@ -15,6 +15,8 @@ import type { ReactNode } from "react";
 import { ListItemLink } from "../navigation/links";
 
 const CURRENT = { selected: true };
+// `exact` alone also demands an identical search, so a filter in the URL would unmark the page.
+const THIS_PATH_ONLY = { exact: true, includeSearch: false };
 
 interface SidebarProps {
   user: { name?: string | null; email: string } | null;
@@ -52,10 +54,10 @@ export function Sidebar({ user, workspaces, signOutAction, onNavigate }: Sidebar
         Whadio
       </Typography>
       <List component="nav" aria-label="Main" sx={{ flexGrow: 1, overflowY: "auto" }}>
-        <ListItemLink to="/" activeOptions={{ exact: true }} {...navLink}>
+        <ListItemLink to="/" activeOptions={THIS_PATH_ONLY} {...navLink}>
           <NavLabel label="Home" icon={<HomeOutlinedIcon />} />
         </ListItemLink>
-        <ListItemLink to="/meetings" activeOptions={{ exact: true }} {...navLink}>
+        <ListItemLink to="/meetings" activeOptions={THIS_PATH_ONLY} {...navLink}>
           <NavLabel label="Meetings" icon={<NotesOutlinedIcon />} />
         </ListItemLink>
         <ListItemLink to="/settings/assistant" {...navLink}>
