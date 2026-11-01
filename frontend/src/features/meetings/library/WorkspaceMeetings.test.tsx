@@ -1,5 +1,6 @@
 import { act, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { Schemas } from "@/shared/api/types";
 import { errorBody, meetingSummary, page } from "@/shared/testing/fixtures";
@@ -32,10 +33,23 @@ function serveMeetings(list: MeetingList) {
 const twoPages: MeetingList = (search) =>
   search.get("cursor") ? page([SECOND]) : page([FIRST], "next-page");
 
-function renderMeetings() {
-  return renderWithProviders(
-    <WorkspaceMeetings workspaceId="workspace" selectedMeetingId="" onMeeting={() => {}} />,
+function Library({ onMeeting = () => {} }: { onMeeting?: (id: string) => void }) {
+  const [name, setName] = useState("");
+  return (
+    <WorkspaceMeetings
+      workspaceId="workspace"
+      selectedMeetingId=""
+      onMeeting={onMeeting}
+      name={name}
+      stateFilter="all"
+      onName={setName}
+      onStateFilter={() => {}}
+    />
   );
+}
+
+function renderMeetings() {
+  return renderWithProviders(<Library />);
 }
 
 const rowTitles = () =>
@@ -218,9 +232,7 @@ test("choosing a row opens its meeting", async () => {
   // Arrange
   serveMeetings(() => page([FIRST]));
   const onMeeting = vi.fn();
-  renderWithProviders(
-    <WorkspaceMeetings workspaceId="workspace" selectedMeetingId="" onMeeting={onMeeting} />,
-  );
+  renderWithProviders(<Library onMeeting={onMeeting} />);
 
   // Act
   await userEvent.click(await screen.findByRole("button", { name: /Newest sync/ }));

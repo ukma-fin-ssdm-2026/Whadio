@@ -1,18 +1,30 @@
 import { Typography } from "@mui/material";
 import { keepPreviousData, useQueries } from "@tanstack/react-query";
 import { MEETINGS_PER_PAGE, meetingQueries } from "../api/meetings";
-import { mapMeeting } from "../model";
+import { mapMeeting, type StateFilter } from "../model";
 import { MeetingLibrary } from "./MeetingLibrary";
-import { useMeetingFilters } from "./useMeetingFilters";
+import { useNameDraft } from "./useNameDraft";
 
 interface AllMeetingsProps {
   workspaceIds: string[];
   selectedMeetingId: string;
   onMeeting: (id: string) => void;
+  name: string;
+  stateFilter: StateFilter;
+  onName: (name: string) => void;
+  onStateFilter: (filter: StateFilter) => void;
 }
 
-export function AllMeetings({ workspaceIds, selectedMeetingId, onMeeting }: AllMeetingsProps) {
-  const { name, filters } = useMeetingFilters();
+export function AllMeetings({
+  workspaceIds,
+  selectedMeetingId,
+  onMeeting,
+  name,
+  stateFilter,
+  onName,
+  onStateFilter,
+}: AllMeetingsProps) {
+  const { draft, type } = useNameDraft(name, onName);
   const pages = useQueries({
     queries: workspaceIds.map((workspaceId) => ({
       ...meetingQueries.latest(workspaceId, name),
@@ -40,7 +52,10 @@ export function AllMeetings({ workspaceIds, selectedMeetingId, onMeeting }: AllM
           </Typography>
         )
       }
-      {...filters}
+      query={draft}
+      stateFilter={stateFilter}
+      onQuery={type}
+      onStateFilter={onStateFilter}
     />
   );
 }
