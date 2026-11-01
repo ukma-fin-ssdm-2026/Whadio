@@ -24,7 +24,8 @@ from ..accounts.contracts import UserProfile
 from ..accounts.enums import NotesTemplate, RegistrationMode
 from ..accounts.password_resets import PasswordResetService
 from ..accounts.passwords import Argon2PasswordHasher
-from ..accounts.redemption import RedemptionRepository, RedemptionService
+from ..accounts.redemption import RedemptionService
+from ..accounts.redemption_repository import RedemptionRepository
 from ..accounts.repositories import (
     InvitationRepository,
     McpKeyRepository,

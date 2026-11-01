@@ -1,100 +1,17 @@
-import hashlib
 import secrets
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from ..audit.services import IMemberJoinAuditWriter, MemberJoined
 from ..shared.errors import Failure, UseCaseError
 from .enums import InvitationStatus, WorkspaceRole
-from .models import Invitation, Workspace, WorkspaceMembership
+from .models import Invitation, WorkspaceMembership
+from .redemption_repository import InvitationLink, IRedemptionRepository
 from .repositories import IRegistrationRepository, ISessionRepository
-from .services import RegistrationDetails, RegistrationService, SignedIn
-
-
-class IRedemptionRepository(Protocol):
-    async def find(self, invitation_id: UUID) -> Invitation | None: ...
-
-    async def lock(self, invitation_id: UUID) -> Invitation | None: ...
-
-    async def workspace_name(self, workspace_id: UUID) -> str: ...
-
-    async def membership(self, workspace_id: UUID, user_id: UUID) -> WorkspaceMembership | None: ...
-
-    async def join(
-        self, invitation: Invitation, user_id: UUID, now: datetime
-    ) -> WorkspaceMembership: ...
-
-    async def answer(
-        self, invitation: Invitation, status: InvitationStatus, now: datetime
-    ) -> None: ...
-
-
-class RedemptionRepository:
-    def __init__(self, session: AsyncSession) -> None:
-        self._session: AsyncSession = session
-
-    async def find(self, invitation_id: UUID) -> Invitation | None:
-        return await self._session.scalar(
-            select(Invitation)
-            .where(Invitation.invitation_id == invitation_id)
-            .execution_options(populate_existing=True)
-        )
-
-    async def lock(self, invitation_id: UUID) -> Invitation | None:
-        invitation = await self.find(invitation_id)
-        if invitation is None:
-            return None
-        # Match management's workspace-before-invitation order, including role changes in #184.
-        await self._session.scalar(
-            select(Workspace.workspace_id)
-            .where(Workspace.workspace_id == invitation.workspace_id)
-            .with_for_update()
-        )
-        return await self._session.scalar(
-            select(Invitation)
-            .where(Invitation.invitation_id == invitation_id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
-
-    async def workspace_name(self, workspace_id: UUID) -> str:
-        name = await self._session.scalar(
-            select(Workspace.name).where(Workspace.workspace_id == workspace_id)
-        )
-        if name is None:
-            raise UseCaseError(Failure.LINK_INVALID)
-        return name
-
-    async def membership(self, workspace_id: UUID, user_id: UUID) -> WorkspaceMembership | None:
-        return await self._session.scalar(
-            select(WorkspaceMembership).where(
-                WorkspaceMembership.workspace_id == workspace_id,
-                WorkspaceMembership.user_id == user_id,
-            )
-        )
-
-    async def join(
-        self, invitation: Invitation, user_id: UUID, now: datetime
-    ) -> WorkspaceMembership:
-        member = WorkspaceMembership(
-            workspace_id=invitation.workspace_id,
-            user_id=user_id,
-            role=WorkspaceRole(invitation.role.value),
-            joined_at=now,
-        )
-        self._session.add(member)
-        await self.answer(invitation, InvitationStatus.ACCEPTED, now)
-        return member
-
-    async def answer(self, invitation: Invitation, status: InvitationStatus, now: datetime) -> None:
-        invitation.status = status
-        invitation.responded_at = now
-        await self._session.flush()
+from .services import RegistrationDetails, SignedIn
+from .tokens import supplied_token_hash
 
 
 @dataclass(frozen=True)
@@ -104,31 +21,36 @@ class InvitationPreview:
     account_exists: bool
 
 
+class IAccountProvisioner(Protocol):
+    async def provision(
+        self, email: str, details: RegistrationDetails, now: datetime
+    ) -> SignedIn: ...
+
+
 class RedemptionService:
     def __init__(
         self,
         repository: IRedemptionRepository,
         registrations: IRegistrationRepository,
         sessions: ISessionRepository,
-        provisioner: RegistrationService,
+        provisioner: IAccountProvisioner,
         audit: IMemberJoinAuditWriter,
     ) -> None:
         self._repository: IRedemptionRepository = repository
         self._registrations: IRegistrationRepository = registrations
         self._sessions: ISessionRepository = sessions
-        self._provisioner: RegistrationService = provisioner
+        self._provisioner: IAccountProvisioner = provisioner
         self._audit: IMemberJoinAuditWriter = audit
 
     async def _valid(
-        self, invitation_id: UUID, token: str, now: datetime, *, accepted: bool = False
+        self, invitation: Invitation | None, token: str, now: datetime, *, accepted: bool = False
     ) -> Invitation:
-        invitation = await self._repository.lock(invitation_id)
+        token_hash = supplied_token_hash(token)
         if (
             invitation is None
             or invitation.expires_at <= now
-            or not secrets.compare_digest(
-                invitation.token_hash, hashlib.sha256(token.encode()).hexdigest()
-            )
+            or token_hash is None
+            or not secrets.compare_digest(invitation.token_hash, token_hash)
             or invitation.status
             not in (
                 (InvitationStatus.PENDING, InvitationStatus.ACCEPTED)
@@ -144,20 +66,41 @@ class RedemptionService:
             raise UseCaseError(Failure.LINK_INVALID)
         return invitation
 
+    async def _read(
+        self, invitation_id: UUID, token: str, now: datetime, *, accepted: bool = False
+    ) -> InvitationLink:
+        link = await self._repository.find(invitation_id)
+        if link is None:
+            raise UseCaseError(Failure.LINK_INVALID)
+        await self._valid(link.invitation, token, now, accepted=accepted)
+        return link
+
+    async def _locked(
+        self, invitation_id: UUID, token: str, now: datetime, *, accepted: bool = False
+    ) -> Invitation:
+        return await self._valid(
+            await self._repository.lock(invitation_id), token, now, accepted=accepted
+        )
+
     async def preview(self, invitation_id: UUID, token: str, now: datetime) -> InvitationPreview:
-        invitation = await self._valid(invitation_id, token, now)
+        link = await self._read(invitation_id, token, now)
         return InvitationPreview(
-            invitation,
-            await self._repository.workspace_name(invitation.workspace_id),
-            await self._sessions.by_email(invitation.invited_email) is not None,
+            link.invitation,
+            link.workspace_name,
+            await self._repository.account_exists(link.invitation.invited_email),
         )
 
     async def accept(
         self, invitation_id: UUID, token: str, user_id: UUID, email: str, now: datetime
     ) -> WorkspaceMembership:
-        invitation = await self._valid(invitation_id, token, now, accepted=True)
+        await self._read(invitation_id, token, now, accepted=True)
+        invitation = await self._locked(invitation_id, token, now, accepted=True)
         if email.lower() != invitation.invited_email.lower():
-            raise UseCaseError(Failure.EMAIL_MISMATCH)
+            raise UseCaseError(
+                Failure.LINK_INVALID
+                if invitation.status is InvitationStatus.ACCEPTED
+                else Failure.EMAIL_MISMATCH
+            )
         member = await self._repository.membership(invitation.workspace_id, user_id)
         if invitation.status is InvitationStatus.ACCEPTED:
             if member is None or member.joined_at != invitation.responded_at:
@@ -177,19 +120,18 @@ class RedemptionService:
         return member
 
     async def decline(self, invitation_id: UUID, token: str, now: datetime) -> Invitation:
-        invitation = await self._valid(invitation_id, token, now)
+        await self._read(invitation_id, token, now)
+        invitation = await self._locked(invitation_id, token, now)
         await self._repository.answer(invitation, InvitationStatus.DECLINED, now)
         return invitation
 
     async def register(
         self, invitation_id: UUID, token: str, details: RegistrationDetails, now: datetime
     ) -> tuple[SignedIn, WorkspaceMembership]:
-        candidate = await self._repository.find(invitation_id)
-        if candidate is None:
-            raise UseCaseError(Failure.LINK_INVALID)
+        candidate = await self._read(invitation_id, token, now)
         # Share registration's email lock before taking any workspace locks.
-        await self._registrations.lock_email(candidate.invited_email)
-        invitation = await self._valid(invitation_id, token, now)
+        await self._registrations.lock_email(candidate.invitation.invited_email)
+        invitation = await self._locked(invitation_id, token, now)
         if await self._sessions.by_email(invitation.invited_email) is not None:
             raise UseCaseError(Failure.ACCOUNT_EXISTS)
         signed = await self._provisioner.provision(invitation.invited_email, details, now)

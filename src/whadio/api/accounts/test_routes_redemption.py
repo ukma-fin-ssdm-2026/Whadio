@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
@@ -85,7 +86,20 @@ def test_register_creates_account_membership_folder_session_and_one_audit(
 
 
 @pytest.mark.parametrize("operation", ["preview", "accept", "register", "decline"])
-@pytest.mark.parametrize("invalid", ["token", "expired", "cancelled", "creator", "unknown"])
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        "token",
+        "surrogate",
+        "expired",
+        "cancelled",
+        "declined",
+        "accepted",
+        "creator",
+        "creator_removed",
+        "unknown",
+    ],
+)
 def test_dead_links_have_one_refusal(
     async_database: AsyncDatabase, operation: str, invalid: str
 ) -> None:
@@ -97,12 +111,14 @@ def test_dead_links_have_one_refusal(
             assert invitation is not None
             if invalid == "token":
                 token = uuid4().hex
+            elif invalid == "surrogate":
+                token = chr(0xD800)
             elif invalid == "expired":
                 invitation.created_at = datetime.now(UTC) - timedelta(days=8)
                 invitation.expires_at = datetime.now(UTC) - timedelta(days=1)
-            elif invalid == "cancelled":
-                invitation.status = InvitationStatus.CANCELLED
-            elif invalid == "creator":
+            elif invalid in ("cancelled", "declined", "accepted"):
+                invitation.status = InvitationStatus(invalid)
+            elif invalid in ("creator", "creator_removed"):
                 member = await session.scalar(
                     select(WorkspaceMembership).where(
                         WorkspaceMembership.workspace_id == invitation.workspace_id,
@@ -110,7 +126,10 @@ def test_dead_links_have_one_refusal(
                     )
                 )
                 assert member is not None
-                member.role = WorkspaceRole.MEMBER
+                if invalid == "creator_removed":
+                    await session.delete(member)
+                else:
+                    member.role = WorkspaceRole.MEMBER
             else:
                 invitation_id = uuid4()
             await session.flush()
@@ -119,7 +138,9 @@ def test_dead_links_have_one_refusal(
                 payload.update(name="New member", password=PASSWORD, accept_terms=True)
             # Act
             response = await client.post(
-                f"/api/v1/invitations/{invitation_id}/{operation}", json=payload
+                f"/api/v1/invitations/{invitation_id}/{operation}",
+                content=json.dumps(payload),
+                headers={"Content-Type": "application/json"},
             )
             return (
                 response.status_code,
@@ -174,38 +195,46 @@ def test_preview_and_decline_are_public_and_decline_consumes_link(
     assert async_database.run(scenario) == (200, 200, 404)
 
 
-@pytest.mark.parametrize(("password", "terms"), [("weak", True), (PASSWORD, False)])
+@pytest.mark.parametrize(
+    ("password", "terms", "name"),
+    [("weak", True, "New member"), (PASSWORD, False, "New member"), (PASSWORD, True, "   ")],
+)
 def test_invalid_registration_keeps_invitation_pending(
-    async_database: AsyncDatabase, password: str, *, terms: bool
+    async_database: AsyncDatabase, password: str, name: str, *, terms: bool
 ) -> None:
     # Arrange
-    async def scenario(session: AsyncSession) -> tuple[int, InvitationStatus]:
+    async def scenario(session: AsyncSession) -> tuple[int, InvitationStatus, bool]:
         async with AsyncDatabase.api_client(session) as client:
-            _, invitation_id, token = await issue(client, session, f"{uuid4()}@example.com")
+            email = f"{uuid4()}@example.com"
+            _, invitation_id, token = await issue(client, session, email)
             # Act
             response = await client.post(
                 f"/api/v1/invitations/{invitation_id}/register",
                 json={
                     "token": token,
-                    "name": "New member",
+                    "name": name,
                     "password": password,
                     "accept_terms": terms,
                 },
             )
             invitation = await session.get(Invitation, invitation_id)
             assert invitation is not None
-            return response.status_code, invitation.status
+            account = await session.scalar(select(User).where(User.email == email))
+            return response.status_code, invitation.status, account is None
 
     # Assert
-    assert async_database.run(scenario) == (422, InvitationStatus.PENDING)
+    assert async_database.run(scenario) == (422, InvitationStatus.PENDING, True)
 
 
-@pytest.mark.parametrize(("operation", "expected"), [("accept", 403), ("register", 409)])
+@pytest.mark.parametrize(
+    ("operation", "expected", "code"),
+    [("accept", 403, "EMAIL_MISMATCH"), ("register", 409, "ACCOUNT_EXISTS")],
+)
 def test_valid_link_reports_wrong_account_or_existing_account(
-    async_database: AsyncDatabase, operation: str, expected: int
+    async_database: AsyncDatabase, operation: str, expected: int, code: str
 ) -> None:
     # Arrange
-    async def scenario(session: AsyncSession) -> int:
+    async def scenario(session: AsyncSession) -> tuple[int, bool]:
         async with AsyncDatabase.api_client(session) as client:
             user = await AsyncDatabase.add_account(session, PASSWORD)
             _, invitation_id, token = await issue(client, session, user.email)
@@ -214,12 +243,14 @@ def test_valid_link_reports_wrong_account_or_existing_account(
                 payload.update(name="New member", password=PASSWORD, accept_terms=True)
             # Act
             response = await client.post(
-                f"/api/v1/invitations/{invitation_id}/{operation}", json=payload
+                f"/api/v1/invitations/{invitation_id}/{operation}",
+                content=json.dumps(payload),
+                headers={"Content-Type": "application/json"},
             )
-            return response.status_code
+            return response.status_code, f'"code":"{code}"' in response.text
 
     # Assert
-    assert async_database.run(scenario) == expected
+    assert async_database.run(scenario) == (expected, True)
 
 
 def test_accept_requires_a_browser_session(async_database: AsyncDatabase) -> None:
@@ -258,3 +289,91 @@ def test_replaced_link_cannot_be_redeemed(async_database: AsyncDatabase) -> None
 
     # Assert
     assert async_database.run(scenario) == 404
+
+
+@pytest.mark.parametrize("operation", ["preview", "accept", "decline", "register"])
+def test_redemption_responses_are_not_cached(async_database: AsyncDatabase, operation: str) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, str]:
+        async with AsyncDatabase.api_client(session) as client:
+            user = await AsyncDatabase.add_account(session, PASSWORD)
+            email = user.email if operation == "accept" else f"{uuid4()}@example.com"
+            _, invitation_id, token = await issue(client, session, email)
+            if operation == "accept":
+                await client.post(
+                    "/api/v1/sessions", json={"email": user.email, "password": PASSWORD}
+                )
+            else:
+                await client.delete("/api/v1/sessions/current")
+            payload: dict[str, str | bool] = {"token": token}
+            if operation == "register":
+                payload.update(name="New member", password=PASSWORD, accept_terms=True)
+            # Act
+            response = await client.post(
+                f"/api/v1/invitations/{invitation_id}/{operation}", json=payload
+            )
+            return response.status_code, response.headers["Cache-Control"]
+
+    result = async_database.run(scenario)
+    # Assert
+    assert result == (201 if operation == "register" else 200, "no-store")
+
+
+@pytest.mark.parametrize("state", ["pending", "removed", "replaced", "other-account"])
+def test_accept_refuses_membership_conflicts_and_stale_retries(
+    async_database: AsyncDatabase, state: str
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, bool]:
+        async with AsyncDatabase.api_client(session) as client:
+            user = await AsyncDatabase.add_account(session, PASSWORD)
+            owner, invitation_id, token = await issue(client, session, user.email)
+            invitation = await session.get(Invitation, invitation_id)
+            assert invitation is not None
+            await client.post("/api/v1/sessions", json={"email": user.email, "password": PASSWORD})
+            path = f"/api/v1/invitations/{invitation_id}/accept"
+            if state != "pending":
+                await client.post(path, json={"token": token})
+            member = await session.scalar(
+                select(WorkspaceMembership).where(
+                    WorkspaceMembership.workspace_id == invitation.workspace_id,
+                    WorkspaceMembership.user_id == user.user_id,
+                )
+            )
+            if state == "pending":
+                session.add(
+                    WorkspaceMembership(
+                        workspace_id=invitation.workspace_id,
+                        user_id=user.user_id,
+                        role=WorkspaceRole.MEMBER,
+                        joined_at=datetime.now(UTC),
+                    )
+                )
+            elif state in ("removed", "replaced"):
+                assert member is not None
+                await session.delete(member)
+                await session.flush()
+                if state == "replaced":
+                    session.add(
+                        WorkspaceMembership(
+                            workspace_id=invitation.workspace_id,
+                            user_id=user.user_id,
+                            role=WorkspaceRole.MEMBER,
+                            joined_at=datetime.now(UTC) + timedelta(seconds=1),
+                        )
+                    )
+            else:
+                other = await session.get(User, owner)
+                assert other is not None
+                await client.post(
+                    "/api/v1/sessions", json={"email": other.email, "password": PASSWORD}
+                )
+            await session.flush()
+            # Act
+            response = await client.post(path, json={"token": token})
+            code = "ALREADY_MEMBER" if state == "pending" else "LINK_INVALID"
+            return response.status_code, f'"code":"{code}"' in response.text
+
+    result = async_database.run(scenario)
+    # Assert
+    assert result == (409 if state == "pending" else 404, True)
