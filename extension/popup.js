@@ -39,6 +39,10 @@ function showRecording(startedAt) {
 
 async function showAccount() {
   if (!(await signedIn())) {
+    const { server } = await chrome.storage.local.get("server");
+    if (server) {
+      document.getElementById("server").value = server;
+    }
     signInForm.hidden = false;
     account.hidden = true;
     return false;
@@ -49,14 +53,14 @@ async function showAccount() {
   const { destination: chosen } = await chrome.storage.local.get("destination");
   document.getElementById("name").textContent = name ?? "";
   const page = await api("GET", "/captures/destinations?limit=100");
+  // A folder chosen under another account, or since deleted, falls back to the personal default.
+  const known = page.items.some((workspace) => workspace.folders.some((folder) => folder.id === chosen?.folder_id));
   destination.replaceChildren(
     ...page.items.flatMap((workspace) =>
       workspace.folders.map((folder) => {
         const value = JSON.stringify({ workspace_id: workspace.workspace_id, folder_id: folder.id });
         const option = new Option(`${workspace.name} / ${folder.name}`, value);
-        option.selected = chosen
-          ? chosen.folder_id === folder.id
-          : workspace.is_personal && folder.is_default;
+        option.selected = known ? chosen.folder_id === folder.id : workspace.is_personal && folder.is_default;
         return option;
       }),
     ),

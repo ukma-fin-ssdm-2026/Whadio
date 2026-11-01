@@ -1,6 +1,8 @@
 // The Whadio server the extension signs in to. The token is an extension session: it works only on
 // the capture endpoints and for signing out, and it ends after 24 hours. It is kept in session storage,
-// which content scripts cannot read, at the cost of signing in again after the browser restarts.
+// which content scripts cannot read, at the cost of signing in again after the browser restarts or the
+// extension is reloaded or updated. The server it is sent to is kept there too, since content scripts can
+// write local storage; the local copy only fills in the sign-in form.
 
 export class ServerError extends Error {
   constructor(status, message) {
@@ -15,8 +17,7 @@ async function failure(response) {
 }
 
 export async function api(method, path, body) {
-  const { server } = await chrome.storage.local.get("server");
-  const { token } = await chrome.storage.session.get("token");
+  const { server, token } = await chrome.storage.session.get(["server", "token"]);
   const init = { method, headers: { Authorization: `Bearer ${token}` } };
   if (body instanceof FormData) {
     init.body = body;
@@ -56,13 +57,20 @@ export async function signIn(server, email, password) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password, kind: "extension" }),
+    // A redirect would resend the password to an address insecureServer never checked.
+    redirect: "error",
   });
   if (!response.ok) {
     throw await failure(response);
   }
   const session = await response.json();
   await chrome.storage.local.set({ server });
-  await chrome.storage.session.set({ token: session.token, expiresAt: session.expires_at, name: session.user.name });
+  await chrome.storage.session.set({
+    server,
+    token: session.token,
+    expiresAt: session.expires_at,
+    name: session.user.name,
+  });
 }
 
 export async function signOut() {

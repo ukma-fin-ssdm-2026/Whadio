@@ -196,7 +196,7 @@ if (!globalThis.whadioRecorder) {
       error.hidden = true;
     }
     chrome.storage.onChanged.addListener(async (changes, area) => {
-      if (area === "local" && "signInPrompt" in changes) {
+      if (area === "local" && ("signInPrompt" in changes || "signInChangedAt" in changes)) {
         await refresh();
         if (!signedIn && !promptSignIn) {
           host.remove();
@@ -204,6 +204,8 @@ if (!globalThis.whadioRecorder) {
       }
     });
 
+    // Meet handles keys on the whole page; Space on the checkbox or a button must not reach its push-to-talk.
+    root.addEventListener("keydown", (event) => event.stopPropagation());
     for (const button of [close, later]) {
       button.addEventListener("click", () => {
         dismissed = true;
@@ -257,10 +259,7 @@ if (!globalThis.whadioRecorder) {
     if (!inCall()) {
       dismissed = false;
       banner.host.remove();
-    } else if (!session && banner.host.isConnected && !banner.signedIn()) {
-      // Session storage sends this page no change events, so a sign-in from the popup is noticed by asking again.
-      await banner.refresh();
-    } else if (!session && !dismissed && !banner.host.isConnected) {
+    } else if (!session && !dismissed && !banner.host.isConnected && banner.wanted()) {
       // A token can expire while the card is away, so it checks again each time it would appear.
       await banner.refresh();
       if (banner.wanted() && !session && !dismissed) {
@@ -308,8 +307,10 @@ if (!globalThis.whadioRecorder) {
     }
     if (message.type === "ask-consent") {
       dismissed = false;
-      document.body.append(banner.host);
-      banner.showError("Tick the box first, then press Alt+Shift+R again.");
+      banner.refresh().then(() => {
+        document.body.append(banner.host);
+        banner.showError("Tick the box first, then press Alt+Shift+R again.");
+      });
       return false;
     }
     const handled = message.type === "start" ? captureWithStreamId(message.streamId).then((tab) => start(tab, true)) : stop();

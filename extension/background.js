@@ -151,6 +151,17 @@ chrome.runtime.onConnect.addListener(async (port) => {
   await chrome.action.setBadgeText({ tabId, text: "REC" });
 });
 
+// Installs signed in before the token moved to session storage still hold it where content scripts can read it.
+chrome.runtime.onInstalled.addListener(() => chrome.storage.local.remove(["token", "expiresAt", "name"]));
+
+// Session storage sends the Meet page no change events, so a sign-in or sign-out reaches the card as a
+// timestamp in local storage, which carries nothing secret.
+chrome.storage.session.onChanged.addListener((changes) => {
+  if ("token" in changes) {
+    chrome.storage.local.set({ signInChangedAt: Date.now() });
+  }
+});
+
 // The card on the Meet page cannot read the token, so it asks here whether the user is signed in.
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type !== "signed-in") {
