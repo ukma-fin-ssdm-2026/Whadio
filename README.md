@@ -153,7 +153,10 @@ Meet call with at least one other participant.
    recording. Alt+Shift+R starts and stops a recording too, but it reads the consent box on the
    card in the Meet page, not the popup's: if that box isn't ticked, the first press shows the
    card and asks you to tick it.
-5. Stop from the popup. The meeting appears in the web app; it's transcribed and gets notes once
+5. The first time, nothing is recorded yet: Whadio opens a tab that asks for your microphone.
+   Allow it, close that tab and press Start recording again. Chrome remembers the choice, so later
+   recordings start at once.
+6. Stop from the popup. The meeting appears in the web app; it's transcribed and gets notes once
    the [workers](#running-the-workers) are running. If the upload fails, the extension saves the
    recording as a `.webm` file in your downloads instead.
 
