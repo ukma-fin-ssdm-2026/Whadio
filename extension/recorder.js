@@ -18,18 +18,7 @@ if (!globalThis.whadioRecorder) {
     let previous = "";
     let secondBegan = began;
     let ticks = 0;
-    return setInterval(() => {
-      for (const tile of document.querySelectorAll("[data-participant-id]")) {
-        const level = tile.querySelector('[jsname="QgSmzd"]');
-        const name = tile.querySelector("span.notranslate")?.textContent.trim();
-        if (level && name && !level.classList.contains("gjg47c")) {
-          heard.add(name);
-        }
-      }
-      ticks += 1;
-      if (ticks % 4 !== 0) {
-        return;
-      }
+    const flush = () => {
       const speakers = [...heard].sort();
       heard.clear();
       // The names belong to when the second began in the audio.
@@ -39,7 +28,21 @@ if (!globalThis.whadioRecorder) {
         previous = speakers.join("\n");
         chrome.runtime.sendMessage({ type: "speakers", speakers, at });
       }
+    };
+    const interval = setInterval(() => {
+      for (const tile of document.querySelectorAll("[data-participant-id]")) {
+        const level = tile.querySelector('[jsname="QgSmzd"]');
+        const name = tile.querySelector("span.notranslate")?.textContent.trim();
+        if (level && name && !level.classList.contains("gjg47c")) {
+          heard.add(name);
+        }
+      }
+      ticks += 1;
+      if (ticks % 4 === 0) {
+        flush();
+      }
     }, 250);
+    return { interval, flush };
   }
 
   function began(startedAt, finish) {
@@ -123,10 +126,11 @@ if (!globalThis.whadioRecorder) {
   function stop(ended = false) {
     const { finish, listening } = session;
     session = null;
-    clearInterval(listening);
+    clearInterval(listening.interval);
     // Recorded once already, so the card stays away for the rest of this call.
     dismissed = true;
     if (!ended) {
+      listening.flush();
       finish();
     }
   }
@@ -301,7 +305,7 @@ if (!globalThis.whadioRecorder) {
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === "status") {
-      sendResponse({ startedAt: session?.startedAt ?? null, consented: banner.consent.checked });
+      sendResponse({ consented: banner.consent.checked });
       return;
     }
     if (message.type === "hide-card") {
@@ -337,6 +341,12 @@ if (!globalThis.whadioRecorder) {
     // The offscreen document records; the background reports when it started and when it ended.
     if (message.type === "started") {
       began(message.startedAt, () => chrome.runtime.sendMessage({ type: "stop-recording" }));
+      // Held for as long as this page lives: its disconnect on a reload or a navigation ends the recording.
+      chrome.runtime.connect({ name: "page" });
+      return;
+    }
+    if (message.type === "flush-speakers") {
+      session?.listening.flush();
       return;
     }
     if (message.type === "stopped") {

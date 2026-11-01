@@ -129,7 +129,7 @@ if (!tab?.url || !MEET_CALL.test(tab.url)) {
 } else {
   await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["recorder.js"] });
   await chrome.tabs.sendMessage(tab.id, { type: "hide-card" });
-  const { startedAt } = await chrome.tabs.sendMessage(tab.id, { type: "status" });
+  const { startedAt } = await chrome.runtime.sendMessage({ type: "recording", tabId: tab.id });
   if (startedAt) {
     showRecording(startedAt);
   } else if (ready) {
@@ -144,9 +144,14 @@ consent.addEventListener("change", () => {
 start.addEventListener("click", async () => {
   showError("");
   start.disabled = true;
-  // Left without a consumer tab, the capture is the extension's own, for its offscreen document to record.
-  const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
-  const reply = await chrome.runtime.sendMessage({ type: "record", tabId: tab.id, streamId });
+  let reply;
+  try {
+    // Left without a consumer tab, the capture is the extension's own, for its offscreen document to record.
+    const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
+    reply = await chrome.runtime.sendMessage({ type: "record", tabId: tab.id, streamId });
+  } catch (failure) {
+    reply = { error: failure.message };
+  }
   if (reply.error) {
     showError(reply.error);
     start.disabled = false;
@@ -157,6 +162,6 @@ start.addEventListener("click", async () => {
 
 stop.addEventListener("click", async () => {
   stop.disabled = true;
-  await chrome.tabs.sendMessage(tab.id, { type: "stop" });
+  await chrome.runtime.sendMessage({ type: "stop-recording", tabId: tab.id });
   window.close();
 });

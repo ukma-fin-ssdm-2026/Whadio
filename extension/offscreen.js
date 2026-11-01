@@ -60,7 +60,7 @@ async function record(tabId, streamId) {
     },
     { once: true },
   );
-  // The capture ends by itself when the tab closes or leaves Meet.
+  // The capture ends by itself only when the tab closes; a reload or a navigation is stopped by the background.
   tab.getAudioTracks()[0].addEventListener("ended", () => {
     if (recorder.state !== "inactive") {
       recorder.stop();
@@ -86,8 +86,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
     return false;
   }
-  // A service worker cannot make a blob URL, so a recording the server did not take becomes one here.
-  const parts = message.chunks.map((chunk) => Uint8Array.from(atob(chunk), (char) => char.charCodeAt(0)));
-  sendResponse({ url: URL.createObjectURL(new Blob(parts, { type: "audio/webm" })) });
+  // A service worker cannot make a blob URL, so a recording the server did not take becomes one here,
+  // released once its download ends.
+  if (message.type === "blob") {
+    const parts = message.chunks.map((chunk) => Uint8Array.from(atob(chunk), (char) => char.charCodeAt(0)));
+    sendResponse({ url: URL.createObjectURL(new Blob(parts, { type: "audio/webm" })) });
+    return false;
+  }
+  if (message.type === "revoke") {
+    URL.revokeObjectURL(message.url);
+    sendResponse({});
+  }
   return false;
 });

@@ -27,27 +27,67 @@ async function offscreen() {
   }
 }
 
+// Recordings being started or saved, which keep the offscreen document open while no upload is under way.
+let pending = 0;
+
+async function closeOffscreenIfIdle() {
+  if (pending === 0 && uploads.size === 0 && (await chrome.offscreen.hasDocument())) {
+    await chrome.offscreen.closeDocument();
+  }
+}
+
 async function saveLocally(startedAt, slices) {
   if (slices.length === 0) {
     return;
   }
-  await offscreen();
-  const { url } = await chrome.runtime.sendMessage({ target: "offscreen", chunks: slices });
-  const stamp = new Date(startedAt).toISOString().slice(0, 19).replaceAll(":", "-");
-  const downloadId = await chrome.downloads.download({ url, filename: `whadio-${stamp}.webm` });
-  await downloaded(downloadId);
+  pending += 1;
+  try {
+    await offscreen();
+    const { url } = await chrome.runtime.sendMessage({ target: "offscreen", type: "blob", chunks: slices });
+    const stamp = new Date(startedAt).toISOString().slice(0, 19).replaceAll(":", "-");
+    const downloadId = await chrome.downloads.download({ url, filename: `whadio-${stamp}.webm` });
+    await downloaded(downloadId);
+    await chrome.runtime.sendMessage({ target: "offscreen", type: "revoke", url });
+  } finally {
+    pending -= 1;
+  }
 }
 
 async function record(tabId, streamId) {
-  await offscreen();
-  const reply = await chrome.runtime.sendMessage({ target: "offscreen", type: "record", tabId, streamId });
-  if (reply.microphone) {
-    await chrome.tabs.create({ url: "permission.html" });
+  pending += 1;
+  try {
+    await offscreen();
+    const reply = await chrome.runtime.sendMessage({ target: "offscreen", type: "record", tabId, streamId });
+    if (reply.microphone) {
+      await chrome.tabs.create({ url: "permission.html" });
+    }
+    if (!reply.error) {
+      try {
+        await chrome.tabs.sendMessage(tabId, { type: "started", startedAt: reply.startedAt });
+      } catch (failure) {
+        // The page went away while the streams opened; nothing there could stop this recording.
+        await chrome.runtime.sendMessage({ target: "offscreen", type: "stop", tabId });
+        throw failure;
+      }
+    }
+    return reply;
+  } finally {
+    pending -= 1;
   }
-  if (!reply.error) {
-    await chrome.tabs.sendMessage(tabId, { type: "started", startedAt: reply.startedAt });
+}
+
+// The page's last speaker names go out before the audio ends, so the final stretch keeps its speaker.
+async function stopRecording(tabId) {
+  const upload = uploads.get(tabId);
+  if (!upload) {
+    return;
   }
-  return reply;
+  if (upload.offscreen) {
+    await chrome.tabs.sendMessage(tabId, { type: "flush-speakers" }).catch(() => {});
+    await chrome.runtime.sendMessage({ target: "offscreen", type: "stop", tabId });
+  } else {
+    await chrome.tabs.sendMessage(tabId, { type: "stop" });
+  }
 }
 
 function bytes(slices) {
@@ -62,9 +102,11 @@ function pause(attempt) {
 // One recording: opens a capture, uploads its chunks in order as they fill, resumes from what the
 // server already holds after a failure, and completes it once the tab stops sending audio.
 class Upload {
-  constructor(startedAt) {
+  constructor(startedAt, offscreen) {
     this.startedAt = startedAt;
+    this.offscreen = offscreen;
     this.slices = [];
+    this.sliced = 0;
     this.chunks = [];
     this.events = [];
     this.capture = null;
@@ -75,8 +117,9 @@ class Upload {
 
   add(audio) {
     this.slices.push(audio);
-    if (this.slices.length % SLICES_PER_CHUNK === 0) {
-      this.cut();
+    // One slice stays back, so the final chunk always has audio to carry the last speaker events.
+    if (this.slices.length - this.sliced > SLICES_PER_CHUNK) {
+      this.cut(this.sliced + SLICES_PER_CHUNK);
     }
   }
 
@@ -84,16 +127,12 @@ class Upload {
     this.events.push({ at_seconds: at, speakers });
   }
 
-  cut() {
-    const from = this.chunks.reduce((total, chunk) => total + chunk.slices, 0);
-    if (from === this.slices.length) {
+  cut(to = this.slices.length) {
+    if (to === this.sliced) {
       return;
     }
-    this.chunks.push({
-      slices: this.slices.length - from,
-      audio: bytes(this.slices.slice(from)),
-      events: this.events,
-    });
+    this.chunks.push({ audio: bytes(this.slices.slice(this.sliced, to)), events: this.events });
+    this.sliced = to;
     this.events = [];
     this.queue = this.queue.then(() => this.send());
   }
@@ -167,11 +206,22 @@ function recordedTab(port) {
 }
 
 chrome.runtime.onConnect.addListener(async (port) => {
+  // A Meet page holds this port while the offscreen document records it. Tab capture outlives a reload
+  // or a navigation, so the page going away is what ends that recording.
+  if (port.name === "page" && port.sender?.tab) {
+    const tabId = port.sender.tab.id;
+    port.onDisconnect.addListener(() => {
+      if (uploads.get(tabId)?.offscreen) {
+        chrome.runtime.sendMessage({ target: "offscreen", type: "stop", tabId }).catch(() => {});
+      }
+    });
+    return;
+  }
   const tabId = recordedTab(port);
   if (tabId === null) {
     return;
   }
-  const upload = new Upload(Date.now());
+  const upload = new Upload(Date.now(), !port.sender?.tab);
   uploads.set(tabId, upload);
   // Opened at once rather than with the first chunk, so the meeting's time is when recording began.
   upload.queue = upload.queue.then(() => upload.send());
@@ -182,6 +232,7 @@ chrome.runtime.onConnect.addListener(async (port) => {
     chrome.tabs.sendMessage(tabId, { type: "stopped" }).catch(() => {});
     chrome.action.setBadgeText({ tabId, text: "" }).catch(() => {});
     await upload.finish();
+    await closeOffscreenIfIdle();
   });
 
   await chrome.action.setBadgeText({ tabId, text: "REC" });
@@ -205,9 +256,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     uploads.get(sender.tab?.id)?.hear(message.at, message.speakers);
     return false;
   }
-  if (message.type === "stop-recording" && sender.tab) {
-    chrome.runtime.sendMessage({ target: "offscreen", type: "stop", tabId: sender.tab.id });
+  // The recordings live here and in the offscreen document, so the popup asks here rather than the page,
+  // which forgets them on a reload.
+  if (message.type === "recording") {
+    sendResponse({ startedAt: uploads.get(message.tabId)?.startedAt ?? null });
     return false;
+  }
+  if (message.type === "stop-recording") {
+    stopRecording(message.tabId ?? sender.tab?.id).then(
+      () => sendResponse({}),
+      () => sendResponse({}),
+    );
+    return true;
   }
   if (message.type === "record") {
     record(message.tabId, message.streamId).then(sendResponse, (failure) => sendResponse({ error: failure.message }));
@@ -230,19 +290,26 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
   if (command !== "toggle-recording" || !tab?.url?.startsWith("https://meet.google.com/")) {
     return;
   }
-  await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["recorder.js"] });
-  const status = await chrome.tabs.sendMessage(tab.id, { type: "status" });
-  if (status.startedAt) {
-    await chrome.tabs.sendMessage(tab.id, { type: "stop" });
-  } else if (!(await signedIn())) {
-    await chrome.tabs.sendMessage(tab.id, { type: "ask-sign-in" });
-  } else if (!status.consented) {
-    await chrome.tabs.sendMessage(tab.id, { type: "ask-consent" });
-  } else {
-    const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
-    const reply = await record(tab.id, streamId);
-    if (reply.error) {
-      await chrome.tabs.sendMessage(tab.id, { type: "show-error", error: reply.error });
+  if (uploads.has(tab.id)) {
+    await stopRecording(tab.id);
+    return;
+  }
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["recorder.js"] });
+    const status = await chrome.tabs.sendMessage(tab.id, { type: "status" });
+    if (!(await signedIn())) {
+      await chrome.tabs.sendMessage(tab.id, { type: "ask-sign-in" });
+    } else if (!status.consented) {
+      await chrome.tabs.sendMessage(tab.id, { type: "ask-consent" });
+    } else {
+      const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
+      const reply = await record(tab.id, streamId);
+      if (reply.error) {
+        throw new Error(reply.error);
+      }
     }
+  } catch (failure) {
+    // The page may be gone too, so the error may have nowhere to show.
+    await chrome.tabs.sendMessage(tab.id, { type: "show-error", error: failure.message }).catch(() => {});
   }
 });
