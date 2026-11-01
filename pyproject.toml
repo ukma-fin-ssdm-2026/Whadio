@@ -56,7 +56,6 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "actionlint-py>=1.7.12.25",
     "bandit>=1.9.4",
     "basedpyright>=1.40.2",
     "check-jsonschema>=0.38.2",

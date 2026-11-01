@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Every locked dependency ships a wheel, so no third-party build script runs in CI.
+  UV_NO_BUILD: "1"
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}

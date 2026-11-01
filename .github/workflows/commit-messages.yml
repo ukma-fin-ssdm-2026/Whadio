@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Every locked dependency ships a wheel, so no third-party build script runs in CI.
+  UV_NO_BUILD: "1"
+
 concurrency:
   group: commit-messages-${{ github.event.pull_request.number }}
   cancel-in-progress: true
