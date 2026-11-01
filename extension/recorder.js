@@ -36,6 +36,8 @@ if (!globalThis.whadioRecorder) {
         const text = element.textContent.trim();
         if (
           text &&
+          // `devices` reached us as text and its markup is still unseen (#252).
+          text !== "devices" &&
           element.classList.length === 1 &&
           !tile.contains(element.closest('[aria-hidden="true"]'))
         ) {
