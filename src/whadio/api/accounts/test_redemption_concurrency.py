@@ -16,8 +16,13 @@ from ...accounts.enums import WorkspaceRole
 from ...accounts.models import Invitation, User, Workspace, WorkspaceMembership
 from ...accounts.redemption import RedemptionService
 from ...accounts.redemption_repository import InvitationLink, RedemptionRepository
-from ...accounts.repositories import RegistrationRepository, SessionRepository
-from ...accounts.services import RegistrationDetails
+from ...accounts.repositories import (
+    InvitationRepository,
+    MembershipRepository,
+    RegistrationRepository,
+    SessionRepository,
+)
+from ...accounts.services import InvitationService, RegistrationDetails, WorkspaceMembershipService
 from ...audit.enums import AuditAction
 from ...audit.models import AuditEvent
 from ...audit.services import AuditWriter
@@ -193,6 +198,28 @@ def test_concurrent_redemptions_join_and_audit_once(
     )
 
 
+class ObservedRedemptionRepository(RedemptionRepository):
+    def __init__(self, session: AsyncSession, attempted: asyncio.Event) -> None:
+        super().__init__(session)
+        self._attempted: asyncio.Event = attempted
+
+    @override
+    async def lock(self, invitation_id: UUID) -> Invitation | None:
+        self._attempted.set()
+        return await super().lock(invitation_id)
+
+
+class ObservedMembershipRepository(MembershipRepository):
+    def __init__(self, session: AsyncSession, attempted: asyncio.Event) -> None:
+        super().__init__(session)
+        self._attempted: asyncio.Event = attempted
+
+    @override
+    async def lock_role(self, workspace_id: UUID, user_id: UUID) -> WorkspaceRole | None:
+        self._attempted.set()
+        return await super().lock_role(workspace_id, user_id)
+
+
 @pytest.mark.parametrize("winner", ["register", "cancel"])
 def test_register_and_cancel_serialize_without_partial_account_creation(
     database_settings: DatabaseSettings, winner: str
@@ -205,16 +232,31 @@ def test_register_and_cancel_serialize_without_partial_account_creation(
             async def perform(operation: str, *, first: bool) -> str:
                 if not first:
                     await completed.wait()
-                    attempted.set()
                 try:
                     async with place.database.transaction() as session:
                         now = datetime.now(UTC)
                         if operation == "register":
-                            await redemption_service(
-                                session, registration_service(session)
-                            ).register(place.invitation, place.token, DETAILS, now)
+                            unit = (
+                                redemption_service(session, registration_service(session))
+                                if first
+                                else service(
+                                    session, ObservedRedemptionRepository(session, attempted)
+                                )
+                            )
+                            await unit.register(place.invitation, place.token, DETAILS, now)
                         else:
-                            await invitation_service(session).cancel(
+                            invitations = (
+                                invitation_service(session)
+                                if first
+                                else InvitationService(
+                                    InvitationRepository(session),
+                                    WorkspaceMembershipService(
+                                        ObservedMembershipRepository(session, attempted)
+                                    ),
+                                    AuditWriter(session),
+                                )
+                            )
+                            await invitations.cancel(
                                 place.owner, place.workspace, place.invitation, now
                             )
                         if first:

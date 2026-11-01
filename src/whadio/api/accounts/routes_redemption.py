@@ -5,15 +5,23 @@ from uuid import UUID
 from fastapi import APIRouter, Path, Response
 from pydantic import ConfigDict, Field, SecretStr
 
-from ...accounts.models import Invitation, WorkspaceMembership
+from ...accounts.models import WorkspaceMembership
 from ...accounts.services import RegistrationDetails, RegistrationValidationError
 from ..composition import Redemptions
-from ..core.errors import ApiError, ErrorCode, ErrorDetail, error_responses
+from ..core.errors import (
+    DOC_INVALID,
+    DOC_MALFORMED,
+    DOC_UNAUTHENTICATED,
+    ApiError,
+    ErrorCode,
+    ErrorDetail,
+    error_responses,
+)
 from ..core.schemas import Input, Output
 from .auth import BrowserUser, set_session_cookie, user_read
+from .invitation_mapping import invitation_read
 from .schemas import (
     InvitationRead,
-    InvitationState,
     InvitedRole,
     RegistrationComplete,
     Role,
@@ -58,29 +66,19 @@ def _member(member: WorkspaceMembership) -> MembershipRead:
     )
 
 
-def _invitation(invitation: Invitation) -> InvitationRead:
-    return InvitationRead(
-        id=invitation.invitation_id,
-        email=invitation.invited_email,
-        role=InvitedRole(invitation.role.value.lower()),
-        status=InvitationState(invitation.status.value),
-        created_at=invitation.created_at,
-        expires_at=invitation.expires_at,
-        link_active=False,
-    )
-
-
 _ERRORS = error_responses(
     {
-        400: "Malformed JSON",
+        400: DOC_MALFORMED,
         404: "LINK_INVALID: invalid or expired link",
-        422: "VALIDATION_ERROR: invalid fields",
+        422: DOC_INVALID,
     }
 )
 
 
 @router.post(
     "/preview",
+    summary="Preview an invitation",
+    response_description="The workspace, invited address, offered role and account existence",
     description="Validates the invitation token from the request body and returns the workspace, "
     "offered role and whether the invited address already has an account. No session is required.",
     openapi_extra={"security": []},
@@ -104,13 +102,15 @@ async def preview(
 
 @router.post(
     "/accept",
+    summary="Accept an invitation",
+    response_description="The granted workspace membership",
     description="Requires a browser session with the invited email address. Consumes the valid "
     "invitation and grants membership; repeating acceptance returns the existing membership.",
     responses={
         **_ERRORS,
         **error_responses(
             {
-                401: "Browser session required",
+                401: DOC_UNAUTHENTICATED,
                 403: "EMAIL_MISMATCH: sign in with the invited address",
                 409: "ALREADY_MEMBER",
             }
@@ -133,6 +133,8 @@ async def accept(
 
 @router.post(
     "/decline",
+    summary="Decline an invitation",
+    response_description="The declined invitation",
     description="Validates the invitation token from the request body and marks the pending "
     "invitation declined. No session is required; the link cannot be used afterwards.",
     openapi_extra={"security": []},
@@ -145,11 +147,13 @@ async def decline(
         invitation_id, payload.token.get_secret_value(), datetime.now(UTC)
     )
     response.headers["Cache-Control"] = "no-store"
-    return _invitation(invitation)
+    return invitation_read(invitation, link_active=False)
 
 
 @router.post(
     "/register",
+    summary="Register through an invitation",
+    response_description="The new user and granted workspace membership",
     status_code=201,
     description="Creates an account for the invited address, its personal workspace and default "
     "folder, and the invited membership atomically. Requires a valid invitation token, a strong "

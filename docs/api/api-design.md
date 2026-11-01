@@ -118,7 +118,8 @@ sub-resource, such as `…/cancel`, `…/complete` or `…/approve`.
 - **Module:** Accounts & Workspaces
 - **Description:** a user's role in a workspace, and a pending offer of one.
 - **Attributes:**
-  - member: `user_id`, `name`, `email`, `role`, `joined_at`
+  - member directory entry: `user_id`, `name`, `email`, `role`, `joined_at`
+  - redemption membership: `user_id`, `workspace_id`, `role`, `joined_at`
   - invitation: `id`, `email`, `role` (`member` | `moderator`), `status`
     (`pending` | `accepted` | `declined` | `cancelled`), `created_at`, `expires_at` (7 days),
     `link_active`
@@ -474,28 +475,32 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /invitations/{invitation_id}/preview` · Preview an invitation link
 
-- **Status:** Implemented · **Caller:** public · **Success:** `200`, the workspace, the role,
-  and whether the address has an account
-- **Rules:** changes nothing. It is a `POST` although it only reads (section 6.3).
+- **Status:** Implemented · **Caller:** public · **Success:** `200`, `workspace_id`,
+  `workspace_name`, `email`, `role` and `account_exists`
+- **Rules:** changes nothing and takes no row locks. It is a `POST` although it only reads
+  (section 6.3). The response uses `Cache-Control: no-store`.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used.
 
 #### `POST /invitations/{invitation_id}/accept` · Accept an invitation
 
 - **Status:** Implemented · **Caller:** the invited user, signed in · **Success:** `200`, the
-  membership
+  redemption membership (`user_id`, `workspace_id`, `role`, `joined_at`), with
+  `Cache-Control: no-store`
 - **Rules:** accepting again with the same account returns the same membership while the token
   remains unexpired, its creator retains authority, and that membership has not been replaced.
   Joining writes one `member_joined` audit event; retries do not repeat it.
 - **Errors:**
-  - `403 EMAIL_MISMATCH`: the signed-in account has a different address.
+  - `403 EMAIL_MISMATCH`: a pending link is valid, but the signed-in account has a different
+    address. A different account using an accepted link receives `404 LINK_INVALID`.
   - `404 LINK_INVALID`: the link cannot be used.
   - `409 ALREADY_MEMBER`: the account is already a member.
 
 #### `POST /invitations/{invitation_id}/register` · Create an account through an invitation
 
-- **Status:** Implemented · **Caller:** public · **Success:** `201`, the user and the
-  membership; the session cookie is set
+- **Status:** Implemented · **Caller:** public · **Success:** `201`, `user` and `membership`,
+  where the latter has `user_id`, `workspace_id`, `role` and `joined_at`; the session cookie is
+  set and the response uses `Cache-Control: no-store`
 - **Rules:**
   - For an invited address without an account. It creates the account and its personal
     workspace, joins the workspace, and signs the browser in (FR-002).
@@ -506,12 +511,14 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used.
   - `409 ACCOUNT_EXISTS`: the address has an account, so sign in and accept instead.
-  - `422 VALIDATION_ERROR` on `password`: the password breaks the rule above.
+  - `422 VALIDATION_ERROR` on `password`, `name` or `accept_terms`: the password breaks the
+    rule above, the display name is invalid, or the Terms were not accepted.
 
 #### `POST /invitations/{invitation_id}/decline` · Decline an invitation
 
 - **Status:** Implemented · **Caller:** public · **Success:** `200`, the declined invitation
-- **Rules:** needs no account. The link stops working.
+- **Rules:** needs no account. The link stops working. The response uses
+  `Cache-Control: no-store`.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used.
 
@@ -1030,7 +1037,7 @@ status, and which operations return it.
 - **`INVITE_ONLY_INSTANCE`:** registration or a password reset was requested on an invite-only
   instance (FR-001, FR-048). It is `403` because the feature exists but this instance does not
   offer it. Returned by `POST /registrations` and `POST /password-resets`.
-- **`EMAIL_MISMATCH`:** an invitation was accepted with a valid token, but the signed-in
+- **`EMAIL_MISMATCH`:** a pending invitation was accepted with a valid token, but the signed-in
   account has a different address. It is `403` because the link is fine, and this account may
   not use it. Returned by `POST /invitations/{id}/accept`.
 

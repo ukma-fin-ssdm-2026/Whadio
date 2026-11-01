@@ -29,7 +29,7 @@ paths:
     post:
       tags:
       - workspaces
-      summary: Preview
+      summary: Preview an invitation
       description: Validates the invitation token from the request body and returns
         the workspace, offered role and whether the invited address already has an
         account. No session is required.
@@ -52,13 +52,14 @@ paths:
               $ref: '#/components/schemas/LinkToken'
       responses:
         '200':
-          description: Successful Response
+          description: The workspace, invited address, offered role and account existence
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PreviewRead'
         '400':
-          description: Malformed JSON
+          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
+            valid JSON'
           content:
             application/json:
               schema:
@@ -70,7 +71,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: 'VALIDATION_ERROR: invalid fields'
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
           content:
             application/json:
               schema:
@@ -80,7 +82,7 @@ paths:
     post:
       tags:
       - workspaces
-      summary: Accept
+      summary: Accept an invitation
       description: Requires a browser session with the invited email address. Consumes
         the valid invitation and grants membership; repeating acceptance returns the
         existing membership.
@@ -105,13 +107,14 @@ paths:
               $ref: '#/components/schemas/LinkToken'
       responses:
         '200':
-          description: Successful Response
+          description: The granted workspace membership
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MembershipRead'
         '400':
-          description: Malformed JSON
+          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
+            valid JSON'
           content:
             application/json:
               schema:
@@ -123,13 +126,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: 'VALIDATION_ERROR: invalid fields'
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: Browser session required
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
           content:
             application/json:
               schema:
@@ -150,7 +154,7 @@ paths:
     post:
       tags:
       - workspaces
-      summary: Decline
+      summary: Decline an invitation
       description: Validates the invitation token from the request body and marks
         the pending invitation declined. No session is required; the link cannot be
         used afterwards.
@@ -173,13 +177,14 @@ paths:
               $ref: '#/components/schemas/LinkToken'
       responses:
         '200':
-          description: Successful Response
+          description: The declined invitation
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvitationRead'
         '400':
-          description: Malformed JSON
+          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
+            valid JSON'
           content:
             application/json:
               schema:
@@ -191,7 +196,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: 'VALIDATION_ERROR: invalid fields'
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
           content:
             application/json:
               schema:
@@ -201,7 +207,7 @@ paths:
     post:
       tags:
       - workspaces
-      summary: Register
+      summary: Register through an invitation
       description: Creates an account for the invited address, its personal workspace
         and default folder, and the invited membership atomically. Requires a valid
         invitation token, a strong password and Terms acceptance; consumes the link
@@ -225,13 +231,14 @@ paths:
               $ref: '#/components/schemas/RegistrationComplete'
       responses:
         '201':
-          description: Successful Response
+          description: The new user and granted workspace membership
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/RegisteredRead'
         '400':
-          description: Malformed JSON
+          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
+            valid JSON'
           content:
             application/json:
               schema:
@@ -243,7 +250,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: 'VALIDATION_ERROR: invalid fields'
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
           content:
             application/json:
               schema:

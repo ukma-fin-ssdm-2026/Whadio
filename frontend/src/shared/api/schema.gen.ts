@@ -14,7 +14,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Preview
+         * Preview an invitation
          * @description Validates the invitation token from the request body and returns the workspace, offered role and whether the invited address already has an account. No session is required.
          */
         post: operations["preview_api_v1_invitations__invitation_id__preview_post"];
@@ -34,7 +34,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Accept
+         * Accept an invitation
          * @description Requires a browser session with the invited email address. Consumes the valid invitation and grants membership; repeating acceptance returns the existing membership.
          */
         post: operations["accept_api_v1_invitations__invitation_id__accept_post"];
@@ -54,7 +54,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Decline
+         * Decline an invitation
          * @description Validates the invitation token from the request body and marks the pending invitation declined. No session is required; the link cannot be used afterwards.
          */
         post: operations["decline_api_v1_invitations__invitation_id__decline_post"];
@@ -74,7 +74,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Register
+         * Register through an invitation
          * @description Creates an account for the invited address, its personal workspace and default folder, and the invited membership atomically. Requires a valid invitation token, a strong password and Terms acceptance; consumes the link and sets the browser session cookie.
          */
         post: operations["register_api_v1_invitations__invitation_id__register_post"];
@@ -2669,7 +2669,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Successful Response */
+            /** @description The workspace, invited address, offered role and account existence */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2678,7 +2678,7 @@ export interface operations {
                     "application/json": components["schemas"]["PreviewRead"];
                 };
             };
-            /** @description Malformed JSON */
+            /** @description `MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2696,7 +2696,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description VALIDATION_ERROR: invalid fields */
+            /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2723,7 +2723,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Successful Response */
+            /** @description The granted workspace membership */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2732,7 +2732,7 @@ export interface operations {
                     "application/json": components["schemas"]["MembershipRead"];
                 };
             };
-            /** @description Malformed JSON */
+            /** @description `MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2741,7 +2741,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Browser session required */
+            /** @description `UNAUTHENTICATED`: the session is missing, expired or ended */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2777,7 +2777,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description VALIDATION_ERROR: invalid fields */
+            /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2804,7 +2804,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Successful Response */
+            /** @description The declined invitation */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2813,7 +2813,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvitationRead"];
                 };
             };
-            /** @description Malformed JSON */
+            /** @description `MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2831,7 +2831,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description VALIDATION_ERROR: invalid fields */
+            /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2858,7 +2858,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Successful Response */
+            /** @description The new user and granted workspace membership */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -2867,7 +2867,7 @@ export interface operations {
                     "application/json": components["schemas"]["RegisteredRead"];
                 };
             };
-            /** @description Malformed JSON */
+            /** @description `MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2894,7 +2894,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description VALIDATION_ERROR: invalid fields */
+            /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each */
             422: {
                 headers: {
                     [name: string]: unknown;
