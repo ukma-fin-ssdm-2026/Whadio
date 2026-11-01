@@ -1,4 +1,4 @@
-import { Box, CircularProgress } from "@mui/material";
+import { CircularProgress } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { ExportMenu } from "@/features/export/components/ExportMenu";
@@ -6,6 +6,7 @@ import { isMeetingGone, meetingQueries } from "@/features/meetings/api/meetings"
 import { MeetingDetail } from "@/features/meetings/detail/MeetingDetail";
 import type { MeetingTab } from "@/features/meetings/model";
 import { workspaceQueries } from "@/features/workspaces/api/workspaces";
+import { ErrorBanner } from "@/shared/ui/ErrorBanner";
 import { Breadcrumbs } from "../layout/Breadcrumbs";
 
 interface MeetingPageProps {
@@ -35,11 +36,7 @@ export function MeetingPage({ meetingId, revisionId, tab, onTab, onRevision }: M
         workspace={workspaces?.find((item) => item.id === meeting?.workspaceId)}
         current={meeting?.title ?? "Meeting"}
       />
-      {opened.isError && (
-        <Box className="error-banner" role="alert">
-          {opened.error.message}
-        </Box>
-      )}
+      {opened.isError && <ErrorBanner>{opened.error.message}</ErrorBanner>}
       {opened.isLoading && (
         <CircularProgress aria-label="Loading meeting" sx={{ alignSelf: "center" }} />
       )}

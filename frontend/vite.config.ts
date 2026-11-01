@@ -30,8 +30,6 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
-    // Vitest blanks every CSS import not listed here, even a ?raw one, which would read as "".
-    css: { include: [/\/styles\.css\?raw$/] },
     setupFiles: ["src/shared/testing/setup.ts"],
   },
 });

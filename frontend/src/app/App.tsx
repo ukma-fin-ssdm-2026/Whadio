@@ -2,7 +2,6 @@ import { RouterProvider } from "@tanstack/react-router";
 import { useState } from "react";
 import { createApp } from "./create-app";
 import { AppProviders } from "./providers";
-import "@/styles.css";
 
 export function App({ basepath }: { basepath?: string }) {
   const [{ queryClient, router }] = useState(() => createApp(basepath));

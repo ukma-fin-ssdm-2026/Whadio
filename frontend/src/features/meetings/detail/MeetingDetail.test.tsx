@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { expect, test } from "vitest";
 import { ExportMenu } from "@/features/export/components/ExportMenu";
@@ -163,13 +163,14 @@ test.for([
 ] as const)("a %s meeting's notes panel is headed by its real state", ([state, label]) => {
   // Arrange
   serveContent();
-  const { container } = renderDetail({ meeting: meeting({ processing_state: state }) });
+  renderDetail({ meeting: meeting({ processing_state: state }) });
+  const panel = screen.getByRole("tabpanel");
 
   // Act
-  const heading = container.querySelector(".processing-panel .MuiTypography-subtitle1");
+  const heading = within(panel).queryByText(label);
 
   // Assert
-  expect(heading).toHaveTextContent(label);
+  expect(heading).toBeInTheDocument();
 });
 
 test.for(["recording", "queued", "processing"] as const)(
@@ -188,10 +189,10 @@ test.for(["recording", "queued", "processing"] as const)(
 
 test("in-progress notes panel offers no control", () => {
   // Arrange
-  const { container } = renderDetail({ meeting: meeting({ processing_state: "queued" }) });
+  renderDetail({ meeting: meeting({ processing_state: "queued" }) });
 
   // Act
-  const controls = container.querySelectorAll(`.processing-panel :is(${interactive})`);
+  const controls = screen.getByRole("tabpanel").querySelectorAll(interactive);
 
   // Assert
   expect(controls).toHaveLength(0);

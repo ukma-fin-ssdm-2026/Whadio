@@ -75,9 +75,34 @@ export function TranscriptPanel({
         />
         <Stack sx={{ gap: 1.5 }}>
           {segments.map((item) => (
-            <Box key={item.id} className="transcript-item">
+            <Box
+              key={item.id}
+              sx={{
+                display: "grid",
+                gap: "0.55rem",
+                pb: "1rem",
+                borderBottom: 1,
+                borderBottomColor: "divider",
+              }}
+            >
               <Stack direction="row" sx={{ gap: 1, alignItems: "center" }}>
-                <Box className="speaker-avatar">{item.speaker.slice(-2)}</Box>
+                <Box
+                  sx={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flex: "0 0 auto",
+                    width: "1.8rem",
+                    height: "1.8rem",
+                    borderRadius: "50%",
+                    bgcolor: "tint.main",
+                    color: "tint.contrastText",
+                    font: "caption",
+                    lineHeight: 1,
+                  }}
+                >
+                  {item.speaker.slice(-2)}
+                </Box>
                 <Typography variant="subtitle1">{item.speaker}</Typography>
                 <Typography color="primary">{formatTimestamp(item.start_seconds)}</Typography>
               </Stack>

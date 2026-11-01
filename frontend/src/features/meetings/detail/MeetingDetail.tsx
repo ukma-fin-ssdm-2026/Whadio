@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Fragment, type ReactNode, useEffect, useId } from "react";
 import type { NoteRead, TranscriptRead } from "@/shared/api/types";
 import { formatDate } from "@/shared/lib/format";
+import { ErrorBanner } from "@/shared/ui/ErrorBanner";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { meetingQueries, TRANSCRIPT_PENDING, useForgetRecordingLink } from "../api/meetings";
 import { isInProgress, type Meeting, type MeetingTab } from "../model";
@@ -62,11 +63,7 @@ export function MeetingDetail({
 
   return (
     <Stack sx={{ gap: 2 }}>
-      {contentError && (
-        <Box className="error-banner" role="alert">
-          {contentError.message}
-        </Box>
-      )}
+      {contentError && <ErrorBanner>{contentError.message}</ErrorBanner>}
       <PageHeader
         title={meeting.title}
         description={`${formatDate(meeting.date)} · ${meeting.source}`}
@@ -76,7 +73,24 @@ export function MeetingDetail({
           </Fragment>
         }
       />
-      <Tabs value={tab} onChange={(_, value) => onTab(value)} className="meeting-tabs">
+      <Tabs
+        value={tab}
+        onChange={(_, value) => onTab(value)}
+        sx={{
+          position: "sticky",
+          top: "0.75rem",
+          zIndex: 5,
+          width: "fit-content",
+          m: "0 auto 0.25rem",
+          border: 1,
+          borderColor: "divider",
+          borderRadius: "0.55rem",
+          bgcolor: "rgb(var(--mui-palette-background-paperChannel) / 92%)",
+          boxShadow:
+            "0 8px 24px color-mix(in srgb, var(--mui-palette-common-black) 8%, transparent)",
+          backdropFilter: "blur(10px)",
+        }}
+      >
         <Tab label="Notes" {...tabProps("notes")} />
         <Tab label="Transcript" {...tabProps("transcript")} />
         <Tab label="Recording" {...tabProps("recording")} />

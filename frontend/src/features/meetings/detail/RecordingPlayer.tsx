@@ -5,6 +5,22 @@ import { useRef, useState } from "react";
 import { meetingQueries } from "../api/meetings";
 import type { Meeting } from "../model";
 
+const playerFrame = {
+  display: "grid",
+  minHeight: "27rem",
+  placeItems: "center",
+  alignContent: "center",
+  gap: "0.75rem",
+  borderRadius: "0.65rem",
+  color: "common.white",
+  textAlign: "center",
+} as const;
+
+const EMPTY_PLAYER_BACKGROUND = `
+  radial-gradient(circle at center, rgb(var(--mui-palette-primary-mainChannel) / 34%), transparent 10rem),
+  linear-gradient(135deg, transparent 48%, rgb(var(--mui-palette-primary-darkChannel) / 45%)),
+  var(--mui-palette-grey-900)`;
+
 export function RecordingPlayer({ meeting }: { meeting: Meeting }) {
   const { data: link, error, refetch } = useQuery(meetingQueries.recording(meeting));
   const resumeAt = useRef<number | null>(null);
@@ -34,7 +50,13 @@ export function RecordingPlayer({ meeting }: { meeting: Meeting }) {
   if (meeting.recordingAvailable && !problem && link?.url) {
     const { url } = link;
     return (
-      <Box className="player player-ready">
+      <Box
+        sx={{
+          ...playerFrame,
+          bgcolor: "common.black",
+          "& video": { width: "100%", maxHeight: "34rem" },
+        }}
+      >
         <video
           controls
           src={url}
@@ -46,8 +68,17 @@ export function RecordingPlayer({ meeting }: { meeting: Meeting }) {
     );
   }
   return (
-    <Box className="player">
-      <Box className="play-circle">
+    <Box sx={{ ...playerFrame, background: EMPTY_PLAYER_BACKGROUND }}>
+      <Box
+        sx={{
+          display: "grid",
+          width: "4.5rem",
+          height: "4.5rem",
+          placeItems: "center",
+          borderRadius: "999px",
+          bgcolor: "color-mix(in srgb, var(--mui-palette-common-white) 16%, transparent)",
+        }}
+      >
         <PlayArrowRoundedIcon fontSize="large" />
       </Box>
       <Typography variant="subtitle1">{meeting.title}</Typography>

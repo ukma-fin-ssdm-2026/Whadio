@@ -49,17 +49,6 @@
   },
   "overrides": [
     {
-      "includes": ["src/styles.css"],
-      "linter": {
-        "rules": {
-          "complexity": {
-            // MUI's Emotion styles load after this sheet and win ties, so overrides need !important.
-            "noImportantStyles": "off"
-          }
-        }
-      }
-    },
-    {
       "includes": ["src/features/meetings/detail/RecordingPlayer.tsx"],
       "linter": {
         "rules": {
