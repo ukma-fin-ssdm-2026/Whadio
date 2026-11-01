@@ -144,19 +144,15 @@ if (!globalThis.whadioRecorder) {
     const startButton = element("button", { textContent: "Start recording", className: "primary", disabled: true });
     const later = element("button", { textContent: "Not now" });
     const error = element("p", { className: "error", hidden: true });
-    // The server is chosen in the toolbar popup; the card signs in to the last one used.
-    let server = "http://localhost:3000";
-    const email = element("input", { type: "email", required: true, autocomplete: "username" });
-    const password = element("input", { type: "password", required: true, autocomplete: "current-password" });
-    const signInButton = element("button", { type: "submit", textContent: "Sign in", className: "primary" });
-    const close = element("button", { type: "button", textContent: "Close" });
-    const neverAgain = element("button", { type: "button", textContent: "Don't show again" });
-    const signInPanel = element("form", {}, [
+    const close = element("button", { textContent: "Close" });
+    const neverAgain = element("button", { textContent: "Don't show again" });
+    // Passwords are typed only into the extension's own popup: scripts on Meet's page see every key pressed here.
+    const signInPanel = element("div", {}, [
       element("h2", { textContent: "Sign in to Whadio" }),
-      element("p", { textContent: "Sign in to record this call into your workspace." }),
-      element("label", { className: "field" }, ["Email", email]),
-      element("label", { className: "field" }, ["Password", password]),
-      element("div", { className: "actions" }, [signInButton, close, neverAgain]),
+      element("p", {
+        textContent: "To record this call, sign in from the Whadio button in the Chrome toolbar.",
+      }),
+      element("div", { className: "actions" }, [close, neverAgain]),
     ]);
     const recordPanel = element("div", {}, [
       element("h2", { textContent: "Record this call with Whadio?" }),
@@ -184,53 +180,32 @@ if (!globalThis.whadioRecorder) {
           button:disabled { opacity: 0.5; cursor: default; }
           .hint { margin: 8px 0 0; color: #5f6368; font-size: 12px; }
           .error { margin: 8px 0 0; color: #d93025; }
-          label.field { flex-direction: column; gap: 4px; margin: 0 0 8px; }
-          label.field input { box-sizing: border-box; width: 100%; padding: 6px; border: 1px solid #dadce0;
-            border-radius: 6px; font: inherit; }
         `,
       }),
       element("div", { className: "card" }, [signInPanel, recordPanel, error]),
     );
 
-    // Recording is offered only once signed in; signing in elsewhere switches the card at once.
+    // Recording is offered only once signed in. The token lives where this page cannot read it, so the
+    // background answers whether there is one.
     async function refresh() {
-      const stored = await chrome.storage.local.get(["token", "expiresAt", "signInPrompt", "server"]);
-      const { token, expiresAt, signInPrompt } = stored;
-      server = stored.server ?? server;
-      signedIn = Boolean(token) && Date.parse(expiresAt) > Date.now();
+      const { signInPrompt } = await chrome.storage.local.get("signInPrompt");
+      signedIn = await chrome.runtime.sendMessage({ type: "signed-in" });
       promptSignIn = signInPrompt !== false;
       signInPanel.hidden = signedIn;
       recordPanel.hidden = !signedIn;
       error.hidden = true;
-      if (!signedIn && !promptSignIn) {
-        host.remove();
-      }
     }
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === "local" && ("token" in changes || "signInPrompt" in changes)) {
-        refresh();
+    chrome.storage.onChanged.addListener(async (changes, area) => {
+      if (area === "local" && ("signInPrompt" in changes || "signInChangedAt" in changes)) {
+        await refresh();
+        if (!signedIn && !promptSignIn) {
+          host.remove();
+        }
       }
     });
 
-    // Meet handles keys on the whole page; typing in the form must not reach it.
+    // Meet handles keys on the whole page; Space on the checkbox or a button must not reach its push-to-talk.
     root.addEventListener("keydown", (event) => event.stopPropagation());
-    signInPanel.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      signInButton.disabled = true;
-      error.hidden = true;
-      const reply = await chrome.runtime.sendMessage({
-        type: "sign-in",
-        server,
-        email: email.value,
-        password: password.value,
-      });
-      signInButton.disabled = false;
-      if (reply.error) {
-        showError(reply.error);
-        return;
-      }
-      password.value = "";
-    });
     for (const button of [close, later]) {
       button.addEventListener("click", () => {
         dismissed = true;
@@ -264,7 +239,14 @@ if (!globalThis.whadioRecorder) {
       error.hidden = false;
     }
 
-    return { host, consent, showError, refresh, wanted: () => signedIn || promptSignIn };
+    return {
+      host,
+      consent,
+      showError,
+      refresh,
+      wanted: () => signedIn || promptSignIn,
+      signedIn: () => signedIn,
+    };
   }
 
   const banner = buildBanner();
@@ -277,7 +259,7 @@ if (!globalThis.whadioRecorder) {
     if (!inCall()) {
       dismissed = false;
       banner.host.remove();
-    } else if (!session && !dismissed && !banner.host.isConnected) {
+    } else if (!session && !dismissed && !banner.host.isConnected && banner.wanted()) {
       // A token can expire while the card is away, so it checks again each time it would appear.
       await banner.refresh();
       if (banner.wanted() && !session && !dismissed) {
@@ -325,8 +307,14 @@ if (!globalThis.whadioRecorder) {
     }
     if (message.type === "ask-consent") {
       dismissed = false;
-      document.body.append(banner.host);
-      banner.showError("Tick the box first, then press Alt+Shift+R again.");
+      banner
+        .refresh()
+        .then(() => {
+          document.body.append(banner.host);
+          banner.showError("Tick the box first, then press Alt+Shift+R again.");
+        })
+        // Fails only once the extension is reloaded under this page, when nothing here can reach it.
+        .catch(() => {});
       return false;
     }
     const handled = message.type === "start" ? captureWithStreamId(message.streamId).then((tab) => start(tab, true)) : stop();

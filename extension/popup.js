@@ -1,6 +1,6 @@
-import { api, originPattern, signIn, signOut, signedIn } from "./server.js";
+import { api, insecureServer, originPattern, signIn, signOut, signedIn } from "./server.js";
 
-const MEET_CALL = /^https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}(?:[/?#]|$)/;
+const MEET_CALL = /^https:\/\/meet\.google\.com\/(?:meet\/)?[a-z]{3}-[a-z]{4}-[a-z]{3}(?:[/?#]|$)/;
 
 const sections = ["not-meet", "idle", "recording"].map((id) => document.getElementById(id));
 const signInForm = document.getElementById("sign-in");
@@ -39,23 +39,28 @@ function showRecording(startedAt) {
 
 async function showAccount() {
   if (!(await signedIn())) {
+    const { server } = await chrome.storage.local.get("server");
+    if (server) {
+      document.getElementById("server").value = server;
+    }
     signInForm.hidden = false;
     account.hidden = true;
     return false;
   }
   signInForm.hidden = true;
   account.hidden = false;
-  const { name, destination: chosen } = await chrome.storage.local.get(["name", "destination"]);
+  const { name } = await chrome.storage.session.get("name");
+  const { destination: chosen } = await chrome.storage.local.get("destination");
   document.getElementById("name").textContent = name ?? "";
   const page = await api("GET", "/captures/destinations?limit=100");
+  // A folder chosen under another account, or since deleted, falls back to the personal default.
+  const known = page.items.some((workspace) => workspace.folders.some((folder) => folder.id === chosen?.folder_id));
   destination.replaceChildren(
     ...page.items.flatMap((workspace) =>
       workspace.folders.map((folder) => {
         const value = JSON.stringify({ workspace_id: workspace.workspace_id, folder_id: folder.id });
         const option = new Option(`${workspace.name} / ${folder.name}`, value);
-        option.selected = chosen
-          ? chosen.folder_id === folder.id
-          : workspace.is_personal && folder.is_default;
+        option.selected = known ? chosen.folder_id === folder.id : workspace.is_personal && folder.is_default;
         return option;
       }),
     ),
@@ -68,6 +73,10 @@ signInForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   showError("");
   const server = new URL(document.getElementById("server").value).origin;
+  if (insecureServer(server)) {
+    showError("Use an https:// address. Plain http:// works only for localhost and 127.0.0.1.");
+    return;
+  }
   // Asked inside the click, as Chrome requires, and only for the server the user names.
   if (!(await chrome.permissions.request({ origins: [originPattern(server)] }))) {
     showError("Whadio needs access to the server to upload recordings.");
