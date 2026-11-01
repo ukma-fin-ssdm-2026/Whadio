@@ -24,6 +24,7 @@ tasks:
       - uv run --frozen ruff check --fix
       - uv run --frozen ruff format
       - npm --prefix frontend run check:fix
+      - npm --prefix frontend run check:extension:fix
 
   check:
     desc: Run every commit-hook check on all files, as CI does

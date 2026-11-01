@@ -141,7 +141,11 @@ if (!globalThis.whadioRecorder) {
     const host = element("div");
     const root = host.attachShadow({ mode: "closed" });
     const consent = element("input", { type: "checkbox" });
-    const startButton = element("button", { textContent: "Start recording", className: "primary", disabled: true });
+    const startButton = element("button", {
+      textContent: "Start recording",
+      className: "primary",
+      disabled: true,
+    });
     const later = element("button", { textContent: "Not now" });
     const error = element("p", { className: "error", hidden: true });
     const close = element("button", { textContent: "Close" });
@@ -156,7 +160,9 @@ if (!globalThis.whadioRecorder) {
     ]);
     const recordPanel = element("div", {}, [
       element("h2", { textContent: "Record this call with Whadio?" }),
-      element("p", { textContent: "Tell everyone you are recording, and record only once they agree." }),
+      element("p", {
+        textContent: "Tell everyone you are recording, and record only once they agree.",
+      }),
       element("label", {}, [consent, "Everyone in the call agreed to be recorded"]),
       element("div", { className: "actions" }, [startButton, later]),
       element("p", { className: "hint", textContent: "Or tick the box and press Alt+Shift+R." }),
@@ -252,7 +258,9 @@ if (!globalThis.whadioRecorder) {
   const banner = buildBanner();
 
   function inCall() {
-    return [...document.querySelectorAll("button")].some((button) => button.textContent.includes("call_end"));
+    return [...document.querySelectorAll("button")].some((button) =>
+      button.textContent.includes("call_end"),
+    );
   }
 
   setInterval(async () => {
@@ -317,7 +325,10 @@ if (!globalThis.whadioRecorder) {
         .catch(() => {});
       return false;
     }
-    const handled = message.type === "start" ? captureWithStreamId(message.streamId).then((tab) => start(tab, true)) : stop();
+    const handled =
+      message.type === "start"
+        ? captureWithStreamId(message.streamId).then((tab) => start(tab, true))
+        : stop();
     handled.then(sendResponse, (failure) => {
       banner.showError(failure.message);
       sendResponse({ error: failure.message });

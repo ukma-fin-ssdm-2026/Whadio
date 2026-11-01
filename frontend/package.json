@@ -20,7 +20,9 @@
     "format": "biome format --write",
     "format:check": "biome format",
     "check": "biome check --error-on-warnings",
-    "check:fix": "biome check --write --error-on-warnings"
+    "check:fix": "biome check --write --error-on-warnings",
+    "check:extension": "cd ../extension && biome check --error-on-warnings .",
+    "check:extension:fix": "cd ../extension && biome check --write --error-on-warnings ."
   },
   "dependencies": {
     "@emotion/react": "^11.13.3",

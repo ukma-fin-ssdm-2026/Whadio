@@ -10,7 +10,7 @@ Every tool below runs in the pre-commit hook (`.pre-commit-config.yaml`) and aga
 |---|---|---|
 | Bandit 1.9.4 | security | Python security issues: hardcoded secrets, injection, unsafe calls |
 | ruff (`select = ["ALL"]`) | style, bugs, security | PEP 8, formatting, and the flake8-bandit `S` rules |
-| Biome 2.5.15 | frontend style, bugs | formatting, import order and the recommended lint rules, React hooks and accessibility included; warnings fail too |
+| Biome 2.6.3 | frontend and extension style, bugs | formatting, import order and the recommended lint rules, React hooks and accessibility included; warnings fail too |
 | ty, basedpyright | types | strict typing, no `Any` or `cast` escape hatches |
 | TypeScript 5.9 (`tsc`, strict) | frontend types | strict typing of the `.ts`/`.tsx` files, `noUncheckedIndexedAccess` included |
 | import-linter | architecture | modules call only the modules below them in the component diagram |

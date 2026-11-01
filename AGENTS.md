@@ -117,9 +117,10 @@ presigned links are signed for `http://seaweedfs:8333`.
 A change is done when `uv run task check` and `uv run task test` pass and a teammate has approved
 the pull request. The commit hook runs the same checks as `task check`, in this order, and stops at
 the first failure: branch name, file hygiene, gitleaks, `uv lock --check`, `ruff check --fix` and
-`ruff format` on the whole project, Biome, `tsc` and Vitest on the frontend, the suppression ban,
-typos, schema and workflow checks, import-linter, ty, basedpyright, Bandit, deptry, the OpenAPI
-drift check and the fast tests. The commit message is checked last. `git push` runs
+`ruff format` on the whole project, Biome on the frontend and the extension, `tsc` and Vitest on
+the frontend, the suppression ban, typos, schema and workflow checks, import-linter, ty,
+basedpyright, Bandit, deptry, the OpenAPI drift check and the fast tests. The commit message is
+checked last. `git push` runs
 `uv run task test:cov`: the whole test suite but the `models` tests, failing below 85% line and
 branch coverage. It needs the services running and `WHADIO_TEST_DATABASE_URL` exported
 (`docs/testing/testing.md`). CI repeats all of this but the branch name, and adds

@@ -74,7 +74,11 @@ class Upload {
     if (from === this.slices.length) {
       return;
     }
-    this.chunks.push({ slices: this.slices.length - from, audio: bytes(this.slices.slice(from)), events: this.events });
+    this.chunks.push({
+      slices: this.slices.length - from,
+      audio: bytes(this.slices.slice(from)),
+      events: this.events,
+    });
     this.events = [];
     this.queue = this.queue.then(() => this.send());
   }
@@ -122,7 +126,9 @@ class Upload {
     await this.queue;
     if (!this.failed && this.chunks.length > 0) {
       try {
-        await api("POST", `/captures/${this.capture.id}/complete`, { last_seq: this.chunks.length - 1 });
+        await api("POST", `/captures/${this.capture.id}/complete`, {
+          last_seq: this.chunks.length - 1,
+        });
         return;
       } catch {
         // Saved below instead, so the call is not lost.
@@ -152,7 +158,9 @@ chrome.runtime.onConnect.addListener(async (port) => {
 });
 
 // Installs signed in before the token moved to session storage still hold it where content scripts can read it.
-chrome.runtime.onInstalled.addListener(() => chrome.storage.local.remove(["token", "expiresAt", "name"]));
+chrome.runtime.onInstalled.addListener(() =>
+  chrome.storage.local.remove(["token", "expiresAt", "name"]),
+);
 
 // Session storage sends the Meet page no change events, so a sign-in or sign-out reaches the card as a
 // timestamp in local storage, which carries nothing secret.
@@ -185,7 +193,10 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
   } else if (!status.consented) {
     await chrome.tabs.sendMessage(tab.id, { type: "ask-consent" });
   } else {
-    const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id, consumerTabId: tab.id });
+    const streamId = await chrome.tabCapture.getMediaStreamId({
+      targetTabId: tab.id,
+      consumerTabId: tab.id,
+    });
     await chrome.tabs.sendMessage(tab.id, { type: "start", streamId });
   }
 });
