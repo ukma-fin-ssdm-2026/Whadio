@@ -27,9 +27,24 @@ tasks:
       - npm --prefix frontend run check:extension:fix
 
   check:
-    desc: Run every commit-hook check on all files, as CI does
+    desc: Run every static check on all files, as CI does
     cmds:
-      - uv run --frozen pre-commit run --all-files --show-diff-on-failure
+      - uv run --frozen pre-commit run --all-files --hook-stage manual --show-diff-on-failure
+
+  ci:
+    desc: Run every CI job in parallel and to the end; needs what `task test:cov` needs, and Docker
+    cmds:
+      - "{{.TASK_EXE}} --output=prefixed ci:jobs"
+
+  ci:jobs:
+    deps:
+      - check
+      - audit
+      - frontend:typecheck
+      - frontend:test
+      - frontend:build
+      - test:cov
+      - image
 
   test:
     desc: Run the whole test suite, slow tests and the frontend's tests included
@@ -41,6 +56,26 @@ tasks:
     desc: Run the frontend's tests
     cmds:
       - npm --prefix frontend test
+
+  frontend:typecheck:
+    desc: Check the frontend's types
+    cmds:
+      - npm --prefix frontend run typecheck
+
+  frontend:build:
+    desc: Build the frontend
+    cmds:
+      - npm --prefix frontend run build
+
+  test:fast:
+    desc: Run the tests that need no services, as the push hook does; CI runs the whole suite
+    cmds:
+      # Importing these two modules loads torch: longer than running all the other tests.
+      - >-
+        uv run --frozen pytest -q -m "not slow"
+        --ignore=src/whadio/workers/asr/diarization/test_pyannote.py
+        --ignore=src/whadio/workers/asr/recognition/test_whisper.py
+        {{.CLI_ARGS}}
 
   test:cov:
     desc: Run the suite CI runs, with the line and branch coverage gate from pyproject.toml
@@ -62,11 +97,21 @@ tasks:
       - uv run --frozen mutmut results
 
   audit:
-    desc: Look for vulnerable dependencies and for secrets anywhere in the git history
+    desc: Warn about vulnerable dependencies
     cmds:
-      - uv run --frozen pre-commit run uv-audit --hook-stage manual --all-files
-      - npm audit --prefix frontend --audit-level=high
-      - uv run --frozen pre-commit run gitleaks-history --hook-stage manual --all-files
+      # A warning: a new advisory would otherwise fail pull requests that changed no dependency.
+      - uv audit --frozen || echo "::warning title=uv audit::Vulnerable Python dependencies"
+      - >-
+        npm audit --prefix frontend --audit-level=high ||
+        echo "::warning title=npm audit::Vulnerable frontend dependencies"
+
+  image:
+    desc: Build the worker image and run its entry point
+    cmds:
+      - defer: docker image rm --force whadio:check > /dev/null
+      # Only the CPU variant: TORCH=cuda adds about 3.5 GB of CUDA wheels to every cold build.
+      - docker build --build-arg TORCH=cpu --tag whadio:check .
+      - docker run --rm whadio:check --help
 
   openapi:
     desc: Regenerate docs/api/openapi-generated.yaml and .json

@@ -49,18 +49,18 @@ recorded alongside results.
 | Coverage | Overall non-model coverage, measured as one combined line-and-branch result, must not fall below **85%**. New or changed domain behaviour must be exercised; a lower result needs a documented risk-based justification. |
 | Critical requirements | NFR-007 to NFR-013 require 100% of their enumerated authorization, authenticity, integrity and audit scenarios to pass. Coverage percentage cannot substitute for these tests. |
 | Regression policy | Every fixed defect receives a regression test that fails before the fix. The debugging log links the defect, fix and test. |
-| Merge gate | `uv run --frozen task check`, the complete non-model suite against migrated Compose services, OpenAPI lint, dependency audit and secret scan must pass; the PR also needs approval. Model-affecting changes additionally run the relevant model tests manually or on a capable runner. |
+| Merge gate | The `CI passed` check must pass: `uv run --frozen task check`, including OpenAPI lint and the secret scan, the complete non-model suite against migrated Compose services, the frontend's tests and build, and the worker image. The dependency audit warns but does not block. The PR also needs approval. Model-affecting changes additionally run the relevant model tests manually or on a capable runner. |
 | Release gate | Core system and acceptance journeys pass on the release candidate, with no unresolved Critical or High security finding and no unexplained coverage regression. |
 
 ## CI/CD use and ownership
 
 The Testing Strategist owns the scope, targets, exceptions and interpretation of results. The
 Integration Lead implements and maintains the jobs, caches, services and artifacts that enforce
-them. Fast unit tests and static checks run on every commit; CI runs all checks plus integration
-tests, audits and API lint on every push and pull request. CI should publish JUnit and coverage
-artifacts and fail when the agreed coverage floors regress. System, performance and model suites
-run before a release and on relevant changes; expensive scheduled runs do not weaken pull-request
-gates. A failing gate is fixed, or its policy is changed transparently in a reviewed PR; checks are
+them. Cheap static checks run on every commit and fast unit tests on every push; CI runs all checks
+plus integration tests, audits and API lint on every pull request and on `main`. CI should publish
+JUnit and coverage artifacts and fail when the agreed coverage floors regress. System, performance
+and model suites run before a release and on relevant changes; expensive scheduled runs do not
+weaken pull-request gates. A failing gate is fixed, or its policy is changed transparently in a reviewed PR; checks are
 never bypassed ad hoc.
 
 ## AI Usage
@@ -123,7 +123,7 @@ between the parts were never counted. The fix and its exact-boundary regression 
 
 - **Threshold:** **85%** of lines and branches combined, set once as `fail_under` in
   `[tool.coverage.report]` in `pyproject.toml`. `uv run task test:cov` enforces it in CI on every
-  push and pull request, and in the push hook.
+  pull request and on `main`.
 - **Why 85%:** it was the measured total (85.6%) when the gate was introduced, after turning on
   greenlet tracing so that SQLAlchemy's async code counts as run. A gate must pass on the day it is
   introduced; 85% stops coverage from slipping below what the suite already proves, and can be raised

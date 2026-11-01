@@ -59,11 +59,12 @@ npm run dev
 
 Biome formats and lints the frontend: `npm run check` reports problems and `npm run check:fix`
 fixes what it can. `npm test` runs the Vitest tests and `npm run typecheck` the TypeScript
-compiler. The commit hook runs all three whenever a commit touches `frontend/`.
+compiler. The commit hook runs Biome whenever a commit touches `frontend/`, the push hook runs the
+compiler and the tests the branch can affect, and CI runs everything.
 
 The API's TypeScript types in `frontend/src/shared/api/schema.gen.ts` are generated from
-`docs/api/openapi-generated.json` by `npm run gen:api`. The commit hook regenerates them whenever
-the specification or `frontend/` changes, and fails until the regenerated file is staged.
+`docs/api/openapi-generated.json` by `npm run gen:api`. The push hook regenerates them whenever
+the specification or `frontend/` changes, and fails until the regenerated file is committed.
 
 Open <http://localhost:5173>. Vite proxies `/api` requests to the local API, so browser sessions
 and uploads use the backend without a separate CORS setup. Set `VITE_API_ORIGIN` (such as

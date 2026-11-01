@@ -1,7 +1,9 @@
 name: CI/CD
 
+# Branches get CI through their pull request; `workflow_dispatch` covers one without a pull request.
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -13,12 +15,9 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  verify:
-    name: Checks, tests and API contract
+  static:
+    name: Static checks and audit
     runs-on: [self-hosted, linux]
-    env:
-      # Pushes to main check out main itself; the hook exists to stop local commits there.
-      SKIP: no-commit-to-branch
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -48,11 +47,67 @@ jobs:
       - name: Install the frontend dependencies
         run: npm ci --prefix frontend --ignore-scripts
 
-      - name: Run the commit-hook checks on all files
+      - name: Run every static check on all files
         run: uv run --frozen task check
 
-      - name: Build the frontend
-        run: npm --prefix frontend run build
+      - name: Audit the dependencies
+        if: ${{ !cancelled() }}
+        run: uv run --frozen task audit
+
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: docs/api
+
+  frontend:
+    name: Frontend
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Install Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install the frontend dependencies
+        run: npm ci --prefix frontend --ignore-scripts
+
+      - name: Check the types
+        run: uv run --frozen task frontend:typecheck
+
+      - name: Run the tests
+        if: ${{ !cancelled() }}
+        run: uv run --frozen task frontend:test
+
+      - name: Build
+        if: ${{ !cancelled() }}
+        run: uv run --frozen task frontend:build
+
+  backend:
+    name: Backend tests and coverage
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+
+      - name: Install dependencies
+        run: uv sync --locked --extra asr --extra cpu
 
       - name: Start the services and migrate the test database
         env:
@@ -97,29 +152,42 @@ jobs:
             htmlcov-ci/
           retention-days: 14
 
-      - name: Audit dependencies and the git history
-        run: uv run --frozen task audit
-
-      # Only the CPU variant: TORCH=cuda adds about 3.5 GB of CUDA wheels to every cold build.
-      - name: Build the worker image and run its entry point
-        run: |
-          tag="whadio:ci-${GITHUB_RUN_ID}"
-          trap 'docker image rm --force "$tag" > /dev/null' EXIT
-          docker build --build-arg TORCH=cpu --tag "$tag" .
-          docker run --rm "$tag" --help
-
-      - name: Lint OpenAPI specification
-        run: npx --yes @redocly/cli@2.55.0 lint docs/api/openapi-generated.yaml
-
-      - name: Upload Pages artifact
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+  image:
+    name: Worker image
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path: docs/api
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Build the worker image and run its entry point
+        run: uv run --frozen task image
+
+  ci-passed:
+    name: CI passed
+    needs: [static, frontend, backend, image]
+    # This is the required check: GitHub counts a skipped job as passed, so it must never skip.
+    if: always()
+    runs-on: [self-hosted, linux]
+    steps:
+      - name: Require every job to have succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "$RESULTS"
+          for result in $RESULTS; do
+            [ "$result" = success ] || exit 1
+          done
 
   deploy:
     name: Deploy to GitHub Pages
-    needs: verify
+    needs: ci-passed
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     environment:
       name: github-pages
