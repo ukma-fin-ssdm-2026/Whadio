@@ -150,6 +150,22 @@ Coverage says which code ran, not whether the test checked the right thing. A te
 - **Property-based tests for name validation:** Hypothesis can generate arbitrary Unicode for folder names and glossary terms, including whitespace and control characters, instead of the few hand-picked values used now.
 - **One shared builder:** `world()` and `team()` both create an Owner, a Member, an outsider and a meeting. Moving them into one fixture in `conftest.py` would stop the next module's tests from writing a third copy.
 
+## 4. Frontend tests
+
+The web app has its own tests, in `frontend/`, next to the code they test. They need neither the API nor a browser.
+
+| Command, in `frontend/` | What it does |
+|---|---|
+| `npm test` | Runs every test once; `uv run task frontend:test` does the same from the root |
+| `npm run test:watch` | Reruns the tests a change affects |
+| `npm run coverage` | Runs every test and reports V8 coverage; no gate applies to it |
+| `npm test -- --changed origin/main` | Runs the tests the branch can affect, as the push hook does |
+
+- **Vitest and jsdom** run the tests. jsdom has no layout and applies no media query, and Vitest blanks imported CSS, so a test cannot see how a page looks. `src/app/theme/css-variables.test.tsx` reads the CSS that Emotion writes into its `<style>` nodes to check the theme's variables and every `var(--mui-...)` the sources reference. Look at a page in a browser to check its appearance.
+- **Testing Library** renders components and finds them by role, label or text, as a user would. `renderWithProviders` (`src/shared/testing/render.tsx`) adds a fresh query client and the notification provider around a feature's component. It uses MUI's default theme, because shared code may not import the app's.
+- **Mock Service Worker** answers the API. `src/shared/testing/server.ts` exports the `server` and an `http` typed from the OpenAPI types, so a handler for a path the API does not have fails to compile. A test declares its handlers with `server.use(...)`, and a request nothing handles fails the test. `src/shared/testing/fixtures.ts` builds the API's response bodies.
+- **Route tests** render the real `<App />` at a URL, with the real route tree and the real theme: set the address with `window.history.replaceState`, then render. `App.routing.test.tsx` and `App.test.tsx` work this way. `src/app/testing.tsx` holds their helpers: `serveApi` answers a signed-in or signed-out session and records the requests, `signIn` fills in the form, and `renderAtPath` gives a component that holds links a router without the app.
+
 ## AI Usage
 
 The tests, the coverage runs and this document were made with Claude Code (Claude Opus 5.5); checked by Denys Zabiiaka.
