@@ -474,7 +474,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /invitations/{invitation_id}/preview` · Preview an invitation link
 
-- **Status:** Designed · **Caller:** public · **Success:** `200`, the workspace, the role,
+- **Status:** Implemented · **Caller:** public · **Success:** `200`, the workspace, the role,
   and whether the address has an account
 - **Rules:** changes nothing. It is a `POST` although it only reads (section 6.3).
 - **Errors:**
@@ -482,9 +482,11 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /invitations/{invitation_id}/accept` · Accept an invitation
 
-- **Status:** Designed · **Caller:** the invited user, signed in · **Success:** `200`, the
+- **Status:** Implemented · **Caller:** the invited user, signed in · **Success:** `200`, the
   membership
-- **Rules:** accepting again with the same account returns the same membership.
+- **Rules:** accepting again with the same account returns the same membership while the token
+  remains unexpired, its creator retains authority, and that membership has not been replaced.
+  Joining writes one `member_joined` audit event; retries do not repeat it.
 - **Errors:**
   - `403 EMAIL_MISMATCH`: the signed-in account has a different address.
   - `404 LINK_INVALID`: the link cannot be used.
@@ -492,13 +494,15 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /invitations/{invitation_id}/register` · Create an account through an invitation
 
-- **Status:** Designed · **Caller:** public · **Success:** `201`, the user and the
+- **Status:** Implemented · **Caller:** public · **Success:** `201`, the user and the
   membership; the session cookie is set
 - **Rules:**
   - For an invited address without an account. It creates the account and its personal
     workspace, joins the workspace, and signs the browser in (FR-002).
   - Requires a password of 12 to 128 characters with at least one digit and one uppercase
     letter.
+  - Requires `accept_terms: true`. Account creation, personal workspace and default folder,
+    invited membership, link consumption, browser session and audit share one transaction.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used.
   - `409 ACCOUNT_EXISTS`: the address has an account, so sign in and accept instead.
@@ -506,7 +510,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /invitations/{invitation_id}/decline` · Decline an invitation
 
-- **Status:** Designed · **Caller:** public · **Success:** `200`, the declined invitation
+- **Status:** Implemented · **Caller:** public · **Success:** `200`, the declined invitation
 - **Rules:** needs no account. The link stops working.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used.

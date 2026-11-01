@@ -24,6 +24,7 @@ from ..accounts.contracts import UserProfile
 from ..accounts.enums import NotesTemplate, RegistrationMode
 from ..accounts.password_resets import PasswordResetService
 from ..accounts.passwords import Argon2PasswordHasher
+from ..accounts.redemption import RedemptionRepository, RedemptionService
 from ..accounts.repositories import (
     InvitationRepository,
     McpKeyRepository,
@@ -531,6 +532,19 @@ def invitation_service(session: Session) -> InvitationService:
 
 
 Invitations = Annotated[InvitationService, Depends(invitation_service)]
+
+
+def redemption_service(session: Session, registrations: Registrations) -> RedemptionService:
+    return RedemptionService(
+        RedemptionRepository(session),
+        RegistrationRepository(session),
+        SessionRepository(session),
+        registrations,
+        AuditWriter(session),
+    )
+
+
+Redemptions = Annotated[RedemptionService, Depends(redemption_service)]
 
 
 def capture_storage() -> IChunkStorage:

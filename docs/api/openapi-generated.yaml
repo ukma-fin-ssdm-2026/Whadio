@@ -25,6 +25,223 @@ info:
     - **Time:** ISO 8601 with an offset; returned in UTC.
   version: 0.1.0
 paths:
+  /api/v1/invitations/{invitation_id}/preview:
+    post:
+      tags:
+      - workspaces
+      summary: Preview
+      operationId: preview_api_v1_invitations__invitation_id__preview_post
+      parameters:
+      - name: invitation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Invitation identifier from the link
+          title: Invitation Id
+        description: Invitation identifier from the link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkToken'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewRead'
+        '400':
+          description: Malformed JSON
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 'LINK_INVALID: invalid or expired link'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 'VALIDATION_ERROR: invalid fields'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security: []
+  /api/v1/invitations/{invitation_id}/accept:
+    post:
+      tags:
+      - workspaces
+      summary: Accept
+      operationId: accept_api_v1_invitations__invitation_id__accept_post
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: invitation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Invitation identifier from the link
+          title: Invitation Id
+        description: Invitation identifier from the link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkToken'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipRead'
+        '400':
+          description: Malformed JSON
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 'LINK_INVALID: invalid or expired link'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 'VALIDATION_ERROR: invalid fields'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Browser session required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'EMAIL_MISMATCH: sign in with the invited address'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: ALREADY_MEMBER
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/invitations/{invitation_id}/decline:
+    post:
+      tags:
+      - workspaces
+      summary: Decline
+      operationId: decline_api_v1_invitations__invitation_id__decline_post
+      parameters:
+      - name: invitation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Invitation identifier from the link
+          title: Invitation Id
+        description: Invitation identifier from the link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkToken'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationRead'
+        '400':
+          description: Malformed JSON
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 'LINK_INVALID: invalid or expired link'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 'VALIDATION_ERROR: invalid fields'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security: []
+  /api/v1/invitations/{invitation_id}/register:
+    post:
+      tags:
+      - workspaces
+      summary: Register
+      operationId: register_api_v1_invitations__invitation_id__register_post
+      parameters:
+      - name: invitation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Invitation identifier from the link
+          title: Invitation Id
+        description: Invitation identifier from the link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationComplete'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisteredRead'
+        '400':
+          description: Malformed JSON
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 'LINK_INVALID: invalid or expired link'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 'VALIDATION_ERROR: invalid fields'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 'ACCOUNT_EXISTS: sign in and accept'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security: []
   /api/v1/instance:
     get:
       tags:
@@ -4125,6 +4342,8 @@ components:
     ErrorCode:
       type: string
       enum:
+      - EMAIL_MISMATCH
+      - ACCOUNT_EXISTS
       - NO_NOTES
       - INTEGRATION_UNAVAILABLE
       - TRANSCRIPT_EXISTS
@@ -4610,6 +4829,19 @@ components:
       - notes
       title: JobType
     JsonValue: {}
+    LinkToken:
+      properties:
+        token:
+          type: string
+          format: password
+          title: Token
+          description: Secret from the invitation link fragment
+          writeOnly: true
+      additionalProperties: false
+      type: object
+      required:
+      - token
+      title: LinkToken
     McpKeyCreate:
       properties:
         expires_in_days:
@@ -4915,6 +5147,33 @@ components:
       additionalProperties: false
       type: object
       title: MeetingUpdate
+    MembershipRead:
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          title: User Id
+          description: Member account identifier
+        workspace_id:
+          type: string
+          format: uuid
+          title: Workspace Id
+          description: Workspace identifier
+        role:
+          $ref: '#/components/schemas/Role'
+          description: Granted workspace role
+        joined_at:
+          type: string
+          format: date-time
+          title: Joined At
+          description: When the membership began
+      type: object
+      required:
+      - user_id
+      - workspace_id
+      - role
+      - joined_at
+      title: MembershipRead
     MetricsRead:
       properties:
         generated_at:
@@ -5250,6 +5509,36 @@ components:
       - detailed
       - interview
       title: Preset
+    PreviewRead:
+      properties:
+        workspace_id:
+          type: string
+          format: uuid
+          title: Workspace Id
+          description: Workspace being joined
+        workspace_name:
+          type: string
+          title: Workspace Name
+          description: Workspace display name
+        email:
+          type: string
+          title: Email
+          description: Invited email address
+        role:
+          $ref: '#/components/schemas/InvitedRole'
+          description: Offered workspace role
+        account_exists:
+          type: boolean
+          title: Account Exists
+          description: Whether to sign in instead of registering
+      type: object
+      required:
+      - workspace_id
+      - workspace_name
+      - email
+      - role
+      - account_exists
+      title: PreviewRead
     ProcessingState:
       type: string
       enum:
@@ -5273,6 +5562,19 @@ components:
       - complete
       - partial
       title: RecordingStatus
+    RegisteredRead:
+      properties:
+        user:
+          $ref: '#/components/schemas/UserRead'
+          description: Newly registered account
+        membership:
+          $ref: '#/components/schemas/MembershipRead'
+          description: Membership created through the invitation
+      type: object
+      required:
+      - user
+      - membership
+      title: RegisteredRead
     RegistrationComplete:
       properties:
         token:
