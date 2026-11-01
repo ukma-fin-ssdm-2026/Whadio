@@ -66,8 +66,8 @@ function visibleText(node: HtmlElement | HtmlElement["children"][number]): strin
   return node.children.map(visibleText).join("");
 }
 
-// Not a browser fragment navigation: that fires popstate, which the app answers by remounting the
-// page, losing the jump and any tab or search state. Centring also clears the sticky meeting tabs.
+// Not a browser fragment navigation: that leaves focus behind and adds a history entry per jump,
+// so Back would walk the footnotes. Centring also clears the sticky meeting tabs.
 function jumpTo(id: string) {
   const target = document.getElementById(id);
   if (!target) return;
