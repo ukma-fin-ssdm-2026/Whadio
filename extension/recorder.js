@@ -307,10 +307,14 @@ if (!globalThis.whadioRecorder) {
     }
     if (message.type === "ask-consent") {
       dismissed = false;
-      banner.refresh().then(() => {
-        document.body.append(banner.host);
-        banner.showError("Tick the box first, then press Alt+Shift+R again.");
-      });
+      banner
+        .refresh()
+        .then(() => {
+          document.body.append(banner.host);
+          banner.showError("Tick the box first, then press Alt+Shift+R again.");
+        })
+        // Fails only once the extension is reloaded under this page, when nothing here can reach it.
+        .catch(() => {});
       return false;
     }
     const handled = message.type === "start" ? captureWithStreamId(message.streamId).then((tab) => start(tab, true)) : stop();
