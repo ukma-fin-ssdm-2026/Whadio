@@ -110,6 +110,36 @@ def test_workspace_detail_reports_the_configured_provider(
     assert reported is provider
 
 
+def test_workspace_detail_reports_the_configured_model(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> str:
+        async with AsyncDatabase.api_client(session, AnthropicLlm(model="claude-test")) as client:
+            await signed_in(client, session)
+            workspace = await created(client)
+            # Act
+            response = await client.get(f"/api/v1/workspaces/{workspace.id}")
+            return WorkspaceRead.model_validate_json(response.content).notes_model
+
+    model = async_database.run(scenario)
+    # Assert
+    assert model == "claude-test"
+
+
+def test_workspace_list_leaves_the_model_out(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> str:
+        async with AsyncDatabase.api_client(session) as client:
+            await signed_in(client, session)
+            await created(client)
+            # Act
+            response = await client.get("/api/v1/workspaces")
+            return response.text
+
+    listed = async_database.run(scenario)
+    # Assert
+    assert "notes_model" not in listed
+
+
 def test_workspace_of_others_is_not_found(async_database: AsyncDatabase) -> None:
     # Arrange
     async def scenario(session: AsyncSession) -> tuple[int, str]:
