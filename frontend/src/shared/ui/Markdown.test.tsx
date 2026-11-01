@@ -187,7 +187,7 @@ describe("links", () => {
       renderNotes(`[Brief](${url})`);
 
       // Assert
-      expect(screen.getByRole("link", { name: "Brief" })).toHaveAttribute("href", url);
+      expect(screen.getByRole("link")).toHaveAttribute("href", url);
     },
   );
 
@@ -196,7 +196,7 @@ describe("links", () => {
     renderNotes("[Brief](https://example.com)");
 
     // Assert
-    expect(screen.getByRole("link", { name: "Brief" })).toHaveAttribute("target", "_blank");
+    expect(screen.getByRole("link")).toHaveAttribute("target", "_blank");
   });
 
   test("a link leaks neither the opener nor the referrer", () => {
@@ -204,10 +204,7 @@ describe("links", () => {
     renderNotes("[Brief](https://example.com)");
 
     // Assert
-    expect(screen.getByRole("link", { name: "Brief" })).toHaveAttribute(
-      "rel",
-      "noopener noreferrer",
-    );
+    expect(screen.getByRole("link")).toHaveAttribute("rel", "noopener noreferrer");
   });
 
   test("a bare address becomes a link", () => {
@@ -216,6 +213,55 @@ describe("links", () => {
 
     // Assert
     expect(screen.getByRole("link")).toHaveAttribute("href", "https://example.com/brief");
+  });
+
+  test.for([
+    ["https", "[Whadio login](https://evil.example/?q=secret)", "Whadio login (evil.example)"],
+    ["http", "[Whadio login](http://evil.example/)", "Whadio login (evil.example)"],
+    ["subdomain", "[Brief](https://docs.example.com/a)", "Brief (docs.example.com)"],
+    ["credentials", "[Brief](https://google.com@evil.example/)", "Brief (evil.example)"],
+    ["internationalised", "[Вхід](https://пример.example/)", "Вхід (xn--e1afmkfd.example)"],
+    ["linked image", "[![Board](https://e.com/a.png)](https://e.com)", "Board (e.com)"],
+  ] as const)("a %s link names its host beside the label", ([, notes, name]) => {
+    // Act
+    renderNotes(notes);
+
+    // Assert
+    expect(screen.getByRole("link")).toHaveAccessibleName(name);
+  });
+
+  test("the host is visible text, not only an accessible name", () => {
+    // Act
+    renderNotes("[Whadio login](https://evil.example/?q=secret)");
+
+    // Assert
+    expect(screen.getByRole("link")).toHaveTextContent(/^Whadio login \(evil\.example\)$/);
+  });
+
+  test.for([
+    ["a URL-looking label", "[https://google.com](https://evil.example)", "evil.example"],
+    ["a bare host as label", "[google.com](https://evil.example)", "evil.example"],
+    ["the same host on another path", "[https://a.example/x](https://a.example/y)", "a.example"],
+    ["a lookalike host", "[https://аpple.example](https://xn--pple-43d.example)", "xn--pple-43d"],
+    ["a bare lookalike host", "See https://аpple.example today", "xn--pple-43d"],
+  ] as const)("%s cannot hide the real host", ([, notes, host]) => {
+    // Act
+    renderNotes(notes);
+
+    // Assert
+    expect(screen.getByRole("link")).toHaveTextContent(`(${host}`);
+  });
+
+  test.for([
+    ["a bare address", "See https://example.com/brief today"],
+    ["an autolink", "See <https://example.com/brief> today"],
+    ["a label equal to its URL", "[https://example.com/brief](https://example.com/brief)"],
+  ] as const)("%s adds no host", ([, notes]) => {
+    // Act
+    renderNotes(notes);
+
+    // Assert
+    expect(screen.getByRole("link")).toHaveTextContent(/^https:\/\/example\.com\/brief$/);
   });
 
   test.for([
@@ -297,6 +343,6 @@ describe("images", () => {
     renderNotes("[![Board](https://example.com/board.png)](https://example.com)");
 
     // Assert
-    expect(within(screen.getByRole("link")).getByText("Board")).toBeInTheDocument();
+    expect(within(screen.getByRole("link")).getByText(/^Board/)).toBeInTheDocument();
   });
 });
