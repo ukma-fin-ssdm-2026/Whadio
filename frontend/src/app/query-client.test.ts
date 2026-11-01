@@ -22,7 +22,7 @@ describe("an expired session", () => {
   test("in a query calls the unauthorized handler", async () => {
     // Arrange
     const onUnauthorized = vi.fn();
-    const client = createQueryClient({ onUnauthorized });
+    const client = createQueryClient({ onUnauthorized, onDataLoaded: () => {} });
 
     // Act
     await failQuery(client, SESSION_EXPIRED);
@@ -34,7 +34,7 @@ describe("an expired session", () => {
   test("in a mutation calls the unauthorized handler", async () => {
     // Arrange
     const onUnauthorized = vi.fn();
-    const client = createQueryClient({ onUnauthorized });
+    const client = createQueryClient({ onUnauthorized, onDataLoaded: () => {} });
 
     // Act
     await failMutation(client, SESSION_EXPIRED);
@@ -44,6 +44,18 @@ describe("an expired session", () => {
   });
 });
 
+test("a successful query reports loaded data", async () => {
+  // Arrange
+  const onDataLoaded = vi.fn();
+  const client = createQueryClient({ onUnauthorized: () => {}, onDataLoaded });
+
+  // Act
+  await client.query({ queryKey: ["loaded"], queryFn: () => "data" });
+
+  // Assert
+  expect(onDataLoaded).toHaveBeenCalledOnce();
+});
+
 test.for([
   ["wrong credentials", apiError(401, "INVALID_CREDENTIALS")],
   ["a forbidden request", apiError(403, "INSUFFICIENT_ROLE")],
@@ -51,7 +63,7 @@ test.for([
 ] as const)("%s leaves the session alone", async ([, error]) => {
   // Arrange
   const onUnauthorized = vi.fn();
-  const client = createQueryClient({ onUnauthorized });
+  const client = createQueryClient({ onUnauthorized, onDataLoaded: () => {} });
 
   // Act
   await failMutation(client, error);
