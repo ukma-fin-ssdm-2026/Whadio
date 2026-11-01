@@ -7,6 +7,17 @@ type InProgressState = Exclude<ProcessingState, "processed" | "failed">;
 
 export type StateFilter = "all" | ProcessingState;
 
+export const STATE_FILTERS = [
+  "all",
+  "recording",
+  "queued",
+  "processing",
+  "processed",
+  "failed",
+] as const satisfies readonly StateFilter[];
+
+export const NAME_FILTER_MAX_LENGTH = 200;
+
 export const MEETING_TABS = ["notes", "transcript", "recording"] as const;
 export type MeetingTab = (typeof MEETING_TABS)[number];
 

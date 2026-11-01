@@ -23,6 +23,7 @@ import {
   isProcessing,
   type Meeting,
   matchesStateFilter,
+  NAME_FILTER_MAX_LENGTH,
   type StateFilter,
 } from "../model";
 
@@ -83,7 +84,7 @@ export function MeetingLibrary({
               onChange={(event) => onQuery(event.target.value)}
               slotProps={{
                 input: { startAdornment: <SearchRoundedIcon color="disabled" sx={{ mr: 1 }} /> },
-                htmlInput: { maxLength: 200 },
+                htmlInput: { maxLength: NAME_FILTER_MAX_LENGTH },
               }}
             />
             <FormControl size="small" sx={{ minWidth: 140 }}>

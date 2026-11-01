@@ -666,6 +666,140 @@ describe("a meeting's tab in the URL", () => {
   });
 });
 
+describe.for(["/meetings", "/workspaces/workspace"])("the filters of %s", (path) => {
+  const FILTER = "Filter by name";
+
+  function serveFailedMeeting() {
+    const names: (string | null)[] = [];
+    server.use(
+      http.get("/api/v1/workspaces/workspace/meetings", ({ request }) => {
+        names.push(new URL(request.url).searchParams.get("name"));
+        return HttpResponse.json(
+          page([
+            meetingSummary({ id: "lost", name: "Lost call", processing_state: "failed" }),
+            meetingSummary({ id: "done", name: "Finished call" }),
+          ]),
+        );
+      }),
+    );
+    return names;
+  }
+
+  test("a deep link fills in the name", async () => {
+    // Act
+    open(`${path}?q=retro`);
+
+    // Assert
+    expect(await screen.findByPlaceholderText(FILTER)).toHaveValue("retro");
+  });
+
+  test("a deep link asks the server for the name", async () => {
+    // Arrange
+    window.history.replaceState(null, "", `${path}?q=retro`);
+    serveApi(true);
+    const names = serveFailedMeeting();
+
+    // Act
+    render(<App />);
+    await screen.findByText("Lost call");
+
+    // Assert
+    expect(names).toEqual(["retro"]);
+  });
+
+  test("a numeric name survives the URL", async () => {
+    // Act
+    open(`${path}?q=2026`);
+
+    // Assert
+    expect(await screen.findByPlaceholderText(FILTER)).toHaveValue("2026");
+  });
+
+  test("a deep link applies the state", async () => {
+    // Arrange
+    window.history.replaceState(null, "", `${path}?state=failed`);
+    serveApi(true);
+    serveFailedMeeting();
+
+    // Act
+    render(<App />);
+    await screen.findByText("Lost call");
+
+    // Assert
+    expect(screen.queryByText("Finished call")).not.toBeInTheDocument();
+  });
+
+  test("a bad state shows everything", async () => {
+    // Act
+    open(`${path}?state=lost`);
+
+    // Assert
+    expect(await screen.findByRole("combobox")).toHaveTextContent("All states");
+  });
+
+  test("typing reaches the URL once it settles", async () => {
+    // Arrange
+    const { user } = open(path);
+
+    // Act
+    await user.type(await screen.findByPlaceholderText(FILTER), " retro ");
+
+    // Assert
+    await waitFor(() => expect(currentPath()).toBe(`${path}?q=retro`));
+  });
+
+  test("typing adds no history entry", async () => {
+    // Arrange
+    const entries = window.history.length;
+    const { user } = open(path);
+
+    // Act
+    await user.type(await screen.findByPlaceholderText(FILTER), "retro");
+    await waitFor(() => expect(window.location.search).toBe("?q=retro"));
+
+    // Assert
+    expect(window.history.length).toBe(entries);
+  });
+
+  test("filtering keeps the scroll position", async () => {
+    // Arrange
+    const { user } = open(path);
+    const search = await screen.findByPlaceholderText(FILTER);
+    vi.mocked(window.scrollTo).mockClear();
+
+    // Act
+    await user.type(search, "retro");
+    await waitFor(() => expect(window.location.search).toBe("?q=retro"));
+
+    // Assert
+    expect(window.scrollTo).not.toHaveBeenCalled();
+  });
+
+  test("choosing a state reaches the URL", async () => {
+    // Arrange
+    const { user } = open(path);
+
+    // Act
+    await user.click(await screen.findByRole("combobox"));
+    await user.click(screen.getByRole("option", { name: "Failed" }));
+
+    // Assert
+    await waitFor(() => expect(currentPath()).toBe(`${path}?state=failed`));
+  });
+
+  test("choosing all states clears the URL", async () => {
+    // Arrange
+    const { user } = open(`${path}?state=failed`);
+
+    // Act
+    await user.click(await screen.findByRole("combobox"));
+    await user.click(screen.getByRole("option", { name: "All states" }));
+
+    // Assert
+    await waitFor(() => expect(currentPath()).toBe(path));
+  });
+});
+
 describe("transcript search", () => {
   async function searchThenSwitchRevision() {
     const { user } = open(REVISION_LINK);

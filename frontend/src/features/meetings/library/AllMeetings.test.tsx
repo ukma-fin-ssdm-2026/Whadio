@@ -1,4 +1,5 @@
 import { screen } from "@testing-library/react";
+import { useState } from "react";
 import { expect, test } from "vitest";
 import { errorBody, meetingSummary, page } from "@/shared/testing/fixtures";
 import { renderWithProviders } from "@/shared/testing/render";
@@ -30,10 +31,23 @@ function serveWorkspaces(nextCursor: string | null = null) {
   return requests;
 }
 
-function renderAll() {
-  return renderWithProviders(
-    <AllMeetings workspaceIds={["alpha", "beta"]} selectedMeetingId="" onMeeting={() => {}} />,
+function Library({ workspaceIds }: { workspaceIds: string[] }) {
+  const [name, setName] = useState("");
+  return (
+    <AllMeetings
+      workspaceIds={workspaceIds}
+      selectedMeetingId=""
+      onMeeting={() => {}}
+      name={name}
+      stateFilter="all"
+      onName={setName}
+      onStateFilter={() => {}}
+    />
   );
+}
+
+function renderAll() {
+  return renderWithProviders(<Library workspaceIds={["alpha", "beta"]} />);
 }
 
 test("merges the workspaces with the newest recording first", async () => {
@@ -121,7 +135,7 @@ test("no workspaces at all reads as no meetings", async () => {
   serveWorkspaces();
 
   // Act
-  renderWithProviders(<AllMeetings workspaceIds={[]} selectedMeetingId="" onMeeting={() => {}} />);
+  renderWithProviders(<Library workspaceIds={[]} />);
 
   // Assert
   expect(await screen.findByText("No meetings yet")).toBeInTheDocument();

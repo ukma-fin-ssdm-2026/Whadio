@@ -1,21 +1,30 @@
 import { Button } from "@mui/material";
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import { meetingQueries } from "../api/meetings";
+import type { StateFilter } from "../model";
 import { MeetingLibrary } from "./MeetingLibrary";
-import { useMeetingFilters } from "./useMeetingFilters";
+import { useNameDraft } from "./useNameDraft";
 
 interface WorkspaceMeetingsProps {
   workspaceId: string;
   selectedMeetingId: string;
   onMeeting: (id: string) => void;
+  name: string;
+  stateFilter: StateFilter;
+  onName: (name: string) => void;
+  onStateFilter: (filter: StateFilter) => void;
 }
 
 export function WorkspaceMeetings({
   workspaceId,
   selectedMeetingId,
   onMeeting,
+  name,
+  stateFilter,
+  onName,
+  onStateFilter,
 }: WorkspaceMeetingsProps) {
-  const { name, filters } = useMeetingFilters();
+  const { draft, type } = useNameDraft(name, onName);
   const meetings = useInfiniteQuery({
     ...meetingQueries.list(workspaceId, name),
     placeholderData: keepPreviousData,
@@ -40,7 +49,10 @@ export function WorkspaceMeetings({
           </Button>
         )
       }
-      {...filters}
+      query={draft}
+      stateFilter={stateFilter}
+      onQuery={type}
+      onStateFilter={onStateFilter}
     />
   );
 }
