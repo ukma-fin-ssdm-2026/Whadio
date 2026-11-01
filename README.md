@@ -134,6 +134,32 @@ uv run whadio dev-user --email margaret@whadio.dev
 The command asks for a password without storing it in the repository and also creates the
 account's personal workspace and default meeting folder.
 
+## Installing the Chrome extension
+
+The extension in [`extension/`](extension/) records a Google Meet call, the other participants
+and your microphone, and uploads it to a Whadio server. You need desktop Chrome 116 or newer, a
+Whadio server it can reach (`https://`, or `http://localhost` and `http://127.0.0.1`), and a
+Meet call with at least one other participant.
+
+1. Get the extension. Open the latest passing CI run on `main` under Actions and download its
+   `whadio-extension-<version>.zip` artifact, then unzip it into a folder. Downloading needs a
+   GitHub sign-in, and artifacts expire after 30 days. To build the archive yourself, run
+   `uv run --no-project python -I .github/scripts/package_extension.py extension .`; to try your
+   own changes, load `extension/` itself.
+2. Open `chrome://extensions`, turn on Developer mode, choose Load unpacked and pick the folder.
+3. Click Whadio in the toolbar, enter the server address and sign in with your Whadio account.
+   Choose the folder recordings go to.
+4. Join the call, open the popup, confirm that everyone agreed to be recorded and press Start
+   recording. Alt+Shift+R starts and stops a recording too, but it reads the consent box on the
+   card in the Meet page, not the popup's: if that box isn't ticked, the first press shows the
+   card and asks you to tick it.
+5. The first time, nothing is recorded yet: Whadio opens a tab that asks for your microphone.
+   Allow it, close that tab and press Start recording again. Chrome remembers the choice, so later
+   recordings start at once.
+6. Stop from the popup. The meeting appears in the web app; it's transcribed and gets notes once
+   the [workers](#running-the-workers) are running. If the upload fails, the extension saves the
+   recording as a `.webm` file in your downloads instead.
+
 ## Running the workers
 
 The transcription and notes workers live in [`src/whadio/workers/`](src/whadio/workers/). They
