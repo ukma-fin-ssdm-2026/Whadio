@@ -81,6 +81,16 @@ repos:
         pass_filenames: false
         require_serial: true
 
+      - id: biome-extension
+        name: biome check --write (extension)
+        language: unsupported
+        # Biome comes from frontend/node_modules; the script runs it from extension/, whose config
+        # extends the frontend's.
+        entry: npm --prefix frontend run check:extension:fix
+        files: ^extension/
+        pass_filenames: false
+        require_serial: true
+
       - id: frontend-typecheck
         name: tsc (frontend)
         language: unsupported

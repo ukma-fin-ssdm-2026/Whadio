@@ -19,7 +19,7 @@
     </form>
 
     <section id="account" hidden>
-      <p class="account">Signed in as <span id="name"></span> <button id="sign-out" class="link">Sign out</button></p>
+      <p class="account">Signed in as <span id="name"></span> <button id="sign-out" type="button" class="link">Sign out</button></p>
       <label class="field">Save recordings to <select id="destination"></select></label>
     </section>
 
@@ -33,12 +33,12 @@
         <input type="checkbox" id="consent" />
         Everyone in the call agreed to be recorded
       </label>
-      <button id="start" disabled>Start recording</button>
+      <button id="start" type="button" disabled>Start recording</button>
     </section>
 
     <section id="recording" hidden>
       <p class="live">Recording <span id="elapsed">0:00</span></p>
-      <button id="stop">Stop and upload</button>
+      <button id="stop" type="button">Stop and upload</button>
     </section>
 
     <p id="error" role="alert" hidden></p>
