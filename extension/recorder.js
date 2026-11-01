@@ -29,10 +29,26 @@ if (!globalThis.whadioRecorder) {
         chrome.runtime.sendMessage({ type: "speakers", speakers, at });
       }
     };
+    // Meet draws icons as words, such as "devices", in the same notranslate elements as names. Words shaped
+    // like an icon name are skipped, and so is a name written that way; the first other span is the name.
+    const ICON_LIGATURE = /^[a-z]+(_[a-z]+)*$/;
+    const tileName = (tile) => {
+      for (const element of tile.querySelectorAll("span.notranslate")) {
+        const text = element.textContent.trim();
+        if (
+          text &&
+          !tile.contains(element.closest('[aria-hidden="true"]')) &&
+          !ICON_LIGATURE.test(text)
+        ) {
+          return text;
+        }
+      }
+      return null;
+    };
     const interval = setInterval(() => {
       for (const tile of document.querySelectorAll("[data-participant-id]")) {
         const level = tile.querySelector('[jsname="QgSmzd"]');
-        const name = tile.querySelector("span.notranslate")?.textContent.trim();
+        const name = tileName(tile);
         if (level && name && !level.classList.contains("gjg47c")) {
           heard.add(name);
         }
