@@ -29,10 +29,22 @@ if (!globalThis.whadioRecorder) {
         chrome.runtime.sendMessage({ type: "speakers", speakers, at });
       }
     };
+    // Meet draws its icons as words in the same notranslate elements as names, such as "devices", so
+    // icons are skipped. A tile left without a name comes out as "Speaker N", never as a wrong name.
+    const ICON_LIGATURE = /^[a-z]+(_[a-z]+)*$/;
+    const tileName = (tile) => {
+      for (const element of tile.querySelectorAll("span.notranslate")) {
+        const text = element.textContent.trim();
+        if (text && !element.closest('[aria-hidden="true"]') && !ICON_LIGATURE.test(text)) {
+          return text;
+        }
+      }
+      return null;
+    };
     const interval = setInterval(() => {
       for (const tile of document.querySelectorAll("[data-participant-id]")) {
         const level = tile.querySelector('[jsname="QgSmzd"]');
-        const name = tile.querySelector("span.notranslate")?.textContent.trim();
+        const name = tileName(tile);
         if (level && name && !level.classList.contains("gjg47c")) {
           heard.add(name);
         }
