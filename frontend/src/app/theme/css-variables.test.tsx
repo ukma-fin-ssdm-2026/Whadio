@@ -84,7 +84,7 @@ test("the dark rule changes every palette colour from its default", () => {
 
 test("styles.css is read as text with MUI variable references in it", () => {
   // Arrange
-  const expected = "--mui-palette-text-primary";
+  const expected = "--mui-palette-divider";
 
   // Act
   const referenced = referencedVariables();
