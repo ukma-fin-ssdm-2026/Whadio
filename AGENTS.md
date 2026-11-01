@@ -114,18 +114,33 @@ presigned links are signed for `http://seaweedfs:8333`.
 
 ## Verifying a change
 
-A change is done when `uv run task check` and `uv run task test` pass and a teammate has approved
-the pull request. The commit hook runs the same checks as `task check`, in this order, and stops at
-the first failure: branch name, file hygiene, gitleaks, `uv lock --check`, `ruff check --fix` and
-`ruff format` on the whole project, Biome on the frontend and the extension, `tsc` and Vitest on
-the frontend, the suppression ban, typos, schema and workflow checks, import-linter, ty,
-basedpyright, Bandit, deptry, the OpenAPI drift check and the fast tests. The commit message is
-checked last. `git push` runs
-`uv run task test:cov`: the whole test suite but the `models` tests, failing below 85% line and
-branch coverage. It needs the services running and `WHADIO_TEST_DATABASE_URL` exported
-(`docs/testing/testing.md`). CI repeats all of this but the branch name, and adds
-`uv run task audit`: uv audit, `npm audit` and a gitleaks scan of the whole history.
-On a pull request, CI checks the title and every commit message against the commit format.
+A change is done when CI passes on its pull request and a teammate has approved it. CI is the gate;
+the hooks only catch the cheap mistakes first, and stay within a time budget:
+
+| When | Budget | What runs |
+|---|---|---|
+| `git commit` | 3 s | Branch name, file hygiene, gitleaks on the staged diff, `uv lock --check`, `ruff check --fix` and `ruff format` on the whole project, Biome on the frontend and the extension, the suppression ban, typos, schema and workflow checks, import-linter and ty. The commit message is checked last. |
+| `git push` | 12 s | Only what the push changes: `uv run task test:fast` for the backend; `tsc` and the Vitest tests the branch can affect for the frontend; the OpenAPI drift check for `src/whadio/api/`. |
+| CI | none | Everything below, on every pull request and on `main`. |
+
+CI runs these jobs in parallel, and every job and hook runs to the end, so one failure hides no
+other:
+
+- **Static checks and audit:** `uv run task check`, which runs the commit hooks on all files, then
+  basedpyright, Bandit, deptry, the OpenAPI drift check and lint, and a gitleaks scan of the whole
+  history; and `uv run task audit`, which runs uv audit and `npm audit` and only warns: a new
+  advisory must not fail a pull request that changed no dependency.
+- **Frontend:** `tsc`, all the Vitest tests and the build.
+- **Backend tests and coverage:** `uv run task test:cov`, the whole test suite but the `models`
+  tests against the Compose services, failing below 85% line and branch coverage.
+- **Worker image:** `uv run task image` builds it and runs its entry point.
+- **CI passed** fails unless all four succeeded. This and the check of the pull request title and
+  every commit message against the commit format are the checks `main` requires.
+
+`uv run task ci` runs those jobs on your machine, in parallel and to the end. It needs Docker, the
+services running and `WHADIO_TEST_DATABASE_URL` exported (`docs/testing/testing.md`); `uv run task
+check` needs none of them. A branch without a pull request gets no CI unless you start the workflow
+by hand, so open a draft pull request to try something.
 
 - Never bypass the checks: no `--no-verify`, no `SKIP=`. If a check is wrong, fix it in its own
   pull request.
@@ -134,7 +149,8 @@ On a pull request, CI checks the title and every commit message against the comm
   refused. Fix the code. A genuine false positive gets a scoped exception in `pyproject.toml` or
   `frontend/biome.jsonc` with a one-line reason, and the pull request explains it.
 - When a hook changes files (ruff, Biome, whitespace, the OpenAPI specification), review the
-  change, stage it and commit again.
+  change, stage it and commit again. The push hook does this for the specification, so push again
+  after committing it.
 - Ruff's and Biome's fixes conflict with a partly staged file: run `uv run task fix` and stage the
   whole file.
 - Changing a route or a schema regenerates `docs/api/openapi-generated.*` and
@@ -174,8 +190,8 @@ Tests use pytest:
 - The body is marked `# Arrange`, `# Act`, `# Assert`, and nothing else in it is commented.
 - One logical assertion per test. Cover edge cases, refusals and validation errors, not only the
   happy path.
-- Mark a test that needs running services or models `@pytest.mark.slow`: the commit hook skips it;
-  the push hook and CI run it.
+- Mark a test `@pytest.mark.slow` if it needs running services or models, or takes over half a
+  second: the push hook skips it and CI runs it.
 - Frontend tests use Vitest and Testing Library the same way: `App.test.tsx` next to `App.tsx`.
 
 ## Git and pull requests

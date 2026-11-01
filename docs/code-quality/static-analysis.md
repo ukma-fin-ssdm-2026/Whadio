@@ -4,7 +4,7 @@ Commit analysed: `2d2c949` on `main` (PR #68 merged).
 
 ## What runs and where
 
-Every tool below runs in the pre-commit hook (`.pre-commit-config.yaml`) and again in CI (`.github/workflows/ci.yml`). `uv run task check` runs the same set locally. Inline suppressions (`# noqa`, `# nosec`, `# type: ignore`, `biome-ignore`, ...) are refused by the `no-suppressions` hook, so a finding has to be fixed in the code or excepted in `pyproject.toml` or `frontend/biome.jsonc` with a reason.
+Every tool below runs in CI (`.github/workflows/ci.yml`), and `.pre-commit-config.yaml` sets which of them also run in the commit and push hooks. `uv run task check` and `uv run task audit` run the same set locally, and `uv run task ci` runs every CI job. Inline suppressions (`# noqa`, `# nosec`, `# type: ignore`, `biome-ignore`, ...) are refused by the `no-suppressions` hook, so a finding has to be fixed in the code or excepted in `pyproject.toml` or `frontend/biome.jsonc` with a reason.
 
 | Tool | Layer | What it checks |
 |---|---|---|
@@ -14,9 +14,9 @@ Every tool below runs in the pre-commit hook (`.pre-commit-config.yaml`) and aga
 | ty, basedpyright | types | strict typing, no `Any` or `cast` escape hatches |
 | TypeScript 5.9 (`tsc`, strict) | frontend types | strict typing of the `.ts`/`.tsx` files, `noUncheckedIndexedAccess` included |
 | import-linter | architecture | modules call only the modules below them in the component diagram |
-| gitleaks, detect-private-key | secrets | keys and passwords in staged changes; `task audit` scans the whole history |
-| uv audit, Dependabot | dependencies | known vulnerabilities in locked packages |
-| npm audit | dependencies | known high and critical vulnerabilities in the frontend's packages, the build tools included; runs in `task audit` |
+| gitleaks, detect-private-key | secrets | keys and passwords in staged changes; `task check` scans the whole history |
+| uv audit, Dependabot | dependencies | known vulnerabilities in locked packages; a warning, not a failure |
+| npm audit | dependencies | known high and critical vulnerabilities in the frontend's packages, the build tools included; runs in `task audit`, as a warning |
 | deptry | dependencies | unused, missing and misplaced dependencies |
 | zizmor, actionlint | CI | unsafe GitHub Actions workflows |
 
