@@ -26,6 +26,7 @@ const FAILURE_TEXT = "This recording could not be transcribed.";
 const GENERATED_NOTES = "Decisions from the weekly sync";
 const STALE_MS = 30_000;
 const RETRIES_MS = 4_000;
+const POLL_WAIT_MS = 3_000;
 const REFUSALS = [
   [404, "NOT_FOUND", "Meeting not found"],
   [403, "INSUFFICIENT_ROLE", "Access denied"],
@@ -400,6 +401,17 @@ describe("a meeting that finishes while it is open", () => {
     await act(() => vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS));
   }
 
+  // Each answer restarts the poll's timer, so a fixed advance can outrun a slow answer.
+  async function pollUntil(condition: () => boolean) {
+    await vi.waitFor(
+      async () => {
+        await nextPoll();
+        expect(condition()).toBe(true);
+      },
+      { timeout: POLL_WAIT_MS },
+    );
+  }
+
   async function failPoll(failure: MeetingFailure) {
     const watch = await watchMeeting();
     watch.live.failure = failure;
@@ -424,8 +436,7 @@ describe("a meeting that finishes while it is open", () => {
     const { live } = await watchMeeting();
 
     // Act
-    await nextPoll();
-    await nextPoll();
+    await pollUntil(() => live.content.length >= 3);
 
     // Assert
     expect(live.content).toEqual(["transcript", "transcript", "transcript"]);
