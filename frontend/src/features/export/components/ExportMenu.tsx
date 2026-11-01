@@ -64,13 +64,22 @@ export function ExportMenu(props: ExportMenuProps) {
   return (
     <>
       <IconButton
-        className="meta-icon-button"
         size="small"
         aria-label={choices.buttonLabel}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         onClick={(event) => setAnchor(event.currentTarget)}
+        sx={{
+          width: "2.15rem",
+          height: "2.15rem",
+          border: 1,
+          borderColor: "divider",
+          borderRadius: "0.5rem",
+          bgcolor: "background.subtle",
+          color: "text.secondary",
+          "&:hover": { bgcolor: "tint.main", color: "tint.contrastText" },
+        }}
       >
         <DownloadOutlinedIcon fontSize="small" />
       </IconButton>

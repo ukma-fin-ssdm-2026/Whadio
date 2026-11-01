@@ -44,8 +44,13 @@ export function SignInForm({ onSignedIn, externalError }: SignInFormProps) {
   );
 
   return (
-    <Box className="auth-screen">
-      <Card component="form" noValidate className="auth-card" onSubmit={submit}>
+    <Box sx={{ display: "grid", minHeight: "100vh", p: "1.25rem", placeItems: "center" }}>
+      <Card
+        component="form"
+        noValidate
+        onSubmit={submit}
+        sx={{ display: "grid", gap: "1.1rem", width: "min(100%, 26rem)", p: "1.5rem" }}
+      >
         <Typography variant="h3" component="p">
           Whadio
         </Typography>
