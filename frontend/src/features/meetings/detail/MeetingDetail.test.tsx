@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { expect, test } from "vitest";
 import { ExportControls } from "@/features/export/components/ExportControls";
@@ -367,6 +367,36 @@ test("reopening a meeting keeps the link of its available recording", async () =
 
   // Assert
   expect(queryClient.getQueryData(meetingQueries.recording(available).queryKey)).toBeDefined();
+});
+
+test("another meeting does not inherit the position of a failed recording", async () => {
+  // Arrange
+  serveContent();
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}/recording", ({ params, response }) =>
+      response(200).json({
+        url: `https://storage.example/${params.meeting_id}`,
+        expires_at: "2026-10-25T10:05:00Z",
+      }),
+    ),
+  );
+  const { rerender } = renderDetail({
+    meeting: meeting({ recording_available: true }),
+    tab: "recording",
+  });
+  const failing = await screen.findByLabelText<HTMLVideoElement>("Weekly sync recording");
+  failing.currentTime = 1800;
+  fireEvent.error(failing);
+  rerender(
+    detail({ meeting: meeting({ id: "other", recording_available: true }), tab: "recording" }),
+  );
+  const next = await screen.findByLabelText<HTMLVideoElement>("Weekly sync recording");
+
+  // Act
+  fireEvent.loadedMetadata(next);
+
+  // Assert
+  expect(next.currentTime).toBe(0);
 });
 
 test("a recording that comes back asks for a new link", async () => {

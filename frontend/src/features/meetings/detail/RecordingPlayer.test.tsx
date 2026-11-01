@@ -1,5 +1,5 @@
 import { focusManager } from "@tanstack/react-query";
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import { errorBody, meetingRead } from "@/shared/testing/fixtures";
 import { renderWithProviders } from "@/shared/testing/render";
@@ -34,6 +34,30 @@ function serveLink() {
 function player() {
   const video = screen.getByLabelText("Weekly sync recording");
   return video.getAttribute("src");
+}
+
+function serveRenewedLinks() {
+  const traffic = { requests: 0 };
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}/recording", ({ response }) => {
+      traffic.requests += 1;
+      const url = `${LINK}&link=${traffic.requests}`;
+      return response(200).json({ url, expires_at: "2026-10-25T10:05:00Z" });
+    }),
+  );
+  return traffic;
+}
+
+async function playFirstLink() {
+  const traffic = serveRenewedLinks();
+  renderWithProviders(<RecordingPlayer meeting={availableMeeting} />);
+  const video = await screen.findByLabelText<HTMLVideoElement>("Weekly sync recording");
+  return { traffic, video };
+}
+
+async function failOverToSecondLink(video: HTMLVideoElement) {
+  fireEvent.error(video);
+  await waitFor(() => expect(player()).toBe(`${LINK}&link=2`));
 }
 
 test("an available recording plays from its link", async () => {
@@ -191,6 +215,99 @@ test("a stale link whose refresh fails gives way to the reason", async () => {
 
   // Assert
   expect(screen.queryByLabelText("Weekly sync recording")).not.toBeInTheDocument();
+});
+
+test("a media error requests a new link", async () => {
+  // Arrange
+  const { traffic, video } = await playFirstLink();
+
+  // Act
+  await failOverToSecondLink(video);
+
+  // Assert
+  expect(traffic.requests).toBe(2);
+});
+
+test("a new link resumes where the expired one stopped", async () => {
+  // Arrange
+  const { video } = await playFirstLink();
+  video.currentTime = 1800;
+  await failOverToSecondLink(video);
+  video.currentTime = 0;
+
+  // Act
+  fireEvent.loadedMetadata(video);
+
+  // Assert
+  expect(video.currentTime).toBe(1800);
+});
+
+test("a new link that fails too asks for no third", async () => {
+  // Arrange
+  const { traffic, video } = await playFirstLink();
+  await failOverToSecondLink(video);
+
+  // Act
+  fireEvent.error(video);
+  await screen.findByRole("alert");
+
+  // Assert
+  expect(traffic.requests).toBe(2);
+});
+
+test("a recording no link can play says so instead of a dead player", async () => {
+  // Arrange
+  const { video } = await playFirstLink();
+  await failOverToSecondLink(video);
+
+  // Act
+  fireEvent.error(video);
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent("could not be played");
+});
+
+test("a link that played can be renewed when it expires in turn", async () => {
+  // Arrange
+  const { traffic, video } = await playFirstLink();
+  await failOverToSecondLink(video);
+  fireEvent.loadedMetadata(video);
+
+  // Act
+  fireEvent.error(video);
+  await waitFor(() => expect(player()).toBe(`${LINK}&link=3`));
+
+  // Assert
+  expect(traffic.requests).toBe(3);
+});
+
+test("a renewal that returns the same link says so", async () => {
+  // Arrange
+  serveLink();
+  renderWithProviders(<RecordingPlayer meeting={availableMeeting} />);
+  const video = await screen.findByLabelText("Weekly sync recording");
+
+  // Act
+  fireEvent.error(video);
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent("could not be played");
+});
+
+test("a refused renewal shows why", async () => {
+  // Arrange
+  const { video } = await playFirstLink();
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}/recording", ({ response }) =>
+      response(404).json(errorBody("NOT_FOUND", "Recording not found")),
+    ),
+  );
+
+  // Act
+  fireEvent.error(video);
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent("Recording not found");
 });
 
 test("a link leaves the cache by the end of its life", async () => {

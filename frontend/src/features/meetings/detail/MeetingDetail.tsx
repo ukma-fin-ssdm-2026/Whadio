@@ -101,7 +101,7 @@ export function MeetingDetail({
               },
             }}
           >
-            {tab === "recording" && <RecordingPlayer meeting={meeting} />}
+            {tab === "recording" && <RecordingPlayer key={meeting.id} meeting={meeting} />}
             <TranscriptPanel
               transcript={transcript}
               missing={transcriptAnswer === null}
