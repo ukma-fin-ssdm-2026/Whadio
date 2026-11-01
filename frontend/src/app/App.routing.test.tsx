@@ -429,6 +429,18 @@ test("the library has its own address", async () => {
   expect(await screen.findByRole("heading", { name: "Meetings" })).toBeInTheDocument();
 });
 
+test("a visit with a session names the user from the server", async () => {
+  // Arrange
+  stubViewportWidth(1440);
+
+  // Act
+  const { traffic } = open("/");
+
+  // Assert
+  expect(await screen.findByText("Demo Member")).toBeInTheDocument();
+  expect(traffic.signIns).toHaveLength(0);
+});
+
 test("Home with no workspaces opens", async () => {
   // Arrange
   window.history.replaceState(null, "", "/");
