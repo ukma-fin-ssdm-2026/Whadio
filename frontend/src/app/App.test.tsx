@@ -20,6 +20,12 @@ const FAILURE_REASON = "transcription_failed";
 const FAILURE_TEXT = "This recording could not be transcribed.";
 const GENERATED_NOTES = "Decisions from the weekly sync";
 const STALE_MS = 30_000;
+const RETRIES_MS = 4_000;
+const REFUSALS = [
+  [404, "NOT_FOUND", "Meeting not found"],
+  [403, "INSUFFICIENT_ROLE", "Access denied"],
+] as const;
+const SERVER_FAILURE = [500, "INTERNAL_ERROR", "Unexpected server error"] as const;
 
 type ApiTraffic = { requests: string[]; signIns: unknown[] };
 
@@ -167,6 +173,8 @@ function renderHome() {
   render(<App />);
   return traffic;
 }
+
+type MeetingFailure = readonly [number, Parameters<typeof errorBody>[0], string];
 
 const currentPath = () => window.location.pathname + window.location.search;
 
@@ -425,6 +433,13 @@ test("a deep link to a meeting the user cannot read says why", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent("Meeting not found");
 });
 
+async function returnToTheWindow() {
+  await act(() => vi.advanceTimersByTimeAsync(STALE_MS + 1));
+  focusManager.setFocused(false);
+  focusManager.setFocused(true);
+  await act(() => vi.advanceTimersByTimeAsync(0));
+}
+
 describe("a meeting that finishes while it is open", () => {
   async function watchMeeting(
     initial: Schemas["ProcessingState"] = "processing",
@@ -432,10 +447,20 @@ describe("a meeting that finishes while it is open", () => {
   ) {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     startSession(CURRENT_LINK);
-    const live = { state: initial, transcribed, polls: 0, content: [] as string[] };
+    const live = {
+      state: initial,
+      transcribed,
+      polls: 0,
+      content: [] as string[],
+      failure: null as MeetingFailure | null,
+    };
     server.use(
       http.get("/api/v1/meetings/meeting", () => {
         live.polls += 1;
+        if (live.failure) {
+          const [status, code, message] = live.failure;
+          return HttpResponse.json(errorBody(code, message), { status });
+        }
         return HttpResponse.json(
           meetingRead({
             processing_state: live.state,
@@ -469,6 +494,14 @@ describe("a meeting that finishes while it is open", () => {
 
   async function nextPoll() {
     await act(() => vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS));
+  }
+
+  async function failPoll(failure: MeetingFailure) {
+    const watch = await watchMeeting();
+    watch.live.failure = failure;
+    await nextPoll();
+    await act(() => vi.advanceTimersByTimeAsync(RETRIES_MS));
+    return watch;
   }
 
   test.for(BEFORE_TRANSCRIPTION)("requests no transcript or notes while %s", async (state) => {
@@ -614,6 +647,111 @@ describe("a meeting that finishes while it is open", () => {
     expect(live.content).toEqual(Array(requests).fill("transcript"));
   });
 
+  test.for(REFUSALS)("a poll refused with %i says why", async (refusal) => {
+    // Act
+    await failPoll(refusal);
+
+    // Assert
+    expect(screen.getByRole("alert")).toHaveTextContent(refusal[2]);
+  });
+
+  test.for(REFUSALS)("a poll refused with %i leaves no cached page", async (refusal) => {
+    // Act
+    await failPoll(refusal);
+
+    // Assert
+    expect(screen.queryByRole("tabpanel")).not.toBeInTheDocument();
+  });
+
+  test.for(REFUSALS)("a poll refused with %i ends the polling", async (refusal) => {
+    // Arrange
+    const { live } = await failPoll(refusal);
+    const polls = live.polls;
+
+    // Act
+    await nextPoll();
+    await nextPoll();
+
+    // Assert
+    expect(live.polls).toBe(polls);
+  });
+
+  test("a refused meeting can be left", async () => {
+    // Arrange
+    const { user } = await failPoll(REFUSALS[0]);
+    screen.getByRole("alert");
+
+    // Act
+    await user.click(screen.getByRole("button", { name: "Home" }));
+
+    // Assert
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("a failed poll keeps the page", async () => {
+    // Act
+    await failPoll(SERVER_FAILURE);
+
+    // Assert
+    expect(screen.getByRole("tabpanel")).toBeInTheDocument();
+  });
+
+  test("a failed poll says so above the page", async () => {
+    // Act
+    await failPoll(SERVER_FAILURE);
+
+    // Assert
+    expect(screen.getByRole("alert")).toHaveTextContent(SERVER_FAILURE[2]);
+  });
+
+  test("a failed poll leaves the polling on", async () => {
+    // Arrange
+    const { live } = await failPoll(SERVER_FAILURE);
+    const polls = live.polls;
+
+    // Act
+    await nextPoll();
+
+    // Assert
+    expect(live.polls).toBeGreaterThan(polls);
+  });
+
+  test("the next good poll clears a failed poll's banner", async () => {
+    // Arrange
+    const { live } = await failPoll(SERVER_FAILURE);
+    screen.getByRole("alert");
+    live.failure = null;
+
+    // Act
+    await nextPoll();
+
+    // Assert
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("a failed refetch of a finished meeting shows the banner", async () => {
+    // Arrange
+    const { live } = await watchMeeting();
+    live.state = "processed";
+    await nextPoll();
+    live.failure = SERVER_FAILURE;
+
+    // Act
+    await returnToTheWindow();
+    await act(() => vi.advanceTimersByTimeAsync(RETRIES_MS));
+
+    // Assert
+    expect(screen.getByRole("alert")).toHaveTextContent(SERVER_FAILURE[2]);
+  });
+
+  test("a session that ends during a poll returns to sign-in", async () => {
+    // Act
+    await failPoll([401, "UNAUTHENTICATED", "Sign in required"]);
+
+    // Assert
+    expect(await screen.findByLabelText(/^Email/)).toBeInTheDocument();
+  });
+
   test.for(["processed", "failed"] as const)("stops polling once %s", async (state) => {
     // Arrange
     const { live } = await watchMeeting();
@@ -651,13 +789,6 @@ describe("a recording that retention deletes while it is open", () => {
     await user.click(await screen.findByRole("tab", { name: "Recording" }));
     await screen.findByLabelText("Weekly sync recording");
     return live;
-  }
-
-  async function returnToTheWindow() {
-    await act(() => vi.advanceTimersByTimeAsync(STALE_MS + 1));
-    focusManager.setFocused(false);
-    focusManager.setFocused(true);
-    await act(() => vi.advanceTimersByTimeAsync(0));
   }
 
   test("coming back to the window takes the player away", async () => {
