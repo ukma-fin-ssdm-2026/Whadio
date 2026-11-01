@@ -77,6 +77,7 @@ const components: Components = {
     ),
   // A remote image would make each reader's browser call a URL chosen by the note's author.
   img: ({ alt }) => alt,
+  input: () => null,
   table: ({ children }) => (
     <TableContainer sx={{ mb: 1.5, border: 1, borderColor: "divider", borderRadius: 1 }}>
       <Table size="small">{children}</Table>

@@ -71,6 +71,22 @@ describe("structure", () => {
     expect(container.querySelector("ul ul li")).toHaveTextContent("Inner");
   });
 
+  test.for(["- [ ] Olena ships", "- [x] Olena ships"])("%s has no checkbox", (notes) => {
+    // Act
+    const { container } = renderNotes(notes);
+
+    // Assert
+    expect(container.querySelector("input")).toBeNull();
+  });
+
+  test("a task item reads as a plain bullet", () => {
+    // Act
+    renderNotes("- [ ] Olena ships");
+
+    // Assert
+    expect(screen.getByRole("listitem")).toHaveTextContent(/^Olena ships$/);
+  });
+
   test("a GFM table has column headers", () => {
     // Act
     renderNotes(TABLE);
