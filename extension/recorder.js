@@ -75,7 +75,9 @@ if (!globalThis.whadioRecorder) {
     let sent = Promise.resolve();
     const recorder = new MediaRecorder(mix.stream, { mimeType: "audio/webm;codecs=opus" });
     recorder.addEventListener("dataavailable", (event) => {
-      sent = sent.then(async () => port.postMessage({ audio: base64(await event.data.arrayBuffer()) }));
+      sent = sent.then(async () =>
+        port.postMessage({ audio: base64(await event.data.arrayBuffer()) }),
+      );
     });
     recorder.addEventListener("stop", () => sent.then(() => port.disconnect()), { once: true });
     recorder.start(1000);

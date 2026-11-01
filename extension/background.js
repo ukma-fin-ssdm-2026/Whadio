@@ -22,7 +22,8 @@ async function offscreen() {
     await chrome.offscreen.createDocument({
       url: "offscreen.html",
       reasons: ["USER_MEDIA", "BLOBS"],
-      justification: "Records the Meet call and turns a recording the server did not take into a file to download.",
+      justification:
+        "Records the Meet call and turns a recording the server did not take into a file to download.",
     });
   }
 }
@@ -43,7 +44,11 @@ async function saveLocally(startedAt, slices) {
   pending += 1;
   try {
     await offscreen();
-    const { url } = await chrome.runtime.sendMessage({ target: "offscreen", type: "blob", chunks: slices });
+    const { url } = await chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "blob",
+      chunks: slices,
+    });
     const stamp = new Date(startedAt).toISOString().slice(0, 19).replaceAll(":", "-");
     const downloadId = await chrome.downloads.download({ url, filename: `whadio-${stamp}.webm` });
     await downloaded(downloadId);
@@ -57,7 +62,12 @@ async function record(tabId, streamId) {
   pending += 1;
   try {
     await offscreen();
-    const reply = await chrome.runtime.sendMessage({ target: "offscreen", type: "record", tabId, streamId });
+    const reply = await chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "record",
+      tabId,
+      streamId,
+    });
     if (reply.microphone) {
       await chrome.tabs.create({ url: "permission.html" });
     }
@@ -270,7 +280,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message.type === "record") {
-    record(message.tabId, message.streamId).then(sendResponse, (failure) => sendResponse({ error: failure.message }));
+    record(message.tabId, message.streamId).then(sendResponse, (failure) =>
+      sendResponse({ error: failure.message }),
+    );
     return true;
   }
   return false;
@@ -310,6 +322,8 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
     }
   } catch (failure) {
     // The page may be gone too, so the error may have nowhere to show.
-    await chrome.tabs.sendMessage(tab.id, { type: "show-error", error: failure.message }).catch(() => {});
+    await chrome.tabs
+      .sendMessage(tab.id, { type: "show-error", error: failure.message })
+      .catch(() => {});
   }
 });

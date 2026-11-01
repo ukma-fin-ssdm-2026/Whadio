@@ -29,7 +29,10 @@ async function record(tabId, streamId) {
       throw failure;
     }
     // This document cannot ask for the microphone; the background opens a page that can.
-    return { error: "Allow Whadio to use your microphone in the tab that opened, then start again.", microphone: true };
+    return {
+      error: "Allow Whadio to use your microphone in the tab that opened, then start again.",
+      microphone: true,
+    };
   }
 
   const context = new AudioContext();
@@ -44,7 +47,9 @@ async function record(tabId, streamId) {
   let sent = Promise.resolve();
   const recorder = new MediaRecorder(mix.stream, { mimeType: "audio/webm;codecs=opus" });
   recorder.addEventListener("dataavailable", (event) => {
-    sent = sent.then(async () => port.postMessage({ audio: base64(await event.data.arrayBuffer()) }));
+    sent = sent.then(async () =>
+      port.postMessage({ audio: base64(await event.data.arrayBuffer()) }),
+    );
   });
   recorder.addEventListener(
     "stop",
@@ -76,7 +81,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return false;
   }
   if (message.type === "record") {
-    record(message.tabId, message.streamId).then(sendResponse, (failure) => sendResponse({ error: failure.message }));
+    record(message.tabId, message.streamId).then(sendResponse, (failure) =>
+      sendResponse({ error: failure.message }),
+    );
     return true;
   }
   if (message.type === "stop") {
@@ -89,7 +96,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   // A service worker cannot make a blob URL, so a recording the server did not take becomes one here,
   // released once its download ends.
   if (message.type === "blob") {
-    const parts = message.chunks.map((chunk) => Uint8Array.from(atob(chunk), (char) => char.charCodeAt(0)));
+    const parts = message.chunks.map((chunk) =>
+      Uint8Array.from(atob(chunk), (char) => char.charCodeAt(0)),
+    );
     sendResponse({ url: URL.createObjectURL(new Blob(parts, { type: "audio/webm" })) });
     return false;
   }

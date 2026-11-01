@@ -7,5 +7,6 @@ try {
   }
   status.textContent = "Microphone allowed. Close this tab and start recording again.";
 } catch {
-  status.textContent = "Whadio cannot record your voice without the microphone. Allow it from the address bar and reload this page.";
+  status.textContent =
+    "Whadio cannot record your voice without the microphone. Allow it from the address bar and reload this page.";
 }
