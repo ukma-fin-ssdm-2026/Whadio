@@ -80,6 +80,18 @@ def test_settings_without_a_provider_are_refused(monkeypatch: pytest.MonkeyPatch
         load_notes_worker_settings()
 
 
+def test_refused_settings_do_not_show_the_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    monkeypatch.delenv("WHADIO_NOTES__LLM__PROVIDER")
+
+    # Act
+    with pytest.raises(ValidationError) as failure:
+        load_notes_worker_settings()
+
+    # Assert
+    assert "sk-ant-test" not in str(failure.value)
+
+
 @pytest.mark.usefixtures("ollama")
 def test_ollama_provider_reads_the_ollama_settings() -> None:
     # Act
