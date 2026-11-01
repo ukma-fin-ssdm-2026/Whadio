@@ -119,6 +119,9 @@ class CompositionRoot:
             public_settings if public_settings is not None else PublicUrlSettings.model_validate({})
         )
         self.public_url: str = str(settings.public_url or "http://localhost:3000")
+        self.invitation_url: str | None = (
+            str(settings.public_url) if settings.public_url is not None else None
+        )
         self.api_public_url: str = str(settings.api_public_url or self.public_url)
         self._web_settings: WebSettings = (
             web_settings if web_settings is not None else WebSettings.model_validate({})
@@ -576,6 +579,10 @@ def connect_integrations(app: FastAPI, integrations: RuntimeIntegrations) -> Non
 
 
 def export_public_url() -> str:
+    raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+
+
+def invitation_public_url() -> str:
     raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
 
 

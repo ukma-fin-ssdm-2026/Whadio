@@ -10,6 +10,11 @@ from ..accounts.contracts import UserProfile
 from ..accounts.password_resets import PasswordResetCleanupService
 from ..accounts.repositories import MembershipRepository, RegistrationRepository
 from ..accounts.reset_repository import PasswordResetRepository
+from ..accounts.repositories import (
+    InvitationRepository,
+    MembershipRepository,
+    RegistrationRepository,
+)
 from ..accounts.services import RegistrationCleanupService, WorkspaceMembershipService
 from ..meetings.models import Meeting
 from ..meetings.repositories import MeetingRepository
@@ -97,9 +102,11 @@ class RegistrationCleanupJobs:
 
     async def remove_expired(self, now: datetime) -> int:
         async with self._database.transaction() as session:
-            return await RegistrationCleanupService(RegistrationRepository(session)).remove_expired(
-                now
-            )
+            registrations = await RegistrationCleanupService(
+                RegistrationRepository(session)
+            ).remove_expired(now)
+            invitations = await InvitationRepository(session).delete_expired(now)
+            return registrations + invitations
 
     async def remove_expired_password_resets(self, now: datetime) -> int:
         async with self._database.transaction() as session:

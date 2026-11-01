@@ -512,8 +512,16 @@ class InvitationRepository:
 
     async def lock_inviter(self, user_id: UUID) -> None:
         await self._session.scalar(
-            select(User.user_id).where(User.user_id == user_id).with_for_update()
+            select(User.user_id).where(User.user_id == user_id).with_for_update(key_share=True)
         )
+
+    async def delete_expired(self, now: datetime) -> int:
+        deleted = await self._session.scalars(
+            delete(Invitation)
+            .where(Invitation.expires_at <= now)
+            .returning(Invitation.invitation_id)
+        )
+        return len(deleted.all())
 
     async def workspace_is_personal(self, workspace_id: UUID) -> bool:
         return bool(

@@ -8,7 +8,7 @@ from ...accounts.enums import InvitationRole, RegistrationMode
 from ...accounts.repositories import WorkspaceInvitation
 from ...accounts.services import InvitationRequest
 from ...shared.pagination import ListCursor
-from ..composition import Invitations, export_public_url, registration_mode
+from ..composition import Invitations, invitation_public_url, registration_mode
 from ..core.errors import (
     DOC_INVALID,
     DOC_MALFORMED,
@@ -62,7 +62,7 @@ async def list_invitations(
     user: BrowserUser,
     invitations: Invitations,
 ) -> Page[InvitationRead]:
-    scope = f"workspace-invitations:{workspace_id}:newest"
+    scope = f"workspace-invitations:{workspace_id}:{user.id}:newest"
     found = await invitations.list_pending(
         user.id, workspace_id, list_window(query, scope, chronological=True)
     )
@@ -79,18 +79,21 @@ async def list_invitations(
     description="Moderator or Owner only. Creates a seven-day, single-use invitation. Issuing "
     "another pending invitation to the same email replaces it and invalidates its old link.",
     response_description="The invitation and its one-time link",
-    responses=error_responses(
-        {
-            400: DOC_MALFORMED,
-            401: DOC_UNAUTHENTICATED,
-            403: _MODERATOR_ONLY,
-            404: _NOT_FOUND,
-            409: "`PERSONAL_WORKSPACE`, or `ALREADY_MEMBER`",
-            422: DOC_INVALID,
-            429: "`INVITATION_LIMIT` or `INVITATION_COOLDOWN`; see `Retry-After`",
-            503: "`INTEGRATION_UNAVAILABLE`: verified-mode email delivery is unavailable",
-        }
-    ),
+    responses={
+        200: {"model": InvitationCreated, "description": "Replaced pending invitation"},
+        **error_responses(
+            {
+                400: DOC_MALFORMED,
+                401: DOC_UNAUTHENTICATED,
+                403: _MODERATOR_ONLY,
+                404: _NOT_FOUND,
+                409: "`PERSONAL_WORKSPACE`, or `ALREADY_MEMBER`",
+                422: DOC_INVALID,
+                429: "`INVITATION_LIMIT` or `INVITATION_COOLDOWN`; see `Retry-After`",
+                503: "`INTEGRATION_UNAVAILABLE`: verified-mode email delivery is unavailable",
+            }
+        ),
+    },
 )
 async def create_invitation(
     workspace_id: WorkspaceId,
@@ -99,7 +102,7 @@ async def create_invitation(
     invitations: Invitations,
     response: Response,
     mode: Annotated[RegistrationMode, Depends(registration_mode)],
-    public_url: Annotated[str, Depends(export_public_url)],
+    public_url: Annotated[str, Depends(invitation_public_url)],
 ) -> InvitationCreated:
     now = datetime.now(UTC)
     issued = await invitations.invite(

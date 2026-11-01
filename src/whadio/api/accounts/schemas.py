@@ -26,6 +26,8 @@ class InvitedRole(StrEnum):
 
 class InvitationState(StrEnum):
     PENDING = "pending"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
     CANCELLED = "cancelled"
 
 

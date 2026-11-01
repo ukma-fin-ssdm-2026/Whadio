@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -236,3 +237,46 @@ def test_link_is_inactive_when_inviter_loses_authority() -> None:
     active = demoted.link_active(NOW)
     # Assert
     assert not active
+
+
+@pytest.mark.parametrize("offset", [-1, 0, 1])
+def test_invitation_expiry_boundary(offset: int) -> None:
+    # Arrange
+    invitation = replace(Invitations().invitation, expires_at=NOW + timedelta(seconds=offset))
+    # Act
+    active = invitation.link_active(NOW)
+    # Assert
+    assert active == (offset > 0)
+
+
+@pytest.mark.parametrize(
+    ("personal", "member", "count", "expected"),
+    [
+        (True, True, 20, Failure.PERSONAL_WORKSPACE),
+        (False, True, 20, Failure.ALREADY_MEMBER),
+        (False, False, 20, Failure.INVITATION_LIMIT),
+        (False, False, 0, Failure.INTEGRATION_UNAVAILABLE),
+    ],
+)
+def test_invitation_checks_preserve_documented_order(
+    *, personal: bool, member: bool, count: int, expected: Failure
+) -> None:
+    # Arrange
+    invitations, audit = Invitations(), Audit()
+    invitations.personal = personal
+    invitations.member = member
+    invitations.window = InvitationWindow(count, NOW)
+
+    async def scenario() -> None:
+        await InvitationService(invitations, Memberships(), audit).invite(
+            uuid4(),
+            uuid4(),
+            InvitationRequest("new@example.com", InvitationRole.MEMBER, RegistrationMode.VERIFIED),
+            NOW,
+        )
+
+    # Act
+    with pytest.raises(UseCaseError) as failure:
+        asyncio.run(scenario())
+    # Assert
+    assert (failure.value.code, invitations.issued_hash, audit.events) == (expected, None, [])

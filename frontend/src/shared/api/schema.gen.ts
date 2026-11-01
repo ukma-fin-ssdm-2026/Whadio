@@ -1278,7 +1278,7 @@ export interface components {
          * InvitationState
          * @enum {string}
          */
-        InvitationState: "pending" | "cancelled";
+        InvitationState: "pending" | "accepted" | "declined" | "cancelled";
         /**
          * InvitedRole
          * @enum {string}
@@ -2914,6 +2914,15 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Replaced pending invitation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationCreated"];
+                };
+            };
             /** @description The invitation and its one-time link */
             201: {
                 headers: {
@@ -6348,7 +6357,7 @@ export const captureStatusValues: ReadonlyArray<FlattenedDeepRequired<components
 export const errorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorCode"]> = ["NO_NOTES", "INTEGRATION_UNAVAILABLE", "TRANSCRIPT_EXISTS", "ALREADY_PROCESSED", "FOLDER_RECOVERY_CONFLICT", "DEFAULT_FOLDER", "FOLDER_EXISTS", "TERM_EXISTS", "STALE_REVISION", "LINK_INVALID", "ACCESS_REQUEST_EXISTS", "ALREADY_HAS_ACCESS", "ACCESS_REQUEST_NOT_PENDING", "SHARE_ALREADY_BOUND", "SHARE_REVOKED", "MALFORMED_REQUEST", "VALIDATION_ERROR", "UNAUTHENTICATED", "INVALID_CREDENTIALS", "INSUFFICIENT_ROLE", "NOT_FOUND", "METHOD_NOT_ALLOWED", "PERSONAL_WORKSPACE", "ALREADY_MEMBER", "INVITATION_LIMIT", "INVITATION_COOLDOWN", "INVITATION_NOT_PENDING", "NOT_TRANSCRIBED", "NOTES_IN_PROGRESS", "RECORDING_NOT_READY", "RECORDING_DELETED", "REGENERATION_LIMIT", "CHUNK_MISMATCH", "CAPTURE_CLOSED", "MISSING_CHUNKS", "EMPTY_CAPTURE", "PAYLOAD_TOO_LARGE", "UNSUPPORTED_MEDIA_TYPE", "RATE_LIMITED", "HTTP_ERROR", "INTERNAL_ERROR"];
 export const exportFormatValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ExportFormat"]> = ["markdown", "vtt"];
 export const exportVersionValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ExportVersion"]> = ["current", "original"];
-export const invitationStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["InvitationState"]> = ["pending", "cancelled"];
+export const invitationStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["InvitationState"]> = ["pending", "accepted", "declined", "cancelled"];
 export const invitedRoleValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["InvitedRole"]> = ["member", "moderator"];
 export const jobStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["JobStatus"]> = ["queued", "running", "succeeded", "failed"];
 export const jobTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["JobType"]> = ["transcription", "notes"];

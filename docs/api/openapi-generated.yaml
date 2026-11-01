@@ -464,6 +464,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvitationCreated'
+        '200':
+          description: Replaced pending invitation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationCreated'
         '400':
           description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
             valid JSON'
@@ -4396,6 +4402,8 @@ components:
       type: string
       enum:
       - pending
+      - accepted
+      - declined
       - cancelled
       title: InvitationState
     InvitedRole:
