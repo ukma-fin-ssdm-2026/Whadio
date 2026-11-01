@@ -1,11 +1,12 @@
 from asyncio import Runner, SelectorEventLoop
 from io import StringIO
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 from sqlalchemy import Connection, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
@@ -50,6 +51,40 @@ def test_migrations_use_owner_role() -> None:
     username = settings.migration_url().username
     # Assert
     assert username == "whadio_owner"
+
+
+@pytest.fixture
+def dotenv_without_passwords(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("WHADIO_DB_APP_PASSWORD", raising=False)
+    monkeypatch.delenv("WHADIO_DB_OWNER_PASSWORD", raising=False)
+    return tmp_path / ".env"
+
+
+def test_refused_database_settings_do_not_show_the_owner_password(
+    dotenv_without_passwords: Path,
+) -> None:
+    # Arrange
+    password = uuid4().hex[:8]
+    dotenv_without_passwords.write_text(f"WHADIO_DB_OWNER_PASSWORD={password}\n", encoding="utf-8")
+    # Act
+    with pytest.raises(ValidationError) as failure:
+        DatabaseSettings.model_validate({})
+    # Assert
+    assert password not in str(failure.value)
+
+
+def test_refused_migration_settings_do_not_show_the_application_password(
+    dotenv_without_passwords: Path,
+) -> None:
+    # Arrange
+    password = uuid4().hex[:8]
+    dotenv_without_passwords.write_text(f"WHADIO_DB_APP_PASSWORD={password}\n", encoding="utf-8")
+    # Act
+    with pytest.raises(ValidationError) as failure:
+        MigrationSettings.model_validate({})
+    # Assert
+    assert password not in str(failure.value)
 
 
 @pytest.mark.parametrize(

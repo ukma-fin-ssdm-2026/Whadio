@@ -9,7 +9,11 @@ from ..shared.broker import BrokerSettings
 
 class WebSettings(BaseSettings):
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
-        env_prefix="WHADIO_", env_nested_delimiter="__", env_file=".env", extra="ignore"
+        env_prefix="WHADIO_",
+        env_nested_delimiter="__",
+        env_file=".env",
+        extra="ignore",
+        hide_input_in_errors=True,
     )
 
     registration_mode: RegistrationMode = Field(
