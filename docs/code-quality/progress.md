@@ -7,8 +7,8 @@ State on 2026-11-01 at `main` commit `46af4d7`, for the midterm evaluation.
 Whadio has no public evaluation instance yet; deployment is tracked in
 [#182](https://github.com/ukma-fin-ssdm-2026/Whadio/issues/182). The current product can be run
 locally with the [README setup](../../README.md#development), and recordings are processed after
-starting the [workers](../../README.md#running-the-workers). The dedicated midterm demo is tracked
-in [#192](https://github.com/ukma-fin-ssdm-2026/Whadio/issues/192).
+starting the [workers](../../README.md#running-the-workers). The
+[midterm demo video](../../Labs/midterm-presentation.txt) shows such a local run.
 
 ## End-to-end path
 
@@ -50,13 +50,12 @@ ASR, and an optional Ollama profile supplies the built-in notes model.
 
 ## Next steps
 
-1. Publish the midterm demo (#192), then add its link beside the local run instructions.
-2. Complete the public CPU deployment, timing run and automated rollback in #182.
-3. Add TC-PIPE-01, TC-PIPE-02 and TC-NFR-01 to CI so recovery is no longer evidenced only by a
+1. Complete the public CPU deployment, timing run and automated rollback in #182.
+2. Add TC-PIPE-01, TC-PIPE-02 and TC-NFR-01 to CI so recovery is no longer evidenced only by a
    manual system run.
-4. Add the missing SPA flows, starting with invitations and registration, then meeting access and
+3. Add the missing SPA flows, starting with invitations and registration, then meeting access and
    the administrator dashboard.
-5. Resolve the transitive `minimatch` advisory without taking the breaking generator downgrade
+4. Resolve the transitive `minimatch` advisory without taking the breaking generator downgrade
    proposed by `npm audit`.
 
 ## AI Usage
@@ -64,4 +63,5 @@ ASR, and an optional Ollama profile supplies the built-in notes model.
 The original document was drafted with Claude Code (Claude Opus 5.5). OpenAI Codex updated the
 2026-11-01 status from the repository, generated OpenAPI specification, CI coverage artifact and
 test-plan evidence. Andrii Shalaiev checked the feature statuses and evidence against the code,
-test plan and CI artifact in pull request #255.
+test plan and CI artifact in pull request #255. Claude Code (Claude Opus 5.5) linked the
+published midterm demo video for #257.
