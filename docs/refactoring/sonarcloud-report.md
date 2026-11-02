@@ -73,8 +73,7 @@ The complete automated test suite will be run after all 2–3 selected refactori
 failure and its cause will be recorded here. The “After” metrics will be filled in only after the
 pull request is merged into `main` and SonarQube Cloud publishes a new analysis.
 
-## Baseline branch note
+## Baseline branch
 
-A remote `pre-refactor` branch already exists at an older revision (`07c55e46`). It must be moved to
-the baseline revision above before the refactoring pull request is merged. Updating that shared
-branch requires an explicit force-push approval.
+The local and remote `pre-refactor` branches point to the baseline revision above (`bc3ec999`) and
+preserve the state of `main` before the refactoring.
