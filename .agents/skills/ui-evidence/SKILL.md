@@ -112,17 +112,21 @@ installed version in full.
 ## 5. Attach to GitHub
 
 Write the comment in `.ui-evidence/<task>/comment.md`: one short line per screen naming the route,
-the viewport and the theme, with each file referenced by its path where it should appear. Once the
-user agrees, post it with gh 2.99 or newer (`gh --version`):
+the viewport and the theme, then the image as
+`![Meetings, 1440 × 900, light](./after/meetings-1440x900-light.png)`, with the path relative to
+the comment file. Leave videos out of the body. Once the user agrees, post it with gh 2.99 or newer
+(`gh --version`):
 
 ```bash
 gh issue comment <number> --body-file .ui-evidence/<task>/comment.md --attach .ui-evidence/<task>/after/meetings-1440x900-light.png --attach .ui-evidence/<task>/demo.mp4
 ```
 
-gh uploads each attached file and replaces its path in the body with the file's address, or appends
-the file when the body does not mention it. `gh pr comment` takes the same flags. A video renders as
-a player only when it stands alone in its paragraph. With an older gh, give the user the paths to
-drag into the comment instead.
+gh uploads each attached file and points the matching `![…](…)` reference at the upload. It leaves a
+bare path as it is, and appends every attached file the body does not reference to the end of the
+comment. That is where a video goes: alone in its paragraph, it renders as a player.
+`gh pr comment` takes the same flags. Read the posted comment back
+(`gh api repos/{owner}/{repo}/issues/comments/<id> --jq .body`) to check that no local path is
+left. With an older gh, give the user the paths to drag into the comment instead.
 
 ## AI Usage
 
