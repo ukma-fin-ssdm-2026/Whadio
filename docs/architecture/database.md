@@ -4,11 +4,13 @@ Whadio stores structured data in PostgreSQL. Audio files live in object storage;
 stores their references. This guide explains where the schema lives, how to apply it, and which
 rules PostgreSQL enforces.
 
-**Implemented:** SQLAlchemy models, Alembic migrations, shared transactions, and Access Policy,
-Meetings and Retention services. Meeting content, folders, glossary, shares, exports and MCP
-use PostgreSQL. Accounts routes persist sessions, workspaces and personal MCP keys; Capture and
-notification delivery still need integration. Content routes require stored browser sessions or
-personal MCP keys, and the development-user command creates a local account for the SPA.
+**Implemented:** SQLAlchemy models, Alembic migrations, shared transactions, and the Accounts,
+Access Policy, Meetings, Capture, Processing, Retention, Notifications and Audit services. Meeting
+content, folders, glossary, shares, exports and MCP use PostgreSQL. Accounts routes persist
+sessions, workspaces, personal MCP keys and invitations, and complete registration and
+password-reset links. Capture stores chunks and queues completed recordings, and the scheduler
+sends the notification outbox. Content routes require stored browser sessions or personal MCP
+keys, and the development-user command creates a local account for the SPA.
 
 Access Policy and Meetings emit typed content audit events through `audit/contracts.py`.
 The runtime wires Audit's writer through the `content_audit` dependency using the same database
@@ -46,21 +48,16 @@ bound-share read access. `IEvictionNotifier` reserves each `EvictionNotice` with
 for authorized recipients. The snapshot survives deletion; notice failure aborts the whole ingest.
 Successful regeneration records its actual preset in audit details, without content or names.
 
-Remaining integrations belong to their module owners:
+Remaining work belongs to its module owners:
 
-- **Processing (Denys):** durable job reservation/publication, provider selection, transitions,
-  regeneration limits, result consumption and idempotent calls to Meetings' persistence ports.
-- **Notifications (after MVP owner assignment):** transactional durable adapters for share requests,
-  eviction and retention warnings, deduplication and delivery. The scheduler accepts a session-bound
-  `IRetentionNotifier` factory; its executable still defaults to the explicitly unavailable
-  adapter. Seven-day warnings are not delivered yet.
-- **Accounts (Denys):** replace demo sign-in/workspace administration with persisted accounts,
-  sessions and membership writes. Stored-identity reads and membership/capacity interfaces are
-  implemented, but normal demo sign-in does not establish an identity for meeting routes.
-- **Capture (unassigned):** submit verified recordings through ingest and reserve Processing work.
+- **Processing (Denys):** notes regeneration and its limits, which the API refuses as unavailable
+  until then, and selecting each workspace's provider instead of the notes worker's.
+- **Accounts (Denys):** registration and password-reset links requested by a visitor, with their
+  emails, invitations in `verified` mode, listing members, changing roles, removing members and
+  LLM provider configuration.
+- **Capture (Denys):** finalising captures left idle into partial recordings.
 
-These ports complete the integration boundaries of this slice, not end-to-end MVP behavior.
-Retention deletion and recording cleanup continue independently of unavailable warning delivery.
+Retention deletion and recording cleanup continue independently of warning delivery.
 
 ## Where the schema lives
 
@@ -130,7 +127,11 @@ mail: its `kind`, the recipient's `recipient_user_id` (deleted with the account)
 `sent_at` and a sanitised `last_error` of at most 200 characters. The partial index
 `ix_notification_outbox_unsent` on `next_attempt_at WHERE sent_at IS NULL` serves the scheduler's
 claim. `whadio_app` holds `SELECT`, `INSERT`, `UPDATE` and `DELETE` on it. Downgrade refuses to
-discard unsent notices. The current head is `0008`.
+discard unsent notices.
+
+Revision `0009` adds `processing_job.queued_at`, the start of a job's current queued period,
+which defaults to the insert time. Existing jobs never attempted take their creation time,
+retried ones keep it null, and queued jobs lose their `started_at`. The current head is `0009`.
 
 Cleanup passes use UUID keyset windows and advance after each batch, including failed or locked
 items. Each pass attempts each selected item at most once; failed items remain durable for the
@@ -282,7 +283,7 @@ Database safeguards protect stored data. Services enforce these use cases:
 | Transcript edits (FR-028) | Save edits as edited revisions and expose the original with an edited marker. The API's promise to preserve earlier edited revisions must also be implemented by services. |
 | Audit events (NFR-010, ADR-005) | Write actor-attributed events in the same transaction as the change. `FolderService.delete_folder` writes one `meeting_moved` event per moved meeting. The database trigger only refuses invalid deletion. |
 | Recording retention (FR-046) | Delete audio 90 days after the meeting, warn accessible members seven days beforehand, and keep transcripts and notes. |
-| Account and sharing flows | Share approval and revocation use services, and Processing reserves the FR-024 notices. Accounts writes remain unfinished. |
+| Account and sharing flows | Share approval and revocation use services, and Processing reserves the FR-024 notices. Accounts writes for member roles, member removal and provider configuration remain unfinished. |
 
 The retention interval and folder permissions above are confirmed product decisions. Storing
 `recording_delete_after` and `recording_deleted_at` does not run a retention schedule or send a
