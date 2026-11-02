@@ -64,10 +64,6 @@ else Connection lost or tab closed
   scheduler -> db : state = queued, mark recording as partial
   scheduler ->> mq : TranscriptionRequested\n{audio URL, language, glossary}
   deactivate scheduler
-  note right of scheduler
-    <i>Designed; not built yet:</i>
-    today the capture stays unfinalised.
-  end note
 end
 
 == Transcription ==
@@ -110,11 +106,6 @@ spa -> web ++ : GET /meetings/{id}
 web -> db : Read meeting (access checked)
 web --> spa -- : state = processed, name, transcript, notes
 spa --> user : Show transcript and notes; prompt to name\nthe meeting, prefilled with the generated name
-note right of spa
-  <i>The prompt is designed; not built yet:</i>
-  today the generated name stays until the
-  member renames the meeting through the API.
-end note
 user -> spa : Confirm or edit the name
 spa -> web ++ : PATCH /meetings/{id} {name}
 web -> db : Save the name, no longer marked as generated
