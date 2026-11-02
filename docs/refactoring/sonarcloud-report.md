@@ -5,6 +5,10 @@
 - Baseline revision: `bc3ec9991bf1e7cde0a6475a2f13fef47ad56d73` (`main`)
 - Baseline recorded: 2026-11-02
 
+Each selected finding is implemented in its own focused branch and pull request. This pull request
+contains only the `normalizeApiOrigin` refactoring on `refactor/#265-normalize-api-origin`; later
+findings will extend this report from separate branches.
+
 ## Metrics
 
 Security Rating is recorded independently, as required. The three selected improvement indicators
@@ -22,7 +26,7 @@ effect more clearly than the already strong Maintainability Rating and duplicati
 
 ## Refactoring 1: replace the trailing-slash regular expression
 
-- SonarQube issue: `AaGLwuFO07PuiwrSX16p`
+- SonarQube issue: linked super-linear regular-expression finding
 - Rule: `typescript:S8786`
 - Location: `frontend/src/shared/api/client.ts:6`
 - Smell: the trailing-slash regular expression can take super-linear time because of backtracking.
@@ -35,7 +39,8 @@ effect more clearly than the already strong Maintainability Rating and duplicati
 - Proving test: `frontend/src/shared/api/client.test.ts` covers undefined and empty inputs, one and
   several trailing slashes, a path prefix, internal repeated slashes, and a 100,000-character
   trailing-slash suffix.
-- Status: implemented locally; the SonarQube result is pending merge and a new analysis.
+- Status: implemented and verified on `refactor/#265-normalize-api-origin`; the SonarQube result is
+  pending merge and a new analysis.
 
 ## AI-assisted refactoring
 
@@ -68,10 +73,16 @@ The proposed diff was reviewed line by line before it was retained:
 | Full frontend suite | `npm.cmd --prefix frontend test` | 52 files and 731 tests passed |
 | Production build | `npm.cmd --prefix frontend run build` | Passed |
 | Repository checks | `uv run task check` | Passed |
+| Service-independent backend suite | `uv run task test:fast -- --basetemp=.venv/pytest-temp-265-fast` | 1,072 tests passed |
+| Complete local suite | `uv run task test -- --basetemp=.venv/pytest-temp-265` | 1,097 passed, 609 skipped, 9 environment-dependent failures |
 
-The complete automated test suite will be run after all 2–3 selected refactorings are finished. Any
-failure and its cause will be recorded here. The “After” metrics will be filled in only after the
-pull request is merged into `main` and SonarQube Cloud publishes a new analysis.
+The complete suite was attempted as required. Eight unrelated slow integration tests could not
+connect to local Mailpit, RabbitMQ, or SeaweedFS because the Compose services were not running. One
+model test could not access the gated `pyannote/speaker-diarization-community-1` repository without
+an authorized Hugging Face token. None of the failures exercise the frontend files changed by this
+refactoring. CI supplies the integration services and remains the authoritative full-suite result.
+The “After” metrics will be filled in only after the pull request is merged into `main` and
+SonarQube Cloud publishes a new analysis.
 
 ## Baseline branch
 
