@@ -3,14 +3,7 @@ import { serializeBody } from "./body";
 import type { paths } from "./schema.gen";
 
 export function normalizeApiOrigin(origin: string | undefined): string {
-  const configuredOrigin = origin ?? "";
-  let end = configuredOrigin.length;
-
-  while (end > 0 && configuredOrigin[end - 1] === "/") {
-    end -= 1;
-  }
-
-  return configuredOrigin.slice(0, end);
+  return (origin ?? "").replace(/\/+$/, "");
 }
 
 export const API_ORIGIN = normalizeApiOrigin(import.meta.env.VITE_API_ORIGIN);
