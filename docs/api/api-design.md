@@ -58,9 +58,7 @@ transaction; the scheduler sends it when an SMTP relay is configured. MCP reads 
 personal keys.
 
 List operations in this slice use bounded database queries and opaque cursors scoped to the
-resource and signed-in caller. A deleted cursor anchor does not invalidate later pages. Two lists
-are the exception: `GET /workspaces` and `GET /captures/destinations` load the caller's whole
-list and page it with the position of the next item as the cursor (section 6.6). Folder
+resource and signed-in caller. A deleted cursor anchor does not invalidate later pages. Folder
 counts include only visible meetings; note versions on later pages are not marked current.
 
 ## 3. Resource model
@@ -1232,10 +1230,8 @@ three reasons:
 - its cost does not grow with depth;
 - an item created between two pages is not shown twice.
 
-Cursors are opaque. A cursor encodes the list it belongs to, the last item's sort key and its
-identifier, so a deleted item does not invalidate later pages. *Implemented for every list except
-`GET /workspaces` and `GET /captures/destinations`:* their cursor is the position of the next
-item, so an item added or removed between two pages can shift the next page by one.
+Cursors are opaque, and every list uses the same style. A cursor encodes the list it belongs to,
+the last item's sort key and its identifier, so a deleted item does not invalidate later pages.
 
 ### 6.7 Long-running work
 
