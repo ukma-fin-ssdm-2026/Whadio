@@ -77,28 +77,28 @@ Source: [uml/component-diagram.puml](uml/component-diagram.puml)
 | Component | Responsibility | Requirements |
 |---|---|---|
 | Chrome extension | Consent confirmation, tab and microphone capture, chunked upload, reading participant names and the active speaker from the Meet page. | FR-009, FR-010, FR-011, FR-016 |
-| Web SPA | The user interface for workspaces, meetings, transcripts, notes, sharing, export and administration; file upload. | FR-013, FR-031, FR-032 and the interface side of the other FRs |
+| Web SPA | The user interface for workspaces, meetings, transcripts, notes, sharing, export and administration; file upload. The sharing and administration pages are designed, not built yet. | FR-013, FR-031, FR-032 and the interface side of the other FRs |
 | MCP client | The user's own AI assistant; external to Whadio. | FR-043, FR-044 |
 
 ### Backend modules
 
 | Component | Responsibility | Requirements |
 |---|---|---|
-| Capture | Capture sessions, the workspaces and folders a recording can be delivered to, idempotent chunk storage, assembling the recording, validating uploaded files, finalising interrupted captures. | FR-009, FR-010, FR-012, FR-013 |
+| Capture | Capture sessions, the workspaces and folders a recording can be delivered to, idempotent chunk storage, assembling the recording, validating uploaded files, finalising interrupted captures. Finalising interrupted captures is designed, not built yet. | FR-009, FR-010, FR-012, FR-013 |
 | MCP Server | The MCP interface: authenticates personal keys and exposes the key owner's meetings as tools. | FR-043, FR-044 |
-| Accounts & Workspaces | Registration in the instance's registration mode, invitation links and their cancellation, password reset, links issued by the operator, sign-in and sessions, workspaces, membership and roles, LLM provider configuration, MCP keys. Checks workspace-administration permissions against the member's role. | FR-001–FR-003, FR-005–FR-008, FR-021, FR-043, FR-047–FR-049, NFR-018 |
+| Accounts & Workspaces | Registration in the instance's registration mode, invitation links and their cancellation, password reset, links issued by the operator, sign-in and sessions, workspaces, membership and roles, LLM provider configuration, MCP keys. Checks workspace-administration permissions against the member's role. Registration and password-reset links requested by a visitor, invitations in `verified` mode, listing members, changing their roles, removing them and LLM provider configuration are designed, not built yet. | FR-001–FR-003, FR-005–FR-008, FR-021, FR-043, FR-047–FR-049, NFR-018 |
 | Access Policy | Decides who may read which meeting: workspace role, per-meeting restriction, share grants and redaction. A share grants reading only to the account its creator approved; opening its link otherwise records an access request for the creator. | FR-004, FR-037–FR-039, FR-044, NFR-007–NFR-009 |
 | Meetings | Meetings, folders, transcript and notes versions, speaker labels, naming, glossary, playback. The single read path for meeting content. Enforces the meeting cap: when a meeting is queued, counts the queued and later meetings across the workspaces of its workspace's Owner, and evicts the earliest-created one if the cap is exceeded. | FR-017, FR-027–FR-036, NFR-003 |
-| Processing | The pipeline's orchestrator: publishes jobs, consumes results, tracks processing state, names diarized speakers from the Meet timeline that Capture stored, assembles the context set, limits regeneration. | FR-012, FR-014–FR-016, FR-018–FR-020, FR-022, FR-023, FR-025, FR-026 |
+| Processing | The pipeline's orchestrator: publishes jobs, consumes results, tracks processing state, names diarized speakers from the Meet timeline that Capture stored, assembles the context set, limits regeneration. Regenerating notes is designed, not built yet: the API refuses it as unavailable. | FR-012, FR-014–FR-016, FR-018–FR-020, FR-022, FR-023, FR-025, FR-026 |
 | Export | Markdown and VTT export with the consent notice and attribution. | FR-040–FR-042 |
-| Notifications | Email to members when processing finishes or fails, before recordings expire, and when the meeting cap evicts a meeting; to a share's creator when an account requests access; registration, invitation and password-reset links to the address they are for. | FR-001, FR-006, FR-024, FR-038, FR-046, FR-048, NFR-003 |
+| Notifications | Email to members when processing finishes or fails, before recordings expire, and when the meeting cap evicts a meeting; to a share's creator when an account requests access; registration, invitation and password-reset links to the address they are for. The link emails are designed, not built yet. | FR-001, FR-006, FR-024, FR-038, FR-046, FR-048, NFR-003 |
 | Retention | Deletes recordings 90 days after the meeting and triggers the warning 7 days before deletion. | FR-046 |
-| Admin & Monitoring | The administrator dashboard: queue, failures, load and model usage, without meeting content. | FR-045 |
+| Admin & Monitoring | The administrator dashboard: queue, failures, load and model usage, without meeting content. Today the API reports jobs, their queue waits and failures; the dashboard page and the load and model-usage figures are designed, not built yet. | FR-045 |
 | Audit | The append-only record of who changed a meeting's content or access: actor, action, target IDs and time, never content. Written by Meetings, Access Policy and Accounts & Workspaces; no API reads it, and the operator consults it in the database. | NFR-010 |
 
 The Web API has no component of its own: each module serves its own resources through its API
-layer, in the module's subpackage of `api`. Session authentication is middleware that Accounts & Workspaces provides to every Web API
-route. MCP Server, by contrast, is a component, because it carries behaviour of its own: a separate
+layer, in the module's subpackage of `api`. Session authentication is a request dependency that Accounts & Workspaces provides to every Web
+API route that needs a signed-in user. MCP Server, by contrast, is a component, because it carries behaviour of its own: a separate
 protocol, authentication by personal key, the tool definitions, and the rule that a key reaches only
 its owner's accessible meetings (FR-043, FR-044).
 
@@ -201,7 +201,8 @@ Source: [uml/sequence-meeting-pipeline.puml](uml/sequence-meeting-pipeline.puml)
    marked as generated, marks the meeting processed and reserves an email to the member in the
    same transaction; the scheduler sends it. The SPA shows the transcript and notes and prompts
    for a name, prefilled with the generated one; if the member does not answer, the generated name
-   stays (FR-033).
+   stays (FR-033). *The SPA prompt is designed; not built yet:* today the generated name stays
+   until the member renames the meeting through the API.
 
 ## 7. Failure behaviour
 
