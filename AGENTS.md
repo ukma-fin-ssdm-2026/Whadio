@@ -34,6 +34,7 @@ src/whadio/
   <module>/       one package per backend module of the high-level design, listed below
 frontend/         the web SPA, with its own toolchain
 infra/            configuration that compose.yaml mounts into the services
+.agents/skills/   agent skills for Claude Code and Codex; `.claude/skills` links here
 ```
 
 | Package | Module | MVP owner |
@@ -158,6 +159,21 @@ by hand, so open a draft pull request to try something.
   whole file.
 - Changing a route or a schema regenerates `docs/api/openapi-generated.*` and
   `frontend/src/shared/api/schema.gen.ts`; commit them with it.
+
+## Agent skills
+
+`.agents/skills/` holds the skills Claude Code and Codex use in this repository. Codex reads the
+directory itself, and `.claude/skills` is a symbolic link to it for Claude Code. Use a skill
+without being asked when its row applies. If your agent does not list the skills, read the
+`SKILL.md` and follow it.
+
+| Skill | Use it |
+|---|---|
+| [`ui-evidence`](.agents/skills/ui-evidence/SKILL.md) | After a change visible in the web app, to check it in the running app, and when an issue asks for screenshots or a video |
+
+On Windows, git checks the link out as a small text file unless symbolic links are enabled. Turn
+on Developer Mode, run `git config core.symlinks true`, delete the `.claude/skills` file and run
+`git checkout -- .claude/skills`.
 
 ## Code standards
 
