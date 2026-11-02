@@ -56,7 +56,7 @@ _MEETING_NOT_FOUND = (
     "`NOT_FOUND`: no such meeting, or the caller cannot read it (restricted meetings are "
     "reported as missing, never as forbidden)"
 )
-_NOT_TRANSCRIBED = f"`{ErrorCode.NOT_TRANSCRIBED}`: the meeting is not processed yet"
+_NOT_TRANSCRIBED = f"`{ErrorCode.NOT_TRANSCRIBED}`: the meeting has no transcript yet"
 
 # --- Meetings ---
 

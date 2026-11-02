@@ -2388,7 +2388,7 @@
             }
           },
           "409": {
-            "description": "`NOT_TRANSCRIBED`: the meeting is not processed yet",
+            "description": "`NOT_TRANSCRIBED`: the meeting has no transcript yet",
             "content": {
               "application/json": {
                 "schema": {
