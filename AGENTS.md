@@ -24,7 +24,7 @@ When the code and these documents disagree, stop and ask instead of picking one.
 ```text
 src/whadio/
   migrations/     packaged Alembic revisions and database integrity guards
-  cli.py          the `whadio` command: `web`, `openapi`; the workers and the scheduler add theirs
+  cli.py          the `whadio` command: every runtime, migrations, `openapi` and the operator commands
   api/            the `web` runtime: FastAPI app, one subpackage of routes per module, MCP server
   scheduler/      the `scheduler` runtime: periodic jobs
   workers/asr/    the transcription worker (GPU host)
@@ -33,6 +33,8 @@ src/whadio/
   shared/         framework-free utilities any runtime may use: settings, logging, clients
   <module>/       one package per backend module of the high-level design, listed below
 frontend/         the web SPA, with its own toolchain
+  src/            app/ shell, features/ per area, routes/ file-based routes, shared/ API client and UI
+extension/        the Chrome extension: records a Meet call and uploads it to Capture in chunks
 infra/            configuration that compose.yaml mounts into the services
 ```
 
@@ -44,7 +46,7 @@ infra/            configuration that compose.yaml mounts into the services
 | `processing` | Processing | Denys |
 | `audit` | Audit | Denys |
 | `retention` | Retention | Valeriia |
-| `capture` | Capture: the recording upload | Denys |
+| `capture` | Capture: the extension's chunked recording sessions | Denys |
 | `export`, `notifications`, `admin` | Export, Notifications, Admin & Monitoring | after the MVP |
 | `contracts`, `workers` | Job contracts, Transcription and Notes pipelines | Andrii, Zlata |
 | `frontend/` | Web SPA | Zlata |
@@ -123,7 +125,7 @@ the hooks only catch the cheap mistakes first, and stay within a time budget:
 | When | Budget | What runs |
 |---|---|---|
 | `git commit` | 3 s | Branch name, file hygiene, gitleaks on the staged diff, `uv lock --check`, `ruff check --fix` and `ruff format` on the whole project, Biome on the frontend and the extension, the suppression ban, typos, schema and workflow checks, import-linter and ty. The commit message is checked last. |
-| `git push` | 12 s | Only what the push changes: `uv run task test:fast` for the backend; `tsc` and the Vitest tests the branch can affect for the frontend; the OpenAPI drift check for `src/whadio/api/`. |
+| `git push` | 12 s | Only what the push changes: `uv run task test:fast` for the backend; `tsc` and the Vitest tests the branch can affect for the frontend; the OpenAPI drift check for `src/whadio/api/`; the API-types and route-tree drift checks for the frontend. |
 | CI | none | Everything below, on every pull request and on `main`. |
 
 CI runs these jobs in parallel, and every job and hook runs to the end, so one failure hides no
