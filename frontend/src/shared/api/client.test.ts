@@ -34,7 +34,7 @@ describe("normalizeApiOrigin", () => {
     expect(origin).toBe("https://example.com/a//b");
   });
 
-  test("removes a long trailing slash suffix in linear time", () => {
+  test("removes a long trailing slash suffix", () => {
     // Arrange
     const configured = `https://api.example.com${"/".repeat(100_000)}`;
 
