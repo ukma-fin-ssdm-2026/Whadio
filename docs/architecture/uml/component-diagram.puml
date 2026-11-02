@@ -62,7 +62,7 @@ mcpClient ..> IMcp : HTTPS, personal key
 ICapture -- capture
 IWeb -- accounts
 IWeb -- meetings
-IWeb -- processing : regenerate notes
+IWeb -- processing : regenerate notes\n(designed, not built yet)
 IWeb -- export
 IWeb -- admin
 IMcp -- mcp

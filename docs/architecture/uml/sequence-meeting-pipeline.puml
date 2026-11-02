@@ -49,7 +49,7 @@ alt Member stops the recording
   ext -> web ++ : POST /captures/{id}/complete {last_seq}
   web -> store : Assemble chunks into the recording
   web -> db : state = queued
-  web ->> mq : TranscriptionRequested\n{audio URL, speaker timeline, glossary}
+  web ->> mq : TranscriptionRequested\n{audio URL, language, glossary}
   web --> ext -- : 202 Accepted
   ext --> user -- : Recording saved, processing
 else Connection lost or tab closed
@@ -62,8 +62,12 @@ else Connection lost or tab closed
   activate scheduler
   scheduler -> store : Assemble the received chunks into the recording
   scheduler -> db : state = queued, mark recording as partial
-  scheduler ->> mq : TranscriptionRequested\n{audio URL, speaker timeline, glossary}
+  scheduler ->> mq : TranscriptionRequested\n{audio URL, language, glossary}
   deactivate scheduler
+  note right of scheduler
+    <i>Designed; not built yet:</i>
+    today the capture stays unfinalised.
+  end note
 end
 
 == Transcription ==
@@ -73,10 +77,10 @@ asr ->> mq : JobStarted
 mq ->> web ++ : JobStarted
 web -> db -- : state = processing
 asr -> store : GET recording (presigned URL)
-asr -> asr : Normalise audio; recognise speech\nwith glossary biasing; diarize;\nname speakers from the timeline
+asr -> asr : Normalise audio; recognise speech\nwith glossary biasing; diarize
 asr ->> mq -- : TranscriptReady {segments, speakers}
 mq ->> web ++ : TranscriptReady
-web -> db : Save transcript (original version)
+web -> db : Name speakers from the stored speaker events;\nsave transcript (original version)
 web -> db : Load preset, provider config and the context set\n(Access Policy drops restricted meetings)
 web ->> mq -- : NotesRequested\n{transcript, preset, context set, provider}
 
@@ -106,6 +110,11 @@ spa -> web ++ : GET /meetings/{id}
 web -> db : Read meeting (access checked)
 web --> spa -- : state = processed, name, transcript, notes
 spa --> user : Show transcript and notes; prompt to name\nthe meeting, prefilled with the generated name
+note right of spa
+  <i>The prompt is designed; not built yet:</i>
+  today the generated name stays until the
+  member renames the meeting through the API.
+end note
 user -> spa : Confirm or edit the name
 spa -> web ++ : PATCH /meetings/{id} {name}
 web -> db : Save the name, no longer marked as generated
