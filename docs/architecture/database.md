@@ -48,14 +48,10 @@ bound-share read access. `IEvictionNotifier` reserves each `EvictionNotice` with
 for authorized recipients. The snapshot survives deletion; notice failure aborts the whole ingest.
 Successful regeneration records its actual preset in audit details, without content or names.
 
-Remaining work belongs to its module owners:
+Remaining integrations belong to their module owners:
 
-- **Processing (Denys):** notes regeneration and its limits, which the API refuses as unavailable
-  until then, and selecting each workspace's provider instead of the notes worker's.
-- **Accounts (Denys):** registration and password-reset links requested by a visitor, with their
-  emails, invitations in `verified` mode, listing members, changing roles, removing members and
-  LLM provider configuration.
-- **Capture (Denys):** finalising captures left idle into partial recordings.
+- **Processing (Denys):** provider selection and regeneration limits.
+- **Accounts (Denys):** membership writes beyond joining a workspace.
 
 Retention deletion and recording cleanup continue independently of warning delivery.
 
@@ -283,7 +279,7 @@ Database safeguards protect stored data. Services enforce these use cases:
 | Transcript edits (FR-028) | Save edits as edited revisions and expose the original with an edited marker. The API's promise to preserve earlier edited revisions must also be implemented by services. |
 | Audit events (NFR-010, ADR-005) | Write actor-attributed events in the same transaction as the change. `FolderService.delete_folder` writes one `meeting_moved` event per moved meeting. The database trigger only refuses invalid deletion. |
 | Recording retention (FR-046) | Delete audio 90 days after the meeting, warn accessible members seven days beforehand, and keep transcripts and notes. |
-| Account and sharing flows | Share approval and revocation use services, and Processing reserves the FR-024 notices. Accounts writes for member roles, member removal and provider configuration remain unfinished. |
+| Account and sharing flows | Share approval and revocation use services, and Processing reserves the FR-024 notices. Accounts writes remain unfinished. |
 
 The retention interval and folder permissions above are confirmed product decisions. Storing
 `recording_delete_after` and `recording_deleted_at` does not run a retention schedule or send a
