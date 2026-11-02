@@ -134,7 +134,7 @@ export function MeetingActions({ meeting, role, userId, folders, onDeleted }: Me
             value={name}
             onChange={(event) => setName(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter") rename();
+              if (event.key === "Enter") void rename();
             }}
             sx={{ mt: 1 }}
           />

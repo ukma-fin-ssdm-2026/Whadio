@@ -214,7 +214,7 @@ export function WorkspaceFolders({
               setDraft((current) => (current ? { ...current, name: event.target.value } : current))
             }
             onKeyDown={(event) => {
-              if (event.key === "Enter") saveFolder();
+              if (event.key === "Enter") void saveFolder();
             }}
             sx={{ mt: 1 }}
           />
