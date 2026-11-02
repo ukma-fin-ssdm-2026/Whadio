@@ -3,7 +3,8 @@ import sys
 import zipfile
 from pathlib import Path
 
-DEV_ONLY_FILES = {"biome.jsonc"}
+DEV_ONLY_FILES = {"biome.jsonc", "vitest.config.mjs"}
+TEST_SUFFIX = ".test.js"
 
 
 def package(source: Path, destination: Path) -> Path:
@@ -14,7 +15,11 @@ def package(source: Path, destination: Path) -> Path:
             sys.exit("manifest.json has no version")
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
         for path in sorted(source.rglob("*")):
-            if path.is_file() and path.name not in DEV_ONLY_FILES:
+            if (
+                path.is_file()
+                and path.name not in DEV_ONLY_FILES
+                and not path.name.endswith(TEST_SUFFIX)
+            ):
                 bundle.write(path, path.relative_to(source))
     return archive
 

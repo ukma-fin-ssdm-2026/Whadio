@@ -108,6 +108,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: uv run --frozen task frontend:test
 
+      - name: Run the extension's tests
+        if: ${{ !cancelled() }}
+        run: uv run --frozen task extension:test
+
       - name: Build
         if: ${{ !cancelled() }}
         run: uv run --frozen task frontend:build

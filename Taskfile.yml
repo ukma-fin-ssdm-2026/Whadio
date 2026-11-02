@@ -43,6 +43,7 @@ tasks:
       - frontend:typecheck
       - frontend:test
       - frontend:build
+      - extension:test
       - test:cov
       - image
 
@@ -51,11 +52,17 @@ tasks:
     cmds:
       - uv run --frozen pytest {{.CLI_ARGS}}
       - task: frontend:test
+      - task: extension:test
 
   frontend:test:
     desc: Run the frontend's tests
     cmds:
       - npm --prefix frontend test
+
+  extension:test:
+    desc: Run the extension's tests with the frontend's Vitest
+    cmds:
+      - npm --prefix frontend run test:extension
 
   frontend:typecheck:
     desc: Check the frontend's types
