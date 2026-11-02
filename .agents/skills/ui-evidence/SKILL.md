@@ -47,19 +47,19 @@ Reuse a running server only if it serves your working tree. If a port is taken, 
 ## 3. Capture screens
 
 ```bash
-npm --prefix frontend run capture -- / /meetings --out .ui-evidence/<task>/after
+npm --prefix frontend run capture -- / /meetings --out <task>/after
 ```
 
 - It signs in as `ui-evidence@whadio.dev`, a development account it creates or updates with
-  `uv run whadio dev-user` under a fresh random password, which it never prints. `--signed-out`
-  skips the account, for `/sign-in`.
+  `whadio dev-user` from the project's `.venv` under a fresh random password, which it never
+  prints. `--signed-out` skips the account, for `/sign-in`.
 - It saves `<route>-<width>x<height>-<theme>.png` for every route at 1440 × 900 and 390 × 844, light
   and dark. `--viewport 1440x900` and `--theme dark` narrow that and repeat; `--full-page` captures
   below the fold.
 - Under each file it lists the page's console errors and warnings, uncaught exceptions and failed
   requests. At the end it names the session file that `playwright cli` can load.
-- `--base-url` points at another server (default `http://127.0.0.1:5173`). `--out` is relative to
-  the directory you run the command from.
+- `--base-url` points at another server (default `http://127.0.0.1:5173`). `--out` names a folder
+  inside `.ui-evidence/`, and the script refuses one outside it.
 
 The account starts with an empty personal workspace. Seed what the screen needs through the SPA in
 a CLI session (section 4) or through the API (`docs/api/api-design.md`), with made-up names and
@@ -68,7 +68,7 @@ text. An upload stays `queued` until the workers process it (`uv run task worker
 **Before and after.** For a change to an existing screen, capture the base branch as well: add a
 worktree of it (`git worktree add ../whadio-base origin/main`), run `npm ci` and the web app there
 on another port, and run the capture from your own checkout with `--base-url` at that port and
-`--out .ui-evidence/<task>/before`. Use the same routes and the same data.
+`--out <task>/before`. Use the same routes and the same data.
 
 ## 4. Flows and video
 

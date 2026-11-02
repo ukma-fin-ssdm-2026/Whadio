@@ -184,10 +184,10 @@ The web app has its own tests, in `frontend/`, next to the code they test. They 
 The tests above never draw a page. `npm run capture` in `frontend/` screenshots the running app with Playwright's own Chromium and lists each page's console errors and warnings, uncaught exceptions and failed requests. Install the browser once with `npx playwright install chromium` in `frontend/`, start the API and the web app (`AGENTS.md`, "Setup"), then run, from the repository root:
 
 ```bash
-npm --prefix frontend run capture -- / /meetings --out .ui-evidence/my-change
+npm --prefix frontend run capture -- / /meetings --out my-change
 ```
 
-It signs in as `ui-evidence@whadio.dev`, a development account it creates with `uv run whadio dev-user` under a fresh random password, and saves every route at 1440 × 900 and 390 × 844, light and dark. `--viewport`, `--theme`, `--full-page`, `--signed-out` and `--base-url` change that, and git ignores `.ui-evidence/`. The agent skill [`ui-evidence`](../../.agents/skills/ui-evidence/SKILL.md) adds before-and-after shots, multi-step flows and videos with `npx playwright cli`, and attaching them to an issue or a pull request.
+It signs in as `ui-evidence@whadio.dev`, a development account it creates with `whadio dev-user` from the project's `.venv` under a fresh random password, and saves every route at 1440 × 900 and 390 × 844, light and dark, in `.ui-evidence/my-change/`, which git ignores. `--viewport`, `--theme`, `--full-page`, `--signed-out` and `--base-url` change that. The agent skill [`ui-evidence`](../../.agents/skills/ui-evidence/SKILL.md) adds before-and-after shots, multi-step flows and videos with `npx playwright cli`, and attaching them to an issue or a pull request.
 
 ## AI Usage
 

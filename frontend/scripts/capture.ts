@@ -1,14 +1,20 @@
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { type Browser, chromium, type Page } from "playwright";
 
-const USAGE = `Usage: npm run capture -- <route>... --out <dir> [--base-url <url>]
+const USAGE = `Usage: npm run capture -- <route>... --out <folder in .ui-evidence> [--base-url <url>]
        [--viewport <WxH>]... [--theme light|dark]... [--full-page] [--signed-out]`;
 const REPO_ROOT = fileURLToPath(new URL("../..", import.meta.url));
+const EVIDENCE_ROOT = join(REPO_ROOT, ".ui-evidence");
+// The project's own entry point by absolute path, so no PATH lookup decides what runs.
+const WHADIO_CLI =
+  process.platform === "win32"
+    ? join(REPO_ROOT, ".venv", "Scripts", "whadio.exe")
+    : join(REPO_ROOT, ".venv", "bin", "whadio");
 const ACCOUNT = { email: "ui-evidence@whadio.dev", name: "UI Evidence" };
 const THEMES = ["light", "dark"] as const;
 
@@ -30,6 +36,12 @@ function parseTheme(value: string): Theme {
   return THEMES.find((theme) => theme === value) ?? fail(`Bad --theme "${value}"`);
 }
 
+function outputFolder(name: string) {
+  const folder = resolve(EVIDENCE_ROOT, name);
+  if (!folder.startsWith(EVIDENCE_ROOT + sep)) fail("--out must stay inside .ui-evidence/");
+  return folder;
+}
+
 function parseOptions() {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
@@ -46,8 +58,7 @@ function parseOptions() {
   if (values.out === undefined) fail("--out is required");
   return {
     routes: positionals,
-    // npm runs scripts from frontend/; INIT_CWD is where the command was typed.
-    out: resolve(process.env.INIT_CWD ?? process.cwd(), values.out),
+    out: outputFolder(values.out),
     baseUrl: values["base-url"],
     viewports: values.viewport.map(parseViewport),
     themes: values.theme.map(parseTheme),
@@ -59,23 +70,12 @@ function parseOptions() {
 function resetAccountPassword(): string {
   const password = randomBytes(18).toString("base64url");
   const result = spawnSync(
-    "uv",
-    [
-      "run",
-      "--frozen",
-      "whadio",
-      "dev-user",
-      "--email",
-      ACCOUNT.email,
-      "--name",
-      ACCOUNT.name,
-      "--password",
-      password,
-    ],
+    WHADIO_CLI,
+    ["dev-user", "--email", ACCOUNT.email, "--name", ACCOUNT.name, "--password", password],
     { cwd: REPO_ROOT, stdio: ["ignore", "ignore", "inherit"] },
   );
   if (result.status !== 0) {
-    fail(`whadio dev-user failed (${result.error?.message ?? `exit ${result.status}`})`);
+    fail(`${WHADIO_CLI} dev-user failed (${result.error?.message ?? `exit ${result.status}`})`);
   }
   return password;
 }
