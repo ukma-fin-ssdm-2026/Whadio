@@ -10,5 +10,11 @@ test("a workspace takes its role and member count from the summary", () => {
   const workspace = mapWorkspace(summary);
 
   // Assert
-  expect(workspace).toEqual({ id: "alpha", name: "Alpha", role: "Moderator", members: 2 });
+  expect(workspace).toEqual({
+    id: "alpha",
+    name: "Alpha",
+    role: "Moderator",
+    rawRole: "moderator",
+    members: 2,
+  });
 });

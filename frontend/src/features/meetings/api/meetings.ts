@@ -7,8 +7,8 @@ import {
 import { useEffect } from "react";
 import { apiClient } from "@/shared/api/client";
 import { ApiError } from "@/shared/api/errors";
-import type { Schemas } from "@/shared/api/types";
-import { unwrap } from "@/shared/api/unwrap";
+import type { MeetingUpdate, Schemas } from "@/shared/api/types";
+import { expectNoContent, unwrap } from "@/shared/api/unwrap";
 import { isInProgress, type Meeting, mapMeeting } from "../model";
 
 export const MEETINGS_PER_PAGE = 100;
@@ -24,12 +24,23 @@ const RECORDING_LINK_FRESH_MS = 4 * 60_000;
 const workspaceListsKey = (workspaceId: string) => ["meetings", "list", workspaceId] as const;
 const detailKey = (meetingId: string) => ["meetings", "detail", meetingId] as const;
 
-function fetchMeetingPage(workspaceId: string, name: string, cursor: string, signal: AbortSignal) {
+function fetchMeetingPage(
+  workspaceId: string,
+  name: string,
+  folderId: string | null,
+  cursor: string,
+  signal: AbortSignal,
+) {
   return unwrap(
     apiClient.GET("/api/v1/workspaces/{workspace_id}/meetings", {
       params: {
         path: { workspace_id: workspaceId },
-        query: { limit: MEETINGS_PER_PAGE, cursor: cursor || null, name: name || null },
+        query: {
+          limit: MEETINGS_PER_PAGE,
+          cursor: cursor || null,
+          folder_id: folderId,
+          name: name || null,
+        },
       },
       signal,
     }),
@@ -66,10 +77,11 @@ const pollWhileInProgress = (items: Pick<Schemas["MeetingSummary"], "processing_
   items.some((item) => isInProgress(item.processing_state)) ? POLL_INTERVAL_MS : false;
 
 export const meetingQueries = {
-  list: (workspaceId: string, name = "") =>
+  list: (workspaceId: string, name = "", folderId: string | null = null) =>
     infiniteQueryOptions({
-      queryKey: [...workspaceListsKey(workspaceId), "pages", { name }],
-      queryFn: ({ pageParam, signal }) => fetchMeetingPage(workspaceId, name, pageParam, signal),
+      queryKey: [...workspaceListsKey(workspaceId), "pages", { name, folderId }],
+      queryFn: ({ pageParam, signal }) =>
+        fetchMeetingPage(workspaceId, name, folderId, pageParam, signal),
       initialPageParam: FIRST_PAGE,
       getNextPageParam: ({ pagination }) => (pagination.has_more ? pagination.next_cursor : null),
       refetchInterval: ({ state }) =>
@@ -80,7 +92,7 @@ export const meetingQueries = {
   latest: (workspaceId: string, name = "") =>
     queryOptions({
       queryKey: [...workspaceListsKey(workspaceId), "latest", { name }],
-      queryFn: ({ signal }) => fetchMeetingPage(workspaceId, name, FIRST_PAGE, signal),
+      queryFn: ({ signal }) => fetchMeetingPage(workspaceId, name, null, FIRST_PAGE, signal),
       refetchInterval: ({ state }) => pollWhileInProgress(state.data?.items ?? []),
     }),
   detail: (meetingId: string) =>
@@ -171,6 +183,45 @@ export function useUploadMeeting(workspaceId: string) {
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: workspaceListsKey(workspaceId) });
+    },
+  });
+}
+
+export function useUpdateMeeting(meetingId: string, workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (changes: MeetingUpdate) =>
+      unwrap(
+        apiClient.PATCH("/api/v1/meetings/{meeting_id}", {
+          params: { path: { meeting_id: meetingId } },
+          body: changes,
+        }),
+      ),
+    onSuccess: async (meeting) => {
+      queryClient.setQueryData(meetingQueries.detail(meetingId).queryKey, meeting);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: workspaceListsKey(workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: ["folders", workspaceId] }),
+      ]);
+    },
+  });
+}
+
+export function useDeleteMeeting(meetingId: string, workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      expectNoContent(
+        apiClient.DELETE("/api/v1/meetings/{meeting_id}", {
+          params: { path: { meeting_id: meetingId } },
+        }),
+      ),
+    onSuccess: async () => {
+      queryClient.removeQueries({ queryKey: detailKey(meetingId) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: workspaceListsKey(workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: ["folders", workspaceId] }),
+      ]);
     },
   });
 }

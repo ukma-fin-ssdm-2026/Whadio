@@ -52,7 +52,7 @@ test("both list shapes sit under their workspace", () => {
 
   // Assert
   expect(keys).toEqual([
-    ["meetings", "list", "alpha", "pages", { name: "sync" }],
+    ["meetings", "list", "alpha", "pages", { name: "sync", folderId: null }],
     ["meetings", "list", "alpha", "latest", { name: "sync" }],
   ]);
 });

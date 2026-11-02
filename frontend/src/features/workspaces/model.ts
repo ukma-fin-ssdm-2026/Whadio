@@ -5,6 +5,7 @@ export interface Workspace {
   id: string;
   name: string;
   role: string;
+  rawRole: Schemas["Role"];
   members: number;
 }
 
@@ -13,6 +14,7 @@ export function mapWorkspace(item: Schemas["WorkspaceSummary"]): Workspace {
     id: item.id,
     name: item.name,
     role: titleCase(item.my_role),
+    rawRole: item.my_role,
     members: item.member_count,
   };
 }
