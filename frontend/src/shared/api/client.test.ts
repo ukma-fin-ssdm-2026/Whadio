@@ -26,6 +26,25 @@ describe("normalizeApiOrigin", () => {
     expect(origin).toBe("https://example.com/whadio");
   });
 
+  test("keeps slashes that are not trailing", () => {
+    // Act
+    const origin = normalizeApiOrigin("https://example.com/a//b");
+
+    // Assert
+    expect(origin).toBe("https://example.com/a//b");
+  });
+
+  test("removes a long trailing slash suffix in linear time", () => {
+    // Arrange
+    const configured = `https://api.example.com${"/".repeat(100_000)}`;
+
+    // Act
+    const origin = normalizeApiOrigin(configured);
+
+    // Assert
+    expect(origin).toBe("https://api.example.com");
+  });
+
   test.for(["", undefined])("treats %s as the page's own origin", (configured) => {
     // Act
     const origin = normalizeApiOrigin(configured);
