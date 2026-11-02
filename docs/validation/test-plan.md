@@ -11,7 +11,7 @@ This plan states when the recording-to-notes path of Whadio counts as verified.
 **Scope.** In scope: sign-in, operator-issued registration links and their completion through the API, uploading a recording, the processing pipeline from the queued job to
 the stored transcript and notes, access to restricted meetings over every content path, the audit
 log, exports, job monitoring, and reading results in the web app. Not tested here: features with
-no API yet (self-service email registration, membership changes and password reset in US-001, US-002 and
+no API yet (self-service email registration, member removal and role changes, and emailed password-reset requests in US-001, US-002 and
 US-020; notes regeneration, US-010; a workspace's own model provider, US-008; server load and model usage on the admin dashboard, US-019 Test-03); screens the web app
 does not have yet (registration, folders, transcript edits, shares, the glossary), so those are tested through the API
 and the user-action limits of NFR-005 and NFR-006 are not measured; the Chrome extension capture
@@ -65,7 +65,7 @@ speakers, preset sections, time). A pass in one never stands in for the other.
 | TC-MTG-02 | Meetings: accepting an upload | Integration | Positive | A supported file creates one `queued` meeting, a privately stored recording and one transcription job in the outbox; nothing is published inside the request. | Valeriia | US-004 (Test-01), NFR-014 | CI, exists |
 | TC-NFR-04 | Core features during a processing outage | Integration | Positive | The API runs with no processing integration and no storage, which is how it sees a stopped worker, broker or LLM runtime. 20 requests go to each function NFR-015 names: sign-in, the workspace list, the meeting list, a processed meeting's transcript, and the sharing settings (its access and its shares). At least 95% of each function's requests succeed; any response but `2xx` counts as a failure. Recovery after the restart is TC-PIPE-01 and TC-NFR-01. | Andrii | NFR-015 | CI, exists |
 | TC-AUD-01 | Audit: a change and its record | Unit | Positive | Renaming a meeting writes one audit event with the actor, the action and the meeting. | Denys | US-013, NFR-010 | CI, exists |
-| TC-AUD-02 | Audit: every NFR-010 change the API offers | Integration | Positive | Meeting creation, renames, moves, deletions and evictions, transcript edits and speaker renames, notes regeneration, restrictions and grants, shares, share-request decisions, workspace deletion and MCP key changes each write exactly one record (actor, action type, target, time) in the same transaction, which a failed write rolls back; `details` holds no transcript, notes or recording content. Membership changes and provider configuration have no API yet. | Denys | NFR-010 | CI, exists |
+| TC-AUD-02 | Audit: every NFR-010 change the API offers | Integration | Positive | Meeting creation, renames, moves, deletions and evictions, transcript edits and speaker renames, notes regeneration, restrictions and grants, shares, share-request decisions, workspace deletion and MCP key changes each write exactly one record (actor, action type, target, time) in the same transaction, which a failed write rolls back; `details` holds no transcript, notes or recording content. Joining through an invitation is audited under TC-INV-02; member removal, role changes and provider configuration have no API yet. | Denys | NFR-010 | CI, exists |
 | TC-AUD-03 | Audit: history cannot change | Integration | Negative | The application's database role cannot delete, update or truncate audit events, and an event survives its workspace's deletion. | Denys | NFR-010 | CI, exists |
 | TC-MTG-01 | Meetings: upload validation | Unit | Negative | Bytes that do not decode as audio are refused with `415`, and no meeting is created. | Valeriia | US-004 (Test-02) | CI, exists |
 | TC-NFR-02 | Meeting and workspace lists under load | System | Positive | k6, 50 virtual users for 30 s per list endpoint, one uvicorn worker: p95 at most 200 ms and no failed request, the API's share of NFR-001's 2-second page budget (QA-1). It does not time a page in the browser, so NFR-001 is covered only in part. | Zlata | NFR-001, US-013 | Manual, `tests/performance/test_lists.js` with k6 from its Docker image |
@@ -140,7 +140,8 @@ runs, and record each run in [Results](#results).
 ## AI Usage
 
 Drafted with Claude Code (Claude Opus 5.5) from Zlata's initial draft (OpenAI Codex) and the GPU
-machine runs, and checked against the code at `69d178d`. The team reviews it before merging.
+machine runs, and checked against the code at `69d178d`. The team reviews it before merging. Claude Code (Claude Opus 5.5)
+later narrowed the membership statements to what has no API at `bc3ec99`, for #257.
 
 The registration scope and TC-ACC-03 through TC-ACC-06 were drafted by Valeriia with OpenAI Codex.
 
