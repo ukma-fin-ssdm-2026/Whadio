@@ -1241,7 +1241,8 @@ item, so an item added or removed between two pages can shift the next page by o
 
 Transcription and notes run in workers, not in the request:
 - **Regenerating notes** answers `202 Accepted` with the queued job. Its `Location` points to
-  the meeting.
+  the meeting. *Designed; not implemented:* the endpoint answers `503 INTEGRATION_UNAVAILABLE`
+  (section 4.5).
 - **Completing a capture or uploading a file** creates the meeting in state `queued` at once.
 - **Clients poll the meeting** until `processing_state` becomes `processed` or `failed`
   (FR-014). The meeting's `failure_reason` gives the cause without content (FR-023).
@@ -1264,7 +1265,8 @@ Transcription and notes run in workers, not in the request:
 
 - **`201 Created`** with a `Location` header for every operation that creates a resource with
   its own URL.
-- **`202 Accepted`** where the work continues in a worker (section 6.7).
+- **`202 Accepted`** where the work continues in a worker (section 6.7). *Designed; not
+  implemented:* no built operation answers `202` yet.
 - **`204 No Content`** for deletions and sign-out.
 - **`200 OK`** for the action sub-resources (`…/cancel`, `…/approve`), which return the changed
   resource, and for replacing a pending invitation in place.
