@@ -1,6 +1,6 @@
 import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/shared/api/client";
-import type { WorkspaceUpdate } from "@/shared/api/types";
+import type { WorkspaceCreate, WorkspaceUpdate } from "@/shared/api/types";
 import { unwrap } from "@/shared/api/unwrap";
 import { mapWorkspace } from "../model";
 
@@ -24,6 +24,20 @@ export const workspaceQueries = {
         ),
     }),
 };
+
+export function useCreateWorkspace() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (workspace: WorkspaceCreate) =>
+      unwrap(apiClient.POST("/api/v1/workspaces", { body: workspace })),
+    onSuccess: (workspace) => {
+      queryClient.setQueryData(workspaceQueries.detail(workspace.id).queryKey, workspace);
+      queryClient.setQueryData(workspaceQueries.list().queryKey, (current) =>
+        current ? { ...current, items: [...current.items, workspace] } : current,
+      );
+    },
+  });
+}
 
 export function useUpdateWorkspace(workspaceId: string) {
   const queryClient = useQueryClient();

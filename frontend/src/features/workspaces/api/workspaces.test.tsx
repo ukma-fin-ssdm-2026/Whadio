@@ -4,7 +4,7 @@ import { expect, test } from "vitest";
 import { page, workspaceRead, workspaceSummary } from "@/shared/testing/fixtures";
 import { createTestQueryClient, TestProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
-import { useUpdateWorkspace, workspaceQueries } from "./workspaces";
+import { useCreateWorkspace, useUpdateWorkspace, workspaceQueries } from "./workspaces";
 
 const UPDATED = workspaceRead({ default_preset: "interview" });
 
@@ -39,6 +39,25 @@ test("workspace keys share the workspaces domain", () => {
     ["workspaces", "list"],
     ["workspaces", "detail", "alpha"],
   ]);
+});
+
+test("creating a workspace adds the server copy to the list immediately", async () => {
+  // Arrange
+  const queryClient = createTestQueryClient();
+  queryClient.setQueryData(workspaceQueries.list().queryKey, page([workspaceSummary()]));
+  server.use(http.post("/api/v1/workspaces", ({ response }) => response(201).json(UPDATED)));
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <TestProviders queryClient={queryClient}>{children}</TestProviders>
+  );
+  const { result } = renderHook(() => useCreateWorkspace(), { wrapper });
+
+  // Act
+  await result.current.mutateAsync({ name: "Demo Workspace", default_preset: "interview" });
+
+  // Assert
+  expect(queryClient.getQueryData(workspaceQueries.list().queryKey)).toEqual(
+    page([workspaceSummary(), UPDATED]),
+  );
 });
 
 test("updating a workspace sends only the changes", async () => {
