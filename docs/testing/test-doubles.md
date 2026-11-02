@@ -22,10 +22,10 @@ fake when a test checks only the result, and a mock when the test asserts on the
 | Broker, in integration tests | None: the Compose stack's RabbitMQ, reached through the `rabbitmq_settings` fixture | (real) | `conftest.py` |
 | Clock | `FixedClock`, a callable for the `now: Callable[[], datetime]` parameters, with `advance()`; `NOW`, the canonical instant | stub | `src/whadio/shared/fakes.py`, `conftest.py` |
 | Audit log | `RecordingAuditWriter`, an `IContentAuditWriter` that keeps the events written | mock | `src/whadio/audit/fakes.py` |
-| LLM (Anthropic) | `_Model` and `_FixedModel`, which return a fixed answer; `httpx2.MockTransport` under `ClaudeChatModel` | stub | `src/whadio/workers/notes/test_handler.py`, `test_main.py`, `test_claude.py` |
-| LLM, shared | `ScriptedChatModel` (**planned**, in a later PR with the chunked notes) | stub | `src/whadio/workers/notes/` |
+| LLM (Anthropic, Ollama) | `httpx2.MockTransport` under `ClaudeChatModel` and `OllamaChatModel` | stub | `src/whadio/workers/notes/test_claude.py`, `test_ollama.py` |
+| LLM, shared | `ScriptedChatModel`, an `IChatModel` that returns its scripted answers in order and keeps the prompts | stub; mock when a test asserts on `prompts` | `src/whadio/workers/notes/fakes.py` |
 | The REST API, in the frontend's tests | A Mock Service Worker `server` with handlers typed from the OpenAPI types | stub; mock when a test asserts on the requests `serveApi` recorded | `frontend/src/shared/testing/server.ts`, `frontend/src/app/testing.tsx` |
-| SMTP | A recording mail sender (**planned**, in the Notifications PR) | mock | `src/whadio/notifications/` |
+| SMTP | `RecordingMailSender`, an `IMailSender` that keeps the mail sent and can be set to fail | mock | `src/whadio/notifications/fakes.py` |
 | Password hasher | None: the real `Argon2PasswordHasher` | (real) | `src/whadio/accounts/passwords.py` |
 
 ## Using the shared doubles
@@ -63,4 +63,4 @@ builders now share the double they had in common, `RecordingAuditWriter`.
 
 ## AI Usage
 
-Prepared with Claude Code (Claude Opus 5.5); reviewed by Andrii Shalaiev.
+Prepared with Claude Code (Claude Opus 5.5); reviewed by Andrii Shalaiev. Claude Code (Claude Opus 5.5) later matched the LLM and SMTP rows to the code for #257.

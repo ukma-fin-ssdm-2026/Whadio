@@ -26,8 +26,8 @@ uv run --frozen pytest -q -m "not slow"
 | Strict `<` before injection | 460 passed, 321 slow tests deselected |
 | Injected `<=` | 2 failed, 458 passed, 321 slow tests deselected |
 
-[`test_retryable_failure_past_the_attempt_limit_fails_the_meeting`](../../src/whadio/processing/test_services.py#L845) reports `QUEUED` instead of `FAILED`.
-[`test_job_at_the_attempt_limit_is_not_published_again`](../../src/whadio/processing/test_services.py#L819) reports an unexpected request instead of an empty publication list.
+[`test_retryable_failure_past_the_attempt_limit_fails_the_meeting`](https://github.com/ukma-fin-ssdm-2026/Whadio/blob/8af7427f9746359d304f47e32da85d924b60799a/src/whadio/processing/test_services.py#L883) reports `QUEUED` instead of `FAILED`.
+[`test_job_at_the_attempt_limit_is_not_published_again`](https://github.com/ukma-fin-ssdm-2026/Whadio/blob/8af7427f9746359d304f47e32da85d924b60799a/src/whadio/processing/test_services.py#L857) reports an unexpected request instead of an empty publication list.
 
 ## Cause
 
@@ -41,7 +41,7 @@ decision without involving a database, broker or GPU worker.
 
 ### 3. Diagnose
 
-[`ProcessingService._failed`](../../src/whadio/processing/services.py#L289)
+[`ProcessingService._failed`](https://github.com/ukma-fin-ssdm-2026/Whadio/blob/8af7427f9746359d304f47e32da85d924b60799a/src/whadio/processing/services.py#L300)
 chooses whether to retry the job or mark it as failed. The injected change was:
 
 ```diff
@@ -67,9 +67,9 @@ check whether another request is published at each boundary point:
 
 | Attempts consumed | Expected publication | Regression test |
 |---|---|---|
-| `MAX_ATTEMPTS - 1` (4) | Publish the same job again | [`test_retryable_failure_one_attempt_before_the_limit_publishes_the_job_again`](../../src/whadio/processing/test_services.py#L806) |
-| `MAX_ATTEMPTS` (5) | Publish nothing | [`test_job_at_the_attempt_limit_is_not_published_again`](../../src/whadio/processing/test_services.py#L819) |
-| `MAX_ATTEMPTS + 1` (6) | Publish nothing | [`test_job_above_the_attempt_limit_is_not_published_again`](../../src/whadio/processing/test_services.py#L832) |
+| `MAX_ATTEMPTS - 1` (4) | Publish the same job again | [`test_retryable_failure_one_attempt_before_the_limit_publishes_the_job_again`](https://github.com/ukma-fin-ssdm-2026/Whadio/blob/8af7427f9746359d304f47e32da85d924b60799a/src/whadio/processing/test_services.py#L844) |
+| `MAX_ATTEMPTS` (5) | Publish nothing | [`test_job_at_the_attempt_limit_is_not_published_again`](https://github.com/ukma-fin-ssdm-2026/Whadio/blob/8af7427f9746359d304f47e32da85d924b60799a/src/whadio/processing/test_services.py#L857) |
+| `MAX_ATTEMPTS + 1` (6) | Publish nothing | [`test_job_above_the_attempt_limit_is_not_published_again`](https://github.com/ukma-fin-ssdm-2026/Whadio/blob/8af7427f9746359d304f47e32da85d924b60799a/src/whadio/processing/test_services.py#L870) |
 
 The below-limit test also failed when the condition was changed to
 `job.attempts < MAX_ATTEMPTS - 1`. That fault stops retries one attempt too early and was not
@@ -87,3 +87,4 @@ attempt. We will check both the meeting's state and whether another worker reque
 Claude Code was used for the original exercise, checked by Denys Zabiiaka.
 OpenAI Codex revised this log, added the boundary tests and ran the verification reported here.
 Valeriia Missirova is responsible for reviewing the results and for the document.
+Claude Code (Claude Opus 5.5) pinned the code links to commit `8af7427`, which added this log, for #257.
