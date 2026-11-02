@@ -249,6 +249,7 @@ export function WorkspaceFolders({
         open={deletedFolder !== null}
         autoHideDuration={8000}
         onClose={() => setDeletedFolder(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
         message="Folder deleted. Its meetings moved to the default folder."
         action={
           <Button color="inherit" loading={restoreFolder.isPending} onClick={restore}>

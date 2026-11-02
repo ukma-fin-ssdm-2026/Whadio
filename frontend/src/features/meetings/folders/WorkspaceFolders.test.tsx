@@ -177,6 +177,25 @@ test("deleted folders can be restored with Undo", async () => {
   expect(restore).toHaveBeenCalledOnce();
 });
 
+test("the folder deletion notice is centred", async () => {
+  // Arrange
+  server.use(
+    http.delete("/api/v1/workspaces/{workspace_id}/folders/{folder_id}", ({ response }) =>
+      response(204).empty(),
+    ),
+  );
+  const user = await openPlanningMenu();
+  await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Delete folder" }));
+
+  // Assert
+  expect(screen.getByText(/folder deleted/i).closest(".MuiSnackbar-root")).toHaveClass(
+    "MuiSnackbar-anchorOriginBottomCenter",
+  );
+});
+
 test.for([
   ["FOLDER_EXISTS", /folder with this name already exists/i],
   ["FOLDER_RECOVERY_CONFLICT", /meetings have changed since deletion/i],
