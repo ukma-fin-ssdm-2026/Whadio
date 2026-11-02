@@ -40,7 +40,7 @@ ASR, and an optional Ollama profile supplies the built-in notes model.
 
 ## Quality evidence
 
-- The latest committed [coverage report](../../htmlcov/index.html) comes from successful
+- The last committed [coverage report](https://github.com/ukma-fin-ssdm-2026/Whadio/tree/649377738acbd740ec84f26e77d2fd99aa22259b/htmlcov) comes from successful
   [CI run 41335159391](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/41335159391)
   at `3242e59` on 2026-11-01: 92.42% combined line and branch coverage.
 - The [test plan](../validation/test-plan.md#results) records the full CI suite, CPU/CUDA ASR,

@@ -119,7 +119,9 @@ The HTML report colours each line green (run) or red (not run). The Lab 6
 and [`htmlcov/`](https://github.com/ukma-fin-ssdm-2026/Whadio/tree/lab06-g5-deadline-2026-10-20/htmlcov)
 snapshots are preserved at tag `lab06-g5-deadline-2026-10-20`. They, and the before-and-after
 figures below, were measured before coverage followed greenlets, so they undercount the
-database-backed modules. The repository's `htmlcov/` is the midterm snapshot of 2026-11-01. CI
+database-backed modules. The midterm snapshot of 2026-11-01 is the
+[`htmlcov/`](https://github.com/ukma-fin-ssdm-2026/Whadio/tree/649377738acbd740ec84f26e77d2fd99aa22259b/htmlcov) of `6493777`, the
+last commit that kept the report in the repository. CI
 writes a fresh report on every run and uploads it with the JUnit XML as the `test-reports`
 artifact, and the job summary shows the coverage table and the failed tests.
 
