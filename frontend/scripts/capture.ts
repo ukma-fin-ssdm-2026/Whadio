@@ -36,10 +36,13 @@ function parseTheme(value: string): Theme {
   return THEMES.find((theme) => theme === value) ?? fail(`Bad --theme "${value}"`);
 }
 
-function outputFolder(name: string) {
+function createOutputFolder(name: string) {
   const folder = resolve(EVIDENCE_ROOT, name);
-  if (!folder.startsWith(EVIDENCE_ROOT + sep)) fail("--out must stay inside .ui-evidence/");
-  return folder;
+  if (folder.startsWith(EVIDENCE_ROOT + sep)) {
+    mkdirSync(folder, { recursive: true });
+    return folder;
+  }
+  return fail("--out must stay inside .ui-evidence/");
 }
 
 function parseOptions() {
@@ -58,7 +61,7 @@ function parseOptions() {
   if (values.out === undefined) fail("--out is required");
   return {
     routes: positionals,
-    out: outputFolder(values.out),
+    out: values.out,
     baseUrl: values["base-url"],
     viewports: values.viewport.map(parseViewport),
     themes: values.theme.map(parseTheme),
@@ -115,8 +118,8 @@ function slug(route: string) {
 }
 
 const options = parseOptions();
-mkdirSync(options.out, { recursive: true });
-const statePath = join(options.out, "session.json");
+const out = createOutputFolder(options.out);
+const statePath = join(out, "session.json");
 const password = options.signedOut ? undefined : resetAccountPassword();
 const browser = await chromium.launch();
 try {
@@ -130,10 +133,7 @@ try {
         storageState: password === undefined ? undefined : statePath,
       });
       for (const route of options.routes) {
-        const file = join(
-          options.out,
-          `${slug(route)}-${viewport.width}x${viewport.height}-${theme}.png`,
-        );
+        const file = join(out, `${slug(route)}-${viewport.width}x${viewport.height}-${theme}.png`);
         const page = await context.newPage();
         const problems = await capture(
           page,
