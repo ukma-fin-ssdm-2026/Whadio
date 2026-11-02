@@ -67,7 +67,7 @@ never bypassed ad hoc.
 
 This strategy was prepared with OpenAI Codex from the requirements, threat model, quality
 attributes, current tests, coverage report and CI configuration. Zlata owns the decisions, reviewed
-the targets and is responsible for the final document. Claude Code (Claude Opus 5.5) later put the
+the targets and is responsible for the final document. Claude Code later put the
 property-based testing and CI report statements in the present tense for #257.
 
 ## Бонуси

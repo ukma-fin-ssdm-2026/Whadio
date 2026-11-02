@@ -63,4 +63,4 @@ builders now share the double they had in common, `RecordingAuditWriter`.
 
 ## AI Usage
 
-Prepared with Claude Code (Claude Opus 5.5); reviewed by Andrii Shalaiev. Claude Code (Claude Opus 5.5) later matched the LLM and SMTP rows to the code for #257.
+Prepared with Claude Code (Claude Opus 5.5); reviewed by Andrii Shalaiev. Claude Code later matched the LLM and SMTP rows to the code for #257.

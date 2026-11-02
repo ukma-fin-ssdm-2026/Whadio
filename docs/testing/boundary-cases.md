@@ -89,4 +89,4 @@ Every other limit sits where its declaration says. Three behaviours are worth kn
 
 ## AI Usage
 
-Drafted with Claude Code (Claude Opus 5.5); checked by Andrii Shalaiev. Claude Code (Claude Opus 5.5) later updated the password-length note for #257.
+Drafted with Claude Code (Claude Opus 5.5); checked by Andrii Shalaiev. Claude Code later updated the password-length note for #257.

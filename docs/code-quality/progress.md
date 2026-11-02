@@ -63,5 +63,5 @@ ASR, and an optional Ollama profile supplies the built-in notes model.
 The original document was drafted with Claude Code (Claude Opus 5.5). OpenAI Codex updated the
 2026-11-01 status from the repository, generated OpenAPI specification, CI coverage artifact and
 test-plan evidence. Andrii Shalaiev checked the feature statuses and evidence against the code,
-test plan and CI artifact in pull request #255. Claude Code (Claude Opus 5.5) linked the
+test plan and CI artifact in pull request #255. Claude Code linked the
 published midterm demo video for #257.

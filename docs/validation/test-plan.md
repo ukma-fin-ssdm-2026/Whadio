@@ -140,7 +140,7 @@ runs, and record each run in [Results](#results).
 ## AI Usage
 
 Drafted with Claude Code (Claude Opus 5.5) from Zlata's initial draft (OpenAI Codex) and the GPU
-machine runs, and checked against the code at `69d178d`. The team reviews it before merging. Claude Code (Claude Opus 5.5)
+machine runs, and checked against the code at `69d178d`. The team reviews it before merging. Claude Code
 later narrowed the membership statements to what has no API at `bc3ec99`, for #257.
 
 The registration scope and TC-ACC-03 through TC-ACC-06 were drafted by Valeriia with OpenAI Codex.

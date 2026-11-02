@@ -87,4 +87,4 @@ attempt. We will check both the meeting's state and whether another worker reque
 Claude Code was used for the original exercise, checked by Denys Zabiiaka.
 OpenAI Codex revised this log, added the boundary tests and ran the verification reported here.
 Valeriia Missirova is responsible for reviewing the results and for the document.
-Claude Code (Claude Opus 5.5) pinned the code links to commit `8af7427`, which added this log, for #257.
+Claude Code pinned the code links to commit `8af7427`, which added this log, for #257.

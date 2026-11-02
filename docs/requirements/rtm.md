@@ -47,5 +47,5 @@ The US-001 registration mappings were updated with OpenAI Codex and reviewed by 
 The NFR-014 planned-CI and manual-run evidence was aligned with the test plan by OpenAI Codex.
 Andrii Shalaiev checked the mappings and status markers against the test plan in pull request #255.
 
-Claude Code (Claude Opus 5.5) updated the US-005, US-013, US-016 and NFR-010 coverage notes to
+Claude Code updated the US-005, US-013, US-016 and NFR-010 coverage notes to
 match the code at `bc3ec99`, for #257.

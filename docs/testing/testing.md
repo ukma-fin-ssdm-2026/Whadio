@@ -181,4 +181,4 @@ The web app has its own tests, in `frontend/`, next to the code they test. They 
 
 ## AI Usage
 
-The tests, the coverage runs and this document were made with Claude Code (Claude Opus 5.5); checked by Denys Zabiiaka. Claude Code (Claude Opus 5.5) later matched its status statements to the code for #257.
+The tests, the coverage runs and this document were made with Claude Code (Claude Opus 5.5); checked by Denys Zabiiaka. Claude Code later matched its status statements to the code for #257.
