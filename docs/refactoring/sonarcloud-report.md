@@ -39,7 +39,7 @@ Four open security findings cause the rating:
 
 The remediation and false-positive review are tracked in [issue #167](https://github.com/ukma-fin-ssdm-2026/Whadio/issues/167).
 They are also connected to the [static-analysis findings](../code-quality/static-analysis.md) and
-the threat model's [R-11 STARTTLS control](../architecture/threat-model.md#risk-register).
+the threat model's [R-11 STARTTLS control](../architecture/threat-model.md#identified-risks).
 
 ### Why Reliability Rating remains E
 
@@ -54,6 +54,8 @@ therefore Reliability is recorded only as a reference metric for this refactorin
 ### Before: `main` at `bc3ec99`
 
 ![SonarQube Cloud dashboard before refactoring](sonarcloud-before.png)
+
+The baseline Measures view shows one maintainability issue in `frontend` and 20 minutes of debt.
 
 ### After: PR #267 analysis preview
 
