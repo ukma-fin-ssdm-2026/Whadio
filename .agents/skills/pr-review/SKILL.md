@@ -44,8 +44,10 @@ gh issue view <issue>
   project"), recent commits on the pull request's base (`baseRefName`: `main`, or the parent pull
   request's branch when stacked) that touch the same files
   (`git log --oneline -5 origin/<base> -- <paths>`), and other open pull requests on them.
-- **Earlier reviews:** open threads and whether the author answered them
-  (`gh api repos/{owner}/{repo}/pulls/<n>/comments`).
+- **Earlier reviews:** each review's state and summary and the conversation
+  (`gh pr view <n> --json reviews,comments`), then the inline threads and whether the author
+  answered them (`gh api repos/{owner}/{repo}/pulls/<n>/comments`, which holds inline comments
+  only).
 
 Report this in about 15 lines, then wait. The reviewer may narrow the review or stop it here.
 
