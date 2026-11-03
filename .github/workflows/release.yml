@@ -40,6 +40,24 @@ jobs:
     outputs:
       release: ${{ steps.commit.outputs.release }}
     steps:
+      # The self-hosted runners' image has no GitHub CLI; the other jobs reuse this step. It goes to
+      # /usr/local/bin because zizmor forbids GITHUB_PATH writes in a workflow_run workflow.
+      - &install-gh
+        name: Install the GitHub CLI
+        env:
+          GH_VERSION: 2.102.1
+          GH_SHA256: 77b9e297e94c50336823d0f84de7ef1be60cba704601fa0d98f129f47a94987b
+        run: |
+          if command -v gh > /dev/null; then
+            exit 0
+          fi
+          archive="gh_${GH_VERSION}_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location --output "${RUNNER_TEMP}/${archive}" \
+            "https://github.com/cli/cli/releases/download/v${GH_VERSION}/${archive}"
+          echo "${GH_SHA256}  ${RUNNER_TEMP}/${archive}" | sha256sum --check --quiet
+          tar --extract --gzip --file "${RUNNER_TEMP}/${archive}" --directory "$RUNNER_TEMP"
+          sudo install --mode 0755 "${RUNNER_TEMP}/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
+
       - name: Check where the pushed commit came from
         id: commit
         env:
@@ -70,6 +88,8 @@ jobs:
       group: release-prepare
       cancel-in-progress: true
     steps:
+      - *install-gh
+
       - name: Get a token for the release app
         id: app
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
@@ -146,6 +166,8 @@ jobs:
     concurrency:
       group: release-merge
     steps:
+      - *install-gh
+
       - name: Get a token for the release app
         id: app
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
@@ -187,6 +209,8 @@ jobs:
     runs-on: [self-hosted, linux]
     environment: release
     steps:
+      - *install-gh
+
       - name: Get a token for the release app
         id: app
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
