@@ -4,6 +4,12 @@ All notable changes to Whadio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-11-03
+
+### Added
+
+- Add workspace creation to the web app ([#258](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/258))
+
 ## [0.2.1] - 2026-11-03
 
 ### Refactoring
