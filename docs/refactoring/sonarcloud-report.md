@@ -224,7 +224,8 @@ The PR dashboard shows a passed Quality Gate, zero new issues, and zero new dupl
   Each handler has a Cognitive Complexity of at most 1, and the shared card steps live in one place.
 - Proving tests: `extension/recorder.test.js`.
   - Before this refactoring, the file had no tests. 14 characterization tests were committed first,
-    on the unchanged code, and pass unchanged after it.
+    on the unchanged code, and pass after it. Review strengthened the `stopped` test, which also
+    passes on the original code.
   - A mutation check showed they are not vacuous: switching to `localeCompare`, dropping the
     `show-error` text, the `stopped` handling, the `stop` answer or the page port each turned at
     least one test red. One mutation survived: removing the `dismissed` reset from `ask-sign-in`,
