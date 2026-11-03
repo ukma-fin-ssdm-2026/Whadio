@@ -126,7 +126,7 @@ the hooks only catch the cheap mistakes first, and stay within a time budget:
 | When | Budget | What runs |
 |---|---|---|
 | `git commit` | 3 s | Branch name, file hygiene, gitleaks on the staged diff, `uv lock --check`, `ruff check --fix` and `ruff format` on the whole project, Biome on the frontend and the extension, the suppression ban, typos, schema and workflow checks, import-linter and ty. The commit message is checked last. |
-| `git push` | 12 s | Only what the push changes: `uv run task test:fast` for the backend; `tsc` and the Vitest tests the branch can affect for the frontend; the OpenAPI drift check for `src/whadio/api/`; the API-types and route-tree drift checks for the frontend. |
+| `git push` | 12 s | Only what the push changes: `uv run task test:fast` for the backend; `tsc` and the Vitest tests the branch can affect for the frontend; the extension's Vitest tests for `extension/`; the OpenAPI drift check for `src/whadio/api/`; the API-types and route-tree drift checks for the frontend. |
 | CI | none | Everything below, on every pull request and on `main`. |
 
 CI runs these jobs in parallel, and every job and hook runs to the end, so one failure hides no
