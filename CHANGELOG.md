@@ -4,6 +4,12 @@ All notable changes to Whadio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-11-03
+
+### Added
+
+- Add the ui-evidence agent skill and a capture script ([#268](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/268))
+
 ## [0.1.2] - 2026-11-03
 
 ### Refactoring
