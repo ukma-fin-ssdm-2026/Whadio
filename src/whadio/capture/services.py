@@ -241,7 +241,7 @@ class CaptureService:
             try:
                 await asyncio.shield(assembly)
             except asyncio.CancelledError as cancelled:
-                # A thread cannot be cancelled: finish its upload before deleting the object.
+                # A repeated cancellation can interrupt this wait for assembly.
                 try:
                     await assembly
                 finally:

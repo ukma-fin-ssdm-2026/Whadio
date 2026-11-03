@@ -500,34 +500,42 @@ def test_completion_creates_its_temporary_file_outside_the_event_loop(
     complete(setup, capture_id, 0)
 
     # Assert
-    assert len(file_threads) == 1
-    assert file_threads[0] != loop_thread
+    assert [thread == loop_thread for thread in file_threads] == [False]
 
 
-def test_cancelled_completion_waits_for_upload_before_cleanup(
+def test_cancelled_completion_leaves_no_assembled_recording(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Arrange
     setup = fixture()
     capture_id = started(setup).capture_id
     upload(setup, capture_id, 0, b"head")
-    entered, release = Event(), Event()
+    entered, release, deleted = Event(), Event(), Event()
+    operations: list[str] = []
     original_put = setup.storage.put
+    original_delete = setup.storage.delete
 
     def blocked_put(key: str, data: BinaryIO, *, content_type: str) -> None:
         entered.set()
         if not release.wait(timeout=5):
             raise TimeoutError("Test did not release upload")
         original_put(key, data, content_type=content_type)
+        operations.append("upload")
+
+    def recording_delete(key: str) -> None:
+        operations.append("delete")
+        original_delete(key)
+        deleted.set()
 
     monkeypatch.setattr(setup.storage, "put", blocked_put)
+    monkeypatch.setattr(setup.storage, "delete", recording_delete)
 
     async def cancel_upload() -> None:
         task = asyncio.create_task(setup.service.complete(USER, capture_id, 0, NOW))
         try:
             assert await asyncio.to_thread(entered.wait, 5)
             task.cancel()
-            await asyncio.sleep(0)
+            await asyncio.to_thread(deleted.wait, 0.2)
         finally:
             release.set()
         with pytest.raises(asyncio.CancelledError):
@@ -537,7 +545,13 @@ def test_cancelled_completion_waits_for_upload_before_cleanup(
     asyncio.run(cancel_upload())
 
     # Assert
-    assert (list(setup.storage.objects), setup.meetings.attached, setup.queue.queued) == (
+    assert (
+        operations,
+        list(setup.storage.objects),
+        setup.meetings.attached,
+        setup.queue.queued,
+    ) == (
+        ["upload", "delete"],
         [f"captures/{capture_id}/0"],
         [],
         [],
