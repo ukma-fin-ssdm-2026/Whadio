@@ -13,8 +13,8 @@ the stored transcript and notes, access to restricted meetings over every conten
 log, exports, job monitoring, and reading results in the web app. Not tested here: features with
 no API yet (self-service email registration, membership changes and password reset in US-001, US-002 and
 US-020; notes regeneration, US-010; a workspace's own model provider, US-008; server load and model usage on the admin dashboard, US-019 Test-03); screens the web app
-does not have yet (registration, folders, transcript edits, shares, the glossary), so those are tested through the API
-and the user-action limits of NFR-005 and NFR-006 are not measured; the Chrome extension capture
+does not have yet (registration, transcript edits, shares, the glossary), so those are tested through the API;
+the user-action limits of NFR-005 and NFR-006 are not measured; the Chrome extension capture
 (US-003, NFR-004); recognition quality scores (WER needs a reference corpus we do not have); real
 models or paid services in CI.
 
@@ -77,6 +77,8 @@ speakers, preset sections, time). A pass in one never stands in for the other.
 | TC-EDIT-01 | Meetings: transcript edits | Integration | Positive | Editing text or a speaker name makes a new revision marked edited; the original and the earlier revisions stay readable and cannot be relabelled; an edit of a stale revision is refused. | Valeriia | US-005 (Test-03), US-011 (Test-03), NFR-011 | CI, exists |
 | TC-EXP-01 | Export: transcript and notes files | Unit | Positive | The current transcript exports with its corrections and says it was edited, the original never does; Markdown can leave out timestamps; a notes export exists only once notes do; every file carries the sharing notice and the Whadio attribution. | Valeriia | US-017 (Test-01 to Test-05), US-011 (Test-04), NFR-011 | CI, exists |
 | TC-FLD-01 | Meetings: folders | Integration | Positive | Deleting a folder moves its meetings, with their recording, transcript, notes and grants, to the default folder; a meeting cannot move to another workspace's folder; a Member cannot delete someone else's meeting. | Valeriia | US-014 (Test-02 to Test-04) | CI, exists |
+| TC-FLD-02 | Web app: folders and meeting actions | Unit | Positive, Negative | Vitest with Testing Library and a mocked API: only a Moderator or Owner is offered folder management, and the default folder no delete; an empty, blank or over-100-character folder name, or a meeting name over 200, is refused without a request, and a taken folder name on its field; deleting a folder explains where its meetings go, and Undo restores that folder, survives a click elsewhere and can be retried after `FOLDER_EXISTS`; renaming a meeting offers only its name; deletion is offered to the recorder, a Moderator and the Owner and needs confirmation; the folder stays in the URL; each change refreshes its workspace's meeting and folder lists. | Zlata | US-013 (Test-05), US-014 (Test-02, Test-04 web app), NFR-005 | CI, exists |
+| TC-LIB-01 | Web app: the meeting library | Unit | Positive, Negative | Vitest with Testing Library and a mocked API: a workspace without meetings says so; the name filter reaches the server once typing settles and a filter that matches nothing says so; a folder lists only its meetings. | Zlata | US-013 (Test-01, Test-04 name filter) | CI, exists |
 | TC-CTX-01 | Notes context from the folder | Integration | Positive | A notes job carries the folder's other processed meetings that are not restricted, the notes record the meetings they used, and a meeting alone in its folder still gets notes. | Valeriia | US-007 (Test-01 to Test-04) | CI, exists |
 | TC-PRE-01 | Notes presets: the prompt stays private | Unit | Negative | Creating or updating a workspace refuses a `prompt` field, and the import-linter contract "Runtimes are independent of each other" keeps the API from importing the notes worker, where the prompts live. | Andrii | US-006 (Test-03) | CI, exists |
 | TC-GLO-01 | Meetings: workspace glossary | Integration | Positive | Terms are kept per workspace, a term differing only in case is refused, and the next transcription job hands the glossary to the recognizer. | Valeriia | US-012 (Test-01 to Test-03) | CI, exists |
@@ -143,6 +145,9 @@ Drafted with Claude Code (Claude Opus 5.5) from Zlata's initial draft (OpenAI Co
 machine runs, and checked against the code at `69d178d`. The team reviews it before merging.
 
 The registration scope and TC-ACC-03 through TC-ACC-06 were drafted by Valeriia with OpenAI Codex.
+
+TC-FLD-02 and TC-LIB-01 were written with Claude Code (Claude Opus 5.5) after review in pull request
+#259, from tests Zlata wrote with OpenAI Codex.
 
 ## Бонуси
 
