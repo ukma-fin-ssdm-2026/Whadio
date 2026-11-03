@@ -7,6 +7,7 @@ import {
   Stack,
 } from "@mui/material";
 import type { ReactNode } from "react";
+import { titleCase } from "@/shared/lib/format";
 import { countOf } from "@/shared/lib/plural";
 import { ListPanel } from "@/shared/ui/ListPanel";
 import { SectionHeader } from "@/shared/ui/SectionHeader";
@@ -38,7 +39,7 @@ export function HomeView({ workspaces, renderMeetingFigures, onWorkspace }: Home
                 primary={workspace.name}
                 secondary={
                   <>
-                    {workspace.role} · {countOf(workspace.members, "member")} ·{" "}
+                    {titleCase(workspace.role)} · {countOf(workspace.members, "member")} ·{" "}
                     {renderMeetingFigures(workspace.id)}
                   </>
                 }

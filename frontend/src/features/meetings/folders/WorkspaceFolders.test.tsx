@@ -1,5 +1,5 @@
-import { screen } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
+import { screen, waitFor, waitForElementToBeRemoved } from "@testing-library/react";
+import { describe, expect, test, vi } from "vitest";
 import type { Schemas } from "@/shared/api/types";
 import { errorBody } from "@/shared/testing/fixtures";
 import { renderWithProviders } from "@/shared/testing/render";
@@ -39,6 +39,72 @@ async function openPlanningMenu() {
   return user;
 }
 
+function serveCreate() {
+  const bodies: unknown[] = [];
+  server.use(
+    http.post("/api/v1/workspaces/{workspace_id}/folders", async ({ request, response }) => {
+      bodies.push(await request.json());
+      return response(201).json({
+        id: "research",
+        name: "Research",
+        is_default: false,
+        meeting_count: 0,
+      });
+    }),
+  );
+  return bodies;
+}
+
+function refuseCreate() {
+  server.use(
+    http.post("/api/v1/workspaces/{workspace_id}/folders", ({ response }) =>
+      response(409).json(errorBody("FOLDER_EXISTS", "Folder exists")),
+    ),
+  );
+}
+
+async function createFolder(name: string) {
+  const { user } = renderFolders();
+  await user.click(screen.getByRole("button", { name: "New folder" }));
+  if (name) await user.type(screen.getByLabelText("Folder name"), name);
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  return user;
+}
+
+function serveDelete() {
+  server.use(
+    http.delete("/api/v1/workspaces/{workspace_id}/folders/{folder_id}", ({ response }) =>
+      response(204).empty(),
+    ),
+  );
+}
+
+function serveRestore(answer: (attempt: number) => "restored" | "exists" | "conflict") {
+  const restored: string[] = [];
+  server.use(
+    http.post(
+      "/api/v1/workspaces/{workspace_id}/folders/{folder_id}/restore",
+      ({ params, response }) => {
+        restored.push(params.folder_id);
+        const outcome = answer(restored.length);
+        if (outcome === "exists") return response(409).json(errorBody("FOLDER_EXISTS", "Conflict"));
+        if (outcome === "conflict") {
+          return response(409).json(errorBody("FOLDER_RECOVERY_CONFLICT", "Conflict"));
+        }
+        return response(200).json(PLANNING_FOLDER);
+      },
+    ),
+  );
+  return restored;
+}
+
+async function deletePlanning() {
+  const user = await openPlanningMenu();
+  await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+  await user.click(screen.getByRole("button", { name: "Delete folder" }));
+  return user;
+}
+
 test("a member is not offered folder creation", () => {
   // Act
   renderFolders("member");
@@ -65,27 +131,53 @@ test("a moderator is offered folder creation", () => {
 
 test("an owner can create a folder", async () => {
   // Arrange
-  const bodies: unknown[] = [];
-  server.use(
-    http.post("/api/v1/workspaces/{workspace_id}/folders", async ({ request, response }) => {
-      bodies.push(await request.json());
-      return response(201).json({
-        id: "research",
-        name: "Research",
-        is_default: false,
-        meeting_count: 0,
-      });
-    }),
-  );
-  const { user } = renderFolders();
+  const bodies = serveCreate();
 
   // Act
-  await user.click(screen.getByRole("button", { name: "New folder" }));
-  await user.type(screen.getByLabelText("Folder name"), "Research");
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await createFolder("Research");
 
   // Assert
-  expect(bodies).toEqual([{ name: "Research" }]);
+  await waitFor(() => expect(bodies).toEqual([{ name: "Research" }]));
+});
+
+describe.each([
+  ["an empty name", "", "Enter a folder name"],
+  ["a blank name", "   ", "Enter a folder name"],
+  ["a name over 100 characters", "f".repeat(101), "Use 100 characters or fewer"],
+])("%s", (_, name, message) => {
+  test("is refused on the field", async () => {
+    // Act
+    await createFolder(name);
+
+    // Assert
+    expect(screen.getByLabelText("Folder name")).toHaveAccessibleDescription(message);
+  });
+
+  test("is not sent", async () => {
+    // Arrange
+    const bodies = serveCreate();
+
+    // Act
+    await createFolder(name);
+
+    // Assert
+    expect(bodies).toEqual([]);
+  });
+});
+
+test("a taken name is refused on the field", async () => {
+  // Arrange
+  refuseCreate();
+
+  // Act
+  await createFolder("Planning");
+
+  // Assert
+  await waitFor(() =>
+    expect(screen.getByLabelText("Folder name")).toHaveAccessibleDescription(
+      "A folder with this name already exists",
+    ),
+  );
 });
 
 test("an owner can rename a folder", async () => {
@@ -109,7 +201,26 @@ test("an owner can rename a folder", async () => {
   await user.click(screen.getByRole("button", { name: "Save" }));
 
   // Assert
-  expect(bodies).toEqual([{ name: "Roadmap" }]);
+  await waitFor(() => expect(bodies).toEqual([{ name: "Roadmap" }]));
+});
+
+test("a refused create leaves no error in the next dialog", async () => {
+  // Arrange
+  refuseCreate();
+  const user = await createFolder("Planning");
+  await waitFor(() =>
+    expect(screen.getByLabelText("Folder name")).toHaveAccessibleDescription(
+      "A folder with this name already exists",
+    ),
+  );
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  await user.click(screen.getByRole("button", { name: "Manage Planning" }));
+
+  // Act
+  await user.click(screen.getByRole("menuitem", { name: "Rename" }));
+
+  // Assert
+  expect(screen.getByLabelText("Folder name")).not.toHaveAccessibleDescription();
 });
 
 test("the default folder cannot be deleted", async () => {
@@ -154,68 +265,75 @@ test("cancelling folder deletion sends no request", async () => {
   expect(remove).not.toHaveBeenCalled();
 });
 
-test("deleted folders can be restored with Undo", async () => {
+test("a failed folder deletion shows the server's message", async () => {
   // Arrange
-  const restore = vi.fn();
   server.use(
     http.delete("/api/v1/workspaces/{workspace_id}/folders/{folder_id}", ({ response }) =>
-      response(204).empty(),
+      response(403).json(errorBody("INSUFFICIENT_ROLE", "Only a Moderator or Owner can do this")),
     ),
-    http.post("/api/v1/workspaces/{workspace_id}/folders/{folder_id}/restore", ({ response }) => {
-      restore();
-      return response(200).json(PLANNING_FOLDER);
-    }),
   );
-  const user = await openPlanningMenu();
-  await user.click(screen.getByRole("menuitem", { name: "Delete" }));
-  await user.click(screen.getByRole("button", { name: "Delete folder" }));
+
+  // Act
+  await deletePlanning();
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Only a Moderator or Owner can do this",
+  );
+});
+
+test("Undo restores the deleted folder", async () => {
+  // Arrange
+  serveDelete();
+  const restored = serveRestore(() => "restored");
+  const user = await deletePlanning();
 
   // Act
   await user.click(await screen.findByRole("button", { name: "Undo" }));
 
   // Assert
-  expect(restore).toHaveBeenCalledOnce();
+  await waitFor(() => expect(restored).toEqual(["planning"]));
 });
 
-test("the folder deletion notice is centred", async () => {
+test("Undo stays after a click elsewhere", async () => {
   // Arrange
-  server.use(
-    http.delete("/api/v1/workspaces/{workspace_id}/folders/{folder_id}", ({ response }) =>
-      response(204).empty(),
-    ),
-  );
-  const user = await openPlanningMenu();
-  await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+  serveDelete();
+  const user = await deletePlanning();
+  await waitForElementToBeRemoved(() => screen.queryByRole("dialog"));
 
   // Act
-  await user.click(screen.getByRole("button", { name: "Delete folder" }));
+  await user.click(screen.getByRole("button", { name: /All meetings/ }));
 
   // Assert
-  expect(screen.getByText(/folder deleted/i).closest(".MuiSnackbar-root")).toHaveClass(
-    "MuiSnackbar-anchorOriginBottomCenter",
-  );
+  expect(screen.getByRole("button", { name: "Undo" })).toBeVisible();
 });
 
 test.for([
-  ["FOLDER_EXISTS", /folder with this name already exists/i],
-  ["FOLDER_RECOVERY_CONFLICT", /meetings have changed since deletion/i],
-] as const)("a %s restore conflict is explained", async ([code, message]) => {
+  ["exists", /folder with this name already exists/i],
+  ["conflict", /meetings have changed since deletion/i],
+] as const)("a %s restore conflict is explained", async ([outcome, message]) => {
   // Arrange
-  server.use(
-    http.delete("/api/v1/workspaces/{workspace_id}/folders/{folder_id}", ({ response }) =>
-      response(204).empty(),
-    ),
-    http.post("/api/v1/workspaces/{workspace_id}/folders/{folder_id}/restore", ({ response }) =>
-      response(409).json(errorBody(code, "Conflict")),
-    ),
-  );
-  const user = await openPlanningMenu();
-  await user.click(screen.getByRole("menuitem", { name: "Delete" }));
-  await user.click(screen.getByRole("button", { name: "Delete folder" }));
+  serveDelete();
+  serveRestore(() => outcome);
+  const user = await deletePlanning();
 
   // Act
   await user.click(await screen.findByRole("button", { name: "Undo" }));
 
   // Assert
   expect(await screen.findByText(message)).toBeVisible();
+});
+
+test("a restore refused for a taken name can be tried again", async () => {
+  // Arrange
+  serveDelete();
+  const restored = serveRestore((attempt) => (attempt === 1 ? "exists" : "restored"));
+  const user = await deletePlanning();
+  await user.click(await screen.findByRole("button", { name: "Undo" }));
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "Try again" }));
+
+  // Assert
+  await waitFor(() => expect(restored).toEqual(["planning", "planning"]));
 });

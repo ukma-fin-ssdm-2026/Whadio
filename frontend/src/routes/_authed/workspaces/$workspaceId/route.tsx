@@ -5,6 +5,7 @@ import { createFileRoute, Outlet, useMatchRoute } from "@tanstack/react-router";
 import { Breadcrumbs } from "@/app/layout/Breadcrumbs";
 import { NotFoundMessage } from "@/app/layout/NotFoundPage";
 import { workspaceQueries } from "@/features/workspaces/api/workspaces";
+import { titleCase } from "@/shared/lib/format";
 import { PageHeader } from "@/shared/ui/PageHeader";
 
 export const Route = createFileRoute("/_authed/workspaces/$workspaceId")({
@@ -27,7 +28,7 @@ function WorkspaceRoute() {
       <Breadcrumbs current={workspace.name} />
       <PageHeader
         title={workspace.name}
-        overline={`${workspace.role} workspace`}
+        overline={`${titleCase(workspace.role)} workspace`}
         actions={
           <Tooltip title="Workspace settings" arrow>
             <IconButton

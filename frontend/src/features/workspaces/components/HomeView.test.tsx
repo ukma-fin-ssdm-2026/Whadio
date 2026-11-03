@@ -6,8 +6,7 @@ import { HomeView } from "./HomeView";
 const WORKSPACE = {
   id: "alpha",
   name: "Alpha",
-  role: "Owner",
-  rawRole: "owner" as const,
+  role: "owner" as const,
   members: 1,
 };
 

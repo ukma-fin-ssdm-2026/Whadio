@@ -1,8 +1,7 @@
 import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/shared/api/client";
 import { expectNoContent, unwrap } from "@/shared/api/unwrap";
-
-const foldersKey = (workspaceId: string) => ["folders", workspaceId] as const;
+import { foldersKey, workspaceListsKey } from "./keys";
 
 export const folderQueries = {
   list: (workspaceId: string) =>
@@ -64,7 +63,7 @@ export function useDeleteFolder(workspaceId: string) {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: foldersKey(workspaceId) }),
-        queryClient.invalidateQueries({ queryKey: ["meetings", "list", workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: workspaceListsKey(workspaceId) }),
       ]);
     },
   });
@@ -82,7 +81,7 @@ export function useRestoreFolder(workspaceId: string) {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: foldersKey(workspaceId) }),
-        queryClient.invalidateQueries({ queryKey: ["meetings", "list", workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: workspaceListsKey(workspaceId) }),
       ]);
     },
   });

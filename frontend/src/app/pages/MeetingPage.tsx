@@ -4,10 +4,10 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { sessionQueries } from "@/features/accounts/api/session";
 import { ExportMenu } from "@/features/export/components/ExportMenu";
+import { folderQueries } from "@/features/meetings/api/folders";
 import { isMeetingGone, meetingQueries } from "@/features/meetings/api/meetings";
 import { MeetingActions } from "@/features/meetings/detail/MeetingActions";
 import { MeetingDetail } from "@/features/meetings/detail/MeetingDetail";
-import { folderQueries } from "@/features/meetings/folders/api/folders";
 import type { MeetingTab } from "@/features/meetings/model";
 import { workspaceQueries } from "@/features/workspaces/api/workspaces";
 import { ErrorBanner } from "@/shared/ui/ErrorBanner";
@@ -58,24 +58,26 @@ export function MeetingPage({ meetingId, revisionId, tab, onTab, onRevision }: M
           onTab={onTab}
           onRevision={onRevision}
           renderExport={({ transcript, notes }) => (
-            <>
-              <ExportMenu meetingId={meeting.id} tab={tab} transcript={transcript} notes={notes} />
-              {workspace && user && (
-                <MeetingActions
-                  meeting={meeting}
-                  role={workspace.rawRole}
-                  userId={user.id}
-                  folders={folders.data ?? []}
-                  onDeleted={() =>
-                    navigate({
-                      to: "/workspaces/$workspaceId",
-                      params: { workspaceId: meeting.workspaceId },
-                    })
-                  }
-                />
-              )}
-            </>
+            <ExportMenu meetingId={meeting.id} tab={tab} transcript={transcript} notes={notes} />
           )}
+          actions={
+            workspace &&
+            user && (
+              <MeetingActions
+                meeting={meeting}
+                role={workspace.role}
+                userId={user.id}
+                folders={folders.data ?? []}
+                onDeleted={() =>
+                  navigate({
+                    to: "/workspaces/$workspaceId",
+                    params: { workspaceId: meeting.workspaceId },
+                    replace: true,
+                  })
+                }
+              />
+            )
+          }
         />
       )}
     </>

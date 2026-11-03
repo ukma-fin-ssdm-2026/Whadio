@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -48,12 +48,15 @@ const twoPages: MeetingList = (search) =>
 
 function Library({ onMeeting = () => {} }: { onMeeting?: (id: string) => void }) {
   const [name, setName] = useState("");
+  const [folderId, setFolderId] = useState<string | null>(null);
   return (
     <WorkspaceMeetings
       workspaceId="workspace"
       workspaceRole="owner"
       selectedMeetingId=""
       onMeeting={onMeeting}
+      folderId={folderId}
+      onFolder={setFolderId}
       name={name}
       stateFilter="all"
       onName={setName}
@@ -67,10 +70,9 @@ function renderMeetings() {
 }
 
 const rowTitles = () =>
-  screen
+  within(screen.getByRole("list", { name: "Meetings" }))
     .getAllByRole("listitem")
-    .map((row) => row.querySelector(".MuiListItemText-primary"))
-    .filter((title) => title?.textContent.endsWith("sync"));
+    .map((row) => row.querySelector(".MuiListItemText-primary"));
 
 async function loadSecondPage() {
   const { user } = renderMeetings();
@@ -271,9 +273,7 @@ test("folders show their meeting counts", async () => {
 
 test("opening a folder lists only meetings in that folder", async () => {
   // Arrange
-  const searches = serveMeetings((search) =>
-    page(search.get("folder_id") === "planning" ? [SECOND] : [FIRST]),
-  );
+  serveMeetings((search) => page(search.get("folder_id") === "planning" ? [SECOND] : [FIRST]));
   const { user } = renderMeetings();
   await screen.findByText("Newest sync");
 
@@ -281,6 +281,7 @@ test("opening a folder lists only meetings in that folder", async () => {
   await user.click(screen.getByRole("button", { name: /Planning 2 meetings/ }));
 
   // Assert
-  expect(await screen.findByText("Oldest sync")).toBeInTheDocument();
-  expect(searches.at(-1)).toContain("folder_id=planning");
+  await waitFor(() =>
+    expect(rowTitles().map((title) => title?.textContent)).toEqual(["Oldest sync"]),
+  );
 });

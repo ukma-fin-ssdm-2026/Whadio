@@ -1,9 +1,8 @@
 import { Button, Stack } from "@mui/material";
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import type { Schemas } from "@/shared/api/types";
+import { folderQueries } from "../api/folders";
 import { meetingQueries } from "../api/meetings";
-import { folderQueries } from "../folders/api/folders";
 import { WorkspaceFolders } from "../folders/WorkspaceFolders";
 import type { StateFilter } from "../model";
 import { MeetingLibrary } from "./MeetingLibrary";
@@ -14,6 +13,8 @@ interface WorkspaceMeetingsProps {
   workspaceRole: Schemas["Role"];
   selectedMeetingId: string;
   onMeeting: (id: string) => void;
+  folderId: string | null;
+  onFolder: (folderId: string | null) => void;
   name: string;
   stateFilter: StateFilter;
   onName: (name: string) => void;
@@ -25,12 +26,13 @@ export function WorkspaceMeetings({
   workspaceRole,
   selectedMeetingId,
   onMeeting,
+  folderId,
+  onFolder,
   name,
   stateFilter,
   onName,
   onStateFilter,
 }: WorkspaceMeetingsProps) {
-  const [folderId, setFolderId] = useState<string | null>(null);
   const { draft, type } = useNameDraft(name, onName);
   const folders = useQuery(folderQueries.list(workspaceId));
   const meetings = useInfiniteQuery({
@@ -47,7 +49,7 @@ export function WorkspaceMeetings({
         selectedFolderId={folderId}
         loading={folders.isPending}
         error={folders.error?.message}
-        onSelect={setFolderId}
+        onSelect={onFolder}
       />
       <MeetingLibrary
         title={folders.data?.find((folder) => folder.id === folderId)?.name ?? "Workspace library"}

@@ -13,8 +13,7 @@ test("a workspace takes its role and member count from the summary", () => {
   expect(workspace).toEqual({
     id: "alpha",
     name: "Alpha",
-    role: "Moderator",
-    rawRole: "moderator",
+    role: "moderator",
     members: 2,
   });
 });

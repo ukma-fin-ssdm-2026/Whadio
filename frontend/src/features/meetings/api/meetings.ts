@@ -10,6 +10,7 @@ import { ApiError } from "@/shared/api/errors";
 import type { MeetingUpdate, Schemas } from "@/shared/api/types";
 import { expectNoContent, unwrap } from "@/shared/api/unwrap";
 import { isInProgress, type Meeting, mapMeeting } from "../model";
+import { detailKey, foldersKey, workspaceListsKey } from "./keys";
 
 export const MEETINGS_PER_PAGE = 100;
 export const POLL_INTERVAL_MS = 10_000;
@@ -20,9 +21,6 @@ const CURRENT_NOTE_ONLY = { limit: 1 };
 // The server signs a playback link for 5 minutes (meetings/recordings.py).
 const RECORDING_LINK_LIFE_MS = 5 * 60_000;
 const RECORDING_LINK_FRESH_MS = 4 * 60_000;
-
-const workspaceListsKey = (workspaceId: string) => ["meetings", "list", workspaceId] as const;
-const detailKey = (meetingId: string) => ["meetings", "detail", meetingId] as const;
 
 function fetchMeetingPage(
   workspaceId: string,
@@ -201,7 +199,7 @@ export function useUpdateMeeting(meetingId: string, workspaceId: string) {
       queryClient.setQueryData(meetingQueries.detail(meetingId).queryKey, meeting);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: workspaceListsKey(workspaceId) }),
-        queryClient.invalidateQueries({ queryKey: ["folders", workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: foldersKey(workspaceId) }),
       ]);
     },
   });
@@ -220,7 +218,7 @@ export function useDeleteMeeting(meetingId: string, workspaceId: string) {
       queryClient.removeQueries({ queryKey: detailKey(meetingId) });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: workspaceListsKey(workspaceId) }),
-        queryClient.invalidateQueries({ queryKey: ["folders", workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: foldersKey(workspaceId) }),
       ]);
     },
   });

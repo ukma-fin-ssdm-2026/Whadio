@@ -3,10 +3,6 @@ import MoreVertIcon from "@mui/icons-material/MoreVert";
 import {
   Alert,
   Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   IconButton,
   List,
   ListItem,
@@ -14,17 +10,18 @@ import {
   ListItemText,
   Menu,
   MenuItem,
-  Snackbar,
   Stack,
-  TextField,
 } from "@mui/material";
 import { useState } from "react";
 import { ApiError } from "@/shared/api/errors";
 import type { Schemas } from "@/shared/api/types";
 import { countOf } from "@/shared/lib/plural";
+import { canManage } from "@/shared/lib/roles";
 import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
 import { useNotify } from "@/shared/ui/NotifyProvider";
-import { useCreateFolder, useDeleteFolder, useRenameFolder, useRestoreFolder } from "./api/folders";
+import { SectionHeader } from "@/shared/ui/SectionHeader";
+import { useDeleteFolder, useRestoreFolder } from "../api/folders";
+import { FolderNameDialog } from "./FolderNameDialog";
 
 type Folder = Schemas["FolderRead"];
 type Role = Schemas["Role"];
@@ -39,9 +36,9 @@ interface WorkspaceFoldersProps {
   onSelect: (folderId: string | null) => void;
 }
 
+// A draft without a folder creates one.
 interface FolderDraft {
-  id: string | null;
-  name: string;
+  folder?: Folder;
 }
 
 function recoveryMessage(error: unknown): string {
@@ -49,7 +46,7 @@ function recoveryMessage(error: unknown): string {
     return "This folder cannot be restored because its meetings have changed since deletion.";
   }
   if (error instanceof ApiError && error.code === "FOLDER_EXISTS") {
-    return "A folder with this name already exists. Rename it before restoring this folder.";
+    return "A folder with this name already exists. Rename it, then try again.";
   }
   return error instanceof Error ? error.message : "The folder could not be restored.";
 }
@@ -63,36 +60,32 @@ export function WorkspaceFolders({
   error,
   onSelect,
 }: WorkspaceFoldersProps) {
-  const canManage = role === "moderator" || role === "owner";
+  const manageable = canManage(role);
   const notify = useNotify();
-  const createFolder = useCreateFolder(workspaceId);
-  const renameFolder = useRenameFolder(workspaceId);
   const deleteFolder = useDeleteFolder(workspaceId);
   const restoreFolder = useRestoreFolder(workspaceId);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [menuFolder, setMenuFolder] = useState<Folder | null>(null);
   const [draft, setDraft] = useState<FolderDraft | null>(null);
   const [folderToDelete, setFolderToDelete] = useState<Folder | null>(null);
-  const [deletedFolder, setDeletedFolder] = useState<Folder | null>(null);
 
   const closeMenu = () => {
     setMenuAnchor(null);
     setMenuFolder(null);
   };
 
-  const saveFolder = async () => {
-    if (!draft?.name.trim()) return;
+  // The server keeps a deleted folder's recovery until it is used, so a name clash can be retried.
+  const restore = async (folder: Folder) => {
     try {
-      if (draft.id) {
-        await renameFolder.mutateAsync({ folderId: draft.id, name: draft.name.trim() });
-        notify("Folder renamed.");
-      } else {
-        await createFolder.mutateAsync(draft.name.trim());
-        notify("Folder created.");
-      }
-      setDraft(null);
-    } catch {
-      return;
+      await restoreFolder.mutateAsync(folder.id);
+      notify("Folder restored.");
+    } catch (caught) {
+      const retry = caught instanceof ApiError && caught.code === "FOLDER_EXISTS";
+      notify(
+        recoveryMessage(caught),
+        "error",
+        retry ? { label: "Try again", onClick: () => restore(folder) } : undefined,
+      );
     }
   };
 
@@ -100,43 +93,39 @@ export function WorkspaceFolders({
     if (!folderToDelete) return;
     try {
       await deleteFolder.mutateAsync(folderToDelete.id);
-      setDeletedFolder(folderToDelete);
       if (selectedFolderId === folderToDelete.id) onSelect(null);
       setFolderToDelete(null);
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "The folder could not be deleted.", "error");
+      notify("Folder deleted. Its meetings moved to the default folder.", "success", {
+        label: "Undo",
+        onClick: () => restore(folderToDelete),
+      });
+    } catch (caught) {
+      setFolderToDelete(null);
+      notify(
+        caught instanceof Error ? caught.message : "The folder could not be deleted.",
+        "error",
+      );
     }
   };
 
-  const restore = async () => {
-    if (!deletedFolder) return;
-    try {
-      await restoreFolder.mutateAsync(deletedFolder.id);
-      setDeletedFolder(null);
-      notify("Folder restored.");
-    } catch (error) {
-      setDeletedFolder(null);
-      notify(recoveryMessage(error), "error");
-    }
-  };
-
-  const mutationError = createFolder.error ?? renameFolder.error;
   const totalMeetings = folders.reduce((total, folder) => total + folder.meeting_count, 0);
 
   return (
     <Stack sx={{ gap: 1 }}>
-      <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
-        <strong>Folders</strong>
-        {canManage && (
-          <Button
-            size="small"
-            startIcon={<CreateNewFolderOutlinedIcon />}
-            onClick={() => setDraft({ id: null, name: "" })}
-          >
-            New folder
-          </Button>
-        )}
-      </Stack>
+      <SectionHeader
+        title="Folders"
+        actions={
+          manageable && (
+            <Button
+              size="small"
+              startIcon={<CreateNewFolderOutlinedIcon />}
+              onClick={() => setDraft({})}
+            >
+              New folder
+            </Button>
+          )
+        }
+      />
       {error && <Alert severity="error">{error}</Alert>}
       <List
         aria-label="Workspace folders"
@@ -153,7 +142,7 @@ export function WorkspaceFolders({
             key={folder.id}
             disablePadding
             secondaryAction={
-              canManage && (
+              manageable && (
                 <IconButton
                   aria-label={`Manage ${folder.name}`}
                   onClick={(event) => {
@@ -183,7 +172,7 @@ export function WorkspaceFolders({
       <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={closeMenu}>
         <MenuItem
           onClick={() => {
-            if (menuFolder) setDraft({ id: menuFolder.id, name: menuFolder.name });
+            if (menuFolder) setDraft({ folder: menuFolder });
             closeMenu();
           }}
         >
@@ -201,36 +190,13 @@ export function WorkspaceFolders({
         )}
       </Menu>
 
-      <Dialog open={draft !== null} onClose={() => setDraft(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>{draft?.id ? "Rename folder" : "Create folder"}</DialogTitle>
-        <DialogContent>
-          {mutationError && <Alert severity="error">{mutationError.message}</Alert>}
-          <TextField
-            autoFocus
-            fullWidth
-            label="Folder name"
-            value={draft?.name ?? ""}
-            onChange={(event) =>
-              setDraft((current) => (current ? { ...current, name: event.target.value } : current))
-            }
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void saveFolder();
-            }}
-            sx={{ mt: 1 }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDraft(null)}>Cancel</Button>
-          <Button
-            variant="contained"
-            loading={createFolder.isPending || renameFolder.isPending}
-            disabled={!draft?.name.trim()}
-            onClick={saveFolder}
-          >
-            Save
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {draft && (
+        <FolderNameDialog
+          workspaceId={workspaceId}
+          folder={draft.folder}
+          onClose={() => setDraft(null)}
+        />
+      )}
 
       <ConfirmDialog
         open={folderToDelete !== null}
@@ -244,19 +210,6 @@ export function WorkspaceFolders({
         Meetings in this folder will move to the default folder. You can undo this immediately
         afterwards.
       </ConfirmDialog>
-
-      <Snackbar
-        open={deletedFolder !== null}
-        autoHideDuration={8000}
-        onClose={() => setDeletedFolder(null)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-        message="Folder deleted. Its meetings moved to the default folder."
-        action={
-          <Button color="inherit" loading={restoreFolder.isPending} onClick={restore}>
-            Undo
-          </Button>
-        }
-      />
     </Stack>
   );
 }
