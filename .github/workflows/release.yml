@@ -15,7 +15,8 @@ env:
   UV_NO_BUILD: "1"
   BRANCH: "chore/#275-release"
   TITLE: "chore(#275): release"
-  # The only files a release pull request may change; the merge job refuses any other.
+  BOT: "whadio-release-bot[bot]"
+  # The only files a release pull request may change; the merge and classify jobs refuse any other.
   RELEASE_FILES: >-
     CHANGELOG.md
     docs/api/openapi-generated.json
@@ -27,11 +28,42 @@ env:
     uv.lock
 
 jobs:
+  # A commit message is no proof: a squash merge takes it from any pull request's title. A release
+  # commit is one merged from the app's pull request on BRANCH, which only the app can push to.
+  classify:
+    name: Tell a release commit from any other
+    if: github.event_name == 'push'
+    runs-on: [self-hosted, linux]
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      release: ${{ steps.commit.outputs.release }}
+    steps:
+      - name: Check where the pushed commit came from
+        id: commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          merged=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+            --jq "[.[] | select(.merged_at and .user.login == \"${BOT}\" and .head.ref == \"${BRANCH}\")] | length")
+          if [[ "$merged" -eq 0 ]]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          unexpected=$(comm -23 \
+            <(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" --jq '.files[].filename' | sort) \
+            <(tr ' ' '\n' <<< "$RELEASE_FILES" | sort))
+          if [[ -n "$unexpected" ]]; then
+            echo "::error::Release commit ${GITHUB_SHA} changes files a release never does:" $unexpected
+            exit 1
+          fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
+
   prepare:
     name: Open or update the release pull request
-    if: >-
-      github.event_name == 'push'
-      && !startsWith(github.event.head_commit.message, 'chore(#275): release ')
+    needs: classify
+    if: needs.classify.outputs.release == 'false'
     runs-on: [self-hosted, linux]
     environment: release
     concurrency:
@@ -150,9 +182,8 @@ jobs:
 
   tag:
     name: Tag and publish the release
-    if: >-
-      github.event_name == 'push'
-      && startsWith(github.event.head_commit.message, 'chore(#275): release ')
+    needs: classify
+    if: needs.classify.outputs.release == 'true'
     runs-on: [self-hosted, linux]
     environment: release
     steps:
