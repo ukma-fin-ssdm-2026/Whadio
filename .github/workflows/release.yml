@@ -67,7 +67,9 @@ jobs:
 
       - name: Write the release
         id: release
-        run: echo "version=$(.github/scripts/prepare_release.sh)" >> "$GITHUB_OUTPUT"
+        run: |
+          version=$(.github/scripts/prepare_release.sh)
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Push the release branch and open or update its pull request
         if: steps.release.outputs.version != ''
