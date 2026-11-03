@@ -118,6 +118,14 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
+      - id: extension-test
+        name: vitest (extension)
+        language: unsupported
+        entry: npm --prefix frontend run test:extension
+        files: ^(extension/|frontend/package(-lock)?\.json$)
+        pass_filenames: false
+        stages: [pre-push]
+
       - id: no-suppressions
         name: no inline suppression comments (configure exceptions in pyproject.toml or biome.jsonc)
         language: pygrep

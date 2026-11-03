@@ -23,7 +23,8 @@
     "check": "biome check --error-on-warnings",
     "check:fix": "biome check --write --error-on-warnings",
     "check:extension": "cd ../extension && biome check --error-on-warnings .",
-    "check:extension:fix": "cd ../extension && biome check --write --error-on-warnings ."
+    "check:extension:fix": "cd ../extension && biome check --write --error-on-warnings .",
+    "test:extension": "cd ../extension && vitest run"
   },
   "dependencies": {
     "@emotion/react": "^11.13.3",
