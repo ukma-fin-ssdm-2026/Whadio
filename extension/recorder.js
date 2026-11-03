@@ -10,6 +10,14 @@ if (!globalThis.whadioRecorder) {
 
   // --- Recording ---
 
+  // The order of a default sort, which the background has always received; a locale order would change it.
+  function byCodeUnits(a, b) {
+    if (a === b) {
+      return 0;
+    }
+    return a < b ? -1 : 1;
+  }
+
   // Each tile's level bars move while that participant talks and rest on the quiet class otherwise; the
   // names heard each second go to the background whenever they differ from the second before.
   function listen() {
@@ -19,7 +27,7 @@ if (!globalThis.whadioRecorder) {
     let secondBegan = began;
     let ticks = 0;
     const flush = () => {
-      const speakers = [...heard].sort();
+      const speakers = [...heard].sort(byCodeUnits);
       heard.clear();
       // The names belong to when the second began in the audio.
       const at = (secondBegan - began) / 1000;
@@ -322,63 +330,74 @@ if (!globalThis.whadioRecorder) {
 
   // --- Messages from the popup and the keyboard shortcut ---
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message.type === "status") {
-      sendResponse({ consented: banner.consent.checked });
-      return;
+  function showCard(error) {
+    document.body.append(banner.host);
+    if (error) {
+      banner.showError(error);
     }
-    if (message.type === "hide-card") {
-      // The toolbar popup took over, so the card stays away for the rest of this call.
-      dismissed = true;
-      banner.host.remove();
-      return;
-    }
-    if (message.type === "ask-sign-in") {
-      // Asked for with the shortcut, so the sign-in card shows even after "Don't show again".
-      dismissed = false;
-      banner.refresh().then(() => document.body.append(banner.host));
-      return;
-    }
-    if (message.type === "ask-consent") {
-      dismissed = false;
-      banner
-        .refresh()
-        .then(() => {
-          document.body.append(banner.host);
-          banner.showError("Tick the box first, then press Alt+Shift+R again.");
-        })
-        // Fails only once the extension is reloaded under this page, when nothing here can reach it.
-        .catch(() => {});
-      return;
-    }
-    if (message.type === "show-error") {
-      dismissed = false;
-      document.body.append(banner.host);
-      banner.showError(message.error);
-      return;
-    }
+  }
+
+  // Asked for from the popup or the shortcut, so the card shows even after "Not now" or "Don't show again".
+  // The sign-in check hides any earlier error, so the error is shown after it.
+  function refreshAndShowCard(error) {
+    dismissed = false;
+    banner
+      .refresh()
+      .then(() => showCard(error))
+      // Fails only once the extension is reloaded under this page, when nothing here can reach it.
+      .catch(() => {});
+  }
+
+  const handlers = new Map([
+    ["status", (_message, sendResponse) => sendResponse({ consented: banner.consent.checked })],
+    [
+      "hide-card",
+      () => {
+        // The toolbar popup took over, so the card stays away for the rest of this call.
+        dismissed = true;
+        banner.host.remove();
+      },
+    ],
+    ["ask-sign-in", () => refreshAndShowCard()],
+    ["ask-consent", () => refreshAndShowCard("Tick the box first, then press Alt+Shift+R again.")],
+    [
+      "show-error",
+      (message) => {
+        dismissed = false;
+        showCard(message.error);
+      },
+    ],
     // The offscreen document records; the background reports when it started and when it ended.
-    if (message.type === "started") {
-      began(message.startedAt, () => chrome.runtime.sendMessage({ type: "stop-recording" }));
-      // Held for as long as this page lives: its disconnect on a reload or a navigation ends the recording.
-      chrome.runtime.connect({ name: "page" });
-      return;
-    }
-    if (message.type === "flush-speakers") {
-      session?.listening.flush();
-      return;
-    }
-    if (message.type === "stopped") {
-      if (session) {
-        stop(true);
-      }
-      return;
-    }
-    if (message.type === "stop") {
-      if (session) {
-        stop();
-      }
-      sendResponse({});
-    }
+    [
+      "started",
+      (message) => {
+        began(message.startedAt, () => chrome.runtime.sendMessage({ type: "stop-recording" }));
+        // Held for as long as this page lives: its disconnect on a reload or a navigation ends the recording.
+        chrome.runtime.connect({ name: "page" });
+      },
+    ],
+    ["flush-speakers", () => session?.listening.flush()],
+    [
+      "stopped",
+      () => {
+        if (session) {
+          stop(true);
+        }
+      },
+    ],
+    [
+      "stop",
+      (_message, sendResponse) => {
+        if (session) {
+          stop();
+        }
+        sendResponse({});
+      },
+    ],
+  ]);
+
+  // Every answer is sent before the listener returns, so it returns nothing and keeps no channel open.
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    handlers.get(message.type)?.(message, sendResponse);
   });
 }

@@ -177,6 +177,18 @@ describe("the recorder's answers to the extension", () => {
     expect(cardShown()).toBe(false);
   });
 
+  test("shows nothing when the extension is unreachable as sign-in is asked for", async () => {
+    // Arrange
+    await load({ unreachable: true });
+
+    // Act
+    send({ type: "ask-sign-in" });
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Assert
+    expect(cardShown()).toBe(false);
+  });
+
   test("shows an error on the card without asking whether the user is signed in", async () => {
     // Arrange
     await load();
