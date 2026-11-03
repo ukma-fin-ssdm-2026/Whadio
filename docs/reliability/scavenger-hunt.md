@@ -1,0 +1,222 @@
+# Resilience Scavenger Hunt
+
+Starting point: `main` at `81b4637`. Scope: the backend (`src/whadio/`), the browser extension
+(`extension/`) and the SPA's API client (`frontend/src/shared/api/`).
+
+Eight findings. Each finding gives its category from the hunt's checklist:
+
+| | Category |
+|---|---|
+| A | Error handling |
+| B | External dependencies |
+| C | Input validation |
+| D | Silent failures |
+| E | Performance and blocking |
+
+## Stage 1: Findings
+
+### F1. Job publish to RabbitMQ waits without a limit while holding a row lock (B, E)
+
+`src/whadio/shared/broker.py`, called from `src/whadio/processing/services.py` (`publish_next`):
+
+```python
+async def connect(settings: BrokerSettings, *, name: str) -> AbstractRobustConnection:
+    return await aio_pika.connect_robust(
+        settings.url.get_secret_value(), client_properties={"connection_name": name}
+    )
+
+
+...
+await self._channel.default_exchange.publish(message, routing_key=queue, mandatory=True)
+```
+
+```python
+job = await self._jobs.next_unpublished()  # SELECT ... FOR UPDATE SKIP LOCKED
+...
+await publisher.publish(request)  # inside the same database transaction
+```
+
+**Why it is dangerous.** In aio-pika 10.2, both `connect_robust(timeout=None)` and
+`Exchange.publish(timeout=None)` wait forever by default. A broker that blocks its publishers (a
+memory or disk alarm sends `connection.blocked`), or a connection that goes quiet, never confirms
+the publish. The await never returns and never raises. Meanwhile `publish_next` keeps its database
+transaction open and holds the job row's lock.
+
+**Potential impact.** `serve_publishing` is built to log a failed publish and retry it next round,
+but no exception ever reaches that `except`. Publishing stops for the whole web instance. Every
+meeting uploaded afterwards stays "queued" with no error anywhere, a pooled database connection
+stays tied up, and the lock lasts until the process restarts.
+
+### F2. Extension requests to the server have no deadline (B, E)
+
+`extension/api.js`:
+
+```js
+const response = await fetch(`${server}/api/v1${path}`, init);
+```
+
+**Why it is dangerous.** `fetch` has no timeout of its own. On a half-open connection (Wi-Fi
+handover, a proxy that drops the flow, a laptop that slept) the request can stay pending for good.
+`Upload.send()` retries only when `api()` *throws*, and a pending request never throws.
+
+**Potential impact.** All chunks go through a single promise chain (`upload.queue`), so one stuck
+`PUT` stops the whole upload. At hang-up, `finish()` does `await this.queue` and never gets past it,
+which means neither `/complete` nor the `saveLocally` fallback runs. The call's audio ends up
+neither on the server nor on disk. It is lost.
+
+### F3. A failed upload is given up without a log or a word to the user (D, A)
+
+`extension/background.js`, `Upload.send()` and `Upload.finish()`:
+
+```js
+} catch (failure) {
+  if (shouldGiveUp(failure, attempt)) {
+    this.failed = true;
+    return;
+  }
+```
+
+```js
+} catch {
+  // Saved below instead, so the call is not lost.
+}
+```
+
+**Why it is dangerous.** After five attempts, or at once on a 401 or 404, the upload is marked
+failed and the `ServerError` (its status and the server's message) is thrown away. Completing the
+capture can fail the same way without a trace.
+
+**Potential impact.** The user keeps recording, believing the call is going to the server, and only
+finds a `.webm` download at the end. When someone reports that a meeting never showed up, the
+service worker console holds nothing that tells an expired session (401), a deleted capture (404)
+and a network outage apart.
+
+### F4. A recording that could not be saved vanishes in an unawaited listener (A, D)
+
+`extension/background.js`, the recording port's `onDisconnect` listener:
+
+```js
+port.onDisconnect.addListener(async () => {
+  ...
+  await upload.finish();
+  await closeOffscreenIfIdle();
+});
+```
+
+**Why it is dangerous.** Chrome does not await event listeners. When `finish()` falls back to
+`saveLocally` and that throws (downloads blocked by policy, the offscreen document failed to open,
+no disk space), the rejection goes nowhere. `closeOffscreenIfIdle()` is skipped too.
+
+**Potential impact.** This is the last safety net for the recording, and when it fails the user is
+not told and nothing is logged. The offscreen document can also stay open.
+
+### F5. Object storage calls can block a request for over half an hour (B, E)
+
+`src/whadio/shared/storage.py`:
+
+```python
+return Minio(
+    f"{endpoint_url.host}:{endpoint_url.port}",
+    ...
+    http_client=http_client,   # None in production
+)
+```
+
+**Why it is dangerous.** Without an `http_client`, MinIO builds its own pool:
+`Timeout(connect=300, read=300)` and `Retry(total=5)` (minio 7.2, `api.py`). Every `put`, `get`
+and `delete` runs in `asyncio.to_thread` inside API request handlers (upload, capture assembly,
+deletion). If storage does not answer, one call can take 6 × 300 s.
+
+**Potential impact.** The HTTP request hangs until nginx or the browser gives up. Each stuck call
+holds a thread from the default executor and a database transaction. A few of them exhaust the
+pool, and then password hashing, which uses the same executor, stalls as well, so sign-ins hang too.
+
+### F6. The SPA's API client has no deadline (B)
+
+`frontend/src/shared/api/client.ts`:
+
+```ts
+fetch: (request) => globalThis.fetch(request),
+```
+
+**Why it is dangerous.** This is the same gap as F2, for every call the web app makes.
+
+**Potential impact.** On a stalled connection, pages show their loading state indefinitely instead
+of an error with a retry button. It is lower in severity than F2 because nothing is lost: reloading
+the page recovers.
+
+### F7. Signing out ignores whether the server ended the session (D)
+
+`extension/api.js`:
+
+```js
+await api("DELETE", "/sessions/current").catch(() => {});
+```
+
+**Why it is dangerous.** If the request fails, the local token is still removed, but the server
+never revokes the session. Nothing records that.
+
+**Potential impact.** An extension session stays valid on the server for up to 24 hours after the
+user believes they signed out. The token lived only in `chrome.storage.session` and is deleted, so
+an attacker would need a copy taken earlier. That makes the risk low.
+
+### F8. Asking which chunks the server holds fails silently (D)
+
+`extension/background.js`, `Upload.syncReceived()`:
+
+```js
+const found = await api("GET", `/captures/${this.capture.id}`).catch(() => null);
+```
+
+**Why it is dangerous.** Returning `null` is the right *behaviour*: without the answer, the next
+retry re-sends chunks and the server accepts the duplicates idempotently. But the failure is not
+logged.
+
+**Potential impact.** Diagnosis only. A series of failed retries leaves no record of whether
+`GET` failed as well as `PUT`.
+
+### Reviewed and kept
+
+These look like the checklist's anti-patterns but are deliberate boundaries:
+
+- `except Exception` in `processing/consumer.py` (`serve_publishing`, `on_result`,
+  `on_dead_letter`), `workers/supervision/runners.py` and `supervisor.py`. Each sits at the top of
+  a long-running loop or task, logs with `logger.exception`, and turns the failure into a retry, a
+  requeue or a failed-job result. A narrower catch there would let one bad message crash the
+  consumer.
+- `except BaseException` in `api/meetings/routes.py` and `capture/services.py`. They delete the
+  half-written object under `asyncio.shield` and re-raise, so cancellation is cleaned up and not
+  swallowed.
+- SMTP, Ollama, Anthropic, the ASR worker's recording fetch and PostgreSQL all already have
+  explicit timeouts, and their errors are mapped to typed failures.
+
+## Stage 2: Fault → error → failure
+
+Most of these are faults whose error has not yet reached a failure. In those cases the "failure"
+column describes what a user or another system sees once the chain completes.
+
+| # | Fault (in the code) | Error (wrong internal state) | Failure (seen outside) | Severity |
+|---|---|---|---|---|
+| F1 | `publish()` and `connect_robust()` called without `timeout` | The publisher coroutine waits for a confirm that never comes; its transaction stays open and the job row stays locked | No new meeting gets transcribed or summarised; they all show "queued" and no error is logged | **High** |
+| F2 | `fetch()` called without an abort signal | One chunk `PUT` stays pending; `upload.queue` and `finish()` wait on it | The recording reaches neither the server nor the user's disk: the call's audio is lost | **High** |
+| F3 | `catch` sets `failed = true` and drops the error | The upload has stopped, but the user and the logs do not know | The user records a whole call believing it is being uploaded; support cannot tell why it failed | **Medium** |
+| F4 | An `async` listener's rejection is not handled | `saveLocally` failed; the offscreen document may stay open | A recording that failed to upload is not saved either, with no message and no log | **High** |
+| F5 | MinIO's default 300 s timeouts and 5 retries | Request handlers and executor threads wait on storage for up to 30 minutes | Uploads and deletions hang; under load, sign-ins stall too because the thread pool is exhausted | **Medium** |
+| F6 | The SPA's `fetch` has no deadline | A query stays in its loading state | A page spins with no error or retry offered | **Low** |
+| F7 | `.catch(() => {})` around session revocation | The server-side session is still active | The extension session stays usable for up to 24 h after sign-out | **Low** |
+| F8 | `.catch(() => null)` without a log | The retry proceeds without knowing what the server holds | None: duplicates are absorbed; only diagnosis suffers | **Low** |
+
+## Stage 4: The finding to present
+
+**F2: the extension can lose a whole call when the network goes quiet.**
+
+- **Fault:** `fetch()` in `extension/api.js` is called without an abort signal or deadline.
+- **Error:** one chunk upload stays pending forever. The upload queue behind it, and the
+  hang-up handler's `await this.queue`, wait on it.
+- **Failure:** the user ends the call and gets nothing: the meeting is not in Whadio, and the
+  promised local `.webm` is never downloaded, because the fallback sits behind the stuck promise.
+
+## AI Usage
+
+The findings and this report were drafted with Claude Code (Claude Opus 5.5) and
+reviewed by the team.
