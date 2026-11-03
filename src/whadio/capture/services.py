@@ -231,12 +231,21 @@ class CaptureService:
             raise MissingChunksError(missing)
         key = f"recordings/{uuid4()}"
         try:
-            with tempfile.TemporaryFile() as assembled:
-                # MediaRecorder's slices of one stream play back as one file once joined in order.
-                for seq in range(last_seq + 1):
-                    assembled.write(await self._read(chunks[seq].storage_key))
-                assembled.seek(0)
-                await self._put(key, assembled)
+            assembly = asyncio.create_task(
+                asyncio.to_thread(
+                    self._assemble,
+                    key,
+                    tuple(chunks[seq].storage_key for seq in range(last_seq + 1)),
+                )
+            )
+            try:
+                await asyncio.shield(assembly)
+            except asyncio.CancelledError as cancelled:
+                # Threads cannot be cancelled: wait before cleanup; another cancel can interrupt.
+                try:
+                    await assembly
+                finally:
+                    raise cancelled
             await self._recordings.attach_recording(
                 user_id,
                 capture.meeting_id,
@@ -253,6 +262,17 @@ class CaptureService:
             await asyncio.shield(self._discard(key))
             raise
         return await self._view(capture, CaptureStatus.ASSEMBLED)
+
+    def _assemble(self, key: str, sources: tuple[str, ...]) -> None:
+        try:
+            with tempfile.TemporaryFile() as assembled:
+                # MediaRecorder's slices of one stream play back as one file once joined in order.
+                for source in sources:
+                    assembled.write(self._storage.get(source))
+                assembled.seek(0)
+                self._storage.put(key, assembled, content_type="application/octet-stream")
+        except ObjectStorageError:
+            raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE) from None
 
     async def _own(self, user_id: UUID, capture_id: UUID, *, lock: bool) -> CaptureSession:
         capture = await self._repository.get(capture_id, lock=lock)
