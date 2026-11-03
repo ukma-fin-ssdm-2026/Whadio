@@ -1,0 +1,189 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: [CI/CD]
+    types: [completed]
+
+permissions:
+  contents: read
+
+env:
+  # Every locked dependency ships a wheel, so no third-party build script runs in CI.
+  UV_NO_BUILD: "1"
+  BRANCH: "chore/#275-release"
+  TITLE: "chore(#275): release"
+  # The only files a release pull request may change; the merge job refuses any other.
+  RELEASE_FILES: >-
+    CHANGELOG.md
+    docs/api/openapi-generated.json
+    docs/api/openapi-generated.yaml
+    extension/manifest.json
+    frontend/package-lock.json
+    frontend/package.json
+    pyproject.toml
+    uv.lock
+
+jobs:
+  prepare:
+    name: Open or update the release pull request
+    if: >-
+      github.event_name == 'push'
+      && !startsWith(github.event.head_commit.message, 'chore(#275): release ')
+    runs-on: [self-hosted, linux]
+    environment: release
+    concurrency:
+      group: release-prepare
+      cancel-in-progress: true
+    steps:
+      - name: Get a token for the release app
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: false
+
+      - name: Install Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.nvmrc
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Write the release
+        id: release
+        run: echo "version=$(.github/scripts/prepare_release.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Push the release branch and open or update its pull request
+        if: steps.release.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          bot_id=$(gh api "users/${APP_SLUG}[bot]" --jq .id)
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+          read -ra files <<< "$RELEASE_FILES"
+          git add -- "${files[@]}"
+          stray=$(git status --porcelain --untracked-files=all | grep -v '^[MA]  ' || true)
+          if [[ -n "$stray" ]]; then
+            echo "::error::The release changed files outside RELEASE_FILES:" "$stray"
+            exit 1
+          fi
+          git switch --create "$BRANCH"
+          git commit --quiet --message "${TITLE} ${VERSION}"
+          git push --force --quiet \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${BRANCH}"
+
+          notes=$(awk -v heading="## [${VERSION}]" 'index($0, heading) == 1 { found = 1; next } /^## \[/ { found = 0 } found' CHANGELOG.md)
+          body=$(printf 'Relates #275\n\nThe release bot merges this pull request once every check passes.\n%s\n' "$notes")
+          number=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [[ -z "$number" ]]; then
+            gh pr create --base main --head "$BRANCH" --title "${TITLE} ${VERSION}" --body "$body"
+          else
+            gh pr edit "$number" --title "${TITLE} ${VERSION}" --body "$body"
+          fi
+
+  merge:
+    name: Merge the release pull request
+    if: >-
+      github.event_name == 'workflow_run'
+      && github.event.workflow_run.event == 'pull_request'
+      && github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.head_branch == 'chore/#275-release'
+    runs-on: [self-hosted, linux]
+    environment: release
+    concurrency:
+      group: release-merge
+    steps:
+      - name: Get a token for the release app
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      # The app may bypass only the approval; the required checks still gate this merge.
+      - name: Merge it once every check passes
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          number=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open \
+            --json number,author,headRefOid \
+            --jq ".[] | select(.author.login == \"app/${APP_SLUG}\" and .headRefOid == \"${HEAD_SHA}\") | .number")
+          if [[ -z "$number" ]]; then
+            echo "No open release pull request by the app at ${HEAD_SHA}; a newer push replaced it."
+            exit 0
+          fi
+          unexpected=$(comm -23 \
+            <(gh pr diff "$number" --repo "$GITHUB_REPOSITORY" --name-only | sort) \
+            <(tr ' ' '\n' <<< "$RELEASE_FILES" | sort))
+          if [[ -n "$unexpected" ]]; then
+            echo "::error::Pull request #${number} changes files a release never does:" $unexpected
+            exit 1
+          fi
+          gh pr checks "$number" --repo "$GITHUB_REPOSITORY" --watch --fail-fast
+          gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${number}/merge" \
+            -f merge_method=squash -f sha="$HEAD_SHA"
+
+  tag:
+    name: Tag and publish the release
+    if: >-
+      github.event_name == 'push'
+      && startsWith(github.event.head_commit.message, 'chore(#275): release ')
+    runs-on: [self-hosted, linux]
+    environment: release
+    steps:
+      - name: Get a token for the release app
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: false
+
+      # The app's token pushes the tag, so workflows that run on tags (a later deploy) see it.
+      - name: Push the tag and publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          version=$(uv version --short --frozen)
+          bot_id=$(gh api "users/${APP_SLUG}[bot]" --jq .id)
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+          git tag --annotate "v${version}" --message "Whadio ${version}"
+          git push --quiet \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/v${version}"
+          awk -v heading="## [${version}]" 'index($0, heading) == 1 { found = 1; next } /^## \[/ { found = 0 } found' \
+            CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          gh release create "v${version}" --verify-tag --title "v${version}" --notes-file "$RUNNER_TEMP/notes.md"
