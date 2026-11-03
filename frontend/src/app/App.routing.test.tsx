@@ -3,7 +3,13 @@ import { userEvent } from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { POLL_INTERVAL_MS } from "@/features/meetings/api/meetings";
-import { errorBody, meetingRead, meetingSummary, page } from "@/shared/testing/fixtures";
+import {
+  errorBody,
+  meetingRead,
+  meetingSummary,
+  page,
+  workspaceRead,
+} from "@/shared/testing/fixtures";
 import { server } from "@/shared/testing/server";
 import { App } from "./App";
 import {
@@ -452,6 +458,26 @@ test("Home with no workspaces opens", async () => {
 
   // Assert
   expect(await screen.findByRole("heading", { name: "Workspaces" })).toBeInTheDocument();
+});
+
+test("a created workspace appears and opens with an empty meeting list", async () => {
+  // Arrange
+  const created = workspaceRead({ id: "research", name: "Research Team", member_count: 1 });
+  server.use(
+    http.post("/api/v1/workspaces", () => HttpResponse.json(created, { status: 201 })),
+    http.get("/api/v1/workspaces/research/meetings", () => HttpResponse.json(page([]))),
+  );
+  const { user } = open("/");
+  await user.click(await screen.findByRole("button", { name: "Create workspace" }));
+  await user.type(screen.getByLabelText(/^Workspace name/), "Research Team");
+
+  // Act
+  await user.click(screen.getByRole("button", { name: /^Create$/ }));
+
+  // Assert
+  await waitFor(() => expect(currentPath()).toBe("/workspaces/research"));
+  expect(await screen.findByRole("heading", { name: "Research Team" })).toBeInTheDocument();
+  expect(await screen.findByText("No meetings yet")).toBeInTheDocument();
 });
 
 describe("a workspace page", () => {
