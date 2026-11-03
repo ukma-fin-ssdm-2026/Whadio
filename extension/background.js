@@ -115,6 +115,10 @@ function pause(attempt) {
   return new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
 }
 
+function shouldGiveUp(failure, attempt) {
+  return attempt + 1 >= RETRIES || failure.status === 401 || failure.status === 404;
+}
+
 // One recording: opens a capture, uploads its chunks in order as they fill, resumes from what the
 // server already holds after a failure, and completes it once the tab stops sending audio.
 class Upload {
@@ -165,30 +169,43 @@ class Upload {
     for (let attempt = 0; !this.failed; attempt += 1) {
       try {
         await this.open();
-        for (const [seq, chunk] of this.chunks.entries()) {
-          if (!this.uploaded.has(seq)) {
-            const form = new FormData();
-            form.append("audio", chunk.audio, `${seq}.webm`);
-            form.append("speaker_events", JSON.stringify(chunk.events));
-            await api("PUT", `/captures/${this.capture.id}/chunks/${seq}`, form);
-            this.uploaded.add(seq);
-          }
-        }
+        await this.uploadPending();
         return;
       } catch (failure) {
-        if (attempt + 1 >= RETRIES || failure.status === 401 || failure.status === 404) {
+        if (shouldGiveUp(failure, attempt)) {
           this.failed = true;
           return;
         }
         await pause(attempt);
-        if (this.capture) {
-          // A response lost on the way may have stored a chunk; the server tells which it holds.
-          const found = await api("GET", `/captures/${this.capture.id}`).catch(() => null);
-          for (const seq of found?.received_seqs ?? []) {
-            this.uploaded.add(seq);
-          }
-        }
+        await this.syncReceived();
       }
+    }
+  }
+
+  async uploadPending() {
+    for (const [seq, chunk] of this.chunks.entries()) {
+      if (!this.uploaded.has(seq)) {
+        await this.uploadChunk(seq, chunk);
+      }
+    }
+  }
+
+  async uploadChunk(seq, chunk) {
+    const form = new FormData();
+    form.append("audio", chunk.audio, `${seq}.webm`);
+    form.append("speaker_events", JSON.stringify(chunk.events));
+    await api("PUT", `/captures/${this.capture.id}/chunks/${seq}`, form);
+    this.uploaded.add(seq);
+  }
+
+  // A response lost on the way may have stored a chunk; the server tells which it holds.
+  async syncReceived() {
+    if (!this.capture) {
+      return;
+    }
+    const found = await api("GET", `/captures/${this.capture.id}`).catch(() => null);
+    for (const seq of found?.received_seqs ?? []) {
+      this.uploaded.add(seq);
     }
   }
 
