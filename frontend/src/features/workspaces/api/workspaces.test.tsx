@@ -6,6 +6,7 @@ import { createTestQueryClient, TestProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
 import { useCreateWorkspace, useUpdateWorkspace, workspaceQueries } from "./workspaces";
 
+const CREATED = workspaceRead({ id: "created", name: "Created Workspace" });
 const UPDATED = workspaceRead({ default_preset: "interview" });
 
 function renderUpdate() {
@@ -45,18 +46,18 @@ test("creating a workspace adds the server copy to the list immediately", async 
   // Arrange
   const queryClient = createTestQueryClient();
   queryClient.setQueryData(workspaceQueries.list().queryKey, page([workspaceSummary()]));
-  server.use(http.post("/api/v1/workspaces", ({ response }) => response(201).json(UPDATED)));
+  server.use(http.post("/api/v1/workspaces", ({ response }) => response(201).json(CREATED)));
   const wrapper = ({ children }: { children: ReactNode }) => (
     <TestProviders queryClient={queryClient}>{children}</TestProviders>
   );
   const { result } = renderHook(() => useCreateWorkspace(), { wrapper });
 
   // Act
-  await result.current.mutateAsync({ name: "Demo Workspace", default_preset: "interview" });
+  await result.current.mutateAsync({ name: "Created Workspace", default_preset: "summary" });
 
   // Assert
   expect(queryClient.getQueryData(workspaceQueries.list().queryKey)).toEqual(
-    page([workspaceSummary(), UPDATED]),
+    page([workspaceSummary(), CREATED]),
   );
 });
 

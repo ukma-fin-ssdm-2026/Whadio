@@ -14,12 +14,10 @@ import { useState } from "react";
 import { type UseFormSetError, useForm } from "react-hook-form";
 import { z } from "zod";
 import type { ApiError } from "@/shared/api/errors";
-import type { Schemas } from "@/shared/api/types";
 import { titleCase } from "@/shared/lib/format";
 import { FormTextField } from "@/shared/ui/FormTextField";
 import { useCreateWorkspace } from "../api/workspaces";
-
-const PRESETS: Schemas["Preset"][] = ["summary", "detailed", "interview"];
+import { PRESETS } from "../model";
 
 const workspaceCreate = z.object({
   name: z.string().trim().min(1, "Enter a workspace name").max(100, "Use 100 characters or fewer"),
@@ -29,12 +27,14 @@ const workspaceCreate = z.object({
 type WorkspaceCreateValues = z.infer<typeof workspaceCreate>;
 
 function showServerError(error: ApiError, setError: UseFormSetError<WorkspaceCreateValues>) {
-  const nameError = error.details.find(({ field }) => field === "name");
-  if (nameError || error.status === 422) {
-    setError("name", { type: "server", message: nameError?.message ?? error.message });
-    return;
+  let onField = false;
+  for (const { field, message } of error.details) {
+    if (field === "name" || field === "default_preset") {
+      setError(field, { type: "server", message });
+      onField = true;
+    }
   }
-  setError("root.server", { type: "server", message: error.message });
+  if (!onField) setError("root.server", { type: "server", message: error.message });
 }
 
 interface CreateWorkspaceDialogProps {
@@ -84,7 +84,7 @@ export function CreateWorkspaceDialog({ onCreated }: CreateWorkspaceDialogProps)
               control={control}
               name="name"
               label="Workspace name"
-              autoComplete="organization"
+              autoComplete="off"
               autoFocus
               required
             />
