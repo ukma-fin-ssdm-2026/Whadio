@@ -48,10 +48,11 @@ alt Member stops the recording
   user -> ext : Stop
   ext -> web ++ : POST /captures/{id}/complete {last_seq}
   web -> store : Assemble chunks into the recording
-  web -> db : state = queued
-  web ->> mq : TranscriptionRequested\n{audio URL, language, glossary}
+  web -> db : state = queued, add the transcription job
   web --> ext -- : 202 Accepted
   ext --> user -- : Recording saved, processing
+  web -> db : Take the queued job not yet published
+  web ->> mq : TranscriptionRequested\n{audio URL, language, glossary}
 else Connection lost or tab closed
   note over ext, web
     Chunks already acknowledged stay stored (NFR-014).
