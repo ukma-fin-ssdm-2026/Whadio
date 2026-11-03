@@ -82,4 +82,9 @@ gh api --method POST repos/{owner}/{repo}/pulls/<n>/reviews --input review.json
 
 A `422` rejects the whole review and posts nothing; fix the comment it names and send it again.
 The response's `html_url` is the review's address. Check it with
-`gh pr view <n> --json reviews --jq '.reviews[-1].state'`, then remove the review worktree.
+`gh pr view <n> --json reviews --jq '.reviews[-1].state'`.
+
+Then clean up: delete `review.json` and run `git worktree remove ../whadio-review-<n>`. Git
+refuses while any file there is changed or untracked; `git status` in the worktree shows which,
+such as a hand mutation that was never restored. Restore or delete that file, and never pass
+`--force`.

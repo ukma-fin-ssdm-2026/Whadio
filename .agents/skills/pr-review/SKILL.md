@@ -53,8 +53,8 @@ Report this in about 15 lines, then wait. The reviewer may narrow the review or 
 
 1. Check out the head: `git fetch origin pull/<n>/head`, then
    `git worktree add --detach ../whadio-review-<n> <headRefOid>`. Install what the checks you run
-   need there (`AGENTS.md`, "Setup"), and remove the worktree with `git worktree remove` once the
-   review is posted.
+   need there (`AGENTS.md`, "Setup"). Remove it after posting, as `references/posting.md`,
+   "Sending it", describes.
 2. Read the diff against the merge base (`git diff origin/<base>...<headRefOid>`), the whole of each
    changed file where the hunk is not enough, and the callers of changed functions.
 3. Check, in this order:
