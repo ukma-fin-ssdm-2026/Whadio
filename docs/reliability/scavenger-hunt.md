@@ -1,23 +1,19 @@
 # Resilience Scavenger Hunt
 
-Starting point: `main` at `81b4637`. Scope: the backend (`src/whadio/`), the browser extension
-(`extension/`) and the SPA's API client (`frontend/src/shared/api/`).
+Starting point: `main` at `8735c26`. Scope: the backend (`src/whadio/`: API, modules, workers and
+scheduler) and the SPA's API client (`frontend/src/shared/api/`), as the issue sets it, plus the
+browser extension (`extension/`), which uploads every recording and so carries most of the risk of
+losing one.
 
-Eight findings. Each finding gives its category from the hunt's checklist:
-
-| | Category |
-|---|---|
-| A | Error handling |
-| B | External dependencies |
-| C | Input validation |
-| D | Silent failures |
-| E | Performance and blocking |
+Eight findings, each with its category from the hunt's checklist: A error handling · B external
+dependencies · C input validation · D silent failures · E performance and blocking.
 
 ## Stage 1: Findings
 
 ### F1. Job publish to RabbitMQ waits without a limit while holding a row lock (B, E)
 
-`src/whadio/shared/broker.py`, called from `src/whadio/processing/services.py` (`publish_next`):
+`src/whadio/shared/broker.py:23`, `:54`, called from `src/whadio/processing/services.py:196`,
+`:205` (`publish_next`):
 
 ```python
 async def connect(settings: BrokerSettings, *, name: str) -> AbstractRobustConnection:
@@ -49,7 +45,7 @@ stays tied up, and the lock lasts until the process restarts.
 
 ### F2. Extension requests to the server have no deadline (B, E)
 
-`extension/api.js`:
+`extension/api.js:31`:
 
 ```js
 const response = await fetch(`${server}/api/v1${path}`, init);
@@ -66,7 +62,7 @@ neither on the server nor on disk. It is lost.
 
 ### F3. A failed upload is given up without a log or a word to the user (D, A)
 
-`extension/background.js`, `Upload.send()` and `Upload.finish()`:
+`extension/background.js:174`, `:221`, `Upload.send()` and `Upload.finish()`:
 
 ```js
 } catch (failure) {
@@ -93,7 +89,7 @@ and a network outage apart.
 
 ### F4. A recording that could not be saved vanishes in an unawaited listener (A, D)
 
-`extension/background.js`, the recording port's `onDisconnect` listener:
+`extension/background.js:262`, the recording port's `onDisconnect` listener:
 
 ```js
 port.onDisconnect.addListener(async () => {
@@ -112,7 +108,7 @@ not told and nothing is logged. The offscreen document can also stay open.
 
 ### F5. Object storage calls can block a request for over half an hour (B, E)
 
-`src/whadio/shared/storage.py`:
+`src/whadio/shared/storage.py:113`:
 
 ```python
 return Minio(
@@ -133,7 +129,7 @@ pool, and then password hashing, which uses the same executor, stalls as well, s
 
 ### F6. The SPA's API client has no deadline (B)
 
-`frontend/src/shared/api/client.ts`:
+`frontend/src/shared/api/client.ts:26`:
 
 ```ts
 fetch: (request) => globalThis.fetch(request),
@@ -147,7 +143,7 @@ the page recovers.
 
 ### F7. Signing out ignores whether the server ended the session (D)
 
-`extension/api.js`:
+`extension/api.js:83`:
 
 ```js
 await api("DELETE", "/sessions/current").catch(() => {});
@@ -162,7 +158,7 @@ an attacker would need a copy taken earlier. That makes the risk low.
 
 ### F8. Asking which chunks the server holds fails silently (D)
 
-`extension/background.js`, `Upload.syncReceived()`:
+`extension/background.js:206`, `Upload.syncReceived()`:
 
 ```js
 const found = await api("GET", `/captures/${this.capture.id}`).catch(() => null);
@@ -189,6 +185,13 @@ These look like the checklist's anti-patterns but are deliberate boundaries:
   swallowed.
 - SMTP, Ollama, Anthropic, the ASR worker's recording fetch and PostgreSQL all already have
   explicit timeouts, and their errors are mapped to typed failures.
+- The scheduler catches `SQLAlchemyError` per cleanup job, logs it and carries on with the next
+  job, so one failing cleanup does not stop the others. The workers parse every job message with
+  pydantic in `workers/supervision/supervisor.py`, and log and reject a malformed one without
+  requeuing it, so it cannot loop.
+- Input validation (C): no finding. Request bodies, query parameters and job messages are parsed
+  by pydantic models at the boundary, with types, ranges and required fields declared on the
+  fields, so a missing or malformed value is refused before it reaches a service.
 
 ## Stage 2: Fault → error → failure
 
@@ -204,7 +207,7 @@ column describes what a user or another system sees once the chain completes.
 | F5 | MinIO's default 300 s timeouts and 5 retries | Request handlers and executor threads wait on storage for up to 30 minutes | Uploads and deletions hang; under load, sign-ins stall too because the thread pool is exhausted | **Medium** |
 | F6 | The SPA's `fetch` has no deadline | A query stays in its loading state | A page spins with no error or retry offered | **Low** |
 | F7 | `.catch(() => {})` around session revocation | The server-side session is still active | The extension session stays usable for up to 24 h after sign-out | **Low** |
-| F8 | `.catch(() => null)` without a log | The retry proceeds without knowing what the server holds | None: duplicates are absorbed; only diagnosis suffers | **Low** |
+| F8 | `.catch(() => null)` without a log | The retry proceeds without knowing what the server holds | No user-visible failure, as the duplicates are absorbed; a support engineer cannot tell from the logs whether the status request failed | **Low** |
 
 ## Stage 4: The finding to present
 
