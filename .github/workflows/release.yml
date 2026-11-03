@@ -52,7 +52,8 @@ jobs:
             exit 0
           fi
           archive="gh_${GH_VERSION}_linux_amd64.tar.gz"
-          curl --fail --silent --show-error --location --output "${RUNNER_TEMP}/${archive}" \
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+            --output "${RUNNER_TEMP}/${archive}" \
             "https://github.com/cli/cli/releases/download/v${GH_VERSION}/${archive}"
           echo "${GH_SHA256}  ${RUNNER_TEMP}/${archive}" | sha256sum --check --quiet
           tar --extract --gzip --file "${RUNNER_TEMP}/${archive}" --directory "$RUNNER_TEMP"
