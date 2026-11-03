@@ -361,7 +361,7 @@ Testing policy and evidence are maintained in [`/docs/testing/`](docs/testing/).
 - [Debugging Log](docs/testing/debugging-log.md) — retry-limit fault, regression tests and lessons
 - [Boundary Cases](docs/testing/boundary-cases.md) — boundary value tests of the numeric and length limits
 - [Test Doubles](docs/testing/test-doubles.md) — doubles used at each test boundary
-- [Coverage Report](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/workflows/ci.yml?query=branch%3Amain) — browsable line and branch coverage, in the `test-reports` artifact of each CI run on `main`
+- [Coverage Report](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/workflows/ci.yml?query=branch%3Amain) — browsable line and branch coverage, in the `test-reports` artifact of each CI run on `main`, kept for 14 days
 
 ## Validation Artifacts
 
