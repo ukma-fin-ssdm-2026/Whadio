@@ -15,6 +15,7 @@ Every refactoring has its own pull request:
 | 2 | Move Sensitive Data Out of Code in the CI workflow | [#273](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/273) | 0.1.1 |
 | 3 | Extract Function on `Upload.send`, after characterization tests ([#274](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/274)) | [#276](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/276) | 0.1.1 |
 | 4 | Capture assembly moved out of the event loop | [#279](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/279) | 0.1.2 |
+| 5 | Recorder messages dispatched from a table, after characterization tests | Pending | Pending |
 
 ## Metrics
 
@@ -69,9 +70,9 @@ version and adds `integrity` and `crossorigin="anonymous"` to both tags, which w
 The regular-expression finding is a code smell and does not affect Reliability Rating. Reliability
 E came from `python:S930` in `src/whadio/api/composition.py:237` (a FastAPI `Depends` false
 positive), `javascript:S2871` and `javascript:S9383` in `extension/recorder.js:22,339`, and
-`python:S7493` in `src/whadio/capture/services.py:234`. Refactoring 4 cleared `python:S7493`. The
-blocker `python:S930` keeps the rating at E until it is resolved as a false positive, and the two
-extension bugs need fixes of their own.
+`python:S7493` in `src/whadio/capture/services.py:234`. Refactoring 4 cleared `python:S7493`, and
+Refactoring 5 clears both extension bugs. The blocker `python:S930` keeps the rating at E until it
+is resolved as a false positive.
 
 ## Dashboard evidence
 
@@ -191,6 +192,55 @@ The PR dashboard shows a passed Quality Gate, zero new issues, and zero new dupl
   the loop, cleanup after a cancelled upload, and a storage failure.
 - Status: merged in PR #279 and released in 0.1.2.
 
+## Refactoring 5: dispatch the recorder's messages from a table
+
+- SonarQube issues: `javascript:S9383` (Major bug) and `javascript:S2871` (Critical bug)
+- Locations: `extension/recorder.js:339`, the `ask-sign-in` message, and `extension/recorder.js:22`,
+  the speaker sort. Together they held the file at Reliability D.
+- Smells:
+  - The `chrome.runtime.onMessage` listener was a chain of nine `if (message.type === ...)`
+    branches, with a Cognitive Complexity of 13 by Biome.
+  - Three branches repeated the same "show the card" steps. Only one of them ended its promise with
+    `.catch`. The `ask-sign-in` copy did not, so a reloaded extension left an unhandled rejection
+    (S9383).
+  - `[...heard].sort()` had no compare function (S2871).
+- Refactoring techniques:
+  - **[Replace Conditional with Polymorphism](https://refactoring.com/catalog/replaceConditionalWithPolymorphism.html)**,
+    in its lookup-table form: a `Map` from message type to handler.
+  - **[Extract Function](https://refactoring.com/catalog/extractFunction.html)** for `showCard` and
+    `refreshAndShowCard`, which merges the duplicated card steps.
+- Behaviour that remains unchanged:
+  - every answer to `status` and `stop`;
+  - when the card shows, and its error;
+  - that `show-error` does not check the sign-in;
+  - the page port and the stop handshake;
+  - silence for unknown types, including `toString`, which a plain object would resolve;
+  - the order of the speakers sent to the background. The comparator sorts by UTF-16 code units,
+    as the default sort did. `localeCompare` would have reordered Cyrillic and accented names.
+- Intended change: `ask-sign-in` now swallows a rejected sign-in check, like `ask-consent` already
+  did. This is the S9383 fix. It changes nothing a user sees, because the page cannot reach the
+  extension at that point.
+- Structural change: the listener is one line, `handlers.get(message.type)?.(message, sendResponse)`.
+  Each handler has a Cognitive Complexity of at most 1, and the shared card steps live in one place.
+- Proving tests: `extension/recorder.test.js`.
+  - Before this refactoring, the file had no tests. 14 characterization tests were committed first,
+    on the unchanged code, and pass after it. Review strengthened the `stopped` test, which also
+    passes on the original code.
+  - A mutation check showed they are not vacuous: switching to `localeCompare`, dropping the
+    `show-error` text, the `stopped` handling, the `stop` answer or the page port each turned at
+    least one test red. One mutation survived: removing the `dismissed` reset from `ask-sign-in`,
+    because it only affects later automatic re-shows.
+  - A 15th test covers the S9383 fix. On the original code it fails with
+    `Unhandled Rejection: Extension context invalidated.`; after the refactoring it passes.
+- Status: pending review.
+
+| Cognitive Complexity | Before | After |
+| --- | ---: | ---: |
+| `onMessage` listener (Biome) | 13 | ≤ 1 per handler |
+| Sum over `extension/recorder.js` functions (Biome) | 61 | 50 |
+| `extension/recorder.js` (SonarQube) | 94 | Pending analysis |
+| `extension/recorder.js` bugs (SonarQube) | 2 (Reliability D) | Pending analysis |
+
 ## AI Usage
 
 ### Refactoring 1 (Codex)
@@ -271,6 +321,21 @@ The cancellation test and its claims were revised against review on #279 and che
 runs: the test passed five repeated runs with the cancellation shield and failed five with it
 removed.
 
+### Refactoring 5 (Claude Code)
+
+Claude Code (Claude Opus 5.5), directed by Denys, generated the characterization tests, the
+refactoring and the first draft of this section. The request was Zlata's task for Lab 8: fix a
+SonarQube problem and refactor it as #265 requires.
+
+Claude Code picked the two open `extension/recorder.js` bugs because they were the only open
+findings with a code fix. The other open findings are `python:S930`, a false positive, and the two
+`Web:S5725` findings tracked in #167.
+
+The diff was reviewed line by line before the commit, and review changed one thing. The first
+draft reset `dismissed` inside `showCard`, which runs after the asynchronous sign-in check. A
+`hide-card` that arrived during that check would then have been undone. The reset was moved back
+before the check, where the original code had it.
+
 ## Verification log
 
 ### Refactoring 1
@@ -305,6 +370,15 @@ authoritative full-suite result.
 | [#274](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/41548640541) | Extension tests, before the refactoring | 15 passed |
 | [#276](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/41556532967) | Extension tests, after the refactoring | The same 15 passed |
 | [#279](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/279) | Capture service tests | 31 existing passed before and after, 3 added passed |
+
+### Refactoring 5
+
+| Step | Command | Result |
+| --- | --- | --- |
+| Characterization, on the original code | `uv run task extension:test` | 29 passed: 15 upload, 14 recorder |
+| After the refactoring | `uv run task extension:test` | 30 passed: the same 29 and the S9383 test |
+| S9383 test, on the original code | `npx --prefix frontend vitest run --root extension recorder.test.js` | Unhandled rejection: the run fails |
+| Lint | `npm --prefix frontend run check:extension` | Passed |
 
 ### Regression after all refactorings
 
