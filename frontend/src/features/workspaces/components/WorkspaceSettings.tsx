@@ -15,8 +15,7 @@ import { useNotify } from "@/shared/ui/NotifyProvider";
 import { SectionHeader } from "@/shared/ui/SectionHeader";
 import { SettingsRow } from "@/shared/ui/SettingsRow";
 import { useUpdateWorkspace, workspaceQueries } from "../api/workspaces";
-
-const PRESETS: Schemas["Preset"][] = ["summary", "detailed", "interview"];
+import { PRESETS } from "../model";
 
 function PresetSelect({ workspace }: { workspace: Schemas["WorkspaceRead"] }) {
   const update = useUpdateWorkspace(workspace.id);
