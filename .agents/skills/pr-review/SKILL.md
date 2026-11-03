@@ -41,8 +41,9 @@ gh issue view <issue>
 - **Size:** additions and deletions without lockfiles and generated files (`*.gen.ts`,
   `docs/api/openapi-generated.*`).
 - **Context:** the governing documents the changed paths fall under (the table in `AGENTS.md`, "The
-  project"), recent commits on the base that touch the same files
-  (`git log --oneline -5 origin/main -- <paths>`), and other open pull requests on them.
+  project"), recent commits on the pull request's base (`baseRefName`: `main`, or the parent pull
+  request's branch when stacked) that touch the same files
+  (`git log --oneline -5 origin/<base> -- <paths>`), and other open pull requests on them.
 - **Earlier reviews:** open threads and whether the author answered them
   (`gh api repos/{owner}/{repo}/pulls/<n>/comments`).
 
