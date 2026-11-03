@@ -139,12 +139,15 @@ jobs:
       - name: Run the whole test suite with the coverage gate
         id: tests
         env:
-          WHADIO_TEST_DATABASE_URL: postgresql+psycopg://whadio_app:whadio-dev-app@127.0.0.1:5432/whadio
-        run: >-
-          uv run --frozen task test:cov --
-          --junitxml=reports/junit.xml
-          --cov-report=term-missing:skip-covered
-          --cov-report=html
+          WHADIO_DB_HOST: 127.0.0.1
+        run: |
+          # Compose created the whadio_app role from .env, so the URL, password included, comes from there too.
+          WHADIO_TEST_DATABASE_URL="$(uv run --frozen python -I -c 'from whadio.shared.database import DatabaseSettings; print(DatabaseSettings().application_url().render_as_string(False))')"
+          export WHADIO_TEST_DATABASE_URL
+          uv run --frozen task test:cov -- \
+            --junitxml=reports/junit.xml \
+            --cov-report=term-missing:skip-covered \
+            --cov-report=html
 
       - name: Summarise coverage and failed tests
         if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
