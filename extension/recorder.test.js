@@ -251,6 +251,7 @@ describe("the recorder's answers to the extension", () => {
 
     // Act
     send({ type: "stopped" });
+    send({ type: "stop" });
 
     // Assert
     expect(sentTypes()).toEqual([]);
