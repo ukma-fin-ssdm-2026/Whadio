@@ -226,7 +226,7 @@ The PR dashboard shows a passed Quality Gate, zero new issues, and zero new dupl
   - Before this refactoring, the file had no tests. 14 characterization tests were committed first,
     on the unchanged code, and pass unchanged after it.
   - A mutation check showed they are not vacuous: switching to `localeCompare`, dropping the
-    `show-error` text, the `stop` answer or the page port each turned at least one test red. One
+    `show-error` text, the `stopped` handling, the `stop` answer or the page port each turned at least one test red. One
     mutation survived: removing the `dismissed` reset from `ask-sign-in`, because it only affects
     later automatic re-shows.
   - A 15th test covers the S9383 fix. On the original code it fails with

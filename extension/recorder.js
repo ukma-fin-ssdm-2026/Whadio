@@ -332,12 +332,12 @@ if (!globalThis.whadioRecorder) {
 
   function showCard(error) {
     document.body.append(banner.host);
-    if (error) {
+    if (error !== undefined) {
       banner.showError(error);
     }
   }
 
-  // Asked for from the popup or the shortcut, so the card shows even after "Not now" or "Don't show again".
+  // Asked for with the shortcut, so the card shows even after "Not now" or "Don't show again".
   // The sign-in check hides any earlier error, so the error is shown after it.
   function refreshAndShowCard(error) {
     dismissed = false;
