@@ -1,6 +1,7 @@
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from importlib.metadata import version
 
 from fastapi import APIRouter, FastAPI
 from fastmcp.utilities.lifespan import combine_lifespans
@@ -42,7 +43,7 @@ from .meetings import routes_content
 from .openapi_export import export_openapi
 from .settings import WebSettings
 
-API_VERSION = "0.1.0"
+API_VERSION = version("whadio")
 
 DESCRIPTION = """
 Whadio records Google Meet calls from the browser, transcribes them with speaker labels and

@@ -347,6 +347,13 @@ All code quality documentation is maintained in the [`/docs/code-quality/`](docs
 - [Static Analysis](docs/code-quality/static-analysis.md) — the tools, how they run, and the documented findings
 - [Implementation Progress](docs/code-quality/progress.md) — the MVP's scope, status and next steps
 
+## Refactoring Artifacts
+
+Refactoring plans and evidence are maintained in [`/docs/refactoring/`](docs/refactoring/).
+
+- [SonarQube Cloud Refactoring Report](docs/refactoring/sonarcloud-report.md) — baseline metrics,
+  refactoring contracts, test evidence and before/after analysis screenshots
+
 ## Testing Artifacts
 Testing policy and evidence are maintained in [`/docs/testing/`](docs/testing/).
 - [Testing Strategy](docs/testing/testing-strategy.md) — scope, quality goals, metrics and merge gates

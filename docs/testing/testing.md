@@ -179,6 +179,16 @@ The web app has its own tests, in `frontend/`, next to the code they test. They 
 - **Mock Service Worker** answers the API. `src/shared/testing/server.ts` exports the `server` and an `http` typed from the OpenAPI types, so a handler for a path the API does not have fails to compile. A test declares its handlers with `server.use(...)`, and a request nothing handles fails the test. `src/shared/testing/fixtures.ts` builds the API's response bodies.
 - **Route tests** render the real `<App />` at a URL, with the real route tree and the real theme: set the address with `window.history.replaceState`, then render. `App.routing.test.tsx` and `App.test.tsx` work this way. `src/app/testing.tsx` holds their helpers: `serveApi` answers a signed-in or signed-out session and records the requests, `signIn` fills in the form, and `renderAtPath` gives a component that holds links a router without the app.
 
+## 5. Visual checks
+
+The tests above never draw a page. `npm run capture` in `frontend/` screenshots the running app with Playwright's own Chromium and lists each page's console errors and warnings, uncaught exceptions and failed requests. Install the browser once with `npx playwright install chromium` in `frontend/`, start the API and the web app (`AGENTS.md`, "Setup"), then run, from the repository root:
+
+```bash
+npm --prefix frontend run capture -- / /meetings --out my-change
+```
+
+It signs in as `ui-evidence@whadio.dev`, a development account it creates with `whadio dev-user` from the project's `.venv` under a fresh random password, and saves every route at 1440 × 900 and 390 × 844, light and dark, in `.ui-evidence/my-change/`, which git ignores. `--viewport`, `--theme`, `--full-page`, `--signed-out` and `--base-url` change that. The agent skill [`ui-evidence`](../../.agents/skills/ui-evidence/SKILL.md) adds before-and-after shots, multi-step flows and videos with `npx playwright cli`, and attaching them to an issue or a pull request.
+
 ## AI Usage
 
-The tests, the coverage runs and this document were made with Claude Code (Claude Opus 5.5); checked by Denys Zabiiaka. Claude Code later matched its status statements to the code for #257.
+The tests, the coverage runs and this document were made with Claude Code (Claude Opus 5.5); checked by Denys Zabiiaka. Section 5 and the capture script were added with Claude Code in #266. Claude Code later matched its status statements to the code for #257.
