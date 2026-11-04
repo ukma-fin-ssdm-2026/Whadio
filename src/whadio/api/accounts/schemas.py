@@ -186,6 +186,10 @@ class InvitationCreated(InvitationRead):
     )
 
 
+class MemberUpdate(Input):
+    role: InvitedRole = Field(description="The member's new role; the Owner's cannot change")
+
+
 class MemberRead(Output):
     user_id: UUID = Field(description="The member's user identifier", examples=[USER_ID_EXAMPLE])
     name: str = Field(description="The member's display name", examples=["Bob"])

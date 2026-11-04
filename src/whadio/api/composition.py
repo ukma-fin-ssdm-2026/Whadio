@@ -554,7 +554,9 @@ Invitations = Annotated[InvitationService, Depends(invitation_service)]
 
 def member_service(session: Session) -> MemberService:
     return MemberService(
-        MemberRepository(session), WorkspaceMembershipService(MembershipRepository(session))
+        MemberRepository(session),
+        WorkspaceMembershipService(MembershipRepository(session)),
+        AuditWriter(session),
     )
 
 
