@@ -396,8 +396,8 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /workspaces/{workspace_id}/members` · List members
 
-- **Status:** Designed · **Caller:** any member · **Success:** `200`, a page of members, by
-  joining time
+- **Status:** Implemented · **Caller:** any member · **Success:** `200`, a page of members, by
+  joining time, oldest first
 - **Errors:**
   - `404 NOT_FOUND`: no such workspace, or the caller is not a member.
 
@@ -1326,3 +1326,6 @@ These PR #63 review revisions were assisted by OpenAI Codex. Everything was revi
 The Export implementation and review changes were assisted by OpenAI Codex.
 
 Later revisions were assisted by OpenAI Codex and verified by author.
+
+The member endpoints (#184) were implemented with Claude Code (Claude Opus 5.5) and reviewed by
+the author.
