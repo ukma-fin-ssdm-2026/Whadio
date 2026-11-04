@@ -940,6 +940,34 @@ describe("the folder of the workspace library", () => {
     expect(folders).toEqual(["folder"]);
   });
 
+  test("a link to a folder that no longer exists drops it from the URL", async () => {
+    // Act
+    open("/workspaces/workspace?folder=deleted");
+
+    // Assert
+    await waitFor(() => expect(currentPath()).toBe("/workspaces/workspace"));
+  });
+
+  test("a link to a folder that no longer exists asks for all meetings", async () => {
+    // Arrange
+    window.history.replaceState(null, "", "/workspaces/workspace?folder=deleted");
+    serveApi(true);
+    const folders: (string | null)[] = [];
+    server.use(
+      http.get("/api/v1/workspaces/workspace/meetings", ({ request }) => {
+        folders.push(new URL(request.url).searchParams.get("folder_id"));
+        return HttpResponse.json(page([meetingSummary()]));
+      }),
+    );
+
+    // Act
+    render(<App />);
+    await screen.findByRole("button", { name: LIST_ROW });
+
+    // Assert
+    expect(folders).toEqual([null]);
+  });
+
   test("comes back after leaving a meeting with Back", async () => {
     // Arrange
     const { user } = open("/workspaces/workspace?folder=folder");

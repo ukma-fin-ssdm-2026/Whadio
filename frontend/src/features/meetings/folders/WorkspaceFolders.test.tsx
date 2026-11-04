@@ -79,14 +79,14 @@ function serveDelete() {
   );
 }
 
-function serveRestore(answer: (attempt: number) => "restored" | "exists" | "conflict") {
+function serveRestore(answer: () => "restored" | "exists" | "conflict") {
   const restored: string[] = [];
   server.use(
     http.post(
       "/api/v1/workspaces/{workspace_id}/folders/{folder_id}/restore",
       ({ params, response }) => {
         restored.push(params.folder_id);
-        const outcome = answer(restored.length);
+        const outcome = answer();
         if (outcome === "exists") return response(409).json(errorBody("FOLDER_EXISTS", "Conflict"));
         if (outcome === "conflict") {
           return response(409).json(errorBody("FOLDER_RECOVERY_CONFLICT", "Conflict"));
@@ -309,7 +309,7 @@ test("Undo stays after a click elsewhere", async () => {
 });
 
 test.for([
-  ["exists", /folder with this name already exists/i],
+  ["exists", /another folder now has its name/i],
   ["conflict", /meetings have changed since deletion/i],
 ] as const)("a %s restore conflict is explained", async ([outcome, message]) => {
   // Arrange
@@ -322,18 +322,4 @@ test.for([
 
   // Assert
   expect(await screen.findByText(message)).toBeVisible();
-});
-
-test("a restore refused for a taken name can be tried again", async () => {
-  // Arrange
-  serveDelete();
-  const restored = serveRestore((attempt) => (attempt === 1 ? "exists" : "restored"));
-  const user = await deletePlanning();
-  await user.click(await screen.findByRole("button", { name: "Undo" }));
-
-  // Act
-  await user.click(await screen.findByRole("button", { name: "Try again" }));
-
-  // Assert
-  await waitFor(() => expect(restored).toEqual(["planning", "planning"]));
 });

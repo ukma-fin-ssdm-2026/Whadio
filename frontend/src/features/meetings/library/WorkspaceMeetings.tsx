@@ -1,5 +1,6 @@
 import { Button, Stack } from "@mui/material";
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import type { Schemas } from "@/shared/api/types";
 import { folderQueries } from "../api/folders";
 import { meetingQueries } from "../api/meetings";
@@ -35,10 +36,17 @@ export function WorkspaceMeetings({
 }: WorkspaceMeetingsProps) {
   const { draft, type } = useNameDraft(name, onName);
   const folders = useQuery(folderQueries.list(workspaceId));
+  // A link can name a deleted or malformed folder; it waits for the list and then falls back to all.
+  const knownFolder = folders.data?.some((folder) => folder.id === folderId) === true;
+  const shownFolderId = knownFolder ? folderId : null;
   const meetings = useInfiniteQuery({
-    ...meetingQueries.list(workspaceId, name, folderId),
+    ...meetingQueries.list(workspaceId, name, shownFolderId),
+    enabled: folderId === null || !folders.isPending,
     placeholderData: keepPreviousData,
   });
+  useEffect(() => {
+    if (folders.isSuccess && folderId !== null && !knownFolder) onFolder(null);
+  }, [folders.isSuccess, folderId, knownFolder, onFolder]);
 
   return (
     <Stack sx={{ gap: 3 }}>
@@ -46,13 +54,15 @@ export function WorkspaceMeetings({
         workspaceId={workspaceId}
         role={workspaceRole}
         folders={folders.data ?? []}
-        selectedFolderId={folderId}
+        selectedFolderId={shownFolderId}
         loading={folders.isPending}
         error={folders.error?.message}
         onSelect={onFolder}
       />
       <MeetingLibrary
-        title={folders.data?.find((folder) => folder.id === folderId)?.name ?? "Workspace library"}
+        title={
+          folders.data?.find((folder) => folder.id === shownFolderId)?.name ?? "Workspace library"
+        }
         meetings={meetings.data ?? []}
         loading={meetings.isPending}
         error={meetings.error?.message}

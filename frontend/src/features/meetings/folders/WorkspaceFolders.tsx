@@ -46,7 +46,7 @@ function recoveryMessage(error: unknown): string {
     return "This folder cannot be restored because its meetings have changed since deletion.";
   }
   if (error instanceof ApiError && error.code === "FOLDER_EXISTS") {
-    return "A folder with this name already exists. Rename it, then try again.";
+    return "This folder cannot be restored because another folder now has its name.";
   }
   return error instanceof Error ? error.message : "The folder could not be restored.";
 }
@@ -74,18 +74,12 @@ export function WorkspaceFolders({
     setMenuFolder(null);
   };
 
-  // The server keeps a deleted folder's recovery until it is used, so a name clash can be retried.
   const restore = async (folder: Folder) => {
     try {
       await restoreFolder.mutateAsync(folder.id);
       notify("Folder restored.");
     } catch (caught) {
-      const retry = caught instanceof ApiError && caught.code === "FOLDER_EXISTS";
-      notify(
-        recoveryMessage(caught),
-        "error",
-        retry ? { label: "Try again", onClick: () => restore(folder) } : undefined,
-      );
+      notify(recoveryMessage(caught), "error");
     }
   };
 
