@@ -4238,7 +4238,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `NOT_TRANSCRIBED`: the meeting is not processed yet */
+            /** @description `NOT_TRANSCRIBED`: the meeting has no transcript yet */
             409: {
                 headers: {
                     [name: string]: unknown;
