@@ -79,7 +79,8 @@ Every other limit sits where its declaration says. Three behaviours are worth kn
 
 ## Not covered here
 
-- Password length (1 to 128) is left to a teammate's test-driven development work.
+- Password length at sign-in (1 to 128) and at reset has no boundary test. The 12 to 128 rule for
+  registration is tested by `test_registration_password_accepts_only_12_to_128_characters`.
 - The prompt budgets of the notes worker are covered by the mutation testing work.
 - Other declared limits have no boundary test yet: the SMTP port (`notifications/settings.py`),
   the speaker display name (200), the share token (256), the MCP key lifetime (1 to 365 days), the
@@ -88,4 +89,4 @@ Every other limit sits where its declaration says. Three behaviours are worth kn
 
 ## AI Usage
 
-Drafted with Claude Code (Claude Opus 5.5); checked by Andrii Shalaiev.
+Drafted with Claude Code (Claude Opus 5.5); checked by Andrii Shalaiev. Claude Code later updated the password-length note for #257.

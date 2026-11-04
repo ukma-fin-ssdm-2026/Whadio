@@ -34,7 +34,7 @@ Security tests must prove **zero content disclosure** to unauthorized identities
 recording, export, share and MCP paths (NFR-007 to NFR-009). Authentication tests cover wrong
 passwords, missing and ended sessions, and expired or revoked keys. Audit tests cover every action
 listed by NFR-010 and assert that records contain identifiers and metadata, never meeting content.
-Property-based testing is planned first for display names, folder names, glossary terms, Unicode
+Property-based testing is in place for display names, folder names, glossary terms, Unicode
 and cursor round-trips. Performance tests use the existing QA-1 target: k6 at 50 concurrent
 requests for 30 seconds, with p95 API latency at or below 200 ms; processing tests measure NFR-002
 separately on one-hour recordings. Model quality is evaluated on a fixed Ukrainian/English
@@ -57,8 +57,8 @@ recorded alongside results.
 The Testing Strategist owns the scope, targets, exceptions and interpretation of results. The
 Integration Lead implements and maintains the jobs, caches, services and artifacts that enforce
 them. Cheap static checks run on every commit and fast unit tests on every push; CI runs all checks
-plus integration tests, audits and API lint on every pull request and on `main`. CI should publish
-JUnit and coverage artifacts and fail when the agreed coverage floors regress. System, performance
+plus integration tests, audits and API lint on every pull request and on `main`. CI publishes
+JUnit and coverage artifacts and fails when the agreed coverage floors regress. System, performance
 and model suites run before a release and on relevant changes; expensive scheduled runs do not
 weaken pull-request gates. A failing gate is fixed, or its policy is changed transparently in a reviewed PR; checks are
 never bypassed ad hoc.
@@ -67,7 +67,8 @@ never bypassed ad hoc.
 
 This strategy was prepared with OpenAI Codex from the requirements, threat model, quality
 attributes, current tests, coverage report and CI configuration. Zlata owns the decisions, reviewed
-the targets and is responsible for the final document.
+the targets and is responsible for the final document. Claude Code later put the
+property-based testing and CI report statements in the present tense for #257.
 
 ## Бонуси
 

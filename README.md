@@ -111,9 +111,8 @@ browser then resolves the same storage host used to sign links for the Compose A
 ## Try Whadio
 
 There is no public evaluation instance yet. To try the current product locally, follow the setup
-above. The dedicated midterm demo is tracked in
-[#192](https://github.com/ukma-fin-ssdm-2026/Whadio/issues/192); the available per-lab walkthroughs
-are linked in the [labs index](#labs-index).
+above. The [midterm demo video](Labs/midterm-presentation.txt) shows the product run locally; the
+per-lab walkthroughs are linked in the [labs index](#labs-index).
 
 ## Running the API
 
@@ -211,7 +210,8 @@ uv run whadio links password-reset --email person@example.com
 ```
 
 The reset link is single-use and valid for one hour, in either registration mode. Reissuing it
-invalidates the previous link. The reset page is pending the SPA milestone. To redeem the link
+invalidates the previous link. The SPA has no reset page yet
+([#189](https://github.com/ukma-fin-ssdm-2026/Whadio/issues/189)). To redeem the link
 through the API, take the reset ID from `/password-resets/<id>` and the token from
 `#token=<token>`, then send:
 
@@ -361,7 +361,7 @@ Testing policy and evidence are maintained in [`/docs/testing/`](docs/testing/).
 - [Debugging Log](docs/testing/debugging-log.md) — retry-limit fault, regression tests and lessons
 - [Boundary Cases](docs/testing/boundary-cases.md) — boundary value tests of the numeric and length limits
 - [Test Doubles](docs/testing/test-doubles.md) — doubles used at each test boundary
-- [Coverage Report](htmlcov/index.html) — browsable line coverage for the current baseline
+- [Coverage Report](htmlcov/index.html) — browsable line and branch coverage, a snapshot of 2026-11-01
 
 ## Validation Artifacts
 
