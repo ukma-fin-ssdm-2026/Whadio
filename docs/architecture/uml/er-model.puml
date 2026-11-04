@@ -57,6 +57,7 @@ entity "MEETING" as Meeting {
   * source_type : enum (extension | upload)
   * recording_status : enum (complete | partial)
   * processing_state : enum (recording | queued | processing | processed | failed)
+  failure_reason : enum (ProcessingFailure) <<nullable>>
   storage_path : string <<P/S, nullable>>
   duration_seconds : integer <<nullable>>
   * recorded_at : datetime
@@ -65,7 +66,9 @@ entity "MEETING" as Meeting {
   consent_confirmed_by_user_id : UUID <<FK, nullable>>
   * recording_delete_after : datetime
   recording_deleted_at : datetime <<nullable>>
+  recording_warning_sent_at : datetime <<nullable>>
   * access_mode : enum (workspace | restricted)
+  * regeneration_count : integer
 }
 
 entity "INVITATION" as Invitation {
@@ -259,9 +262,12 @@ entity "PROCESSING_JOB" as ProcessingJob {
   * status : enum (queued | running | succeeded | failed)
   failure_reason : text <<S, nullable>>
   * created_at : datetime
+  queued_at : datetime <<nullable>>
   * attempts : integer
   started_at : datetime <<nullable>>
   finished_at : datetime <<nullable>>
+  published_at : datetime <<nullable>>
+  sent_context : json <<S, nullable>>
 }
 
 entity "NOTIFICATION_OUTBOX" as NotificationOutbox {
