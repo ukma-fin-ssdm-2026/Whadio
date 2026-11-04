@@ -105,7 +105,7 @@ services:
       - ./infra/rabbitmq/users.sh:/users.sh:ro
 
   seaweedfs:
-    image: chrislusf/seaweedfs:4.48
+    image: chrislusf/seaweedfs:4.50
     profiles: [storage]
     logging: *logging
     # Without credentials SeaweedFS serves every bucket anonymously, so the keys are mandatory.
@@ -123,7 +123,7 @@ services:
       test: [CMD, curl, -fsS, -o, /dev/null, http://localhost:8333/healthz]
 
   mailpit:
-    image: axllent/mailpit:v1.31.6
+    image: axllent/mailpit:v1.32.0
     profiles: [dev]
     logging: *logging
     ports:
