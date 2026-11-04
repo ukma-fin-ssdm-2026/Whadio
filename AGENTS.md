@@ -172,6 +172,7 @@ without being asked when its row applies. If your agent does not list the skills
 | Skill | Use it |
 |---|---|
 | [`ui-evidence`](.agents/skills/ui-evidence/SKILL.md) | After a change visible in the web app, to check it in the running app, and when an issue asks for screenshots or a video |
+| [`pr-review`](.agents/skills/pr-review/SKILL.md) | When reviewing a pull request, from the first look to posting the review |
 
 On Windows, git checks the link out as a small text file unless symbolic links are enabled. Turn
 on Developer Mode, run `git config core.symlinks true`, delete the `.claude/skills` file and run
