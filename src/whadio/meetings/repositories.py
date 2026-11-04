@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol
 from uuid import UUID
@@ -224,6 +225,21 @@ class MeetingRepository:
             meeting.created_by_user_id,
             meeting.access_mode == "restricted",
         )
+
+    async def lock_scopes(
+        self, workspace_id: UUID, meeting_ids: Sequence[UUID]
+    ) -> list[MeetingScope]:
+        found = await self._session.execute(
+            select(Meeting.meeting_id, Meeting.created_by_user_id, Meeting.access_mode)
+            .join(Folder, Folder.folder_id == Meeting.folder_id)
+            .where(Folder.workspace_id == workspace_id, Meeting.meeting_id.in_(meeting_ids))
+            .order_by(Meeting.meeting_id)
+            .with_for_update(of=Meeting)
+        )
+        return [
+            MeetingScope(meeting_id, workspace_id, creator_id, mode is AccessMode.RESTRICTED)
+            for meeting_id, creator_id, mode in found
+        ]
 
     async def set_restricted(self, meeting_id: UUID, *, restricted: bool) -> None:
         meeting = await self.get(meeting_id)
