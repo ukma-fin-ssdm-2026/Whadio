@@ -1,12 +1,11 @@
 import type { Schemas } from "@/shared/api/types";
-import { titleCase } from "@/shared/lib/format";
 
 export const PRESETS: Schemas["Preset"][] = ["summary", "detailed", "interview"];
 
 export interface Workspace {
   id: string;
   name: string;
-  role: string;
+  role: Schemas["Role"];
   members: number;
 }
 
@@ -14,7 +13,7 @@ export function mapWorkspace(item: Schemas["WorkspaceSummary"]): Workspace {
   return {
     id: item.id,
     name: item.name,
-    role: titleCase(item.my_role),
+    role: item.my_role,
     members: item.member_count,
   };
 }
