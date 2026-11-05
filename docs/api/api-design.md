@@ -1328,5 +1328,4 @@ The Export implementation and review changes were assisted by OpenAI Codex.
 
 Later revisions were assisted by OpenAI Codex and verified by author.
 
-The member endpoints (#184) were implemented with Claude Code (Claude Opus 5.5) and reviewed by
-the author.
+The member endpoints (#184) were implemented with Claude Code and reviewed by the author.
