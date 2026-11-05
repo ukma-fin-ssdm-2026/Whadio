@@ -1,8 +1,9 @@
 from dataclasses import replace
 from datetime import datetime
+from typing import Protocol
 from uuid import UUID
 
-from ..audit.services import IMembershipAuditWriter, MemberRoleChanged
+from ..audit.services import IMembershipAuditWriter, MemberRemoved, MemberRoleChanged
 from ..shared.errors import Failure, UseCaseError
 from ..shared.pagination import ListWindow
 from .enums import InvitationRole, WorkspaceRole
@@ -10,15 +11,29 @@ from .member_repository import IMemberRepository, WorkspaceMember
 from .services import IWorkspaceMembership
 
 
+class IMemberAccess(Protocol):
+    """What a member can open in modules above Accounts; Access Policy implements it."""
+
+    async def release(self, workspace_id: UUID, user_id: UUID, /) -> None:
+        """Drop the member's meeting grants in the workspace, in the caller's transaction.
+
+        Raises `RESTRICTED_MEETING_REQUIRES_RECIPIENT`, changing nothing, while the member is
+        the only recipient of a restricted meeting there.
+        """
+        ...
+
+
 class MemberService:
     def __init__(
         self,
         members: IMemberRepository,
         memberships: IWorkspaceMembership,
+        access: IMemberAccess,
         audit: IMembershipAuditWriter,
     ) -> None:
         self._members: IMemberRepository = members
         self._memberships: IWorkspaceMembership = memberships
+        self._access: IMemberAccess = access
         self._audit: IMembershipAuditWriter = audit
 
     async def list(
@@ -47,6 +62,16 @@ class MemberService:
             )
         )
         return replace(member, role=new_role)
+
+    async def remove(
+        self, actor_id: UUID, workspace_id: UUID, user_id: UUID, now: datetime
+    ) -> None:
+        member = await self._managed(actor_id, workspace_id, user_id)
+        await self._access.release(workspace_id, user_id)
+        await self._members.remove(workspace_id, user_id)
+        await self._audit.write(
+            MemberRemoved(actor_id, workspace_id, user_id, member.role.value, now)
+        )
 
     async def _managed(self, actor_id: UUID, workspace_id: UUID, user_id: UUID) -> WorkspaceMember:
         # Every membership change locks the workspace first, so the roles read here hold.

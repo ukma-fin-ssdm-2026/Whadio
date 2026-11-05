@@ -64,6 +64,15 @@ class MemberRoleChanged:
 
 
 @dataclass(frozen=True)
+class MemberRemoved:
+    actor_id: UUID
+    workspace_id: UUID
+    member_id: UUID
+    role: str
+    occurred_at: datetime
+
+
+@dataclass(frozen=True)
 class McpKeyCreated:
     actor_id: UUID
     key_id: UUID
@@ -98,7 +107,7 @@ class IMemberJoinAuditWriter(Protocol):
 
 
 class IMembershipAuditWriter(Protocol):
-    async def write(self, event: MemberRoleChanged) -> None: ...
+    async def write(self, event: MemberRoleChanged | MemberRemoved) -> None: ...
 
 
 class AuditWriter:
@@ -114,6 +123,7 @@ class AuditWriter:
             | InvitationCancelled
             | MemberJoined
             | MemberRoleChanged
+            | MemberRemoved
             | McpKeyCreated
             | McpKeyRevoked
             | ContentEvent
@@ -179,6 +189,19 @@ class AuditWriter:
                     workspace_id=event.workspace_id,
                     subject_id=event.member_id,
                     details={"from_role": event.from_role, "to_role": event.to_role},
+                )
+            )
+            await self._session.flush()
+            return
+        if isinstance(event, MemberRemoved):
+            self._session.add(
+                AuditEvent(
+                    occurred_at=event.occurred_at,
+                    actor_user_id=event.actor_id,
+                    action=AuditAction.MEMBER_REMOVED,
+                    workspace_id=event.workspace_id,
+                    subject_id=event.member_id,
+                    details={"role": event.role},
                 )
             )
             await self._session.flush()

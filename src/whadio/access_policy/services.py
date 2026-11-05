@@ -15,10 +15,10 @@ from ..audit.contracts import ContentEvent, IContentAuditWriter
 from ..audit.enums import AuditAction
 from ..shared.errors import Failure, UseCaseError
 from ..shared.pagination import ListWindow
-from .contracts import IMeetingAccessSource, MeetingScope
+from .contracts import IMeetingAccessSource, IWorkspaceMeetingLocks, MeetingScope
 from .enums import ShareRequestStatus
 from .models import ExternalShare, MeetingAccessGrant, ShareAccessRequest
-from .repositories import IAccessRepository
+from .repositories import IAccessRepository, IMemberGrantRepository
 
 
 class ContentPath(StrEnum):
@@ -185,6 +185,10 @@ class AccessService:
         restricted: bool,
     ) -> None:
         dependencies = self._dependencies
+        located = await dependencies.meetings.scope(meeting_id)
+        # Membership changes lock the workspace before its meetings. Taking that order here keeps
+        # a member's removal and a change of their access from interleaving or deadlocking.
+        await dependencies.memberships.lock_role(located.workspace_id, actor_id)
         scope = await dependencies.meetings.scope(meeting_id, lock=True)
         permission = await self.policy.authorize(scope, actor_id)
         if permission.role is None or permission.role not in (
@@ -395,3 +399,19 @@ class AccessService:
         if share.created_by_user_id != actor_id:
             raise UseCaseError(Failure.INSUFFICIENT_ROLE)
         return scope
+
+
+class MemberAccessRelease:
+    """Accounts' `IMemberAccess`: drops a departing member's grants, or refuses."""
+
+    def __init__(self, grants: IMemberGrantRepository, meetings: IWorkspaceMeetingLocks) -> None:
+        self._grants: IMemberGrantRepository = grants
+        self._meetings: IWorkspaceMeetingLocks = meetings
+
+    async def release(self, workspace_id: UUID, user_id: UUID) -> None:
+        granted = await self._grants.meetings_granted_to(user_id)
+        scopes = await self._meetings.lock_scopes(workspace_id, granted)
+        for scope in scopes:
+            if scope.restricted and await self._grants.grants(scope.meeting_id) == {user_id}:
+                raise UseCaseError(Failure.RESTRICTED_MEETING_REQUIRES_RECIPIENT)
+        await self._grants.revoke(user_id, [scope.meeting_id for scope in scopes])
