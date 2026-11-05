@@ -6,6 +6,9 @@
 - Baseline recorded: 2026-11-02
 - After revision: `f6c3bd83a75699caccc20634b3d6bfd35ef989ec` (`main`, release `0.1.2`)
 - After recorded: 2026-11-03
+- Final revision: `a3e3ee396ee8b010d926d06c25a5c22fc4a774c0` (`main`, release `0.3.0`, after the
+  `python:S930` review)
+- Final recorded: 2026-11-04
 
 Every refactoring has its own pull request:
 
@@ -15,7 +18,7 @@ Every refactoring has its own pull request:
 | 2 | Move Sensitive Data Out of Code in the CI workflow | [#273](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/273) | 0.1.1 |
 | 3 | Extract Function on `Upload.send`, after characterization tests ([#274](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/274)) | [#276](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/276) | 0.1.1 |
 | 4 | Capture assembly moved out of the event loop | [#279](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/279) | 0.1.2 |
-| 5 | Recorder messages dispatched from a table, after characterization tests | Pending | Pending |
+| 5 | Recorder messages dispatched from a table, after characterization tests | [#285](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/285) | 0.2.1 |
 
 ## Metrics
 
@@ -23,14 +26,23 @@ Security Rating is recorded independently, as required. The three selected impro
 are Code Smells, Technical Debt, and Duplicated Lines. Reliability Rating is recorded for reference:
 its findings are bugs, not code smells.
 
-| Metric | Before (`bc3ec99`) | After (`f6c3bd8`) | Selected target |
-| --- | ---: | ---: | --- |
-| Code Smells | 1 | 0 | Yes |
-| Technical Debt | 20 min (0.33 h) | 0 min | Yes |
-| Duplicated Lines | 0.1% (4 blocks) | 0.1% (4 blocks) | Yes |
-| Security Rating (required) | E (4 vulnerabilities) | B (2 vulnerabilities) | Always recorded |
-| Maintainability Rating | A | A | Reference |
-| Reliability Rating | E (4 bugs) | E (3 bugs) | Reference |
+The After column is `main` after Refactorings 1 to 4. The Final column is `main` after all five
+refactorings and the `python:S930` review.
+
+| Metric | Before (`bc3ec99`) | After (`f6c3bd8`) | Final (`a3e3ee3`) | Selected target |
+| --- | ---: | ---: | ---: | --- |
+| Code Smells | 1 | 0 | 0 | Yes |
+| Technical Debt | 20 min (0.33 h) | 0 min | 0 min | Yes |
+| Duplicated Lines | 0.1% (4 blocks) | 0.1% (4 blocks) | 0.1% (4 blocks) | Yes |
+| Security Rating (required) | E (4 vulnerabilities) | B (2 vulnerabilities) | B (2 vulnerabilities) | Always recorded |
+| Maintainability Rating | A | A | A | Reference |
+| Reliability Rating | E (4 bugs) | E (3 bugs) | A (0 bugs) | Reference |
+
+Security is the only rating below A. Its two findings are the `Web:S5725` that #297 fixes. Once
+#297 is merged, `main` should have no open vulnerability, which rates A.
+
+The analysis of a pull request rates only the lines it changes. #297's summary shows A on its 11
+new lines. That proves #297 adds no finding; it is not a project rating.
 
 Refactoring 1 removed the only code smell and with it all 20 minutes of debt. Duplicated Lines did
 not move: all four duplicated blocks are in test files (`src/whadio/api/test_composition.py`,
@@ -39,7 +51,7 @@ and no refactoring targeted them. The new characterization tests of Refactoring 
 duplicated block. Refactoring 3 also lowered the Cognitive Complexity of `extension/background.js`
 from 64 to 57.
 
-### Security Rating: E before, B after
+### Security Rating: E before, B at the end, A expected after #297
 
 Four open security findings caused the E:
 
@@ -53,26 +65,53 @@ The remediation and false-positive review are tracked in [issue #167](https://gi
 They are also connected to the [static-analysis findings](../code-quality/static-analysis.md) and
 the threat model's [R-11 STARTTLS control](../architecture/threat-model.md#identified-risks).
 
-The rating follows the most severe open vulnerability, so it moved in two steps:
+The rating follows the most severe open vulnerability. It moved in two steps, and #297 is the
+third:
 
 1. `python:S4830` was reviewed and [resolved as a false positive](https://sonarcloud.io/project/issues?id=ukma-fin-ssdm-2026_Whadio&open=AaF0Yp8tXMYMJHNhzNMU)
    on 2026-11-03. `ssl.create_default_context()` sets `verify_mode=CERT_REQUIRED` and
    `check_hostname=True`, and `test_starttls_verifies_the_certificate_of_the_relay` asserts both on
    the context passed to `starttls()`. The rating stayed E, because the blocker was still open.
 2. Refactoring 2 removed `secrets:S6698`, the blocker, and the rating rose to B.
+3. [#297](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/297) fixes the two minor `Web:S5725`
+   findings, the last open vulnerabilities, so the rating should rise to A once it is merged. The
+   page had loaded the moving `swagger-ui-dist@5` from unpkg. #297 pins `5.34.1` and gives both
+   tags `integrity` and `crossorigin="anonymous"`.
+   - The hashes come from the npm tarball, checked against the registry's integrity; the unpkg and
+     jsdelivr copies hash the same.
+   - In headless Chromium the page renders all 63 operations. With one hash character changed,
+     the browser blocks the script.
 
-B is the current value: the two minor `Web:S5725` findings remain. Swagger UI is loaded from
-`unpkg.com/swagger-ui-dist@5` without Subresource Integrity. The planned fix, in #167, pins an exact
-version and adds `integrity` and `crossorigin="anonymous"` to both tags, which would reach A.
+### Reliability Rating: E before, A after the review
 
-### Why Reliability Rating remains E
+The regular-expression finding is a code smell and does not affect Reliability Rating. Four bugs
+caused the E:
 
-The regular-expression finding is a code smell and does not affect Reliability Rating. Reliability
-E came from `python:S930` in `src/whadio/api/composition.py:237` (a FastAPI `Depends` false
-positive), `javascript:S2871` and `javascript:S9383` in `extension/recorder.js:22,339`, and
-`python:S7493` in `src/whadio/capture/services.py:234`. Refactoring 4 cleared `python:S7493`, and
-Refactoring 5 clears both extension bugs. The blocker `python:S930` keeps the rating at E until it
-is resolved as a false positive.
+- `python:S930` (Blocker) in `src/whadio/api/composition.py:237`;
+- `javascript:S2871` and `javascript:S9383` in `extension/recorder.js:22,339`;
+- `python:S7493` in `src/whadio/capture/services.py:234`.
+
+Refactoring 4 cleared `python:S7493`, and Refactoring 5 cleared both extension bugs. The rating
+stayed E until the blocker was reviewed.
+
+`python:S930` reports "Remove this unexpected named argument 'scope'" on
+`Depends(transaction, scope="function")`. It was [resolved as a false positive](https://sonarcloud.io/project/issues?id=ukma-fin-ssdm-2026_Whadio&open=AaF0Yp7FXMYMJHNhzNMT)
+on 2026-11-04, and the rating rose to A:
+
+- **Why the analyzer is wrong.** SonarQube Cloud does not read the installed FastAPI. It checks
+  calls against signatures that SonarSource serialized from `fastapi==0.98.0`
+  ([`typeshed_serializer/pyproject.toml`](https://github.com/SonarSource/sonar-python/blob/master/python-frontend/typeshed_serializer/pyproject.toml)).
+  There, `Depends` takes only `dependency` and `use_cache`. FastAPI added `scope` in 0.121.0, and
+  `uv.lock` pins 0.142.2.
+- **Why the suggested fix is wrong.** By default, FastAPI ends a dependency that yields after the
+  response is sent. `scope="function"` ends it before, so the transaction commits before the client
+  gets its answer. Without it, a failed commit answers 2xx, and the change is lost.
+- **Proving test.** Without the argument, 2 of the 1,082 fast tests fail:
+  `test_monitoring_database_failures_use_the_shared_safe_error_envelope[transaction_end-jobs]` and
+  `[transaction_end-metrics]`. The client gets `200` and an empty list instead of the error.
+- **Why not change the code.** SonarSource's copy of `fastapi.params.Depends` lacks `scope` too, so
+  no other spelling avoids the finding. The repository bans inline suppressions, and excluding
+  S930 for the file would hide real argument mistakes in it.
 
 ## Dashboard evidence
 
@@ -106,6 +145,23 @@ The PR dashboard shows a passed Quality Gate, zero new issues, and zero new dupl
 ![SonarQube Cloud summary after refactoring: Security B with 2 issues, Reliability E with 3, Maintainability A](sonarcloud-after-overall.png)
 
 ![The two security findings left after refactoring](sonarcloud-after-security.png)
+
+### Final: `main` at `a3e3ee3`, after the false-positive review of `python:S930`
+
+Refactoring 5 is on `main` and the blocker is reviewed, so Reliability shows A with no open issue.
+Security is still B with the two `Web:S5725` findings that #297 fixes. The kept analysis of
+`4e21118`, a documentation-only commit after it, records the same values.
+
+![SonarQube Cloud summary after the S930 review: Security B with 2 issues, Reliability A with 0, Maintainability A](sonarcloud-s930-false-positive-overall.png)
+
+![python:S930 on composition.py:237 with the status False positive](sonarcloud-s930-false-positive.png)
+
+### The analysis of #297
+
+The PR Summary rates only the 11 lines #297 changes. It shows a passed Quality Gate and no new
+issue.
+
+![SonarQube Cloud PR Summary of #297: Quality Gate passed, no issue on its 11 new lines](sonarcloud-pr297.png)
 
 ## Refactoring 1: replace the trailing-slash regular expression
 
@@ -232,14 +288,14 @@ The PR dashboard shows a passed Quality Gate, zero new issues, and zero new dupl
     because it only affects later automatic re-shows.
   - A 15th test covers the S9383 fix. On the original code it fails with
     `Unhandled Rejection: Extension context invalidated.`; after the refactoring it passes.
-- Status: pending review.
+- Status: merged in PR #285 and released in 0.2.1. The `main` analysis after it closed both bugs.
 
 | Cognitive Complexity | Before | After |
 | --- | ---: | ---: |
 | `onMessage` listener (Biome) | 13 | ≤ 1 per handler |
 | Sum over `extension/recorder.js` functions (Biome) | 61 | 50 |
-| `extension/recorder.js` (SonarQube) | 94 | Pending analysis |
-| `extension/recorder.js` bugs (SonarQube) | 2 (Reliability D) | Pending analysis |
+| `extension/recorder.js` (SonarQube) | 94 | 80 |
+| `extension/recorder.js` bugs (SonarQube) | 2 (Reliability D) | 0 (Reliability A) |
 
 ## AI Usage
 
@@ -336,6 +392,38 @@ draft reset `dismissed` inside `showCard`, which runs after the asynchronous sig
 `hide-card` that arrived during that check would then have been undone. The reset was moved back
 before the check, where the original code had it.
 
+### The `python:S930` review and the Swagger UI fix (Claude Code)
+
+Claude Code (Claude Opus 5.5), directed by Andrii, investigated the findings left after
+Refactoring 5 and wrote #297 and this update of the report. The prompt, with its spelling
+corrected, was:
+
+> i would like to work on issues #167 and #265 simultaneously to fix all the issues under them and
+> bring up all of our SonarCloud grades to level A (Reliability from E to A and Security from B to
+> A). Explore both tasks, check what has already been done (as part of Lab08 work), explore
+> sonarcloud to check what issues remain, and suggest a fix plan for everything. I believe the
+> scope="function" is a false positive, but double-check and see what the recommended fix is on
+> SonarCloud
+
+Claude Code did this work:
+
+- It listed the open findings through the SonarQube Cloud API.
+- It traced `python:S930` to SonarSource's FastAPI 0.98.0 signatures.
+- It removed `scope="function"` in a scratch copy to find the tests that guard it.
+- It computed the Subresource Integrity hashes, checked them three ways, and made the browser
+  check.
+- It took the screenshots in headless Chromium.
+
+Andrii reviewed the evidence and resolved `python:S930` as a false positive in SonarQube Cloud.
+
+The suggested fix of `python:S930`, removing the argument, is the "80% problem" again: it clears
+the finding, and 1,080 of the 1,082 fast tests still pass. But a failed commit would then answer
+2xx and lose the change silently. Of the fast tests, only the two `transaction_end` tests catch it.
+
+Zlata's review caught one more. The first draft of this update recorded #297's PR analysis as the
+Final ratings, but a pull request analysis rates only the lines the pull request changes. The
+Final column now comes from `main`.
+
 ## Verification log
 
 ### Refactoring 1
@@ -382,34 +470,37 @@ authoritative full-suite result.
 
 ### Regression after all refactorings
 
-The [CI run on `main` at `05e853e`](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/41565908627),
-which contains all four refactorings, passed every job. No test failed.
+The [CI run on `main` at `a3e3ee3`](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/41727359363),
+which contains all five refactorings, passed every job. No test failed.
 
 | Suite | Result |
 | --- | --- |
 | Backend, with PostgreSQL, RabbitMQ, SeaweedFS and Mailpit | 1,706 passed, 4 skipped, 8 deselected; coverage 92.78% (gate 85%) |
-| Frontend | 52 files, 731 tests passed |
-| Extension | 15 tests passed |
+| Frontend | 53 files, 746 tests passed |
+| Extension | 2 files, 30 tests passed |
 | Static checks and audit, worker image | Passed |
 
-Refactoring 4 added three tests: 1,703 before it, 1,706 after. The 4 skipped tests run against a
-real Ollama (`WHADIO_TEST_OLLAMA_URL`), which CI does not start. The 8 deselected tests are marked
-`models`: they need downloaded ML models, and `task test:cov` runs `pytest -m "not models"`.
+Refactoring 4 added three backend tests: 1,703 before it, 1,706 after. Refactoring 5 added the 15
+recorder tests. The 4 skipped tests run against a real Ollama (`WHADIO_TEST_OLLAMA_URL`), which CI
+does not start. The 8 deselected tests are marked `models`: they need downloaded ML models, and
+`task test:cov` runs `pytest -m "not models"`.
 
 ## Release
 
 - **Version.** The baseline is 0.1.0, tagged `v0.1.0` on `bc3ec99`. A pure refactoring is a patch,
-  so Refactorings 1 to 3 were released as **0.1.1** and Refactoring 4 as **0.1.2**.
+  so Refactorings 1 to 3 were released as **0.1.1** and Refactoring 4 as **0.1.2**. Refactoring 5
+  followed the feature release 0.2.0 and was released as **0.2.1**.
 - **One number everywhere.** The same number appears in `pyproject.toml`, `uv.lock`,
   `frontend/package.json`, `extension/manifest.json`, the OpenAPI specification, `CHANGELOG.md` and
   the tag.
 - **[`CHANGELOG.md`](../../CHANGELOG.md)** follows Keep a Changelog. Each release has a
   `## [X.Y.Z] - YYYY-MM-DD` heading and a `### Refactoring` category that names each technique.
 - **The `[REFACTOR]` marker** is in each refactoring's commit message on `main` (#267, #273, #276,
-  #279).
-- **Automation.** A CI tool made both releases, with no manual step (Bonus 3):
-  [`v0.1.1`](https://github.com/ukma-fin-ssdm-2026/Whadio/releases/tag/v0.1.1) and
-  [`v0.1.2`](https://github.com/ukma-fin-ssdm-2026/Whadio/releases/tag/v0.1.2).
+  #279, #285).
+- **Automation.** A CI tool made each refactoring release, with no manual step (Bonus 3):
+  [`v0.1.1`](https://github.com/ukma-fin-ssdm-2026/Whadio/releases/tag/v0.1.1),
+  [`v0.1.2`](https://github.com/ukma-fin-ssdm-2026/Whadio/releases/tag/v0.1.2) and
+  [`v0.2.1`](https://github.com/ukma-fin-ssdm-2026/Whadio/releases/tag/v0.2.1).
 
 ## Baseline branch
 
@@ -468,5 +559,6 @@ preserve the state of `main` before the refactoring.
     no human approval;
   - [tag](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/41565744357) pushed `v0.1.1` and
     the GitHub Release.
-- **The next release.** The same bot released Refactoring 4 as `0.1.2` through
-  [#282](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/282).
+- **The next releases.** The same bot released Refactoring 4 as `0.1.2` through
+  [#282](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/282), and Refactoring 5 as `0.2.1`
+  through [#286](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/286).
