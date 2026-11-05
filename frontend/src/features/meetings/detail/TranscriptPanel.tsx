@@ -49,13 +49,20 @@ export function TranscriptPanel({
     // Visible: a Card clips its content, which would keep the edit bar from sticking.
     <Card sx={{ p: { xs: 2, md: 3 }, overflow: "visible" }}>
       <Stack sx={{ gap: 1.5 }}>
-        <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
+        <Stack
+          direction="row"
+          sx={{ justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 1 }}
+        >
           <Typography variant="h2">
             {showsOriginal ? "Original transcript" : shown ? "Edited transcript" : "Transcript"}
           </Typography>
-          <Stack direction="row" sx={{ gap: 1, alignItems: "center" }}>
+          <Stack direction="row" sx={{ gap: 1, alignItems: "center", ml: "auto" }}>
             {transcript && editable && !editedBase && (
-              <Button startIcon={<EditOutlinedIcon />} onClick={() => setEditedBase(transcript)}>
+              <Button
+                startIcon={<EditOutlinedIcon />}
+                onClick={() => setEditedBase(transcript)}
+                sx={{ whiteSpace: "nowrap" }}
+              >
                 Edit transcript
               </Button>
             )}
