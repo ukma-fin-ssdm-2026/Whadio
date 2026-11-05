@@ -125,3 +125,25 @@ def test_new_role_is_stored_for_that_member_only(async_database: AsyncDatabase) 
 
     # Assert
     assert async_database.run(scenario) == [WorkspaceRole.MODERATOR, WorkspaceRole.MEMBER]
+
+
+def test_new_role_leaves_that_members_other_workspace_unchanged(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> list[WorkspaceRole]:
+        workspace, other = await add_workspace(session), await add_workspace(session)
+        target = await add_member(session, workspace, JOINED)
+        session.add(
+            WorkspaceMembership(
+                workspace_id=other, user_id=target.user_id, role=WorkspaceRole.MEMBER
+            )
+        )
+        await session.flush()
+        repository = MemberRepository(session)
+        # Act
+        await repository.set_role(workspace, target.user_id, WorkspaceRole.MODERATOR)
+        return [item.role for item in await repository.page(other, ListWindow(21))]
+
+    # Assert
+    assert async_database.run(scenario) == [WorkspaceRole.MEMBER]

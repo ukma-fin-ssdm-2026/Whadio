@@ -80,6 +80,30 @@ def test_members_are_listed_with_their_roles_oldest_first(async_database: AsyncD
     assert found == expected
 
 
+def test_members_are_listed_with_their_stored_joining_times(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[dict[UUID, datetime], dict[UUID, datetime]]:
+        async with AsyncDatabase.api_client(session) as client:
+            _, workspace = await _owner_workspace(client, session)
+            await _join(session, workspace, WorkspaceRole.MODERATOR, 1)
+            stored = await session.execute(
+                select(WorkspaceMembership.user_id, WorkspaceMembership.joined_at).where(
+                    WorkspaceMembership.workspace_id == workspace
+                )
+            )
+            # Act
+            response = await client.get(f"/api/v1/workspaces/{workspace}/members")
+            listed = Page[MemberRead].model_validate_json(response.content).items
+            return {item.user_id: item.joined_at for item in listed}, dict(stored.all())
+
+    found, expected = async_database.run(scenario)
+
+    # Assert
+    assert found == expected
+
+
 def test_member_list_continues_on_the_next_page(async_database: AsyncDatabase) -> None:
     # Arrange
     async def scenario(session: AsyncSession) -> tuple[list[UUID], list[UUID], bool]:
