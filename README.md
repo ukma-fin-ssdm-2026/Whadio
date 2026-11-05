@@ -155,6 +155,10 @@ compiler and the tests the branch can affect, and CI runs everything. The
 Styling is MUI only: the theme in `frontend/src/app/theme/` sets the colours and component
 defaults, and components add the rest with `sx`. There is no stylesheet.
 
+Operators maintain the public `/terms` text in
+[`frontend/src/routes/terms.tsx`](frontend/src/routes/terms.tsx) and must rebuild the SPA after
+changing it.
+
 The API's TypeScript types in `frontend/src/shared/api/schema.gen.ts` are generated from
 `docs/api/openapi-generated.json` by `npm run gen:api`. The push hook regenerates them whenever
 the specification or `frontend/` changes, and fails until the regenerated file is committed.

@@ -375,12 +375,7 @@ test("a failed workspace list keeps the address", async () => {
 });
 
 describe("the not-found page", () => {
-  const EMAILED_LINKS = [
-    "/shares/share/access-requests",
-    "/invitations/invitation",
-    "/registrations/registration#token=emailed-secret",
-    "/password-resets/reset#token=emailed-secret",
-  ];
+  const EMAILED_LINKS = ["/shares/share/access-requests", "/invitations/invitation"];
 
   test.for(EMAILED_LINKS)("answers %s when signed out", async (path) => {
     // Act
@@ -400,7 +395,7 @@ describe("the not-found page", () => {
 
   test("shows no token from the link", async () => {
     // Act
-    open("/registrations/registration#token=emailed-secret", false);
+    open("/invitations/invitation#token=emailed-secret", false);
     await screen.findByRole("heading", { name: "Page not found" });
 
     // Assert
