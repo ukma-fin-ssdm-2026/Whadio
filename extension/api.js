@@ -27,6 +27,9 @@ async function withDeadline(request) {
   );
   try {
     return await request(abort.signal);
+  } catch (cause) {
+    // Chromium rejects a body read cut off by the signal with an AbortError, not the signal's reason.
+    throw abort.signal.aborted ? abort.signal.reason : cause;
   } finally {
     clearTimeout(timer);
   }
