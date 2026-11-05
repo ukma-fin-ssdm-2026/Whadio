@@ -13,8 +13,8 @@ the stored transcript and notes, access to restricted meetings over every conten
 log, exports, job monitoring, and reading results in the web app. Not tested here: features with
 no API yet (self-service email registration, member removal and role changes, and emailed password-reset requests in US-001, US-002 and
 US-020; notes regeneration, US-010; a workspace's own model provider, US-008; server load and model usage on the admin dashboard, US-019 Test-03); screens the web app
-does not have yet (registration, transcript edits, shares, the glossary), so those are tested through the API;
-the user-action limits of NFR-005 and NFR-006 are not measured; the Chrome extension capture
+does not have yet (registration, speaker renames, shares, the glossary), so those are tested through the API;
+the user-action limit of NFR-005 is not measured; the Chrome extension capture
 (US-003, NFR-004); recognition quality scores (WER needs a reference corpus we do not have); real
 models or paid services in CI.
 
@@ -76,6 +76,7 @@ speakers, preset sections, time). A pass in one never stands in for the other.
 | TC-ACL-03 | Access Policy: who may restrict | Unit | Negative | A Member cannot restrict a meeting or change its access list, and access cannot be granted to someone outside the workspace. | Valeriia | US-015 (Test-04) | CI, exists |
 | TC-SHR-01 | Access Policy: external shares | Integration | Negative | A share only reads: no export, recording, MCP or edit. It binds to the one approved account, the creator gets the access request, and a declined or revoked share reads nothing, nor does a signed-out visitor; a redacted share names the speakers Speaker 1, Speaker 2. | Valeriia | US-016 (Test-01 to Test-06), NFR-008, NFR-009 | CI, exists |
 | TC-EDIT-01 | Meetings: transcript edits | Integration | Positive | Editing text or a speaker name makes a new revision marked edited; the original and the earlier revisions stay readable and cannot be relabelled; an edit of a stale revision is refused. | Valeriia | US-005 (Test-03), US-011 (Test-03), NFR-011 | CI, exists |
+| TC-EDIT-02 | Web app: correcting a transcript | Unit | Positive, Negative | Vitest with Testing Library and a mocked API: editing is offered on the current revision of a meeting that is not in progress, never on the original of an edited transcript or while its notes are written; several corrections, an emptied segment among them, are saved together as one revision of the shown one, and text typed back to what it was is no change; Escape puts a segment's text back; the saved revision shows without another request, the meeting is marked edited and the original stays one action away; a stale revision says that someone else edited the transcript, reloads it and keeps no unsaved change; any other refusal shows the server's message and keeps the corrections. | Andrii | US-011 (Test-03 web app), NFR-006 | CI, exists |
 | TC-EXP-01 | Export: transcript and notes files | Unit | Positive | The current transcript exports with its corrections and says it was edited, the original never does; Markdown can leave out timestamps; a notes export exists only once notes do; every file carries the sharing notice and the Whadio attribution. | Valeriia | US-017 (Test-01 to Test-05), US-011 (Test-04), NFR-011 | CI, exists |
 | TC-FLD-01 | Meetings: folders | Integration | Positive | Deleting a folder moves its meetings, with their recording, transcript, notes and grants, to the default folder; a meeting cannot move to another workspace's folder; a Member cannot delete someone else's meeting. | Valeriia | US-014 (Test-02 to Test-04) | CI, exists |
 | TC-FLD-02 | Web app: folders and meeting actions | Unit | Positive, Negative | Vitest with Testing Library and a mocked API: only a Moderator or Owner is offered folder management, and the default folder no delete; an empty, blank or over-100-character folder name, or a meeting name over 200, is refused without a request, and a taken folder name on its field; deleting a folder explains where its meetings go, and Undo restores that folder and survives a click elsewhere; renaming a meeting offers only its name; deletion is offered to the recorder, a Moderator and the Owner and needs confirmation; the folder stays in the URL, and a link to a folder that no longer exists falls back to all meetings; each change refreshes its workspace's meeting and folder lists. | Zlata | US-013 (Test-05), US-014 (Test-02, Test-04 web app) | CI, exists |
@@ -155,6 +156,8 @@ after review in pull request #258.
 
 TC-FLD-02 and TC-LIB-01 were written with Claude Code (Claude Opus 5.5) after review in pull request
 #259, from tests Zlata wrote with OpenAI Codex.
+
+TC-EDIT-02 and the web-app scope of transcript edits were written with Claude Code for #186.
 
 ## Бонуси
 
