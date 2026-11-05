@@ -1,6 +1,7 @@
-import { Box, Button, Card, Chip, Stack, TextField, Typography } from "@mui/material";
+import { Button, Card, Chip, Stack, TextField, Typography } from "@mui/material";
 import type { TranscriptRead } from "@/shared/api/types";
-import { formatTimestamp } from "@/shared/lib/format";
+import { SegmentRow } from "./SegmentRow";
+import { matchingSegments, NO_MATCH } from "./segments";
 
 interface TranscriptPanelProps {
   transcript: TranscriptRead | null;
@@ -12,24 +13,8 @@ interface TranscriptPanelProps {
   onRevision: (revisionId: string | null) => void;
 }
 
-function matchingSegments(transcript: TranscriptRead | null, query: string) {
-  const speakers = new Map<string | null, string>(
-    (transcript?.speakers ?? []).map((item) => [item.id, item.display_name]),
-  );
-  const wanted = query.toLowerCase();
-  return (transcript?.segments ?? [])
-    .map((item) => ({
-      ...item,
-      speaker: speakers.get(item.speaker_id) ?? "Unknown speaker",
-    }))
-    .filter(
-      (item) =>
-        item.text.toLowerCase().includes(wanted) || item.speaker.toLowerCase().includes(wanted),
-    );
-}
-
 function emptyMessage(transcript: TranscriptRead | null, missing: boolean, failed: boolean) {
-  if (transcript) return "No transcript matches your search.";
+  if (transcript) return NO_MATCH;
   if (failed) return null;
   return missing ? "This meeting has no transcript." : "Transcript is not available yet.";
 }
@@ -75,39 +60,9 @@ export function TranscriptPanel({
         />
         <Stack sx={{ gap: 1.5 }}>
           {segments.map((item) => (
-            <Box
-              key={item.id}
-              sx={{
-                display: "grid",
-                gap: "0.55rem",
-                pb: "1rem",
-                borderBottom: 1,
-                borderBottomColor: "divider",
-              }}
-            >
-              <Stack direction="row" sx={{ gap: 1, alignItems: "center" }}>
-                <Box
-                  sx={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flex: "0 0 auto",
-                    width: "1.8rem",
-                    height: "1.8rem",
-                    borderRadius: "50%",
-                    bgcolor: "tint.main",
-                    color: "tint.contrastText",
-                    font: "caption",
-                    lineHeight: 1,
-                  }}
-                >
-                  {item.speaker.slice(-2)}
-                </Box>
-                <Typography variant="subtitle1">{item.speaker}</Typography>
-                <Typography color="primary">{formatTimestamp(item.start_seconds)}</Typography>
-              </Stack>
+            <SegmentRow key={item.id} speaker={item.speaker} startSeconds={item.start_seconds}>
               <Typography color="textSecondary">{item.text}</Typography>
-            </Box>
+            </SegmentRow>
           ))}
           {empty && <Typography color="textSecondary">{empty}</Typography>}
         </Stack>
