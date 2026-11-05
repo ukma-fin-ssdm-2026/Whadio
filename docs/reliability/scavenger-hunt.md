@@ -209,6 +209,17 @@ column describes what a user or another system sees once the chain completes.
 | F7 | `.catch(() => {})` around session revocation | The server-side session is still active | The extension session stays usable for up to 24 h after sign-out | **Low** |
 | F8 | `.catch(() => null)` without a log | The retry proceeds without knowing what the server holds | No user-visible failure, as the duplicates are absorbed; a support engineer cannot tell from the logs whether the status request failed | **Low** |
 
+## Stage 3: Remediation
+
+For each finding chosen for fixing, the deciding question is which is worse in that place: a wrong
+answer or no answer (§3.1). The fixes, before and after, are in
+[`reliability-report.md`](reliability-report.md).
+
+| # | Worse here | Response | Patterns, in the order of §3.5 | Fixed by |
+|---|---|---|---|---|
+| F2 | No answer: a chunk that waits forever loses the whole call | **Fail-safe.** A request that runs out is retried; once retries are spent the call is saved locally | Timeout per request → retry with backoff (existing) → local file fallback (existing) | Zlata, `fix(#287): give the extension's requests a deadline` |
+| F6 | No answer for reads: a page loads forever. A wrong answer for writes: giving up on an upload that still lands invites a duplicate | **Fail-fast** for reads: the read ends with an error that says it timed out, and the page shows it instead of loading forever. Writes keep no client deadline | Timeout on reads → retry by React Query (existing) → clear error message | Zlata, `fix(#287): give the web app's reads a deadline` |
+
 ## Stage 4: The finding to present
 
 **F2: the extension can lose a whole call when the network goes quiet.**
@@ -218,6 +229,9 @@ column describes what a user or another system sees once the chain completes.
   hang-up handler's `await this.queue`, wait on it.
 - **Failure:** the user ends the call and gets nothing: the meeting is not in Whadio, and the
   promised local `.webm` is never downloaded, because the fallback sits behind the stuck promise.
+- **Fix:** every extension request now gives up after 30 s (5 min for `/complete`), so the stuck
+  chunk is retried and, if the server stays silent, the call is saved locally. See
+  [`reliability-report.md`](reliability-report.md#f2-extension-requests-to-the-server-have-no-deadline).
 
 ## AI Usage
 
