@@ -21,8 +21,12 @@ const USER = {
   created_at: "2026-11-05T00:00:00Z",
 };
 
-function open(kind = "registrations", fragment = `#token=${TOKEN}`, basepath?: string) {
-  window.history.replaceState(null, "", `${basepath ?? "/"}${kind}/${ID}${fragment}`);
+function open(
+  kind = "registrations",
+  fragment = `#token=${TOKEN}`,
+  { basepath, id = ID }: { basepath?: string; id?: string } = {},
+) {
+  window.history.replaceState(null, "", `${basepath ?? "/"}${kind}/${id}${fragment}`);
   render(<App basepath={basepath} />);
   return userEvent.setup();
 }
@@ -52,6 +56,7 @@ test("registration consumes a fragment token in the body and enters the signed-i
   );
   const user = open();
   await fill(user);
+  const historyLength = window.history.length;
 
   // Act
   await user.click(screen.getByRole("button", { name: "Create account" }));
@@ -65,6 +70,7 @@ test("registration consumes a fragment token in the body and enters the signed-i
     },
   ]);
   expect(window.location.hash).toBe("");
+  expect(window.history.length).toBe(historyLength);
 });
 
 test("registration requires explicit Terms acceptance without submitting", async () => {
@@ -91,6 +97,7 @@ test("reset sends only the token and password then shows sign-in confirmation", 
   );
   const user = open("password-resets");
   await fill(user, false);
+  const historyLength = window.history.length;
 
   // Act
   await user.click(screen.getByRole("button", { name: "Save new password" }));
@@ -100,6 +107,7 @@ test("reset sends only the token and password then shows sign-in confirmation", 
   expect(body).toEqual({ token: TOKEN, password: PASSWORD });
   expect(window.location.pathname).toBe("/sign-in");
   expect(window.location.hash).toBe("");
+  expect(window.history.length).toBe(historyLength);
 });
 
 describe.each(["registrations", "password-resets"])("%s", (kind) => {
@@ -151,17 +159,19 @@ describe.each(["registrations", "password-resets"])("%s", (kind) => {
     await screen.findByRole("alert");
   });
 
-  test.each(["", "#token=", "#token=one&token=two"])(
-    "refuses missing or ambiguous token %s without exposing it",
-    async (fragment) => {
-      // Act
-      open(kind, fragment);
+  test.each([
+    { reason: "missing token", id: ID, fragment: "" },
+    { reason: "empty token", id: ID, fragment: "#token=" },
+    { reason: "ambiguous token", id: ID, fragment: "#token=one&token=two" },
+    { reason: "malformed id", id: "not-a-uuid", fragment: `#token=${TOKEN}` },
+  ])("refuses an unusable link ($reason) without exposing it", async ({ id, fragment }) => {
+    // Act
+    open(kind, fragment, { id });
 
-      // Assert
-      expect(await screen.findByRole("alert")).toHaveTextContent("This link cannot be used");
-      expect(screen.queryByRole("button")).not.toBeInTheDocument();
-    },
-  );
+    // Assert
+    expect(await screen.findByRole("alert")).toHaveTextContent("This link cannot be used");
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
 
   test("keeps the token out of the rendered page and outgoing links", async () => {
     // Act
@@ -238,7 +248,7 @@ describe.each(["registrations", "password-resets"])("%s", (kind) => {
 
 test("the Terms link preserves a deployment base path and opens a separate tab", async () => {
   // Act
-  open("registrations", `#token=${TOKEN}`, "/whadio/");
+  open("registrations", `#token=${TOKEN}`, { basepath: "/whadio/" });
 
   // Assert
   const link = await screen.findByRole("link", { name: "Terms and Conditions" });
