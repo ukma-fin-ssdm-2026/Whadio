@@ -1,4 +1,4 @@
-import { COMPLETE_TIMEOUT_MS } from "./api.js";
+import { TIMEOUT_MS } from "./api.js";
 
 const SERVER = "https://whadio.example";
 const DESTINATION = { workspace_id: "w1", folder_id: "f1" };
@@ -416,10 +416,10 @@ describe("a server that stops answering", () => {
   });
 
   test.for([
-    [COMPLETE_TIMEOUT_MS - 1, 0],
-    [COMPLETE_TIMEOUT_MS, 1],
+    [TIMEOUT_MS - 1, 0],
+    [TIMEOUT_MS, 1],
   ])(
-    "waits up to the completion deadline: answered after %i ms, saves %i files",
+    "waits for the completion up to the deadline: answered after %i ms, saves %i files",
     async ([delay, saved]) => {
       // Arrange
       const slowComplete = (request, _earlier, signal) =>

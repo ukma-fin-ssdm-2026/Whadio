@@ -1,4 +1,4 @@
-import { api, COMPLETE_TIMEOUT_MS, signedIn } from "./api.js";
+import { api, signedIn } from "./api.js";
 
 // MediaRecorder hands over one slice a second; ten of them make one uploaded chunk.
 const SLICES_PER_CHUNK = 10;
@@ -214,12 +214,9 @@ class Upload {
     await this.queue;
     if (!this.failed && this.chunks.length > 0) {
       try {
-        await api(
-          "POST",
-          `/captures/${this.capture.id}/complete`,
-          { last_seq: this.chunks.length - 1 },
-          COMPLETE_TIMEOUT_MS,
-        );
+        await api("POST", `/captures/${this.capture.id}/complete`, {
+          last_seq: this.chunks.length - 1,
+        });
         return;
       } catch {
         // Saved below instead, so the call is not lost.
