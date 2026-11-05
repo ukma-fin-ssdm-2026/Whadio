@@ -304,7 +304,7 @@ test("revocation also removes administrator navigation", async () => {
   );
 });
 
-test("polling fetches fresh metrics and jobs", async () => {
+test("polling fetches fresh metrics", async () => {
   // Arrange
   const { queryClient } = openPage();
   await screen.findByText("Workspace: workspace-alpha");
@@ -319,6 +319,24 @@ test("polling fetches fresh metrics and jobs", async () => {
   await waitFor(() => expect(requests).toHaveBeenCalled(), { timeout: 12_000 });
   // Assert
   expect(queryClient.getQueryData([...ADMIN_KEY, "metrics"])).toEqual(metrics);
+}, 15_000);
+
+test("jobs polling automatically displays changed job data", async () => {
+  // Arrange
+  openPage();
+  await screen.findByText("Waiting: Unknown · Attempts: 0");
+  server.use(
+    http.get("/api/v1/admin/jobs", () =>
+      HttpResponse.json(
+        page([job({ status: "running", running_seconds: 65, attempts_started: 2 })]),
+      ),
+    ),
+  );
+  // Act
+  await screen.findByText("Running: 1m 5s · Attempts: 2", {}, { timeout: 12_000 });
+  // Assert
+  expect(screen.queryByText("Waiting: Unknown · Attempts: 0")).not.toBeInTheDocument();
+  expect(screen.getByText("Running", { selector: ".MuiChip-label" })).toBeVisible();
 }, 15_000);
 
 test("browser back restores the previous URL filters", async () => {
