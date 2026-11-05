@@ -1,6 +1,7 @@
 import { Box, Stack, Typography } from "@mui/material";
 import type { ReactNode } from "react";
 import { formatTimestamp } from "@/shared/lib/format";
+import { speakerInitials } from "./segments";
 
 interface SegmentRowProps {
   speaker: string;
@@ -36,7 +37,7 @@ export function SegmentRow({ speaker, startSeconds, marker, children }: SegmentR
             lineHeight: 1,
           }}
         >
-          {speaker.slice(-2)}
+          {speakerInitials(speaker)}
         </Box>
         <Typography variant="subtitle1">{speaker}</Typography>
         <Typography color="primary">{formatTimestamp(startSeconds)}</Typography>

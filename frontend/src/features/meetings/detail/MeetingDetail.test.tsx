@@ -73,6 +73,7 @@ function detail(changes: Partial<ComponentProps<typeof MeetingDetail>> = {}) {
     onTab: () => {},
     onTranscriptQuery: () => {},
     onRevision: () => {},
+    onUnsavedChange: () => {},
     ...changes,
   };
   return (
