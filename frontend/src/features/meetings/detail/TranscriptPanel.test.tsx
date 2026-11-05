@@ -19,6 +19,7 @@ const EDITED = transcriptRead({
 function renderPanel(changes: Partial<ComponentProps<typeof TranscriptPanel>> = {}) {
   return render(
     <TranscriptPanel
+      meeting={{ id: "meeting", state: "processed" }}
       transcript={EDITED}
       missing={false}
       loading={false}
@@ -26,10 +27,58 @@ function renderPanel(changes: Partial<ComponentProps<typeof TranscriptPanel>> = 
       query=""
       onQuery={() => {}}
       onRevision={() => {}}
+      onSaved={() => {}}
       {...changes}
     />,
   );
 }
+
+const ORIGINAL_OF_EDITED = transcriptRead({
+  is_edited: true,
+  revision: { ...transcriptRead().revision, is_current: false },
+});
+
+const editButton = () => screen.queryByRole("button", { name: "Edit transcript" });
+
+test("a transcript that was never edited can be edited", () => {
+  // Act
+  renderPanel({ transcript: transcriptRead() });
+
+  // Assert
+  expect(editButton()).toBeInTheDocument();
+});
+
+test("the original of an edited transcript cannot be edited", () => {
+  // Act
+  renderPanel({ transcript: ORIGINAL_OF_EDITED });
+
+  // Assert
+  expect(editButton()).not.toBeInTheDocument();
+});
+
+test("a transcript whose notes are still being written cannot be edited", () => {
+  // Act
+  renderPanel({ meeting: { id: "meeting", state: "processing" } });
+
+  // Assert
+  expect(editButton()).not.toBeInTheDocument();
+});
+
+test("the transcript of a meeting whose notes failed can be edited", () => {
+  // Act
+  renderPanel({ meeting: { id: "meeting", state: "failed" } });
+
+  // Assert
+  expect(editButton()).toBeInTheDocument();
+});
+
+test("a meeting without a transcript offers no editing", () => {
+  // Act
+  renderPanel({ transcript: null, missing: true });
+
+  // Assert
+  expect(editButton()).not.toBeInTheDocument();
+});
 
 test("segments show their speaker and start time", () => {
   // Act
@@ -100,7 +149,7 @@ test("an unedited transcript offers no other revision", () => {
   renderPanel({ transcript: transcriptRead() });
 
   // Assert
-  expect(screen.queryByRole("button", { name: /transcript$/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /^View \w+ transcript$/ })).not.toBeInTheDocument();
 });
 
 test("a missing transcript waits for its query before saying so", () => {

@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { ExportMenu } from "@/features/export/components/ExportMenu";
 import type { Schemas } from "@/shared/api/types";
 import { errorBody, meetingRead, noteRead, page, transcriptRead } from "@/shared/testing/fixtures";
@@ -656,4 +656,83 @@ test("transcript download menu stays open when the same revision reloads", async
 
   // Assert
   expect(screen.getByRole("menu")).toBeInTheDocument();
+});
+
+test("an edited meeting is marked in its header", () => {
+  // Arrange
+  serveContent();
+
+  // Act
+  renderDetail({ meeting: meeting({ is_edited: true }) });
+
+  // Assert
+  expect(screen.getByText("Edited")).toBeInTheDocument();
+});
+
+test("a meeting never edited carries no edited mark", () => {
+  // Arrange
+  serveContent();
+
+  // Act
+  renderDetail();
+
+  // Assert
+  expect(screen.queryByText("Edited")).not.toBeInTheDocument();
+});
+
+function serveSavedCorrection() {
+  serveContent();
+  serveSpokenTranscript();
+  server.use(
+    http.post("/api/v1/meetings/{meeting_id}/transcript/revisions", ({ response }) =>
+      response(201).json(revision("edited")),
+    ),
+  );
+}
+
+async function saveCorrection(changes: Partial<ComponentProps<typeof MeetingDetail>> = {}) {
+  const view = renderDetail({ tab: "transcript", ...changes });
+  await view.user.click(await screen.findByRole("button", { name: "Edit transcript" }));
+  await view.user.click(screen.getByRole("button", { name: /^Edit text at 00:00/ }));
+  await view.user.type(screen.getByLabelText("Text at 00:00"), " in full");
+  await view.user.click(screen.getByRole("button", { name: "Save" }));
+  return view;
+}
+
+test("a saved correction leaves the original one action away", async () => {
+  // Arrange
+  serveSavedCorrection();
+
+  // Act
+  await saveCorrection();
+
+  // Assert
+  expect(
+    await screen.findByRole("button", { name: "View original transcript" }),
+  ).toBeInTheDocument();
+});
+
+test("a correction saved from a revision link shows the current transcript", async () => {
+  // Arrange
+  serveSavedCorrection();
+  const onRevision = vi.fn();
+
+  // Act
+  await saveCorrection({ revisionId: "revision", onRevision });
+
+  // Assert
+  await waitFor(() => expect(onRevision).toHaveBeenCalledWith(null));
+});
+
+test("a correction saved on the current transcript stays where it is", async () => {
+  // Arrange
+  serveSavedCorrection();
+  const onRevision = vi.fn();
+  await saveCorrection({ onRevision });
+
+  // Act
+  await screen.findByRole("button", { name: "View original transcript" });
+
+  // Assert
+  expect(onRevision).not.toHaveBeenCalled();
 });

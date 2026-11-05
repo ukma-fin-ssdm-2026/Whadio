@@ -7,7 +7,7 @@ import {
 import { useEffect } from "react";
 import { apiClient } from "@/shared/api/client";
 import { ApiError } from "@/shared/api/errors";
-import type { MeetingUpdate, Schemas } from "@/shared/api/types";
+import type { MeetingUpdate, RevisionInput, Schemas } from "@/shared/api/types";
 import { expectNoContent, unwrap } from "@/shared/api/unwrap";
 import { isInProgress, type Meeting, mapMeeting } from "../model";
 import { detailKey, foldersKey, workspaceListsKey } from "./keys";
@@ -21,6 +21,8 @@ const CURRENT_NOTE_ONLY = { limit: 1 };
 // The server signs a playback link for 5 minutes (meetings/recordings.py).
 const RECORDING_LINK_LIFE_MS = 5 * 60_000;
 const RECORDING_LINK_FRESH_MS = 4 * 60_000;
+
+const transcriptsKey = (meetingId: string) => [...detailKey(meetingId), "transcript"] as const;
 
 function fetchMeetingPage(
   workspaceId: string,
@@ -112,7 +114,7 @@ export const meetingQueries = {
     revisionId: string | null,
   ) =>
     queryOptions({
-      queryKey: [...detailKey(id), "transcript", { revisionId }],
+      queryKey: [...transcriptsKey(id), { revisionId }],
       queryFn: ({ signal }) => fetchTranscript(id, meetingState, revisionId, signal),
       // Not `processed`, unlike the notes: it is saved before them and outlives their failure.
       enabled: meetingState !== "recording" && meetingState !== "queued",
@@ -181,6 +183,30 @@ export function useUploadMeeting(workspaceId: string) {
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: workspaceListsKey(workspaceId) });
+    },
+  });
+}
+
+export function useEditTranscript(meeting: Pick<Meeting, "id" | "state">) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (edit: RevisionInput) =>
+      unwrap(
+        apiClient.POST("/api/v1/meetings/{meeting_id}/transcript/revisions", {
+          params: { path: { meeting_id: meeting.id } },
+          body: edit,
+        }),
+      ),
+    onSuccess: (revision) => {
+      // Every cached revision's `is_current` changed with it.
+      queryClient.invalidateQueries({ queryKey: transcriptsKey(meeting.id), refetchType: "none" });
+      queryClient.setQueryData(meetingQueries.transcript(meeting, null).queryKey, revision);
+      // Exact: refetching the recording link under it would restart playback.
+      return queryClient.invalidateQueries({ queryKey: detailKey(meeting.id), exact: true });
+    },
+    onError: (error) => {
+      if (error.code !== "STALE_REVISION") return;
+      return queryClient.invalidateQueries({ queryKey: transcriptsKey(meeting.id) });
     },
   });
 }

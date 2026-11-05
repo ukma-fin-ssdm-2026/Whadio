@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { meetingSummary, page } from "@/shared/testing/fixtures";
+import { meetingRead, meetingSummary, page } from "@/shared/testing/fixtures";
 import { describeFailure, describeMeetingFigures, mapMeeting, matchesStateFilter } from "./model";
 
 const QUEUED = meetingSummary({ processing_state: "queued" });
@@ -22,6 +22,22 @@ test("a meeting summary carries no recording or failure reason", () => {
 
   // Assert
   expect(meeting).toMatchObject({ recordingAvailable: false, failureReason: null });
+});
+
+test("a meeting summary never claims an edited transcript", () => {
+  // Act
+  const meeting = mapMeeting(meetingSummary());
+
+  // Assert
+  expect(meeting.isEdited).toBe(false);
+});
+
+test("a meeting read says that its transcript was edited", () => {
+  // Act
+  const meeting = mapMeeting(meetingRead({ is_edited: true }));
+
+  // Assert
+  expect(meeting.isEdited).toBe(true);
 });
 
 test("an uploaded meeting is labelled as an upload", () => {
