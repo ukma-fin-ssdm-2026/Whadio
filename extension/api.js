@@ -4,10 +4,30 @@
 // extension is reloaded or updated. The server it is sent to is kept there too, since content scripts can
 // write local storage; the local copy only fills in the sign-in form.
 
+// fetch has no deadline of its own, and a request that never settles would hold the upload queue and the
+// local fallback behind it for good. One that runs out is thrown, so the upload retries it like any failure.
+const TIMEOUT_MS = 30_000;
+// The server assembles the whole recording from its chunks before it answers /complete.
+export const COMPLETE_TIMEOUT_MS = 5 * 60_000;
+
 export class ServerError extends Error {
   constructor(status, message) {
     super(message);
     this.status = status;
+  }
+}
+
+// A plain timer rather than AbortSignal.timeout, whose timer the tests' fake clock cannot move.
+async function withDeadline(timeout, request) {
+  const abort = new AbortController();
+  const timer = setTimeout(
+    () => abort.abort(new DOMException("The server did not answer in time.", "TimeoutError")),
+    timeout,
+  );
+  try {
+    return await request(abort.signal);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -19,7 +39,7 @@ async function failure(response) {
   );
 }
 
-export async function api(method, path, body) {
+export async function api(method, path, body, timeout = TIMEOUT_MS) {
   const { server, token } = await chrome.storage.session.get(["server", "token"]);
   const init = { method, headers: { Authorization: `Bearer ${token}` } };
   if (body instanceof FormData) {
@@ -28,14 +48,16 @@ export async function api(method, path, body) {
     init.body = JSON.stringify(body);
     init.headers["Content-Type"] = "application/json";
   }
-  const response = await fetch(`${server}/api/v1${path}`, init);
-  if (response.status === 401) {
-    await chrome.storage.session.remove(["token", "expiresAt", "name"]);
-  }
-  if (!response.ok) {
-    throw await failure(response);
-  }
-  return response.status === 204 ? null : response.json();
+  return withDeadline(timeout, async (signal) => {
+    const response = await fetch(`${server}/api/v1${path}`, { ...init, signal });
+    if (response.status === 401) {
+      await chrome.storage.session.remove(["token", "expiresAt", "name"]);
+    }
+    if (!response.ok) {
+      throw await failure(response);
+    }
+    return response.status === 204 ? null : await response.json();
+  });
 }
 
 // Passwords travel only over HTTPS; plain HTTP is allowed for a server on this computer.
@@ -59,17 +81,20 @@ export async function signedIn() {
 }
 
 export async function signIn(server, email, password) {
-  const response = await fetch(`${server}/api/v1/sessions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password, kind: "extension" }),
-    // A redirect would resend the password to an address insecureServer never checked.
-    redirect: "error",
+  const session = await withDeadline(TIMEOUT_MS, async (signal) => {
+    const response = await fetch(`${server}/api/v1/sessions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, kind: "extension" }),
+      // A redirect would resend the password to an address insecureServer never checked.
+      redirect: "error",
+      signal,
+    });
+    if (!response.ok) {
+      throw await failure(response);
+    }
+    return response.json();
   });
-  if (!response.ok) {
-    throw await failure(response);
-  }
-  const session = await response.json();
   await chrome.storage.local.set({ server });
   await chrome.storage.session.set({
     server,

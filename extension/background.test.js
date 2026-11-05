@@ -1,3 +1,5 @@
+import { COMPLETE_TIMEOUT_MS } from "./api.js";
+
 const SERVER = "https://whadio.example";
 const DESTINATION = { workspace_id: "w1", folder_id: "f1" };
 const STARTED_AT = new Date("2026-11-03T10:00:00Z");
@@ -65,7 +67,8 @@ function read(body) {
   return body === undefined ? undefined : JSON.parse(body);
 }
 
-// Records every request and answers it with `reply`, which sees the request and how many like it came before.
+// Records every request and answers it with `reply`, which sees the request, how many like it came before
+// and the request's abort signal.
 function fakeServer(reply = answer) {
   const requests = [];
   globalThis.fetch = vi.fn(async (url, init) => {
@@ -77,7 +80,7 @@ function fakeServer(reply = answer) {
     };
     const earlier = requests.filter((r) => r.method === request.method && r.path === request.path);
     requests.push(request);
-    return reply(request, earlier.length);
+    return reply(request, earlier.length, init.signal);
   });
   return requests;
 }
@@ -85,6 +88,17 @@ function fakeServer(reply = answer) {
 function failingPuts(failures, failure = () => new Response(null, { status: 503 })) {
   return (request, earlier) =>
     request.method === "PUT" && earlier < failures ? failure() : answer(request);
+}
+
+// Answers after `delay`, unless the request's deadline aborts it first; an infinite delay never answers.
+function answerAfter(delay, signal, response) {
+  return new Promise((resolve, reject) => {
+    const timer = Number.isFinite(delay) ? setTimeout(() => resolve(response), delay) : null;
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    });
+  });
 }
 
 function port() {
@@ -364,4 +378,63 @@ describe("a recording's upload", () => {
       saved: chrome.downloads.download.mock.calls.length,
     }).toEqual({ requests: ["POST /captures"], saved: 0 });
   });
+});
+
+describe("a server that stops answering", () => {
+  test("gives up on a chunk that gets no answer within its deadline and sends it again", async () => {
+    // Arrange
+    const quiet = (request, earlier, signal) =>
+      request.method === "PUT" && earlier === 0
+        ? answerAfter(Number.POSITIVE_INFINITY, signal)
+        : answer(request);
+    const requests = fakeServer(quiet);
+    const recording = await connect();
+
+    // Act
+    speak(recording, 11);
+    await vi.runAllTimersAsync();
+
+    // Assert
+    expect(sent(requests, "PUT")).toEqual(["/captures/c1/chunks/0", "/captures/c1/chunks/0"]);
+  });
+
+  test("still saves the call locally when no chunk upload ever gets an answer", async () => {
+    // Arrange
+    const quiet = (request, _earlier, signal) =>
+      request.method === "PUT" ? answerAfter(Number.POSITIVE_INFINITY, signal) : answer(request);
+    fakeServer(quiet);
+    const recording = await connect();
+    speak(recording, 15);
+
+    // Act
+    await hangUp(recording);
+
+    // Assert
+    expect(chrome.downloads.download.mock.calls.map(([options]) => options.filename)).toEqual([
+      "whadio-2026-11-03T10-00-00.webm",
+    ]);
+  });
+
+  test.for([
+    [COMPLETE_TIMEOUT_MS - 1, 0],
+    [COMPLETE_TIMEOUT_MS, 1],
+  ])(
+    "waits up to the completion deadline: answered after %i ms, saves %i files",
+    async ([delay, saved]) => {
+      // Arrange
+      const slowComplete = (request, _earlier, signal) =>
+        request.path.endsWith("/complete")
+          ? answerAfter(delay, signal, json(200, { id: "c1" }))
+          : answer(request);
+      fakeServer(slowComplete);
+      const recording = await connect();
+      speak(recording, 15);
+
+      // Act
+      await hangUp(recording);
+
+      // Assert
+      expect(chrome.downloads.download.mock.calls).toHaveLength(saved);
+    },
+  );
 });
