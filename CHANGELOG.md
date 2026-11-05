@@ -4,6 +4,16 @@ All notable changes to Whadio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-11-05
+
+### Added
+
+- Organise meetings into folders ([#259](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/259))
+
+### Fixed
+
+- Give the extension's and the web app's requests a deadline ([#306](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/306))
+
 ## [0.5.0] - 2026-11-05
 
 ### Added
