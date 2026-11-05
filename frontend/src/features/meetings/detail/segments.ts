@@ -3,6 +3,7 @@ import type { Schemas, TranscriptRead } from "@/shared/api/types";
 export const NO_MATCH = "No transcript matches your search.";
 
 export type LabelledSegment = Schemas["SegmentRead"] & {
+  index: number;
   speaker: string;
 };
 
@@ -15,8 +16,9 @@ export function matchingSegments(
   );
   const wanted = query.toLowerCase();
   return (transcript?.segments ?? [])
-    .map((item) => ({
+    .map((item, index) => ({
       ...item,
+      index,
       speaker: speakers.get(item.speaker_id) ?? "Unknown speaker",
     }))
     .filter(
