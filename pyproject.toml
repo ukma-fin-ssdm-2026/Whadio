@@ -1,6 +1,6 @@
 [project]
 name = "whadio"
-version = "0.1.0"
+version = "0.4.0"
 description = "Whadio backend: meeting recording, transcription and notes"
 readme = "README.md"
 requires-python = ">=3.13,<3.15"
@@ -60,6 +60,7 @@ dev = [
     "basedpyright>=1.40.2",
     "check-jsonschema>=0.38.2",
     "deptry>=0.25.1",
+    "git-cliff>=2.14.2",
     "go-task-bin>=3.54.0",
     "hypothesis>=6.170.1",
     "import-linter>=2.15",

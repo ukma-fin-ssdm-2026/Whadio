@@ -1,5 +1,7 @@
 import type { Schemas } from "@/shared/api/types";
 
+export const PRESETS: Schemas["Preset"][] = ["summary", "detailed", "interview"];
+
 export interface Workspace {
   id: string;
   name: string;

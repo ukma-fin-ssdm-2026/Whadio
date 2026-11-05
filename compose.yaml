@@ -1,7 +1,7 @@
 name: whadio
 
-# Every service needs a profile (`core`: main host, `gpu`: ASR host, `ollama`: local LLM);
-# .env sets COMPOSE_PROFILES.
+# Every service needs a profile (`core`: main host, `gpu`: ASR host, `ollama`: local LLM,
+# `storage`: bundled S3, `dev`: host-run development); .env sets COMPOSE_PROFILES.
 
 x-healthcheck: &healthcheck
   interval: 5s

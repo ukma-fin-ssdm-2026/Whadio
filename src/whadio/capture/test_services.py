@@ -1,6 +1,8 @@
 import asyncio
+import tempfile
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from threading import Event, get_ident
 from typing import BinaryIO
 from uuid import UUID, uuid4
 
@@ -475,6 +477,103 @@ def test_completion_joins_the_chunks_in_order() -> None:
 
     # Assert
     assert setup.storage.objects[setup.meetings.attached[0][2].storage_key] == b"head-tail"
+
+
+def test_completion_creates_its_temporary_file_outside_the_event_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    setup = fixture()
+    capture_id = started(setup).capture_id
+    upload(setup, capture_id, 0, b"head")
+    loop_thread = get_ident()
+    file_threads: list[int] = []
+    temporary_file = tempfile.TemporaryFile
+
+    def recording_file() -> BinaryIO:
+        file_threads.append(get_ident())
+        return temporary_file()
+
+    monkeypatch.setattr(tempfile, "TemporaryFile", recording_file)
+
+    # Act
+    complete(setup, capture_id, 0)
+
+    # Assert
+    assert [thread == loop_thread for thread in file_threads] == [False]
+
+
+def test_cancelled_completion_leaves_no_assembled_recording(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    setup = fixture()
+    capture_id = started(setup).capture_id
+    upload(setup, capture_id, 0, b"head")
+    entered, release, deleted = Event(), Event(), Event()
+    operations: list[str] = []
+    original_put = setup.storage.put
+    original_delete = setup.storage.delete
+
+    def blocked_put(key: str, data: BinaryIO, *, content_type: str) -> None:
+        entered.set()
+        if not release.wait(timeout=5):
+            raise TimeoutError("Test did not release upload")
+        original_put(key, data, content_type=content_type)
+        operations.append("upload")
+
+    def recording_delete(key: str) -> None:
+        operations.append("delete")
+        original_delete(key)
+        deleted.set()
+
+    monkeypatch.setattr(setup.storage, "put", blocked_put)
+    monkeypatch.setattr(setup.storage, "delete", recording_delete)
+
+    async def cancel_upload() -> None:
+        task = asyncio.create_task(setup.service.complete(USER, capture_id, 0, NOW))
+        try:
+            assert await asyncio.to_thread(entered.wait, 5)
+            task.cancel()
+            await asyncio.to_thread(deleted.wait, 0.2)
+        finally:
+            release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    # Act
+    asyncio.run(cancel_upload())
+
+    # Assert
+    assert (
+        operations,
+        list(setup.storage.objects),
+        setup.meetings.attached,
+        setup.queue.queued,
+    ) == (
+        ["upload", "delete"],
+        [f"captures/{capture_id}/0"],
+        [],
+        [],
+    )
+
+
+def test_failed_assembly_upload_maps_storage_error_and_keeps_capture_open() -> None:
+    # Arrange
+    setup = fixture()
+    capture_id = started(setup).capture_id
+    upload(setup, capture_id, 0, b"head")
+    setup.storage.unavailable = True
+
+    # Act
+    with pytest.raises(UseCaseError) as error:
+        complete(setup, capture_id, 0)
+
+    # Assert
+    assert (error.value.code, setup.repository.captures[capture_id].status) == (
+        Failure.INTEGRATION_UNAVAILABLE,
+        CaptureStatus.RECORDING,
+    )
 
 
 def test_completion_hands_every_chunk_over_for_cleanup() -> None:

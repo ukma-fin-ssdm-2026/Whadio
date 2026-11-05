@@ -17,14 +17,21 @@ interface HomeViewProps {
   workspaces: Workspace[];
   renderMeetingFigures: (workspaceId: string) => ReactNode;
   onWorkspace: (id: string) => void;
+  actions?: ReactNode;
 }
 
-export function HomeView({ workspaces, renderMeetingFigures, onWorkspace }: HomeViewProps) {
+export function HomeView({
+  workspaces,
+  renderMeetingFigures,
+  onWorkspace,
+  actions,
+}: HomeViewProps) {
   return (
     <Stack sx={{ gap: 1.5 }}>
       <SectionHeader
         title="Choose a workspace"
         description="Upload recordings and review processed meetings."
+        actions={actions}
       />
       <ListPanel>
         {workspaces.map((workspace) => (

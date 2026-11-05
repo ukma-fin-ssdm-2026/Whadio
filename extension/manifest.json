@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Whadio",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "description": "Records the audio of a Google Meet call together with your microphone into Whadio.",
   "minimum_chrome_version": "116",
   "permissions": ["activeTab", "downloads", "offscreen", "scripting", "storage", "tabCapture"],

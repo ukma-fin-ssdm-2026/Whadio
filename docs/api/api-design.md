@@ -673,7 +673,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
     always reachable through `original_revision_id` (NFR-006, NFR-011).
 - **Errors:**
   - `404 NOT_FOUND`: no such meeting, or the caller cannot read it; or no such revision.
-  - `409 NOT_TRANSCRIBED`: the meeting is not processed yet.
+  - `409 NOT_TRANSCRIBED`: the meeting has no transcript yet.
 
 #### `GET`, `POST /meetings/{meeting_id}/transcript/revisions` · List revisions or edit
 
@@ -688,7 +688,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - Every segment and speaker id must belong to the base revision, and each may appear once.
 - **Errors:**
   - `404 NOT_FOUND`: no such meeting, or the caller cannot read it.
-  - `409 NOT_TRANSCRIBED`: the meeting is not processed yet.
+  - `409 NOT_TRANSCRIBED`: the meeting has no transcript yet.
   - `409 STALE_REVISION`: someone edited after `base_revision_id`. Reload and edit again.
 
 ### 4.5 Notes and export
@@ -748,7 +748,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
     ends with an attribution (FR-042). An edited transcript says so.
 - **Errors:**
   - `404 NOT_FOUND`: no such meeting, or the caller cannot read it.
-  - `409 NOT_TRANSCRIBED`: the meeting is not processed yet.
+  - `409 NOT_TRANSCRIBED`: the meeting has no transcript yet.
 
 #### `GET /meetings/{meeting_id}/notes/export` · Download the notes
 
@@ -841,7 +841,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 - **Rules:** with redaction, speaker names are replaced in both.
 - **Errors:**
   - `404 NOT_FOUND`: no such share, or it is not bound to the caller.
-  - `409 NOT_TRANSCRIBED`, transcript only: the meeting is not processed yet.
+  - `409 NOT_TRANSCRIBED`, transcript only: the meeting has no transcript yet.
   - `410 SHARE_REVOKED`: the creator revoked the share.
 
 #### `GET /users/me/shares` · Meetings shared with me
@@ -1073,9 +1073,11 @@ status, and which operations return it.
   `DELETE /workspaces/{id}/members/{user_id}`.
 - **`FOLDER_EXISTS`, `TERM_EXISTS`:** a folder name or a glossary term that already exists in
   the workspace, ignoring case.
-- **`NOT_TRANSCRIBED`:** the meeting has no transcript yet, because it is recording, queued,
-  processing or failed. Returned by the transcript, revision, notes regeneration, transcript
-  export and shared transcript operations.
+- **`NOT_TRANSCRIBED`:** the meeting has no transcript yet: it is recording or queued, its
+  transcription is running, or transcription failed. The transcript is stored as soon as
+  transcription finishes, so it is readable while the meeting is still `processing` its notes
+  and after it `failed` at the notes step. Returned by the transcript, revision, notes
+  regeneration, transcript export and shared transcript operations.
 - **`STALE_REVISION`:** a transcript edit based on a revision that is no longer current. It
   prevents a lost update between two editors.
 - **`RECORDING_NOT_READY`:** a playback link for a meeting that is still being captured.

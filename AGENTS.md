@@ -24,7 +24,7 @@ When the code and these documents disagree, stop and ask instead of picking one.
 ```text
 src/whadio/
   migrations/     packaged Alembic revisions and database integrity guards
-  cli.py          the `whadio` command: `web`, `openapi`; the workers and the scheduler add theirs
+  cli.py          the `whadio` command: every runtime, migrations, `openapi` and the operator commands
   api/            the `web` runtime: FastAPI app, one subpackage of routes per module, MCP server
   scheduler/      the `scheduler` runtime: periodic jobs
   workers/asr/    the transcription worker (GPU host)
@@ -33,7 +33,10 @@ src/whadio/
   shared/         framework-free utilities any runtime may use: settings, logging, clients
   <module>/       one package per backend module of the high-level design, listed below
 frontend/         the web SPA, with its own toolchain
+  src/            app/ shell, features/ per area, routes/ file-based routes, shared/ API client and UI
+extension/        the Chrome extension: records a Meet call and uploads it to Capture in chunks
 infra/            configuration that compose.yaml mounts into the services
+.agents/skills/   agent skills for Claude Code and Codex; `.claude/skills` links here
 ```
 
 | Package | Module | MVP owner |
@@ -44,7 +47,7 @@ infra/            configuration that compose.yaml mounts into the services
 | `processing` | Processing | Denys |
 | `audit` | Audit | Denys |
 | `retention` | Retention | Valeriia |
-| `capture` | Capture: the recording upload | Denys |
+| `capture` | Capture: the extension's chunked recording sessions | Denys |
 | `export`, `notifications`, `admin` | Export, Notifications, Admin & Monitoring | after the MVP |
 | `contracts`, `workers` | Job contracts, Transcription and Notes pipelines | Andrii, Zlata |
 | `frontend/` | Web SPA | Zlata |
@@ -123,7 +126,7 @@ the hooks only catch the cheap mistakes first, and stay within a time budget:
 | When | Budget | What runs |
 |---|---|---|
 | `git commit` | 3 s | Branch name, file hygiene, gitleaks on the staged diff, `uv lock --check`, `ruff check --fix` and `ruff format` on the whole project, Biome on the frontend and the extension, the suppression ban, typos, schema and workflow checks, import-linter and ty. The commit message is checked last. |
-| `git push` | 12 s | Only what the push changes: `uv run task test:fast` for the backend; `tsc` and the Vitest tests the branch can affect for the frontend; the OpenAPI drift check for `src/whadio/api/`. |
+| `git push` | 12 s | Only what the push changes: `uv run task test:fast` for the backend; `tsc` and the Vitest tests the branch can affect for the frontend; the extension's Vitest tests for `extension/`; the OpenAPI drift check for `src/whadio/api/`; the API-types and route-tree drift checks for the frontend. |
 | CI | none | Everything below, on every pull request and on `main`. |
 
 CI runs these jobs in parallel, and every job and hook runs to the end, so one failure hides no
@@ -158,6 +161,22 @@ by hand, so open a draft pull request to try something.
   whole file.
 - Changing a route or a schema regenerates `docs/api/openapi-generated.*` and
   `frontend/src/shared/api/schema.gen.ts`; commit them with it.
+
+## Agent skills
+
+`.agents/skills/` holds the skills Claude Code and Codex use in this repository. Codex reads the
+directory itself, and `.claude/skills` is a symbolic link to it for Claude Code. Use a skill
+without being asked when its row applies. If your agent does not list the skills, read the
+`SKILL.md` and follow it.
+
+| Skill | Use it |
+|---|---|
+| [`ui-evidence`](.agents/skills/ui-evidence/SKILL.md) | After a change visible in the web app, to check it in the running app, and when an issue asks for screenshots or a video |
+| [`pr-review`](.agents/skills/pr-review/SKILL.md) | When reviewing a pull request, from the first look to posting the review |
+
+On Windows, git checks the link out as a small text file unless symbolic links are enabled. Turn
+on Developer Mode, run `git config core.symlinks true`, delete the `.claude/skills` file and run
+`git checkout -- .claude/skills`.
 
 ## Code standards
 

@@ -2,6 +2,7 @@ import type { components } from "./schema.gen";
 
 export type Schemas = components["schemas"];
 
+export type WorkspaceCreate = Schemas["WorkspaceCreate"];
 export type WorkspaceUpdate = Schemas["WorkspaceUpdate"];
 export type MeetingUpdate = Schemas["MeetingUpdate"];
 export type MeetingPage = Schemas["Page_MeetingSummary_"];

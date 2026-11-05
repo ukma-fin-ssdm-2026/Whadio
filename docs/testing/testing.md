@@ -24,7 +24,7 @@ We added 116 tests in five files. The two `test_services_unit.py` files are unit
 ### Fixtures, mocks and parametrised tests
 
 - **Fixtures:** `async_database` (in the root `conftest.py`) runs each test in a PostgreSQL transaction that is rolled back afterwards, so tests never see each other's data. Two builders set up the people each test needs: `world()` in Access Policy and `team()` in Meetings. Each creates a workspace Owner, a Member, an outsider and a meeting.
-- **Mocks (fakes):** Access Policy must not import Meetings (import-linter enforces the layering), so its tests replace the collaborators with small fakes. `FakeMeetings` returns the meeting's scope, `FakeAudit` records audit events in a list, and `FakeNotices` records the notices sent to share creators. The tests then assert on what the fakes received. The unit tests go further: `FakeAccessRepository` and `FakeDirectory` stand in for the Access Policy database and the workspace memberships, and `FakeMeetingRepository` and `FakePolicy` do the same for Meetings.
+- **Mocks (fakes):** Access Policy must not import Meetings (import-linter enforces the layering), so its tests replace the collaborators with small fakes. `FakeMeetings` returns the meeting's scope, the shared `RecordingAuditWriter` records audit events in a list, and `FakeNotices` records the notices sent to share creators. The tests then assert on what the fakes received. The unit tests go further: `FakeAccessRepository` and `FakeDirectory` stand in for the Access Policy database and the workspace memberships, and `FakeMeetingRepository` and `FakePolicy` do the same for Meetings.
 - **Parametrised tests:** the four content paths a share recipient may not use (export, MCP, recording, write); the two invalid combinations of access mode and member list; blank names and names with a control character; a share with names hidden and with names shown; deleting and updating someone else's glossary term.
 
 ### Edge cases covered
@@ -112,14 +112,14 @@ The run fails below 85% coverage of lines and branches combined: an `if` counts 
 
 Coverage also follows greenlets (`concurrency = ["greenlet", "thread"]`). SQLAlchemy's async layer runs every database call in a greenlet, and without this setting coverage.py does not see the code that runs after an awaited call return, so it reports that code as never run. Turning it on raised the first full run from 84.7% to 85.6%. Nearly all of the gain is in database-backed code: the session and workspace routes went from 67% and 91% to 100%, the MCP server from 72% to 91%, and the meeting routes from 73% to 83%.
 
-Why 85: the full run measures 87.5% of lines and branches combined. The testing strategy and this gate settled on 85 together, as a compromise: it sits close to the measured figure, so a real drop fails the run, while it leaves room for the ASR code that only runs with downloaded models, which CI cannot run (about 1.2 points), and for normal churn.
+Why 85: when the gate was set, the full run measured 87.5% of lines and branches combined; the CI run of 2026-11-01 measured 92.42%. The testing strategy and this gate settled on 85 together, as a compromise: it sat close to the measured figure, so a real drop fails the run, while it leaves room for the ASR code that only runs with downloaded models, which CI cannot run (about 1.2 points), and for normal churn.
 
 The HTML report colours each line green (run) or red (not run). The Lab 6
 [`htmlcov-before/`](https://github.com/ukma-fin-ssdm-2026/Whadio/tree/lab06-g5-deadline-2026-10-20/htmlcov-before)
 and [`htmlcov/`](https://github.com/ukma-fin-ssdm-2026/Whadio/tree/lab06-g5-deadline-2026-10-20/htmlcov)
 snapshots are preserved at tag `lab06-g5-deadline-2026-10-20`. They, and the before-and-after
 figures below, were measured before coverage followed greenlets, so they undercount the
-database-backed modules. The repository's current `htmlcov/` is the latest midterm baseline. CI
+database-backed modules. The repository's `htmlcov/` is the midterm snapshot of 2026-11-01. CI
 writes a fresh report on every run and uploads it with the JUnit XML as the `test-reports`
 artifact, and the job summary shows the coverage table and the failed tests.
 
@@ -157,11 +157,11 @@ Coverage says which code ran, not whether the test checked the right thing. A te
 ## 3. Proposals for improving the tests
 
 - **Close the two ordinary gaps:** a successful glossary term rename, and the happy path of `processing_snapshot`.
-- **Measure branches, not only lines:** the runs above count lines. An `if` whose false side never ran still counts as covered. Adding `--cov-branch` would show those half-tested conditions.
-- **Mutation testing:** run mutmut on `access_policy/services.py`. It flips conditions and changes values, then checks whether some test fails. Coverage shows that a line ran; mutation testing shows whether an assertion would notice it going wrong.
+- **Measure branches, not only lines:** done. `branch = true` in `[tool.coverage.run]` makes the gate count lines and branches combined, so an `if` whose false side never ran no longer counts as covered.
+- **Mutation testing:** partly done. mutmut runs over the notes prompt (see "Mutation testing" above); `access_policy/services.py` is not in its scope yet. It flips conditions and changes values, then checks whether some test fails. Coverage shows that a line ran; mutation testing shows whether an assertion would notice it going wrong.
 - **Real concurrency tests for the race guards:** two sessions against PostgreSQL, each holding its own transaction, instead of leaving those lines untested.
-- **Property-based tests for name validation:** Hypothesis can generate arbitrary Unicode for folder names and glossary terms, including whitespace and control characters, instead of the few hand-picked values used now.
-- **One shared builder:** `world()` and `team()` both create an Owner, a Member, an outsider and a meeting. Moving them into one fixture in `conftest.py` would stop the next module's tests from writing a third copy.
+- **Property-based tests for name validation:** done. Hypothesis generates arbitrary Unicode, including whitespace and control characters, for the display-text validation that folder names and glossary terms share (`api/core/test_schemas.py`).
+- **One shared builder:** `world()` and `team()` both create an Owner, a Member, an outsider and a meeting. Moving them into one fixture in `conftest.py` would stop the next module's tests from writing a third copy. Not adopted: [Test Doubles](test-doubles.md#why-world-and-team-stay-separate) explains why.
 
 ## 4. Frontend tests
 
@@ -179,6 +179,16 @@ The web app has its own tests, in `frontend/`, next to the code they test. They 
 - **Mock Service Worker** answers the API. `src/shared/testing/server.ts` exports the `server` and an `http` typed from the OpenAPI types, so a handler for a path the API does not have fails to compile. A test declares its handlers with `server.use(...)`, and a request nothing handles fails the test. `src/shared/testing/fixtures.ts` builds the API's response bodies.
 - **Route tests** render the real `<App />` at a URL, with the real route tree and the real theme: set the address with `window.history.replaceState`, then render. `App.routing.test.tsx` and `App.test.tsx` work this way. `src/app/testing.tsx` holds their helpers: `serveApi` answers a signed-in or signed-out session and records the requests, `signIn` fills in the form, and `renderAtPath` gives a component that holds links a router without the app.
 
+## 5. Visual checks
+
+The tests above never draw a page. `npm run capture` in `frontend/` screenshots the running app with Playwright's own Chromium and lists each page's console errors and warnings, uncaught exceptions and failed requests. Install the browser once with `npx playwright install chromium` in `frontend/`, start the API and the web app (`AGENTS.md`, "Setup"), then run, from the repository root:
+
+```bash
+npm --prefix frontend run capture -- / /meetings --out my-change
+```
+
+It signs in as `ui-evidence@whadio.dev`, a development account it creates with `whadio dev-user` from the project's `.venv` under a fresh random password, and saves every route at 1440 × 900 and 390 × 844, light and dark, in `.ui-evidence/my-change/`, which git ignores. `--viewport`, `--theme`, `--full-page`, `--signed-out` and `--base-url` change that. The agent skill [`ui-evidence`](../../.agents/skills/ui-evidence/SKILL.md) adds before-and-after shots, multi-step flows and videos with `npx playwright cli`, and attaching them to an issue or a pull request.
+
 ## AI Usage
 
-The tests, the coverage runs and this document were made with Claude Code (Claude Opus 5.5); checked by Denys Zabiiaka.
+The tests, the coverage runs and this document were made with Claude Code (Claude Opus 5.5); checked by Denys Zabiiaka. Section 5 and the capture script were added with Claude Code in #266. Claude Code later matched its status statements to the code for #257.

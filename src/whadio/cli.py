@@ -71,7 +71,9 @@ def openapi() -> None:
 
 
 @app.command(
-    help="Run recording retention and deleted-meeting cleanup; one instance per deployment."
+    help="Apply recording retention and its warnings, delete the recordings of deleted meetings, "
+    "remove expired account links and, with an SMTP relay configured, send queued email notices; "
+    "one instance per deployment."
 )
 def scheduler(
     *,

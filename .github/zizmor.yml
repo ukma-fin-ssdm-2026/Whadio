@@ -1,0 +1,5 @@
+rules:
+  dangerous-triggers:
+    ignore:
+      # Its workflow_run job checks out nothing and only merges the release app's own pull request.
+      - release.yml

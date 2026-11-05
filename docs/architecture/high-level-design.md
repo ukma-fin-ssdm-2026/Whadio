@@ -97,8 +97,8 @@ Source: [uml/component-diagram.puml](uml/component-diagram.puml)
 | Audit | The append-only record of who changed a meeting's content or access: actor, action, target IDs and time, never content. Written by Meetings, Access Policy and Accounts & Workspaces; no API reads it, and the operator consults it in the database. | NFR-010 |
 
 The Web API has no component of its own: each module serves its own resources through its API
-layer, in the module's subpackage of `api`. Session authentication is middleware that Accounts & Workspaces provides to every Web API
-route. MCP Server, by contrast, is a component, because it carries behaviour of its own: a separate
+layer, in the module's subpackage of `api`. Session authentication is a request dependency that Accounts & Workspaces provides to every Web
+API route that needs a signed-in user. MCP Server, by contrast, is a component, because it carries behaviour of its own: a separate
 protocol, authentication by personal key, the tool definitions, and the rule that a key reaches only
 its owner's accessible meetings (FR-043, FR-044).
 
