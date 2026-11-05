@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { apiClient, normalizeApiOrigin, READ_TIMEOUT_MS } from "./client";
-import { NETWORK_ERROR } from "./errors";
+import { ApiError, NETWORK_ERROR } from "./errors";
 import { unwrap } from "./unwrap";
 
 describe("normalizeApiOrigin", () => {
@@ -59,6 +59,10 @@ describe("normalizeApiOrigin", () => {
 // Answers after `delay`, unless the request's signal aborts it first; an infinite delay never answers.
 function answerAfter(delay: number, signal: AbortSignal | null | undefined): Promise<Response> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
     const timer = Number.isFinite(delay)
       ? setTimeout(() => resolve(Response.json({ id: "u1" })), delay)
       : undefined;
@@ -74,6 +78,29 @@ function serverAnsweringAfter(delay: number) {
     "fetch",
     vi.fn((_request: Request, init?: RequestInit) => answerAfter(delay, init?.signal)),
   );
+}
+
+// Sends the headers and part of the body, then stalls. Like Chromium, the body read is cut off with an
+// AbortError once the signal aborts, whatever the signal's reason.
+function serverStallingMidBody() {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_request: Request, init?: RequestInit) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"id":'));
+          init?.signal?.addEventListener("abort", () =>
+            controller.error(new DOMException("BodyStreamBuffer was aborted", "AbortError")),
+          );
+        },
+      });
+      return new Response(body, { status: 200, headers: { "Content-Type": "application/json" } });
+    }),
+  );
+}
+
+function causeOf(outcome: unknown): unknown {
+  return outcome instanceof ApiError ? outcome.cause : outcome;
 }
 
 // Lets `elapsed` pass on the fake clock and reports how the request ended.
@@ -123,6 +150,45 @@ describe("a server that stops answering", () => {
 
     // Assert
     expect(outcome === "answered" ? "answered" : "timed out").toBe(expected);
+  });
+
+  test("ends a read whose answer stops partway with the timeout message", async () => {
+    // Arrange
+    serverStallingMidBody();
+
+    // Act
+    const outcome = await outcomeAfter(unwrap(apiClient.GET("/api/v1/users/me")), READ_TIMEOUT_MS);
+
+    // Assert
+    expect(outcome).toHaveProperty("message", "The server did not answer in time. Try again.");
+  });
+
+  test("ends a read at once, as a cancellation, when its caller aborts it", async () => {
+    // Arrange
+    serverAnsweringAfter(Number.POSITIVE_INFINITY);
+    const caller = new AbortController();
+    const request = unwrap(apiClient.GET("/api/v1/users/me", { signal: caller.signal }));
+
+    // Act
+    caller.abort();
+    const outcome = await outcomeAfter(request, 0);
+
+    // Assert
+    expect(causeOf(outcome)).toHaveProperty("name", "AbortError");
+  });
+
+  test("ends a read whose caller has already aborted it as a cancellation", async () => {
+    // Arrange
+    serverAnsweringAfter(Number.POSITIVE_INFINITY);
+
+    // Act
+    const outcome = await outcomeAfter(
+      unwrap(apiClient.GET("/api/v1/users/me", { signal: AbortSignal.abort() })),
+      0,
+    );
+
+    // Assert
+    expect(causeOf(outcome)).toHaveProperty("name", "AbortError");
   });
 
   test("lets a write take longer than the read deadline", async () => {
