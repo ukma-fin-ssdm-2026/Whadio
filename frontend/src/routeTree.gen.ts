@@ -5,7 +5,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as SignInRouteImport } from './routes/sign-in'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
+import { Route as PasswordResetsResetIdRouteImport } from './routes/password-resets/$resetId'
+import { Route as RegistrationsRegistrationIdRouteImport } from './routes/registrations/$registrationId'
 import { Route as AuthedMeetingsIndexRouteImport } from './routes/_authed/meetings/index'
 import { Route as AuthedMeetingsMeetingIdRouteImport } from './routes/_authed/meetings/$meetingId'
 import { Route as AuthedSettingsAssistantRouteImport } from './routes/_authed/settings/assistant'
@@ -22,11 +25,27 @@ const SignInRoute = SignInRouteImport.update({
   path: '/sign-in',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthedIndexRoute = AuthedIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthedRoute,
 } as any)
+const PasswordResetsResetIdRoute = PasswordResetsResetIdRouteImport.update({
+  id: '/password-resets/$resetId',
+  path: '/password-resets/$resetId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RegistrationsRegistrationIdRoute =
+  RegistrationsRegistrationIdRouteImport.update({
+    id: '/registrations/$registrationId',
+    path: '/registrations/$registrationId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AuthedMeetingsIndexRoute = AuthedMeetingsIndexRouteImport.update({
   id: '/meetings/',
   path: '/meetings/',
@@ -64,6 +83,9 @@ const AuthedWorkspacesWorkspaceIdSettingsRoute =
 export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
   '/sign-in': typeof SignInRoute
+  '/terms': typeof TermsRoute
+  '/password-resets/$resetId': typeof PasswordResetsResetIdRoute
+  '/registrations/$registrationId': typeof RegistrationsRegistrationIdRoute
   '/workspaces/$workspaceId': typeof AuthedWorkspacesWorkspaceIdRouteRouteWithChildren
   '/meetings/$meetingId': typeof AuthedMeetingsMeetingIdRoute
   '/settings/assistant': typeof AuthedSettingsAssistantRoute
@@ -73,6 +95,9 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
+  '/terms': typeof TermsRoute
+  '/password-resets/$resetId': typeof PasswordResetsResetIdRoute
+  '/registrations/$registrationId': typeof RegistrationsRegistrationIdRoute
   '/': typeof AuthedIndexRoute
   '/meetings/$meetingId': typeof AuthedMeetingsMeetingIdRoute
   '/settings/assistant': typeof AuthedSettingsAssistantRoute
@@ -84,6 +109,9 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authed': typeof AuthedRouteWithChildren
   '/sign-in': typeof SignInRoute
+  '/terms': typeof TermsRoute
+  '/password-resets/$resetId': typeof PasswordResetsResetIdRoute
+  '/registrations/$registrationId': typeof RegistrationsRegistrationIdRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/workspaces/$workspaceId': typeof AuthedWorkspacesWorkspaceIdRouteRouteWithChildren
   '/_authed/meetings/$meetingId': typeof AuthedMeetingsMeetingIdRoute
@@ -97,6 +125,9 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/sign-in'
+    | '/terms'
+    | '/password-resets/$resetId'
+    | '/registrations/$registrationId'
     | '/workspaces/$workspaceId'
     | '/meetings/$meetingId'
     | '/settings/assistant'
@@ -106,6 +137,9 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/sign-in'
+    | '/terms'
+    | '/password-resets/$resetId'
+    | '/registrations/$registrationId'
     | '/'
     | '/meetings/$meetingId'
     | '/settings/assistant'
@@ -116,6 +150,9 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_authed'
     | '/sign-in'
+    | '/terms'
+    | '/password-resets/$resetId'
+    | '/registrations/$registrationId'
     | '/_authed/'
     | '/_authed/workspaces/$workspaceId'
     | '/_authed/meetings/$meetingId'
@@ -128,6 +165,9 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
   SignInRoute: typeof SignInRoute
+  TermsRoute: typeof TermsRoute
+  PasswordResetsResetIdRoute: typeof PasswordResetsResetIdRoute
+  RegistrationsRegistrationIdRoute: typeof RegistrationsRegistrationIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -146,12 +186,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignInRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authed/': {
       id: '/_authed/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AuthedIndexRouteImport
       parentRoute: typeof AuthedRoute
+    }
+    '/password-resets/$resetId': {
+      id: '/password-resets/$resetId'
+      path: '/password-resets/$resetId'
+      fullPath: '/password-resets/$resetId'
+      preLoaderRoute: typeof PasswordResetsResetIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/registrations/$registrationId': {
+      id: '/registrations/$registrationId'
+      path: '/registrations/$registrationId'
+      fullPath: '/registrations/$registrationId'
+      preLoaderRoute: typeof RegistrationsRegistrationIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authed/meetings/': {
       id: '/_authed/meetings/'
@@ -239,6 +300,9 @@ const AuthedRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
   SignInRoute: SignInRoute,
+  TermsRoute: TermsRoute,
+  PasswordResetsResetIdRoute: PasswordResetsResetIdRoute,
+  RegistrationsRegistrationIdRoute: RegistrationsRegistrationIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

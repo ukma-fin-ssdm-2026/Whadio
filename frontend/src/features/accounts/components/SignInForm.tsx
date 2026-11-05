@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Box, Button, Card, Typography } from "@mui/material";
+import { Alert, Box, Button, Card, Typography } from "@mui/material";
 import { type UseFormSetError, useForm } from "react-hook-form";
 import { z } from "zod";
 import type { ApiError } from "@/shared/api/errors";
@@ -26,9 +26,10 @@ function showServerError(error: ApiError, setError: UseFormSetError<Credentials>
 interface SignInFormProps {
   onSignedIn: (user: Schemas["UserRead"]) => void;
   externalError?: string;
+  confirmation?: string;
 }
 
-export function SignInForm({ onSignedIn, externalError }: SignInFormProps) {
+export function SignInForm({ onSignedIn, externalError, confirmation }: SignInFormProps) {
   const signIn = useSignIn();
   const { control, handleSubmit, setError, formState } = useForm({
     resolver: zodResolver(credentials),
@@ -58,6 +59,11 @@ export function SignInForm({ onSignedIn, externalError }: SignInFormProps) {
           <Typography variant="h1">Sign in</Typography>
           <Typography color="textSecondary">Open your meetings, notes, and transcripts.</Typography>
         </Box>
+        {confirmation && (
+          <Alert severity="success" sx={{ alignItems: "center" }}>
+            {confirmation}
+          </Alert>
+        )}
         <FormTextField
           control={control}
           name="email"
