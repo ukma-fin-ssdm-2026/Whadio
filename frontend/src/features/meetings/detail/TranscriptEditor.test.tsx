@@ -60,6 +60,7 @@ async function startEditing(transcript = BASE) {
       onQuery={() => {}}
       onRevision={() => {}}
       onSaved={() => {}}
+      onUnsavedChange={() => {}}
     />,
   );
   await view.user.click(screen.getByRole("button", { name: "Edit transcript" }));

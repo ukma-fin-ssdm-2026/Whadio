@@ -174,13 +174,20 @@ interface EditBarProps {
   base: TranscriptRead;
   pending: boolean;
   onCancel: () => void;
+  onUnsavedChange: (unsaved: boolean) => void;
 }
 
-function EditBar({ control, base, pending, onCancel }: EditBarProps) {
+function EditBar({ control, base, pending, onCancel, onUnsavedChange }: EditBarProps) {
   const [speakers, segments] = useWatch({ control, name: ["speakers", "segments"] });
   const { errors } = useFormState({ control });
   const changes = countChanges(revisionInput(base, { speakers, segments }));
   const error = errors.root?.server?.message;
+  const unsaved = changes > 0;
+
+  useEffect(() => {
+    onUnsavedChange(unsaved);
+    return () => onUnsavedChange(false);
+  }, [unsaved, onUnsavedChange]);
 
   return (
     <Stack
@@ -246,6 +253,7 @@ interface TranscriptEditorProps {
   segments: LabelledSegment[];
   onClose: () => void;
   onSaved: () => void;
+  onUnsavedChange: (unsaved: boolean) => void;
 }
 
 export function TranscriptEditor({
@@ -254,6 +262,7 @@ export function TranscriptEditor({
   segments,
   onClose,
   onSaved,
+  onUnsavedChange,
 }: TranscriptEditorProps) {
   const notify = useNotify();
   const edit = useEditTranscript(meeting);
@@ -306,7 +315,13 @@ export function TranscriptEditor({
         />
       ))}
       {segments.length === 0 && <Typography color="textSecondary">{NO_MATCH}</Typography>}
-      <EditBar control={control} base={base} pending={edit.isPending} onCancel={onClose} />
+      <EditBar
+        control={control}
+        base={base}
+        pending={edit.isPending}
+        onCancel={onClose}
+        onUnsavedChange={onUnsavedChange}
+      />
     </Stack>
   );
 }
