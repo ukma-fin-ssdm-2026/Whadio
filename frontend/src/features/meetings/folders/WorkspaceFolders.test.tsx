@@ -66,7 +66,8 @@ function refuseCreate() {
 async function createFolder(name: string) {
   const { user } = renderFolders();
   await user.click(screen.getByRole("button", { name: "New folder" }));
-  if (name) await user.type(screen.getByLabelText("Folder name"), name);
+  await user.click(screen.getByLabelText("Folder name"));
+  if (name) await user.paste(name);
   await user.click(screen.getByRole("button", { name: "Save" }));
   return user;
 }

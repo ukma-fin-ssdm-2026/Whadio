@@ -60,7 +60,8 @@ async function rename(name: string) {
   const { user } = await openActions();
   await user.click(screen.getByRole("menuitem", { name: /Rename/ }));
   await user.clear(screen.getByLabelText("Meeting name"));
-  if (name) await user.type(screen.getByLabelText("Meeting name"), name);
+  await user.click(screen.getByLabelText("Meeting name"));
+  if (name) await user.paste(name);
   await user.click(screen.getByRole("button", { name: "Save" }));
   return user;
 }
