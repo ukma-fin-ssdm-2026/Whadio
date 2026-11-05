@@ -1,3 +1,4 @@
+import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import {
   Alert,
   Box,
@@ -8,14 +9,17 @@ import {
   Paper,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { Schemas } from "@/shared/api/types";
 import { formatDuration } from "@/shared/lib/format-duration";
+import { useNotify } from "@/shared/ui/NotifyProvider";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { ADMIN_KEY, adminQueries, type JobFilters } from "./api/monitoring";
+import { adminSearch, JOB_STATUSES, JOB_TYPES } from "./search";
 
 const duration = (value: number | null) =>
   value === null ? "Unknown" : formatDuration(Math.floor(value));
@@ -28,7 +32,10 @@ function Counts({ counts }: { counts: Schemas["JobCounts"] }) {
     ["Running", counts.running],
     ["Failed", counts.failed],
     ["Not yet published", counts.unpublished],
-    ["Oldest known queue wait", duration(counts.oldest_queue_wait_seconds)],
+    [
+      "Oldest known queue wait",
+      counts.queued === 0 ? "None queued" : duration(counts.oldest_queue_wait_seconds),
+    ],
     ["Unknown queue waits", counts.unknown_queue_waits],
   ];
   return (
@@ -53,12 +60,23 @@ function Counts({ counts }: { counts: Schemas["JobCounts"] }) {
 }
 
 function Job({ job }: { job: Schemas["JobSnapshot"] }) {
+  const notify = useNotify();
+  const copyId = async () => {
+    try {
+      await navigator.clipboard.writeText(job.job_id);
+      notify("Job ID copied");
+    } catch {
+      notify(`Could not copy. Copy this job ID manually: ${job.job_id}`, "error");
+    }
+  };
   const timing =
     job.status === "queued"
       ? `Waiting: ${duration(job.queue_wait_seconds)}`
       : job.status === "running"
         ? `Running: ${duration(job.running_seconds)}`
-        : `Last attempt: ${duration(job.last_attempt_duration_seconds)}`;
+        : job.attempts_started === 0
+          ? "Not started"
+          : `Last attempt: ${duration(job.last_attempt_duration_seconds)}`;
   return (
     <Paper component="li" variant="outlined" sx={{ p: 2, listStyle: "none" }}>
       <Stack direction="row" sx={{ gap: 1, alignItems: "center", flexWrap: "wrap", mb: 1 }}>
@@ -71,10 +89,37 @@ function Job({ job }: { job: Schemas["JobSnapshot"] }) {
           color={job.status === "failed" ? "error" : "default"}
         />
       </Stack>
+      <Tooltip title={job.job_id} arrow>
+        <Button
+          size="small"
+          onClick={copyId}
+          aria-label={`Copy job ID ${job.job_id}`}
+          endIcon={<ContentCopyOutlinedIcon />}
+          sx={{ fontFamily: "monospace", px: 0 }}
+        >
+          Job: {job.job_id.slice(0, 8)}
+        </Button>
+      </Tooltip>
       <Typography sx={{ overflowWrap: "anywhere" }}>Workspace: {job.workspace_id}</Typography>
       <Typography>
         {timing} · Attempts: {job.attempts_started}
       </Typography>
+      <Typography variant="body2">
+        Total elapsed: {duration(job.total_elapsed_seconds)}
+        {job.attempts_started > 0 &&
+          job.status !== "queued" &&
+          ` · Queue before attempt: ${duration(job.last_queue_wait_seconds)}`}
+      </Typography>
+      {job.status === "running" && (
+        <Typography variant="body2">
+          Started {job.started_at === null ? "Unknown" : timestamp(job.started_at)}
+        </Typography>
+      )}
+      {(job.status === "succeeded" || job.status === "failed") && (
+        <Typography variant="body2">
+          Finished {job.finished_at === null ? "Unknown" : timestamp(job.finished_at)}
+        </Typography>
+      )}
       {job.failure_description && (
         <Typography color="error.main">{job.failure_description}</Typography>
       )}
@@ -170,17 +215,17 @@ export function AdminPage({
           onChange={(event) =>
             onFilters({
               ...filters,
-              job_type:
-                event.target.value === "transcription" || event.target.value === "notes"
-                  ? event.target.value
-                  : undefined,
+              job_type: adminSearch.shape.job_type.parse(event.target.value),
             })
           }
           sx={{ minWidth: 180 }}
         >
           <MenuItem value="">All types</MenuItem>
-          <MenuItem value="transcription">Transcription</MenuItem>
-          <MenuItem value="notes">Notes</MenuItem>
+          {JOB_TYPES.map((type) => (
+            <MenuItem key={type} value={type}>
+              {title(type)}
+            </MenuItem>
+          ))}
         </TextField>
         <TextField
           select
@@ -190,19 +235,13 @@ export function AdminPage({
             const value = event.target.value;
             onFilters({
               ...filters,
-              status:
-                value === "queued" ||
-                value === "running" ||
-                value === "succeeded" ||
-                value === "failed"
-                  ? value
-                  : undefined,
+              status: adminSearch.shape.status.parse(value),
             });
           }}
           sx={{ minWidth: 180 }}
         >
           <MenuItem value="">All states</MenuItem>
-          {["queued", "running", "succeeded", "failed"].map((status) => (
+          {JOB_STATUSES.map((status) => (
             <MenuItem key={status} value={status}>
               {title(status)}
             </MenuItem>

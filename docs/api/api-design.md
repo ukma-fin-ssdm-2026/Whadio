@@ -921,10 +921,6 @@ All capture operations accept the extension's bearer token as well as the browse
 
 - **Status:** Implemented backend and job dashboard at `/admin` (#180). Host/model telemetry
   remains pending under #139; that part of US-019/FR-045 is not complete.
-- **Web page:** administrator-only navigation uses `/users/me`; a refusal from either monitoring
-  endpoint hides both snapshots and clears their caches. Job type/state filters stay in the URL;
-  changing filters restarts cursor paging. Visible pages refresh every 10 seconds and on demand,
-  displaying server timestamps, null waits as Unknown and unknown-wait counts separately.
 - **Caller:** signed-in instance administrator; workspace roles alone grant no access.
 - **Jobs:** workspace UUID, job type/state, stored attempt counter and safe failure descriptions.
   Times distinguish original creation, entry into the current queue period and attempt start/end.

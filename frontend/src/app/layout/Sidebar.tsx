@@ -13,6 +13,7 @@ import {
   Typography,
 } from "@mui/material";
 import type { ReactNode } from "react";
+import type { Schemas } from "@/shared/api/types";
 import { ListItemLink } from "../navigation/links";
 
 const CURRENT = { selected: true };
@@ -20,7 +21,7 @@ const CURRENT = { selected: true };
 const THIS_PATH_ONLY = { exact: true, includeSearch: false };
 
 interface SidebarProps {
-  user: { name?: string | null; email: string; is_administrator?: boolean } | null;
+  user: (Pick<Schemas["UserRead"], "email" | "is_administrator"> & { name?: string | null }) | null;
   workspaces: { id: string; name: string }[];
   signOutAction: ReactNode;
   onNavigate: () => void;
