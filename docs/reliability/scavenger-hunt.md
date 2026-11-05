@@ -229,8 +229,9 @@ answer or no answer (§3.1). The fixes, before and after, are in
   hang-up handler's `await this.queue`, wait on it.
 - **Failure:** the user ends the call and gets nothing: the meeting is not in Whadio, and the
   promised local `.webm` is never downloaded, because the fallback sits behind the stuck promise.
-- **Fix:** every extension request now gives up after 30 s (5 min for `/complete`), so the stuck
-  chunk is retried and, if the server stays silent, the call is saved locally. See
+- **Fix:** every extension request, `/complete` included, now gives up after 25 s, before Chrome
+  stops the service worker, so the stuck chunk is retried and, if the server stays silent, the
+  call is saved locally. See
   [`reliability-report.md`](reliability-report.md#f2-extension-requests-to-the-server-have-no-deadline).
 
 ## AI Usage
