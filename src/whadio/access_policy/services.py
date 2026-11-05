@@ -186,8 +186,9 @@ class AccessService:
     ) -> None:
         dependencies = self._dependencies
         located = await dependencies.meetings.scope(meeting_id)
+        await self.policy.authorize(located, actor_id)
         # Membership changes lock the workspace before its meetings. Taking that order here keeps
-        # a member's removal and a change of their access from interleaving or deadlocking.
+        # a member's removal and a change of their access from interleaving.
         await dependencies.memberships.lock_role(located.workspace_id, actor_id)
         scope = await dependencies.meetings.scope(meeting_id, lock=True)
         permission = await self.policy.authorize(scope, actor_id)

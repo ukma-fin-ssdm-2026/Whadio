@@ -229,12 +229,18 @@ class MeetingRepository:
     async def lock_scopes(
         self, workspace_id: UUID, meeting_ids: Sequence[UUID]
     ) -> list[MeetingScope]:
-        found = await self._session.execute(
-            select(Meeting.meeting_id, Meeting.created_by_user_id, Meeting.access_mode)
+        in_workspace = (
+            select(Meeting.meeting_id)
             .join(Folder, Folder.folder_id == Meeting.folder_id)
             .where(Folder.workspace_id == workspace_id, Meeting.meeting_id.in_(meeting_ids))
+        )
+        # Locked by id, not through the join: PostgreSQL rechecks a concurrently moved meeting
+        # against the folder row it first joined, so the moved meeting would drop out unlocked.
+        found = await self._session.execute(
+            select(Meeting.meeting_id, Meeting.created_by_user_id, Meeting.access_mode)
+            .where(Meeting.meeting_id.in_(in_workspace))
             .order_by(Meeting.meeting_id)
-            .with_for_update(of=Meeting)
+            .with_for_update()
         )
         return [
             MeetingScope(meeting_id, workspace_id, creator_id, mode is AccessMode.RESTRICTED)

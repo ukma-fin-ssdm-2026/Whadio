@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import delete, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from conftest import AsyncDatabase
@@ -16,7 +16,7 @@ from conftest import AsyncDatabase
 from ...access_policy.models import MeetingAccessGrant
 from ...access_policy.repositories import AccessRepository
 from ...access_policy.services import AccessCollaborators, AccessService, MemberAccessRelease
-from ...accounts.enums import WorkspaceRole
+from ...accounts.enums import InvitationRole, WorkspaceRole
 from ...accounts.member_repository import MemberRepository
 from ...accounts.members import MemberService
 from ...accounts.models import User, Workspace, WorkspaceMembership
@@ -34,7 +34,7 @@ from ...shared.database import (
     create_migration_engine,
 )
 from ...shared.errors import UseCaseError
-from ..composition import share_notifications
+from ..composition import meeting_service, share_notifications
 
 pytestmark = pytest.mark.slow
 
@@ -49,10 +49,13 @@ class World:
     moderator: UUID
     departing: UUID
     meeting: UUID
+    archive: UUID
 
 
 @asynccontextmanager
-async def world(settings: DatabaseSettings) -> AsyncGenerator[World]:
+async def world(
+    settings: DatabaseSettings, *, departing_granted: bool = False
+) -> AsyncGenerator[World]:
     database = Database(settings)
     users: list[UUID] = []
     workspace: UUID | None = None
@@ -80,10 +83,14 @@ async def world(settings: DatabaseSettings) -> AsyncGenerator[World]:
             meeting = await AsyncDatabase.add_meeting(
                 session, (owner, folder), access_mode=AccessMode.RESTRICTED
             )
-            session.add(
-                MeetingAccessGrant(meeting_id=meeting, user_id=moderator, granted_by_user_id=owner)
+            session.add_all(
+                MeetingAccessGrant(meeting_id=meeting, user_id=recipient, granted_by_user_id=owner)
+                for recipient in ([moderator, departing] if departing_granted else [moderator])
             )
-        yield World(database, workspace, owner, moderator, departing, meeting)
+            archive = Folder(workspace_id=workspace, name="Archive")
+            session.add(archive)
+            await session.flush()
+        yield World(database, workspace, owner, moderator, departing, meeting, archive.folder_id)
     finally:
         await database.close()
 
@@ -137,14 +144,19 @@ async def _operate(
 ) -> None:
     directory = WorkspaceMembershipService(memberships)
     now = datetime.now(UTC)
+    members = MemberService(
+        MemberRepository(session),
+        directory,
+        MemberAccessRelease(AccessRepository(session), MeetingRepository(session)),
+        AuditWriter(session),
+    )
     if operation == "remove":
-        members = MemberService(
-            MemberRepository(session),
-            directory,
-            MemberAccessRelease(AccessRepository(session), MeetingRepository(session)),
-            AuditWriter(session),
-        )
         await members.remove(place.owner, place.workspace, place.departing, now)
+        return
+    if operation == "demote":
+        await members.change_role(
+            place.moderator, place.workspace, place.moderator, InvitationRole.MEMBER, now
+        )
         return
     access = AccessService(
         AccessCollaborators(
@@ -228,3 +240,58 @@ def test_removal_and_a_concurrent_grant_to_the_departing_member_serialize(
 
     # Assert
     assert (results, granted, still_member) == (expected, recipients, False)
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        pytest.param("grant", id="a-recipient-changes-the-access"),
+        pytest.param("demote", id="a-recipient-demotes-themselves"),
+        pytest.param("remove", id="a-recipient-is-removed"),
+    ],
+)
+def test_membership_and_access_changes_wait_for_a_concurrent_move(
+    database_settings: DatabaseSettings, operation: str
+) -> None:
+    # Arrange
+    async def scenario() -> list[str]:
+        async with world(database_settings, departing_granted=operation == "remove") as place:
+            held, attempted = asyncio.Event(), asyncio.Event()
+
+            async def move() -> str:
+                try:
+                    async with place.database.transaction() as session:
+                        await meeting_service(session, AuditWriter(session)).update(
+                            place.moderator,
+                            place.meeting,
+                            datetime.now(UTC),
+                            folder_id=place.archive,
+                        )
+                        held.set()
+                        await attempted.wait()
+                        await asyncio.sleep(0.5)
+                except DBAPIError as error:
+                    return f"move: {type(error.orig).__name__}"
+                return "move: done"
+
+            async def change() -> str:
+                await held.wait()
+                try:
+                    async with place.database.transaction() as session:
+                        await _operate(
+                            place,
+                            session,
+                            operation,
+                            ObservedMembershipRepository(session, attempted),
+                        )
+                except DBAPIError as error:
+                    return f"{operation}: {type(error.orig).__name__}"
+                return f"{operation}: done"
+
+            # Act
+            return sorted(await asyncio.wait_for(asyncio.gather(move(), change()), timeout=20))
+
+    results = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+    # Assert
+    assert results == sorted(["move: done", f"{operation}: done"])
