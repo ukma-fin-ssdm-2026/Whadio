@@ -6,6 +6,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
+import { Route as AuthedAdminRouteImport } from './routes/_authed/admin'
 import { Route as AuthedMeetingsIndexRouteImport } from './routes/_authed/meetings/index'
 import { Route as AuthedMeetingsMeetingIdRouteImport } from './routes/_authed/meetings/$meetingId'
 import { Route as AuthedSettingsAssistantRouteImport } from './routes/_authed/settings/assistant'
@@ -25,6 +26,11 @@ const SignInRoute = SignInRouteImport.update({
 const AuthedIndexRoute = AuthedIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedAdminRoute = AuthedAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedMeetingsIndexRoute = AuthedMeetingsIndexRouteImport.update({
@@ -64,6 +70,7 @@ const AuthedWorkspacesWorkspaceIdSettingsRoute =
 export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
   '/sign-in': typeof SignInRoute
+  '/admin': typeof AuthedAdminRoute
   '/workspaces/$workspaceId': typeof AuthedWorkspacesWorkspaceIdRouteRouteWithChildren
   '/meetings/$meetingId': typeof AuthedMeetingsMeetingIdRoute
   '/settings/assistant': typeof AuthedSettingsAssistantRoute
@@ -73,6 +80,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
+  '/admin': typeof AuthedAdminRoute
   '/': typeof AuthedIndexRoute
   '/meetings/$meetingId': typeof AuthedMeetingsMeetingIdRoute
   '/settings/assistant': typeof AuthedSettingsAssistantRoute
@@ -84,6 +92,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authed': typeof AuthedRouteWithChildren
   '/sign-in': typeof SignInRoute
+  '/_authed/admin': typeof AuthedAdminRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/workspaces/$workspaceId': typeof AuthedWorkspacesWorkspaceIdRouteRouteWithChildren
   '/_authed/meetings/$meetingId': typeof AuthedMeetingsMeetingIdRoute
@@ -97,6 +106,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/sign-in'
+    | '/admin'
     | '/workspaces/$workspaceId'
     | '/meetings/$meetingId'
     | '/settings/assistant'
@@ -106,6 +116,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/sign-in'
+    | '/admin'
     | '/'
     | '/meetings/$meetingId'
     | '/settings/assistant'
@@ -116,6 +127,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_authed'
     | '/sign-in'
+    | '/_authed/admin'
     | '/_authed/'
     | '/_authed/workspaces/$workspaceId'
     | '/_authed/meetings/$meetingId'
@@ -151,6 +163,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AuthedIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/admin': {
+      id: '/_authed/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AuthedAdminRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/meetings/': {
@@ -217,6 +236,7 @@ const AuthedWorkspacesWorkspaceIdRouteRouteWithChildren =
   )
 
 interface AuthedRouteChildren {
+  AuthedAdminRoute: typeof AuthedAdminRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedWorkspacesWorkspaceIdRouteRoute: typeof AuthedWorkspacesWorkspaceIdRouteRouteWithChildren
   AuthedMeetingsMeetingIdRoute: typeof AuthedMeetingsMeetingIdRoute
@@ -225,6 +245,7 @@ interface AuthedRouteChildren {
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
+  AuthedAdminRoute: AuthedAdminRoute,
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedWorkspacesWorkspaceIdRouteRoute:
     AuthedWorkspacesWorkspaceIdRouteRouteWithChildren,

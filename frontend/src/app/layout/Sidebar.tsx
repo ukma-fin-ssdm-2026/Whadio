@@ -1,4 +1,5 @@
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
+import MonitorHeartOutlinedIcon from "@mui/icons-material/MonitorHeartOutlined";
 import NotesOutlinedIcon from "@mui/icons-material/NotesOutlined";
 import SmartToyOutlinedIcon from "@mui/icons-material/SmartToyOutlined";
 import {
@@ -19,7 +20,7 @@ const CURRENT = { selected: true };
 const THIS_PATH_ONLY = { exact: true, includeSearch: false };
 
 interface SidebarProps {
-  user: { name?: string | null; email: string } | null;
+  user: { name?: string | null; email: string; is_administrator?: boolean } | null;
   workspaces: { id: string; name: string }[];
   signOutAction: ReactNode;
   onNavigate: () => void;
@@ -63,6 +64,11 @@ export function Sidebar({ user, workspaces, signOutAction, onNavigate }: Sidebar
         <ListItemLink to="/settings/assistant" {...navLink}>
           <NavLabel label="AI assistant" icon={<SmartToyOutlinedIcon />} />
         </ListItemLink>
+        {user?.is_administrator && (
+          <ListItemLink to="/admin" activeOptions={THIS_PATH_ONLY} {...navLink}>
+            <NavLabel label="Admin" icon={<MonitorHeartOutlinedIcon />} />
+          </ListItemLink>
+        )}
         <ListSubheader component="div" disableSticky sx={{ mt: 1 }}>
           Workspaces
         </ListSubheader>
