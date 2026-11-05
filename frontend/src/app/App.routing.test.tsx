@@ -928,3 +928,96 @@ describe("under a deployment prefix", () => {
     expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(LINKED_TITLE);
   });
 });
+
+describe("the folder of the workspace library", () => {
+  test("a chosen folder reaches the URL", async () => {
+    // Arrange
+    const { user } = open("/workspaces/workspace");
+
+    // Act
+    await user.click(await screen.findByRole("button", { name: /^General/ }));
+
+    // Assert
+    await waitFor(() => expect(currentPath()).toBe("/workspaces/workspace?folder=folder"));
+  });
+
+  test("a deep link asks the server for the folder", async () => {
+    // Arrange
+    window.history.replaceState(null, "", "/workspaces/workspace?folder=folder");
+    serveApi(true);
+    const folders: (string | null)[] = [];
+    server.use(
+      http.get("/api/v1/workspaces/workspace/meetings", ({ request }) => {
+        folders.push(new URL(request.url).searchParams.get("folder_id"));
+        return HttpResponse.json(page([meetingSummary()]));
+      }),
+    );
+
+    // Act
+    render(<App />);
+    await screen.findByRole("button", { name: LIST_ROW });
+
+    // Assert
+    expect(folders).toEqual(["folder"]);
+  });
+
+  test("a link to a folder that no longer exists drops it from the URL", async () => {
+    // Act
+    open("/workspaces/workspace?folder=deleted");
+
+    // Assert
+    await waitFor(() => expect(currentPath()).toBe("/workspaces/workspace"));
+  });
+
+  test("a link to a folder that no longer exists asks for all meetings", async () => {
+    // Arrange
+    window.history.replaceState(null, "", "/workspaces/workspace?folder=deleted");
+    serveApi(true);
+    const folders: (string | null)[] = [];
+    server.use(
+      http.get("/api/v1/workspaces/workspace/meetings", ({ request }) => {
+        folders.push(new URL(request.url).searchParams.get("folder_id"));
+        return HttpResponse.json(page([meetingSummary()]));
+      }),
+    );
+
+    // Act
+    render(<App />);
+    await screen.findByRole("button", { name: LIST_ROW });
+
+    // Assert
+    expect(folders).toEqual([null]);
+  });
+
+  test("comes back after leaving a meeting with Back", async () => {
+    // Arrange
+    const { user } = open("/workspaces/workspace?folder=folder");
+    serveWorkspaceMeetings();
+    await user.click(await screen.findByRole("button", { name: LIST_ROW }));
+    await screen.findByRole("tab", { selected: true });
+
+    // Act
+    window.history.back();
+
+    // Assert
+    await waitFor(() => expect(currentPath()).toBe("/workspaces/workspace?folder=folder"));
+  });
+});
+
+test("a deleted meeting leaves no way back to it", async () => {
+  // Arrange
+  const { user } = open(MEETING_LINK);
+  server.use(
+    http.delete("/api/v1/meetings/meeting", () => new HttpResponse(null, { status: 204 })),
+  );
+  const entries = window.history.length;
+  await user.click(await screen.findByRole("button", { name: "Meeting actions" }));
+  await user.click(screen.getByRole("menuitem", { name: /Delete/ }));
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Delete meeting" }));
+  await waitFor(() => expect(currentPath()).toBe("/workspaces/workspace"));
+
+  // Assert
+  expect(window.history.length).toBe(entries);
+});

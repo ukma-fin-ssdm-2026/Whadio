@@ -118,7 +118,7 @@ export function MeetingLibrary({
         />
       )}
       {visible.length > 0 && (
-        <ListPanel>
+        <ListPanel label="Meetings">
           {visible.map((meeting) => (
             <ListItem key={meeting.id} disablePadding>
               <ListItemButton
