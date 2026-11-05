@@ -29,7 +29,7 @@
 | NFR-007 | NFR | Content endpoints return nothing to identities without access to the meeting | US-001, US-002, US-015 | — | TC-ACL-01, TC-ACL-02, TC-PROC-05 |
 | NFR-008 | NFR | A share is readable only by the approved account, with no export or re-share | US-016, US-017 | — | TC-SHR-01 |
 | NFR-009 | NFR | Every content path, connected services included, enforces the meeting access rules | US-007, US-015, US-018 | — | TC-ACL-02, TC-SHR-01 |
-| NFR-010 | NFR | Changes to meeting content or access are audited without storing content | US-002, US-003, US-004, US-005, US-008, US-010, US-011, US-013, US-014, US-015, US-016, US-018, US-019 | — | TC-AUD-01, TC-AUD-02, TC-AUD-03; joining through an invitation is audited under TC-INV-02; member removal and role changes (#184) and provider configuration have no API yet |
+| NFR-010 | NFR | Changes to meeting content or access are audited without storing content | US-002, US-003, US-004, US-005, US-008, US-010, US-011, US-013, US-014, US-015, US-016, US-018, US-019 | — | TC-AUD-01, TC-AUD-02, TC-AUD-03; joining through an invitation is audited under TC-INV-02, and role changes under TC-MEM-01; member removal and provider configuration have no API yet |
 | NFR-011 | NFR | An edited transcript is never labelled original, and the original stays retrievable | US-011, US-017 | — | TC-EDIT-01, TC-EXP-01 |
 | NFR-012 | NFR | Wrong passwords, revoked MCP keys and missing sessions are rejected; passwords are hashed | US-001, US-018, US-020 | — | TC-ACC-01, TC-ACC-02 |
 | NFR-013 | NFR | Provider keys are encrypted at rest and never returned after creation | US-008 | — | Out of scope (test plan) |
@@ -53,5 +53,5 @@ Claude Code (Claude Opus 5.5).
 Claude Code updated the US-005, US-013, US-016 and NFR-010 coverage notes to
 match the code at `bc3ec99`, for #257.
 
-The US-002 member-management mappings (#184) were added with Claude Code (Claude Opus 5.5) and
+The US-002 and NFR-010 member-management mappings (#184) were added with Claude Code and
 reviewed by the author.
