@@ -10,7 +10,7 @@ import type { Schemas } from "@/shared/api/types";
 export function InvitationPage({ invitationId }: { invitationId: string }) {
   const router = useRouter();
   const hash = useLocation({ select: (location) => location.hash });
-  const { data: currentUser } = useQuery(sessionQueries.me());
+  const { data: currentUser, error: sessionError, refetch } = useQuery(sessionQueries.me());
   const signOut = useSignOut();
   const [signingIn, setSigningIn] = useState(false);
   const { queryClient, onSignedIn } = router.options.context;
@@ -50,6 +50,8 @@ export function InvitationPage({ invitationId }: { invitationId: string }) {
       id={invitationId}
       token={linkToken(hash)}
       currentUser={currentUser}
+      sessionError={sessionError?.message}
+      onRetrySession={() => void refetch()}
       termsHref={router.buildLocation({ to: "/terms" }).href}
       onRequestSignIn={() => setSigningIn(true)}
       onUseDifferentAccount={async () => {

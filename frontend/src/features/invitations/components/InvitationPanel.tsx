@@ -18,7 +18,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { formatDate, titleCase } from "@/shared/lib/format";
 import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
@@ -131,7 +131,7 @@ function InviteDialog({ workspaceId, onClose }: { workspaceId: string; onClose: 
 }
 
 export function InvitationPanel({ workspaceId }: { workspaceId: string }) {
-  const invitations = useQuery(invitationQueries.list(workspaceId));
+  const invitations = useInfiniteQuery(invitationQueries.list(workspaceId));
   const cancel = useCancelInvitation(workspaceId);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [invitationToCancel, setInvitationToCancel] = useState<Invitation | null>(null);
@@ -183,6 +183,14 @@ export function InvitationPanel({ workspaceId }: { workspaceId: string }) {
             </ListItem>
           ))}
         </ListPanel>
+      )}
+      {invitations.hasNextPage && (
+        <Button
+          disabled={invitations.isFetchingNextPage}
+          onClick={() => void invitations.fetchNextPage()}
+        >
+          {invitations.isFetchingNextPage ? "Loading..." : "Load more invitations"}
+        </Button>
       )}
       {inviteOpen && (
         <InviteDialog workspaceId={workspaceId} onClose={() => setInviteOpen(false)} />

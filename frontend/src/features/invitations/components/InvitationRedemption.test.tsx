@@ -260,3 +260,111 @@ test("any link holder can decline after confirmation", async () => {
   // Assert
   expect(await screen.findByRole("heading", { name: "Invitation declined" })).toBeInTheDocument();
 });
+
+test.each([
+  { name: "", password: "StrongPassword1", terms: true, field: "Name" },
+  { name: " ", password: "StrongPassword1", terms: true, field: "Name" },
+  { name: "x".repeat(101), password: "StrongPassword1", terms: true, field: "Name" },
+  { name: "Person", password: "Short1", terms: true, field: "Password" },
+  { name: "Person", password: `A1${"x".repeat(127)}`, terms: true, field: "Password" },
+  { name: "Person", password: "lowercasepassword1", terms: true, field: "Password" },
+  { name: "Person", password: "UppercasePassword", terms: true, field: "Password" },
+  { name: "Person", password: "StrongPassword1", terms: false, field: "Terms" },
+])(
+  "refuses invalid registration input %# before sending it",
+  async ({ name, password, terms, field }) => {
+    // Arrange
+    servePreview({ ...PREVIEW, account_exists: false });
+    const register = vi.fn();
+    server.use(
+      http.post("/api/v1/invitations/{invitation_id}/register", ({ response }) => {
+        register();
+        return response(201).json({ user: USER, membership: MEMBERSHIP });
+      }),
+    );
+    const { user } = renderInvitation();
+    const nameInput = await screen.findByLabelText(/^Name/);
+    if (name) await user.type(nameInput, name);
+    await user.type(screen.getByLabelText(/^Password/), password);
+    if (terms) await user.click(screen.getByRole("checkbox"));
+
+    // Act
+    await user.click(screen.getByRole("button", { name: "Create account and join" }));
+
+    // Assert
+    const input =
+      field === "Terms"
+        ? screen.getByRole("checkbox")
+        : screen.getByLabelText(new RegExp(`^${field}`));
+    await waitFor(() => expect(input).toHaveAttribute("aria-invalid", "true"));
+    expect(register).not.toHaveBeenCalled();
+  },
+);
+
+test.each(["accept", "register", "decline"] as const)(
+  "%s handles a link invalidated after preview",
+  async (action) => {
+    // Arrange
+    servePreview({ ...PREVIEW, account_exists: action !== "register" });
+    server.use(
+      http.post(`/api/v1/invitations/{invitation_id}/${action}`, ({ response }) =>
+        response(404).json(errorBody("LINK_INVALID", "Private detail")),
+      ),
+    );
+    const { user } = renderInvitation(USER);
+    await screen.findByRole("heading", { name: "Join Research Team" });
+    if (action === "register") {
+      await user.type(screen.getByLabelText(/^Name/), "Person");
+      await user.type(screen.getByLabelText(/^Password/), "StrongPassword1");
+      await user.click(screen.getByRole("checkbox"));
+    }
+
+    // Act
+    if (action === "decline") {
+      await user.click(screen.getByRole("button", { name: "Decline invitation" }));
+      await user.click(
+        within(screen.getByRole("dialog")).getByRole("button", { name: "Decline invitation" }),
+      );
+    } else {
+      await user.click(
+        screen.getByRole("button", {
+          name: action === "accept" ? "Accept invitation" : "Create account and join",
+        }),
+      );
+    }
+
+    // Assert
+    expect(
+      await screen.findByRole("heading", { name: "Invitation unavailable" }),
+    ).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent("Private detail");
+  },
+);
+
+test("an expired session during acceptance asks for local sign-in", async () => {
+  // Arrange
+  servePreview();
+  server.use(
+    http.post("/api/v1/invitations/{invitation_id}/accept", ({ response }) =>
+      response(401).json(errorBody("UNAUTHENTICATED", "Expired")),
+    ),
+  );
+  const { user, onRequestSignIn } = renderInvitation(USER);
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "Accept invitation" }));
+
+  // Assert
+  await waitFor(() => expect(onRequestSignIn).toHaveBeenCalledOnce());
+});
+
+test("account matching ignores email case", async () => {
+  // Arrange
+  servePreview();
+
+  // Act
+  renderInvitation({ ...USER, email: USER.email.toUpperCase() });
+
+  // Assert
+  expect(await screen.findByRole("button", { name: "Accept invitation" })).toBeInTheDocument();
+});

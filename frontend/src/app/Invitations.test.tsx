@@ -1,11 +1,15 @@
+import { RouterProvider } from "@tanstack/react-router";
 import { render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { expect, test } from "vitest";
+import { workspaceQueries } from "@/features/workspaces/api/workspaces";
 import type { Schemas } from "@/shared/api/types";
 import { errorBody, page, workspaceSummary } from "@/shared/testing/fixtures";
 import { server } from "@/shared/testing/server";
 import { App } from "./App";
+import { createApp } from "./create-app";
+import { AppProviders } from "./providers";
 
 const ID = "11111111-1111-4111-8111-111111111111";
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
@@ -135,4 +139,111 @@ test("registration refreshes the new session and redirects into the invited work
     accept_terms: true,
   });
   expect(traffic.urls.every((url) => !url.includes(TOKEN))).toBe(true);
+});
+
+test("an expired session during account switching preserves the invitation through sign-in", async () => {
+  // Arrange
+  serveInvitationApi({ accountExists: true, signedIn: true });
+  server.use(
+    http.get("/api/v1/users/me", () => HttpResponse.json({ ...USER, email: "other@example.test" })),
+    http.delete("/api/v1/sessions/current", () =>
+      HttpResponse.json(errorBody("UNAUTHENTICATED", "Expired"), { status: 401 }),
+    ),
+  );
+  const user = openInvitation();
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "Use a different account" }));
+  await user.type(await screen.findByLabelText(/^Email/), USER.email);
+  await user.type(screen.getByLabelText(/^Password/), "StrongPassword1");
+  await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+  // Assert
+  expect(await screen.findByRole("button", { name: "Accept invitation" })).toBeInTheDocument();
+  expect(window.location.hash).toBe(`#token=${TOKEN}`);
+});
+
+test("a failed account check offers retry and local sign-in", async () => {
+  // Arrange
+  serveInvitationApi({ accountExists: true });
+  server.use(
+    http.get("/api/v1/users/me", () =>
+      HttpResponse.json(errorBody("INTEGRATION_UNAVAILABLE", "Account check unavailable"), {
+        status: 503,
+      }),
+    ),
+  );
+  window.history.replaceState(null, "", `/invitations/${ID}#token=${TOKEN}`);
+  const { queryClient, router } = createApp();
+  queryClient.setDefaultOptions({ queries: { retry: false } });
+  render(
+    <AppProviders queryClient={queryClient}>
+      <RouterProvider router={router} />
+    </AppProviders>,
+  );
+  const user = userEvent.setup();
+  await screen.findByRole("button", { name: "Retry account check" });
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+  // Assert
+  expect(await screen.findByLabelText(/^Email/)).toBeInTheDocument();
+  expect(window.location.hash).toBe(`#token=${TOKEN}`);
+});
+
+test("acceptance refreshes an already cached workspace list", async () => {
+  // Arrange
+  serveInvitationApi({ accountExists: true, signedIn: true });
+  window.history.replaceState(null, "", `/invitations/${ID}#token=${TOKEN}`);
+  const { queryClient, router } = createApp();
+  queryClient.setQueryData(workspaceQueries.list().queryKey, page([]));
+  render(
+    <AppProviders queryClient={queryClient}>
+      <RouterProvider router={router} />
+    </AppProviders>,
+  );
+  const user = userEvent.setup();
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "Accept invitation" }));
+  await waitFor(() => expect(window.location.pathname).toBe(`/workspaces/${WORKSPACE_ID}`));
+
+  // Assert
+  expect(queryClient.getQueryData(workspaceQueries.list().queryKey)).toEqual(
+    page([workspaceSummary({ id: WORKSPACE_ID, name: "Research Team", my_role: "member" })]),
+  );
+});
+
+test("retrying a failed account check restores acceptance without losing the token", async () => {
+  // Arrange
+  serveInvitationApi({ accountExists: true, signedIn: true });
+  let unavailable = true;
+  server.use(
+    http.get("/api/v1/users/me", () =>
+      unavailable
+        ? HttpResponse.json(errorBody("INTEGRATION_UNAVAILABLE", "Account check unavailable"), {
+            status: 503,
+          })
+        : HttpResponse.json(USER),
+    ),
+  );
+  window.history.replaceState(null, "", `/invitations/${ID}#token=${TOKEN}`);
+  const { queryClient, router } = createApp();
+  queryClient.setDefaultOptions({ queries: { retry: false } });
+  render(
+    <AppProviders queryClient={queryClient}>
+      <RouterProvider router={router} />
+    </AppProviders>,
+  );
+  const user = userEvent.setup();
+  await screen.findByRole("button", { name: "Retry account check" });
+  unavailable = false;
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Retry account check" }));
+
+  // Assert
+  expect(await screen.findByRole("button", { name: "Accept invitation" })).toBeInTheDocument();
+  expect(window.location.hash).toBe(`#token=${TOKEN}`);
 });

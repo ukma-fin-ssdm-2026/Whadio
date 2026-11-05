@@ -1,4 +1,4 @@
-import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
+import { infiniteQueryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/shared/api/client";
 import type { Schemas } from "@/shared/api/types";
 import { unwrap } from "@/shared/api/unwrap";
@@ -9,15 +9,21 @@ export type InvitedRole = Schemas["InvitedRole"];
 
 export const invitationQueries = {
   list: (workspaceId: string) =>
-    queryOptions({
+    infiniteQueryOptions({
       queryKey: ["workspaces", workspaceId, "invitations"],
-      queryFn: ({ signal }) =>
+      queryFn: ({ pageParam, signal }) =>
         unwrap(
           apiClient.GET("/api/v1/workspaces/{workspace_id}/invitations", {
-            params: { path: { workspace_id: workspaceId }, query: { limit: 100 } },
+            params: {
+              path: { workspace_id: workspaceId },
+              query: { limit: 100, cursor: pageParam || null },
+            },
             signal,
           }),
         ),
+      initialPageParam: "",
+      getNextPageParam: ({ pagination }) => (pagination.has_more ? pagination.next_cursor : null),
+      select: ({ pages }) => ({ items: pages.flatMap((page) => page.items) }),
     }),
 };
 

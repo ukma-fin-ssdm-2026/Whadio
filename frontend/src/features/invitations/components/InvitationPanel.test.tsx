@@ -104,3 +104,87 @@ test("cancels a pending invitation only after confirmation", async () => {
   // Assert
   await waitFor(() => expect(cancelled).toEqual([INVITATION.id]));
 });
+
+test("loads and cancels an invitation on a later page", async () => {
+  // Arrange
+  const { cancelled } = serve();
+  const older = { ...INVITATION, email: "older@example.test" };
+  server.use(
+    http.get("/api/v1/workspaces/{workspace_id}/invitations", ({ request, response }) => {
+      const cursor = new URL(request.url).searchParams.get("cursor");
+      return response(200).json(
+        cursor === "older-page"
+          ? page([older])
+          : {
+              items: [{ ...INVITATION, id: "newer", email: "newer@example.test" }],
+              pagination: { limit: 100, next_cursor: "older-page", has_more: true },
+            },
+      );
+    }),
+  );
+  const { user } = renderWithProviders(<InvitationPanel workspaceId="workspace" />);
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "Load more invitations" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Cancel invitation for older@example.test" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Cancel invitation" }));
+
+  // Assert
+  await waitFor(() => expect(cancelled).toEqual([older.id]));
+});
+
+test("creating an invitation refreshes the pending list", async () => {
+  // Arrange
+  let items: Schemas["InvitationRead"][] = [];
+  server.use(
+    http.get("/api/v1/workspaces/{workspace_id}/invitations", ({ response }) =>
+      response(200).json(page(items)),
+    ),
+    http.post("/api/v1/workspaces/{workspace_id}/invitations", ({ response }) => {
+      items = [INVITATION];
+      return response(201).json({ ...INVITATION, link: LINK });
+    }),
+  );
+  const { user } = renderWithProviders(<InvitationPanel workspaceId="workspace" />);
+  await screen.findByText("No pending invitations");
+  await user.click(screen.getByRole("button", { name: "Invite person" }));
+  await user.type(screen.getByLabelText(/^Email address/), INVITATION.email);
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Invite" }));
+  await user.click(await screen.findByRole("button", { name: "Done" }));
+
+  // Assert
+  expect(
+    await screen.findByRole("button", { name: `Cancel invitation for ${INVITATION.email}` }),
+  ).toBeInTheDocument();
+});
+
+test("cancellation refreshes the pending list", async () => {
+  // Arrange
+  let items = [INVITATION];
+  server.use(
+    http.get("/api/v1/workspaces/{workspace_id}/invitations", ({ response }) =>
+      response(200).json(page(items)),
+    ),
+    http.post(
+      "/api/v1/workspaces/{workspace_id}/invitations/{invitation_id}/cancel",
+      ({ response }) => {
+        items = [];
+        return response(200).json({ ...INVITATION, status: "cancelled" });
+      },
+    ),
+  );
+  const { user } = renderWithProviders(<InvitationPanel workspaceId="workspace" />);
+  await user.click(
+    await screen.findByRole("button", { name: `Cancel invitation for ${INVITATION.email}` }),
+  );
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Cancel invitation" }));
+
+  // Assert
+  expect(await screen.findByText("No pending invitations")).toBeInTheDocument();
+});

@@ -54,6 +54,8 @@ interface InvitationRedemptionProps {
   id: string;
   token: string | null;
   currentUser: User | null | undefined;
+  sessionError?: string;
+  onRetrySession?: () => void;
   termsHref: string;
   onRequestSignIn: () => void;
   onUseDifferentAccount: () => Promise<void>;
@@ -189,6 +191,8 @@ export function InvitationRedemption({
   id,
   token,
   currentUser,
+  sessionError,
+  onRetrySession,
   termsHref,
   onRequestSignIn,
   onUseDifferentAccount,
@@ -332,7 +336,17 @@ export function InvitationRedemption({
       {actionError && <Alert severity="error">{actionError}</Alert>}
       {preview.account_exists ? (
         currentUser === undefined ? (
-          <CircularProgress size={24} aria-label="Checking your account" />
+          sessionError ? (
+            <Stack sx={{ gap: 1 }}>
+              <Alert severity="error">{sessionError}</Alert>
+              <Button onClick={onRetrySession}>Retry account check</Button>
+              <Button variant="contained" onClick={onRequestSignIn}>
+                Sign in
+              </Button>
+            </Stack>
+          ) : (
+            <CircularProgress size={24} aria-label="Checking your account" />
+          )
         ) : currentUser === null ? (
           <Stack sx={{ gap: 1 }}>
             <Typography>Sign in with the invited account, then accept the invitation.</Typography>
