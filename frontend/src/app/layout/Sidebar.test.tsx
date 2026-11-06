@@ -8,7 +8,7 @@ import { Sidebar } from "./Sidebar";
 async function renderSidebar(path = "/", changes: Partial<ComponentProps<typeof Sidebar>> = {}) {
   const router = renderAtPath(
     <Sidebar
-      user={{ name: "Demo Member", email: "member@example.com" }}
+      user={{ name: "Demo Member", email: "member@example.com", is_administrator: false }}
       workspaces={[
         { id: "alpha", name: "Alpha" },
         { id: "beta", name: "Beta" },
