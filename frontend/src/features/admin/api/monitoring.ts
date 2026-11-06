@@ -4,6 +4,7 @@ import type { Schemas } from "@/shared/api/types";
 import { unwrap } from "@/shared/api/unwrap";
 
 export interface JobFilters {
+  workspace_id?: string;
   job_type?: Schemas["JobType"];
   status?: Schemas["JobStatus"];
 }

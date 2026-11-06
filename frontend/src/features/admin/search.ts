@@ -13,6 +13,7 @@ export const JOB_STATUSES = [
 ] as const satisfies readonly Schemas["JobStatus"][];
 
 export const adminSearch = z.object({
+  workspace_id: z.uuid().optional().catch(undefined),
   job_type: z.enum(JOB_TYPES).optional().catch(undefined),
   status: z.enum(JOB_STATUSES).optional().catch(undefined),
 });

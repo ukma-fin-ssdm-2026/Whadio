@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, expect, test, vi } from "vitest";
 import { errorBody, page } from "@/shared/testing/fixtures";
@@ -22,7 +22,9 @@ function openPage() {
 }
 
 const countValue = (label: string) =>
-  screen.getByText(label, { selector: "dt" }).nextElementSibling;
+  within(screen.getByRole("table", { name: "Job counts by type" }))
+    .getByText(label)
+    .closest("th")?.nextElementSibling;
 
 test("shows an unknown current job wait", async () => {
   // Arrange
@@ -57,7 +59,7 @@ test("displays a known zero wait as zero", async () => {
 test.for(["metrics", "jobs"])("a %s refusal removes both snapshots", async (endpoint) => {
   // Arrange
   const { user } = openPage();
-  await screen.findByText("Workspace: workspace-alpha");
+  await screen.findByRole("button", { name: "Copy workspace ID workspace-alpha" });
   server.use(
     http.get(`/api/v1/admin/${endpoint}`, () =>
       HttpResponse.json(errorBody("INSUFFICIENT_ROLE", "Denied"), { status: 403 }),
@@ -67,13 +69,13 @@ test.for(["metrics", "jobs"])("a %s refusal removes both snapshots", async (endp
   await user.click(screen.getByRole("button", { name: "Refresh" }));
   await screen.findByText(/Not allowed/);
   // Assert
-  expect(screen.queryAllByText(/Workspace: workspace-alpha|Counts assembled/)).toHaveLength(0);
+  expect(screen.queryAllByText(/Job: job-1|Counts assembled/)).toHaveLength(0);
 });
 
 test.for(["metrics", "jobs"])("a %s refusal clears monitoring caches", async (endpoint) => {
   // Arrange
   const { user, queryClient } = openPage();
-  await screen.findByText("Workspace: workspace-alpha");
+  await screen.findByRole("button", { name: "Copy workspace ID workspace-alpha" });
   server.use(http.get(`/api/v1/admin/${endpoint}`, () => HttpResponse.json({}, { status: 403 })));
   // Act
   await user.click(screen.getByRole("button", { name: "Refresh" }));
@@ -89,7 +91,7 @@ test.for(["metrics", "jobs"])("a %s refusal clears monitoring caches", async (en
 test("a refusal refreshes administrator identity", async () => {
   // Arrange
   const { user, onForbidden } = openPage();
-  await screen.findByText("Workspace: workspace-alpha");
+  await screen.findByRole("button", { name: "Copy workspace ID workspace-alpha" });
   server.use(http.get("/api/v1/admin/metrics", () => HttpResponse.json({}, { status: 403 })));
   // Act
   await user.click(screen.getByRole("button", { name: "Refresh" }));
@@ -129,7 +131,7 @@ test.for(["metrics", "jobs"])("a %s refusal stops requests to both endpoints", a
 test("a late successful response cannot restore data after a refusal", async () => {
   // Arrange
   const { user } = openPage();
-  await screen.findByText("Workspace: workspace-alpha");
+  await screen.findByRole("button", { name: "Copy workspace ID workspace-alpha" });
   let release = () => {};
   const gate = new Promise<void>((resolve) => {
     release = resolve;
@@ -146,7 +148,9 @@ test("a late successful response cannot restore data after a refusal", async () 
   await screen.findByText(/Not allowed/);
   await act(async () => release());
   // Assert
-  expect(screen.queryByText("Workspace: workspace-alpha")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Copy workspace ID workspace-alpha" }),
+  ).not.toBeInTheDocument();
 });
 
 test("loads the next opaque cursor and preserves existing jobs", async () => {
@@ -164,10 +168,10 @@ test("loads the next opaque cursor and preserves existing jobs", async () => {
       );
     }),
   );
-  await screen.findByText("Workspace: workspace-alpha");
+  await screen.findByRole("button", { name: "Copy workspace ID workspace-alpha" });
   // Act
   await user.click(screen.getByRole("button", { name: "Load more" }));
-  await screen.findByText("Workspace: workspace-beta");
+  await screen.findByRole("button", { name: "Copy workspace ID workspace-beta" });
   // Assert
   expect(cursors).toEqual([null, "opaque-next"]);
 });
@@ -194,13 +198,13 @@ test("shows running time", async () => {
 test("a transient failure retains the dated snapshot and offers retry", async () => {
   // Arrange
   const { user } = openPage();
-  await screen.findByText("Workspace: workspace-alpha");
+  await screen.findByRole("button", { name: "Copy workspace ID workspace-alpha" });
   server.use(http.get("/api/v1/admin/jobs", () => HttpResponse.json({}, { status: 500 })));
   // Act
   await user.click(screen.getByRole("button", { name: "Refresh" }));
   await screen.findByText(/Jobs could not/);
   // Assert
-  expect(screen.getByText("Workspace: workspace-alpha")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Copy workspace ID workspace-alpha" })).toBeVisible();
 });
 
 test("empty results explain that no jobs match", async () => {
@@ -217,7 +221,7 @@ test("polling fetches fresh metrics", async () => {
   // Arrange
   vi.useFakeTimers({ shouldAdvanceTime: true });
   openPage();
-  await screen.findByText("Workspace: workspace-alpha");
+  await screen.findByRole("button", { name: "Copy workspace ID workspace-alpha" });
   server.use(
     http.get("/api/v1/admin/metrics", () =>
       HttpResponse.json({
@@ -311,7 +315,7 @@ test.for([0, 65, null])("a finished attempt renders its %s duration", async (val
     ),
   );
   // Act
-  await screen.findByText("Workspace: workspace-alpha");
+  await screen.findByRole("button", { name: "Copy workspace ID workspace-alpha" });
   // Assert
   expect(
     screen.getByText(
@@ -429,12 +433,12 @@ test("retrying a failed next page keeps the cursor and existing jobs", async () 
       return HttpResponse.json(page([job({ job_id: "job-2", workspace_id: "workspace-beta" })]));
     }),
   );
-  await screen.findByText("Workspace: workspace-alpha");
+  await screen.findByRole("button", { name: "Copy workspace ID workspace-alpha" });
   await user.click(screen.getByRole("button", { name: "Load more" }));
   await screen.findByText(/Jobs could not/);
   // Act
   await user.click(screen.getByRole("button", { name: "Retry jobs" }));
-  await screen.findByText("Workspace: workspace-beta");
+  await screen.findByRole("button", { name: "Copy workspace ID workspace-beta" });
   // Assert
   expect(cursors).toEqual([null, "next", "next"]);
 });
@@ -442,7 +446,7 @@ test("retrying a failed next page keeps the cursor and existing jobs", async () 
 test("leaving monitoring discards snapshots before a later visit", async () => {
   // Arrange
   const { unmount, queryClient } = openPage();
-  await screen.findByText("Workspace: workspace-alpha");
+  await screen.findByRole("button", { name: "Copy workspace ID workspace-alpha" });
   await screen.findByText(/Counts assembled/);
   // Act
   unmount();
