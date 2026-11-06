@@ -21,10 +21,12 @@ function openPage() {
   };
 }
 
-const countValue = (label: string) =>
-  within(screen.getByRole("table", { name: "Job counts by type" }))
-    .getByText(label)
-    .closest("th")?.nextElementSibling;
+const countValue = (label: string) => {
+  const table = screen.queryByRole("table", { name: "Job counts by type" });
+  return table
+    ? within(table).getByText(label).closest("th")?.nextElementSibling
+    : within(screen.getByRole("region", { name: label })).getAllByRole("definition")[0];
+};
 
 test("shows an unknown current job wait", async () => {
   // Arrange

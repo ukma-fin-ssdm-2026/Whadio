@@ -1,8 +1,12 @@
 import { screen } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { renderWithProviders } from "@/shared/testing/render";
+import { stubViewportWidth } from "@/shared/testing/viewport";
 import { CountsTable } from "./CountsTable";
 import { metrics } from "./testing";
+
+beforeEach(() => stubViewportWidth(1440));
+afterEach(() => vi.unstubAllGlobals());
 
 const counts = {
   job_type: "transcription",

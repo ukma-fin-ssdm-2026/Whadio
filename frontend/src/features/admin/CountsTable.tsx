@@ -9,8 +9,9 @@ import {
   TableHead,
   TableRow,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
-import { Fragment } from "react";
 import type { Schemas } from "@/shared/api/types";
 import { formatDuration } from "@/shared/lib/format-duration";
 
@@ -36,7 +37,129 @@ const ROWS = [
   },
 ] as const;
 
+type Metric = (typeof ROWS)[number];
+
+function metricValue(count: Schemas["JobCounts"], key: Metric["key"]) {
+  const value = count[key];
+  const warning =
+    key === "failed" || key === "unpublished"
+      ? value !== null && value > 0
+      : key === "oldest_queue_wait_seconds" &&
+        count.queued > 0 &&
+        value !== null &&
+        value > LONG_WAIT_SECONDS;
+  const displayed =
+    key === "oldest_queue_wait_seconds"
+      ? count.queued === 0
+        ? "None queued"
+        : value === null
+          ? "Unknown"
+          : formatDuration(Math.floor(value))
+      : value;
+  return { displayed, warning };
+}
+
+function Value({
+  displayed,
+  warning,
+  label,
+  outsideWarning = false,
+}: ReturnType<typeof metricValue> & { label: string; outsideWarning?: boolean }) {
+  return (
+    <Box
+      component="span"
+      sx={{
+        display: "inline-flex",
+        gap: 0.5,
+        alignItems: "center",
+        whiteSpace: "nowrap",
+        position: outsideWarning ? "relative" : undefined,
+      }}
+    >
+      {warning && (
+        <WarningAmberOutlinedIcon
+          fontSize="small"
+          titleAccess={`${label} needs attention`}
+          sx={outsideWarning ? { position: "absolute", right: "calc(100% + 2px)" } : undefined}
+        />
+      )}
+      {displayed}
+    </Box>
+  );
+}
+
 export function CountsTable({ counts }: { counts: Schemas["JobCounts"][] }) {
+  const desktop = useMediaQuery(useTheme().breakpoints.up("sm"));
+  if (!desktop)
+    return (
+      <Paper
+        component="section"
+        variant="outlined"
+        aria-label="Job counts by type"
+        sx={{ overflow: "hidden" }}
+      >
+        {ROWS.map(({ key, label, helper }) => (
+          <Box
+            key={key}
+            component="section"
+            aria-label={label}
+            sx={{ p: 1.5, "& + &": { borderTop: 1, borderColor: "divider" } }}
+          >
+            <Typography component="h2" variant="body2" sx={{ fontWeight: 600 }}>
+              {label}
+            </Typography>
+            <Typography variant="caption" color="textSecondary" sx={{ display: "block", mt: 0.25 }}>
+              {helper}
+            </Typography>
+            <Box
+              component="dl"
+              sx={{
+                m: 0,
+                mt: 1,
+                display: "grid",
+                gridTemplateColumns: "1fr",
+                gap: 0.5,
+              }}
+            >
+              {counts.map((count) => {
+                const value = metricValue(count, key);
+                return (
+                  <Box
+                    key={count.job_type}
+                    sx={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(6rem, 1fr) minmax(8rem, 0.8fr)",
+                      alignItems: "center",
+                      gap: 1.5,
+                    }}
+                  >
+                    <Typography component="dt" variant="caption" color="textSecondary">
+                      {count.job_type === "notes" ? "Notes" : "Transcription"}
+                    </Typography>
+                    <Typography
+                      component="dd"
+                      variant="body2"
+                      sx={{
+                        m: 0,
+                        textAlign: "right",
+                        paddingInlineEnd: "3.5ch",
+                        fontWeight: 400,
+                        "& svg": { fontSize: 14 },
+                        "& > span": { gap: 0.25 },
+                        fontVariantNumeric: "tabular-nums",
+                        color: value.warning ? "warning.main" : "text.primary",
+                      }}
+                    >
+                      <Value {...value} label={label} outsideWarning />
+                    </Typography>
+                  </Box>
+                );
+              })}
+            </Box>
+          </Box>
+        ))}
+      </Paper>
+    );
   return (
     <TableContainer component={Paper} variant="outlined">
       <Table size="small" aria-label="Job counts by type">
@@ -52,73 +175,33 @@ export function CountsTable({ counts }: { counts: Schemas["JobCounts"][] }) {
         </TableHead>
         <TableBody>
           {ROWS.map(({ key, label, helper }) => (
-            <Fragment key={key}>
-              <TableRow>
-                <TableCell
-                  component="th"
-                  scope="row"
-                  sx={{ width: { xs: "auto", sm: "60%" }, py: 0.75 }}
-                >
-                  <Typography variant="body2" component="span">
-                    {label}
-                  </Typography>
-                  <Typography
-                    variant="caption"
-                    color="textSecondary"
-                    sx={{ display: { xs: "none", sm: "inline" }, ml: 1 }}
+            <TableRow key={key}>
+              <TableCell component="th" scope="row" sx={{ width: "60%", py: 0.75 }}>
+                <Typography variant="body2" component="span">
+                  {label}
+                </Typography>
+                <Typography variant="caption" color="textSecondary" sx={{ ml: 1 }}>
+                  {helper}
+                </Typography>
+              </TableCell>
+              {counts.map((count) => {
+                const value = metricValue(count, key);
+                return (
+                  <TableCell
+                    key={count.job_type}
+                    align="right"
+                    sx={{
+                      verticalAlign: "top",
+                      py: 0.75,
+                      fontVariantNumeric: "tabular-nums",
+                      color: value.warning ? "warning.main" : "text.primary",
+                    }}
                   >
-                    {helper}
-                  </Typography>
-                </TableCell>
-                {counts.map((count) => {
-                  const value = count[key];
-                  const warning =
-                    key === "failed" || key === "unpublished"
-                      ? value !== null && value > 0
-                      : key === "oldest_queue_wait_seconds" &&
-                        count.queued > 0 &&
-                        value !== null &&
-                        value > LONG_WAIT_SECONDS;
-                  const displayed =
-                    key === "oldest_queue_wait_seconds"
-                      ? count.queued === 0
-                        ? "None queued"
-                        : value === null
-                          ? "Unknown"
-                          : formatDuration(Math.floor(value))
-                      : value;
-                  return (
-                    <TableCell
-                      key={count.job_type}
-                      align="right"
-                      sx={{
-                        verticalAlign: "top",
-                        py: 0.75,
-                        fontVariantNumeric: "tabular-nums",
-                        color: warning ? "warning.main" : "text.primary",
-                      }}
-                    >
-                      <Box sx={{ display: "inline-flex", gap: 0.5, alignItems: "center" }}>
-                        {warning && (
-                          <WarningAmberOutlinedIcon
-                            fontSize="small"
-                            titleAccess={`${label} needs attention`}
-                          />
-                        )}
-                        {displayed}
-                      </Box>
-                    </TableCell>
-                  );
-                })}
-              </TableRow>
-              <TableRow sx={{ display: { xs: "table-row", sm: "none" } }}>
-                <TableCell colSpan={counts.length + 1} sx={{ pt: 0, pb: 1 }}>
-                  <Typography variant="caption" color="textSecondary">
-                    {helper}
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            </Fragment>
+                    <Value {...value} label={label} />
+                  </TableCell>
+                );
+              })}
+            </TableRow>
           ))}
         </TableBody>
       </Table>
