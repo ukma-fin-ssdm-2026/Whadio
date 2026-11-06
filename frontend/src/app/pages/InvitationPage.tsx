@@ -12,15 +12,17 @@ export function InvitationPage({ invitationId }: { invitationId: string }) {
   const hash = useLocation({ select: (location) => location.hash });
   const { data: currentUser, error: sessionError, refetch } = useQuery(sessionQueries.me());
   const signOut = useSignOut();
-  const [signingIn, setSigningIn] = useState(false);
+  const [signIn, setSignIn] = useState<{ sessionRefused?: boolean } | null>(null);
+  const [signInUnproven, setSignInUnproven] = useState(false);
   const { queryClient, onSignedIn } = router.options.context;
 
-  if (signingIn) {
+  if (signIn) {
     return (
       <SignInForm
+        sessionRefused={signIn.sessionRefused}
         onSignedIn={() => {
-          onSignedIn();
-          setSigningIn(false);
+          setSignInUnproven(true);
+          setSignIn(null);
         }}
       />
     );
@@ -33,10 +35,8 @@ export function InvitationPage({ invitationId }: { invitationId: string }) {
       queryClient.setQueryData(sessionQueries.me().queryKey, user);
       onSignedIn();
     }
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["workspaces"] }),
-      queryClient.invalidateQueries({ queryKey: sessionQueries.me().queryKey }),
-    ]);
+    setSignInUnproven(false);
+    await queryClient.invalidateQueries({ queryKey: ["workspaces"] });
     await router.navigate({
       to: "/workspaces/$workspaceId",
       params: { workspaceId },
@@ -53,10 +53,16 @@ export function InvitationPage({ invitationId }: { invitationId: string }) {
       sessionError={sessionError?.message}
       onRetrySession={() => void refetch()}
       termsHref={router.buildLocation({ to: "/terms" }).href}
-      onRequestSignIn={() => setSigningIn(true)}
+      onRequestSignIn={() => setSignIn({})}
+      onSessionExpired={() => {
+        queryClient.setQueryData(sessionQueries.me().queryKey, null);
+        setSignIn({ sessionRefused: signInUnproven });
+        setSignInUnproven(false);
+      }}
       onUseDifferentAccount={async () => {
         await signOut.mutateAsync().catch(() => undefined);
-        setSigningIn(true);
+        setSignInUnproven(false);
+        setSignIn({});
       }}
       onJoined={finishJoining}
     />

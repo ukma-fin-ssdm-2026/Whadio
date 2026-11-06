@@ -1,5 +1,6 @@
 import { infiniteQueryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/shared/api/client";
+import { ApiError } from "@/shared/api/errors";
 import type { Schemas } from "@/shared/api/types";
 import { unwrap } from "@/shared/api/unwrap";
 
@@ -53,8 +54,13 @@ export function useCancelInvitation(workspaceId: string) {
           params: { path: { workspace_id: workspaceId, invitation_id: invitationId } },
         }),
       ),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: invitationQueries.list(workspaceId).queryKey }),
+    onSettled: (_data, error) => {
+      if (!error || (error instanceof ApiError && error.code === "INVITATION_NOT_PENDING")) {
+        return queryClient.invalidateQueries({
+          queryKey: invitationQueries.list(workspaceId).queryKey,
+        });
+      }
+    },
   });
 }
 

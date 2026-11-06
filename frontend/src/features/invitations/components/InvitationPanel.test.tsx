@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import type { Schemas } from "@/shared/api/types";
-import { page } from "@/shared/testing/fixtures";
+import { errorBody, page } from "@/shared/testing/fixtures";
 import { renderWithProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
 import { InvitationPanel } from "./InvitationPanel";
@@ -181,6 +181,122 @@ test("cancellation refreshes the pending list", async () => {
   await user.click(
     await screen.findByRole("button", { name: `Cancel invitation for ${INVITATION.email}` }),
   );
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Cancel invitation" }));
+
+  // Assert
+  expect(await screen.findByText("No pending invitations")).toBeInTheDocument();
+});
+
+test.each([
+  [409, "ALREADY_MEMBER", "That person already belongs to this workspace"],
+  [429, "INVITATION_COOLDOWN", "Wait before inviting this person again"],
+] as const)("displays the create error for HTTP %i", async (status, code, message) => {
+  // Arrange
+  serve([]);
+  server.use(
+    http.post("/api/v1/workspaces/{workspace_id}/invitations", ({ response }) =>
+      response(status).json(errorBody(code, message)),
+    ),
+  );
+  const { user } = renderWithProviders(<InvitationPanel workspaceId="workspace" />);
+  await user.click(await screen.findByRole("button", { name: "Invite person" }));
+  await user.type(screen.getByLabelText(/^Email address/), INVITATION.email);
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Invite" }));
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent(message);
+});
+
+test("displays the pending-list load error", async () => {
+  // Arrange
+  server.use(
+    http.get("/api/v1/workspaces/{workspace_id}/invitations", ({ response }) =>
+      response(403).json(errorBody("INSUFFICIENT_ROLE", "Cannot list invitations")),
+    ),
+  );
+
+  // Act
+  renderWithProviders(<InvitationPanel workspaceId="workspace" />);
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent("Cannot list invitations");
+});
+
+test("marks a pending invitation with an inactive link", async () => {
+  // Arrange
+  serve([{ ...INVITATION, link_active: false }]);
+
+  // Act
+  renderWithProviders(<InvitationPanel workspaceId="workspace" />);
+
+  // Assert
+  expect(await screen.findByText("Inactive")).toBeInTheDocument();
+});
+
+test("releases the one-time link from the mutation cache when the dialog closes", async () => {
+  // Arrange
+  serve([]);
+  const { queryClient, user } = renderWithProviders(<InvitationPanel workspaceId="workspace" />);
+  await user.click(await screen.findByRole("button", { name: "Invite person" }));
+  await user.type(screen.getByLabelText(/^Email address/), INVITATION.email);
+  await user.click(screen.getByRole("button", { name: "Invite" }));
+  await screen.findByDisplayValue(LINK);
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Done" }));
+
+  // Assert
+  await waitFor(() =>
+    expect(
+      queryClient
+        .getMutationCache()
+        .getAll()
+        .map(({ state }) => state.data),
+    ).not.toContainEqual(expect.objectContaining({ link: LINK })),
+  );
+});
+
+const ALREADY_ANSWERED = "This invitation has already been answered";
+
+async function openStaleCancellation() {
+  let items = [INVITATION];
+  server.use(
+    http.get("/api/v1/workspaces/{workspace_id}/invitations", ({ response }) =>
+      response(200).json(page(items)),
+    ),
+    http.post(
+      "/api/v1/workspaces/{workspace_id}/invitations/{invitation_id}/cancel",
+      ({ response }) => {
+        items = [];
+        return response(409).json(errorBody("INVITATION_NOT_PENDING", ALREADY_ANSWERED));
+      },
+    ),
+  );
+  const { user } = renderWithProviders(<InvitationPanel workspaceId="workspace" />);
+  await user.click(
+    await screen.findByRole("button", { name: `Cancel invitation for ${INVITATION.email}` }),
+  );
+  return user;
+}
+
+test("displays the error when cancelling an already answered invitation", async () => {
+  // Arrange
+  const user = await openStaleCancellation();
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Cancel invitation" }));
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent(ALREADY_ANSWERED);
+});
+
+test("refreshes the pending list when cancellation finds an already answered invitation", async () => {
+  // Arrange
+  const user = await openStaleCancellation();
 
   // Act
   await user.click(screen.getByRole("button", { name: "Cancel invitation" }));

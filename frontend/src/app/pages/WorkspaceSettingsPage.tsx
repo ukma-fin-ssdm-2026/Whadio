@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { InvitationPanel } from "@/features/invitations/components/InvitationPanel";
 import { workspaceQueries } from "@/features/workspaces/api/workspaces";
 import { WorkspaceSettings } from "@/features/workspaces/components/WorkspaceSettings";
+import { canManage } from "@/shared/lib/roles";
 
 export function WorkspaceSettingsPage({ workspaceId }: { workspaceId: string }) {
   const { data: workspace, error } = useQuery(workspaceQueries.detail(workspaceId));
@@ -14,8 +15,7 @@ export function WorkspaceSettingsPage({ workspaceId }: { workspaceId: string }) 
     );
   }
 
-  const canInvite =
-    !workspace.is_personal && (workspace.my_role === "owner" || workspace.my_role === "moderator");
+  const canInvite = !workspace.is_personal && canManage(workspace.my_role);
 
   return (
     <Stack sx={{ gap: 2 }}>

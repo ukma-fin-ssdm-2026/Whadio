@@ -1,24 +1,19 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  Checkbox,
-  CircularProgress,
-  FormControlLabel,
-  Link,
-  Stack,
-  Typography,
-} from "@mui/material";
+import { Alert, Box, Button, Card, CircularProgress, Stack, Typography } from "@mui/material";
 import { useEffect, useState } from "react";
-import { Controller, type UseFormSetError, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { ApiError } from "@/shared/api/errors";
 import type { Schemas } from "@/shared/api/types";
 import { titleCase } from "@/shared/lib/format";
 import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
 import { FormTextField } from "@/shared/ui/FormTextField";
+import {
+  PASSWORD_RULE,
+  registrationSchema,
+  showRegistrationError,
+  TermsField,
+} from "@/shared/ui/RegistrationFields";
 import {
   acceptInvitation,
   declineInvitation,
@@ -27,26 +22,8 @@ import {
 } from "../api/invitations";
 
 const INVALID_LINK = "This invitation link cannot be used. Ask for a new invitation.";
-const PASSWORD_RULE = "Use 12–128 characters, including at least one capital letter and one number";
 const validId = z.uuid();
 
-const registrationSchema = z.object({
-  name: z.string().trim().min(1, "Enter your name").max(100),
-  password: z.string().refine((value) => {
-    const characters = Array.from(value);
-    return (
-      characters.length >= 12 &&
-      characters.length <= 128 &&
-      /\p{Uppercase}/u.test(value) &&
-      /\p{N}/u.test(value)
-    );
-  }, PASSWORD_RULE),
-  accept_terms: z
-    .boolean()
-    .refine((value) => value, "Accept the Terms and Conditions to create your account"),
-});
-
-type RegistrationValues = z.infer<typeof registrationSchema>;
 type Preview = Schemas["PreviewRead"];
 type User = Schemas["UserRead"];
 
@@ -58,19 +35,9 @@ interface InvitationRedemptionProps {
   onRetrySession?: () => void;
   termsHref: string;
   onRequestSignIn: () => void;
+  onSessionExpired: () => void;
   onUseDifferentAccount: () => Promise<void>;
   onJoined: (workspaceId: string, user?: User) => Promise<void>;
-}
-
-function showRegistrationError(error: ApiError, setError: UseFormSetError<RegistrationValues>) {
-  let fieldError = false;
-  for (const { field, message } of error.details) {
-    if (field === "name" || field === "password" || field === "accept_terms") {
-      setError(field, { type: "server", message });
-      fieldError = true;
-    }
-  }
-  if (!fieldError) setError("root.server", { type: "server", message: error.message });
 }
 
 function RegistrationForm({
@@ -126,44 +93,7 @@ function RegistrationForm({
         slotProps={{ formHelperText: { sx: { mx: 0, width: "100%" } } }}
         required
       />
-      <Controller
-        control={control}
-        name="accept_terms"
-        render={({ field }) => (
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={field.value}
-                onChange={(_, checked) => field.onChange(checked)}
-                onBlur={field.onBlur}
-                slotProps={{
-                  input: {
-                    ref: field.ref,
-                    "aria-invalid": Boolean(formState.errors.accept_terms),
-                    "aria-describedby": formState.errors.accept_terms
-                      ? "invite-terms-error"
-                      : undefined,
-                  },
-                }}
-                name={field.name}
-              />
-            }
-            label={
-              <>
-                I accept the{" "}
-                <Link href={termsHref} target="_blank" rel="noopener noreferrer">
-                  Terms and Conditions
-                </Link>
-              </>
-            }
-          />
-        )}
-      />
-      {formState.errors.accept_terms && (
-        <Typography id="invite-terms-error" color="error" role="alert">
-          {formState.errors.accept_terms.message}
-        </Typography>
-      )}
+      <TermsField control={control} termsHref={termsHref} />
       {formState.errors.root?.server && (
         <Alert severity="error">{formState.errors.root.server.message}</Alert>
       )}
@@ -195,6 +125,7 @@ export function InvitationRedemption({
   onRetrySession,
   termsHref,
   onRequestSignIn,
+  onSessionExpired,
   onUseDifferentAccount,
   onJoined,
 }: InvitationRedemptionProps) {
@@ -292,8 +223,8 @@ export function InvitationRedemption({
         setActionError(
           "This invitation belongs to a different account. Sign in with the invited address.",
         );
-      } else if (error instanceof ApiError && error.code === "UNAUTHENTICATED") {
-        onRequestSignIn();
+      } else if (error instanceof ApiError && error.status === 401) {
+        onSessionExpired();
       } else {
         setActionError(
           error instanceof ApiError ? error.message : "Could not accept the invitation.",
@@ -354,7 +285,7 @@ export function InvitationRedemption({
               Sign in
             </Button>
           </Stack>
-        ) : currentUser.email.toLocaleLowerCase() !== preview.email.toLocaleLowerCase() ? (
+        ) : currentUser.email.toLowerCase() !== preview.email.toLowerCase() ? (
           <Stack sx={{ gap: 1 }}>
             <Alert severity="warning">
               You are signed in with a different account. Use the invited account to continue.

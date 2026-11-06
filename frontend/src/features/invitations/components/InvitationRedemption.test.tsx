@@ -40,22 +40,24 @@ function validationError(field: string, message: string) {
   };
 }
 
-function renderInvitation(currentUser: Schemas["UserRead"] | null | undefined = null) {
+function renderInvitation(currentUser: Schemas["UserRead"] | null | undefined = null, id = ID) {
   const onJoined = vi.fn(async () => undefined);
   const onRequestSignIn = vi.fn();
+  const onSessionExpired = vi.fn();
   const onUseDifferentAccount = vi.fn(async () => undefined);
   const rendered = renderWithProviders(
     <InvitationRedemption
-      id={ID}
+      id={id}
       token={TOKEN}
       currentUser={currentUser}
       termsHref="/terms"
       onRequestSignIn={onRequestSignIn}
+      onSessionExpired={onSessionExpired}
       onUseDifferentAccount={onUseDifferentAccount}
       onJoined={onJoined}
     />,
   );
-  return { ...rendered, onJoined, onRequestSignIn, onUseDifferentAccount };
+  return { ...rendered, onJoined, onRequestSignIn, onSessionExpired, onUseDifferentAccount };
 }
 
 function servePreview(preview: Schemas["PreviewRead"] = PREVIEW) {
@@ -265,7 +267,7 @@ test.each([
   { name: "", password: "StrongPassword1", terms: true, field: "Name" },
   { name: " ", password: "StrongPassword1", terms: true, field: "Name" },
   { name: "x".repeat(101), password: "StrongPassword1", terms: true, field: "Name" },
-  { name: "Person", password: "Short1", terms: true, field: "Password" },
+  { name: "Person", password: "Password12A", terms: true, field: "Password" },
   { name: "Person", password: `A1${"x".repeat(127)}`, terms: true, field: "Password" },
   { name: "Person", password: "lowercasepassword1", terms: true, field: "Password" },
   { name: "Person", password: "UppercasePassword", terms: true, field: "Password" },
@@ -349,22 +351,50 @@ test("an expired session during acceptance asks for local sign-in", async () => 
       response(401).json(errorBody("UNAUTHENTICATED", "Expired")),
     ),
   );
-  const { user, onRequestSignIn } = renderInvitation(USER);
+  const { user, onSessionExpired } = renderInvitation(USER);
 
   // Act
   await user.click(await screen.findByRole("button", { name: "Accept invitation" }));
 
   // Assert
-  await waitFor(() => expect(onRequestSignIn).toHaveBeenCalledOnce());
+  await waitFor(() => expect(onSessionExpired).toHaveBeenCalledOnce());
 });
 
-test("account matching ignores email case", async () => {
+test("account matching ignores the browser locale", async () => {
   // Arrange
-  servePreview();
+  servePreview({ ...PREVIEW, email: "ivan@example.test" });
+  const lowerCase = String.prototype.toLocaleLowerCase;
+  const localeLowerCase = vi
+    .spyOn(String.prototype, "toLocaleLowerCase")
+    .mockImplementation(function (this: string) {
+      return lowerCase.call(this, "tr");
+    });
 
   // Act
-  renderInvitation({ ...USER, email: USER.email.toUpperCase() });
+  try {
+    renderInvitation({ ...USER, email: "Ivan@example.test" });
+
+    // Assert
+    expect(await screen.findByRole("button", { name: "Accept invitation" })).toBeInTheDocument();
+  } finally {
+    localeLowerCase.mockRestore();
+  }
+});
+
+test("a malformed invitation ID is refused before preview", async () => {
+  // Arrange
+  const preview = vi.fn();
+  server.use(
+    http.post("/api/v1/invitations/{invitation_id}/preview", ({ response }) => {
+      preview();
+      return response(200).json(PREVIEW);
+    }),
+  );
+
+  // Act
+  renderInvitation(null, "not-a-uuid");
+  await screen.findByRole("heading", { name: "Invitation unavailable" });
 
   // Assert
-  expect(await screen.findByRole("button", { name: "Accept invitation" })).toBeInTheDocument();
+  expect(preview).not.toHaveBeenCalled();
 });
