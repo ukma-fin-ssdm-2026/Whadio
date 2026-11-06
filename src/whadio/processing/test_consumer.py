@@ -160,7 +160,7 @@ async def _serve_one_result(broker: BrokerSettings) -> tuple[UUID, UUID]:
                 .model_dump_json()
                 .encode()
             )
-            await MessagePublisher(channel, broker.user).publish(
+            await MessagePublisher(channel, broker.user, timeout=broker.timeout).publish(
                 results.name, body, message_type="job_started", correlation_id=str(job_id)
             )
             consumer = asyncio.create_task(

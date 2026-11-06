@@ -115,7 +115,9 @@ async def serve_jobs[J: JobMessage, R: IResultMessage](
         for queue in (DEAD_LETTERS, spec.results):
             await declare_queue(channel, queue.name, queue.arguments)
         jobs = await declare_queue(channel, spec.queue.name, spec.queue.arguments)
-        publisher = AmqpResultPublisher(MessagePublisher(channel, broker.user), spec.results.name)
+        publisher = AmqpResultPublisher(
+            MessagePublisher(channel, broker.user, timeout=broker.timeout), spec.results.name
+        )
         supervisor = JobSupervisor(spec, runner, publisher)
         in_flight: set[asyncio.Task[None]] = set()
         failed = asyncio.Event()

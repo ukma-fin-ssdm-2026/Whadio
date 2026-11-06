@@ -144,7 +144,7 @@ async def _publish_job(
     broker: BrokerSettings,
     spec: WorkerSpec[TranscriptionRequested, _Result],
 ) -> None:
-    await MessagePublisher(channel, broker.user).publish(
+    await MessagePublisher(channel, broker.user, timeout=broker.timeout).publish(
         spec.queue.name,
         _JOB.model_dump_json().encode(),
         message_type=_JOB.type,
