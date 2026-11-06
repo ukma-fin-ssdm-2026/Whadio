@@ -83,7 +83,7 @@ export function AdminPage({
       {metrics.data && (
         <>
           <Typography variant="body2">
-            Counts assembled {timestamp(metrics.data.generated_at)}
+            Counts updated {timestamp(metrics.data.generated_at)}
           </Typography>
           {metrics.data.jobs.length > 0 && <CountsTable counts={metrics.data.jobs} />}
           {metrics.data.jobs.length === 0 && <Alert severity="info">No retained jobs.</Alert>}

@@ -29,9 +29,13 @@ test.for([390, 1440])("each fetched page has one observation time at %s pixels",
     />,
   );
   // Assert
-  expect(screen.getAllByText(/^Observed /).map((line) => line.textContent)).toEqual([
-    `Observed ${new Date(STAMP).toLocaleString()}`,
-    `Observed ${new Date(later).toLocaleString()}`,
+  expect(
+    screen
+      .getAllByText(/^Jobs observed /)
+      .map((line) => ({ text: line.textContent, outsideTable: line.closest("table") === null })),
+  ).toEqual([
+    { text: `Jobs observed ${new Date(STAMP).toLocaleString()}`, outsideTable: true },
+    { text: `Jobs observed ${new Date(later).toLocaleString()}`, outsideTable: true },
   ]);
 });
 

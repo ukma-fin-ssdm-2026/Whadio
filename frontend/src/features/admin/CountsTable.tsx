@@ -22,18 +22,17 @@ const ROWS = [
   {
     key: "unpublished",
     label: "Not yet published",
-    helper:
-      "Queued jobs not yet sent to the broker. Persistent counts suggest a publishing problem.",
+    helper: "Jobs not yet sent to the worker queue.",
   },
   {
     key: "oldest_queue_wait_seconds",
     label: "Oldest known queue wait",
-    helper: "Longest known wait for a worker. Above 15 minutes, check worker capacity.",
+    helper: "Longest known wait. Warns above 15 minutes.",
   },
   {
     key: "unknown_queue_waits",
     label: "Unknown queue waits",
-    helper: "Queued jobs with no recorded queue-entry time. Excluded from the oldest known wait.",
+    helper: "Missing queue-entry times; excluded from oldest wait.",
   },
 ] as const;
 

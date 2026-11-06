@@ -39,7 +39,7 @@ test("shows the server assembly timestamp", async () => {
   // Arrange
   openPage();
   // Act
-  const stamp = await screen.findByText(`Counts assembled ${new Date(STAMP).toLocaleString()}`);
+  const stamp = await screen.findByText(`Counts updated ${new Date(STAMP).toLocaleString()}`);
   // Assert
   expect(stamp).toBeVisible();
 });
@@ -69,7 +69,7 @@ test.for(["metrics", "jobs"])("a %s refusal removes both snapshots", async (endp
   await user.click(screen.getByRole("button", { name: "Refresh" }));
   await screen.findByText(/Not allowed/);
   // Assert
-  expect(screen.queryAllByText(/Job: job-1|Counts assembled/)).toHaveLength(0);
+  expect(screen.queryAllByText(/Job: job-1|Counts updated/)).toHaveLength(0);
 });
 
 test.for(["metrics", "jobs"])("a %s refusal clears monitoring caches", async (endpoint) => {
@@ -447,7 +447,7 @@ test("leaving monitoring discards snapshots before a later visit", async () => {
   // Arrange
   const { unmount, queryClient } = openPage();
   await screen.findByRole("button", { name: "Copy workspace ID workspace-alpha" });
-  await screen.findByText(/Counts assembled/);
+  await screen.findByText(/Counts updated/);
   // Act
   unmount();
   // Assert

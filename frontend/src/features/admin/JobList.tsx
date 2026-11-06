@@ -147,103 +147,127 @@ export function JobList({
   if (pages.every((page) => page.length === 0)) return null;
   if (desktop)
     return (
-      <TableContainer component={Paper} variant="outlined">
-        <Table
-          size="small"
-          aria-label="Processing jobs"
-          sx={{
-            minWidth: 1000,
-            tableLayout: "fixed",
-            "& td": { verticalAlign: "top" },
-            "& th, & td": { px: 1 },
-          }}
-        >
-          <TableHead>
-            <TableRow>
-              {[
-                ["Created / attempt", "14%"],
-                ["Type", "9%"],
-                ["State", "10%"],
-                ["Wait / run", "17%"],
-                ["Total", "7%"],
-                ["Attempts", "6%"],
-                ["Failure", "10%"],
-                ["Workspace", "15%"],
-                ["Job", "12%"],
-              ].map(([label, width]) => (
-                <TableCell key={label} component="th" scope="col" sx={{ width }}>
-                  {label}
-                </TableCell>
-              ))}
-            </TableRow>
-          </TableHead>
-          {pages.map(
-            (page, index) =>
-              page.length > 0 && (
-                <TableBody key={page[0]?.job_id ?? index}>
-                  <TableRow>
-                    <TableCell colSpan={9} sx={{ bgcolor: "action.hover" }}>
-                      Observed {timestamp(page[0]?.as_of ?? "")}
-                    </TableCell>
-                  </TableRow>
-                  {page.map((job) => (
-                    <TableRow key={job.job_id}>
-                      <TableCell>
-                        <Typography variant="body2">Created {timestamp(job.created_at)}</Typography>
-                        <AttemptTime job={job} />
-                      </TableCell>
-                      <TableCell>{title(job.job_type)}</TableCell>
-                      <TableCell>
-                        <Status job={job} />
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2">{timing(job)}</Typography>
-                        <Typography variant="caption" component="div">
-                          <PreviousWait job={job} />
-                        </Typography>
-                        {job.timing_anomaly && (
-                          <Typography variant="caption">Timing adjusted for clock skew.</Typography>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2">
-                          {duration(job.total_elapsed_seconds)}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>{job.attempts_started}</TableCell>
-                      <TableCell
-                        sx={{
-                          color: job.failure_description ? "error.main" : "text.secondary",
-                          minWidth: 85,
-                        }}
-                      >
-                        {job.failure_description ?? "—"}
-                      </TableCell>
-                      <TableCell>
-                        <Identifier
-                          id={job.workspace_id}
-                          compact
-                          kind="Workspace"
-                          onWorkspace={onWorkspace}
-                          filters={filters}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Identifier
-                          id={job.job_id}
-                          compact
-                          kind="Job"
-                          onWorkspace={onWorkspace}
-                          filters={filters}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              ),
-          )}
-        </Table>
-      </TableContainer>
+      <Stack sx={{ gap: 2 }}>
+        {pages.map(
+          (page, index) =>
+            page.length > 0 && (
+              <Stack key={page[0]?.job_id ?? index} sx={{ gap: 1 }}>
+                <Typography variant="body2" color="textSecondary">
+                  Jobs observed {timestamp(page[0]?.as_of ?? "")}
+                </Typography>
+                <TableContainer component={Paper} variant="outlined">
+                  <Table
+                    size="small"
+                    aria-label="Processing jobs"
+                    sx={{
+                      minWidth: 1000,
+                      tableLayout: "fixed",
+                      "& td": { verticalAlign: "top" },
+                      "& th, & td": { px: 1 },
+                      "& th:nth-of-type(3), & td:nth-of-type(3)": {
+                        px: 2.5,
+                        verticalAlign: "middle",
+                      },
+                      "& th:nth-of-type(7), & td:nth-of-type(7)": { px: 2.5 },
+                      "& td:nth-of-type(7)": { verticalAlign: "top" },
+                    }}
+                  >
+                    <TableHead>
+                      <TableRow>
+                        {[
+                          ["Created", "13%"],
+                          ["Type", "10%"],
+                          ["State", "10%"],
+                          ["Wait / run", "15%"],
+                          ["Total", "11%"],
+                          ["Attempts", "7%"],
+                          ["Failure", "10%"],
+                          ["Workspace", "13%"],
+                          ["Job", "11%"],
+                        ].map(([label, width]) => (
+                          <TableCell
+                            key={label}
+                            component="th"
+                            scope="col"
+                            align={
+                              label === "State" || label === "Attempts" || label === "Failure"
+                                ? "center"
+                                : "left"
+                            }
+                            sx={{ width }}
+                          >
+                            {label}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {page.map((job) => (
+                        <TableRow key={job.job_id}>
+                          <TableCell>
+                            <Typography variant="body2">
+                              Created {timestamp(job.created_at)}
+                            </Typography>
+                            <AttemptTime job={job} />
+                          </TableCell>
+                          <TableCell>{title(job.job_type)}</TableCell>
+                          <TableCell align="center" sx={{ verticalAlign: "middle" }}>
+                            <Status job={job} />
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">{timing(job)}</Typography>
+                            <Typography variant="caption" component="div">
+                              <PreviousWait job={job} />
+                            </Typography>
+                            {job.timing_anomaly && (
+                              <Typography variant="caption">
+                                Timing adjusted for clock skew.
+                              </Typography>
+                            )}
+                          </TableCell>
+                          <TableCell sx={{ whiteSpace: "nowrap" }}>
+                            <Typography variant="body2">
+                              {duration(job.total_elapsed_seconds)}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="center">{job.attempts_started}</TableCell>
+                          <TableCell
+                            align="center"
+                            style={{ verticalAlign: job.failure_description ? "top" : "middle" }}
+                            sx={{
+                              color: job.failure_description ? "error.main" : "text.secondary",
+                              minWidth: 85,
+                            }}
+                          >
+                            {job.failure_description ?? "—"}
+                          </TableCell>
+                          <TableCell>
+                            <Identifier
+                              id={job.workspace_id}
+                              compact
+                              kind="Workspace"
+                              onWorkspace={onWorkspace}
+                              filters={filters}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Identifier
+                              id={job.job_id}
+                              compact
+                              kind="Job"
+                              onWorkspace={onWorkspace}
+                              filters={filters}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Stack>
+            ),
+        )}
+      </Stack>
     );
   return (
     <Stack sx={{ gap: 2 }}>
@@ -252,7 +276,7 @@ export function JobList({
           page.length > 0 && (
             <Stack key={page[0]?.job_id ?? index} sx={{ gap: 1 }}>
               <Typography variant="body2" color="textSecondary">
-                Observed {timestamp(page[0]?.as_of ?? "")}
+                Jobs observed {timestamp(page[0]?.as_of ?? "")}
               </Typography>
               <Stack component="ul" sx={{ gap: 1, p: 0, m: 0 }}>
                 {page.map((job) => (

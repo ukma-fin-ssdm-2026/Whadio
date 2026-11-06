@@ -30,7 +30,7 @@ test("counts explain publication delays and missing historical waits", () => {
   renderWithProviders(<CountsTable counts={metrics.jobs} />);
   // Assert
   expect(screen.getByRole("table")).toHaveTextContent(
-    /Queued jobs not yet sent to the broker.*Queued jobs with no recorded queue-entry time/,
+    /Jobs not yet sent to the worker queue.*Missing queue-entry times; excluded from oldest wait/,
   );
 });
 
