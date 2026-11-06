@@ -15,7 +15,12 @@ function openPage() {
   const onForbidden = vi.fn();
   return {
     ...renderWithProviders(
-      <AdminPage filters={{}} onFilters={() => {}} onForbidden={onForbidden} />,
+      <AdminPage
+        workspaceHref={() => "#"}
+        filters={{}}
+        onFilters={() => {}}
+        onForbidden={onForbidden}
+      />,
     ),
     onForbidden,
   };
@@ -120,7 +125,14 @@ test.for(["metrics", "jobs"])("a %s refusal stops requests to both endpoints", a
         : HttpResponse.json(page([job()]));
     }),
   );
-  renderWithProviders(<AdminPage filters={{}} onFilters={() => {}} onForbidden={() => {}} />);
+  renderWithProviders(
+    <AdminPage
+      workspaceHref={() => "#"}
+      filters={{}}
+      onFilters={() => {}}
+      onForbidden={() => {}}
+    />,
+  );
   await screen.findByText(/Not allowed/);
   await act(() => vi.advanceTimersByTimeAsync(100));
   const before = [...requests];

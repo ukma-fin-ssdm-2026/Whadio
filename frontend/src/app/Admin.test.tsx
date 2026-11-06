@@ -8,7 +8,7 @@ import { job, serve } from "@/features/admin/testing";
 import { errorBody, page } from "@/shared/testing/fixtures";
 import { server } from "@/shared/testing/server";
 
-async function openApp(administrator: boolean, path = "/admin") {
+async function openApp(administrator: boolean, path = "/admin", basepath?: string) {
   stubViewportWidth(1440);
   window.history.replaceState(null, "", path);
   serveApi(true);
@@ -25,7 +25,7 @@ async function openApp(administrator: boolean, path = "/admin") {
   );
   if (!administrator)
     server.use(http.get("/api/v1/admin/jobs", () => HttpResponse.json({}, { status: 403 })));
-  render(<App />);
+  render(<App basepath={basepath} />);
 }
 
 test("an administrator sees the Admin entry after a fresh deep link", async () => {
@@ -153,46 +153,49 @@ test.for([
 
 const WORKSPACE = "29dd39f7-c5c8-438b-9b4f-530839c8fc59";
 
-test("the workspace link preserves filters and restarts paging", async () => {
-  // Arrange
-  const requests: URL[] = [];
-  await openApp(true, "/admin?job_type=notes&status=failed");
-  server.use(
-    http.get("/api/v1/admin/jobs", ({ request }) => {
-      requests.push(new URL(request.url));
-      return HttpResponse.json(
-        page(
-          [
-            job({
-              workspace_id: WORKSPACE,
-              job_id: new URL(request.url).searchParams.has("cursor") ? "job-2" : "job-1",
-            }),
-          ],
-          "next",
-        ),
-      );
-    }),
-  );
-  const user = userEvent.setup();
-  await screen.findByRole("link", { name: `Filter by workspace ${WORKSPACE}` });
-  await user.click(screen.getByRole("button", { name: "Load more" }));
-  await waitFor(() => expect(requests.at(-1)?.searchParams.get("cursor")).toBe("next"));
-  // Act
-  await user.click(
-    screen.getAllByRole("link", { name: `Filter by workspace ${WORKSPACE}` })[0] ??
-      screen.getByRole("link", { name: `Filter by workspace ${WORKSPACE}` }),
-  );
-  // Assert
-  await waitFor(() =>
-    expect({
-      request: Object.fromEntries(requests.at(-1)?.searchParams ?? []),
-      url: Object.fromEntries(new URL(window.location.href).searchParams),
-    }).toEqual({
-      request: { limit: "25", workspace_id: WORKSPACE, job_type: "notes", status: "failed" },
-      url: { workspace_id: WORKSPACE, job_type: "notes", status: "failed" },
-    }),
-  );
-});
+test.for(["/", "/whadio/"])(
+  "the workspace link preserves filters and restarts paging under %s",
+  async (basepath) => {
+    // Arrange
+    const requests: URL[] = [];
+    await openApp(true, `${basepath}admin?job_type=notes&status=failed`, basepath);
+    server.use(
+      http.get("/api/v1/admin/jobs", ({ request }) => {
+        requests.push(new URL(request.url));
+        return HttpResponse.json(
+          page(
+            [
+              job({
+                workspace_id: WORKSPACE,
+                job_id: new URL(request.url).searchParams.has("cursor") ? "job-2" : "job-1",
+              }),
+            ],
+            "next",
+          ),
+        );
+      }),
+    );
+    const user = userEvent.setup();
+    await screen.findByRole("link", { name: `Filter by workspace ${WORKSPACE}` });
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    await waitFor(() => expect(requests.at(-1)?.searchParams.get("cursor")).toBe("next"));
+    // Act
+    await user.click(
+      screen.getAllByRole("link", { name: `Filter by workspace ${WORKSPACE}` })[0] ??
+        screen.getByRole("link", { name: `Filter by workspace ${WORKSPACE}` }),
+    );
+    // Assert
+    await waitFor(() =>
+      expect({
+        request: Object.fromEntries(requests.at(-1)?.searchParams ?? []),
+        url: Object.fromEntries(new URL(window.location.href).searchParams),
+      }).toEqual({
+        request: { limit: "25", workspace_id: WORKSPACE, job_type: "notes", status: "failed" },
+        url: { workspace_id: WORKSPACE, job_type: "notes", status: "failed" },
+      }),
+    );
+  },
+);
 
 test("clearing a workspace filter preserves type and state and resets paging", async () => {
   // Arrange
@@ -266,3 +269,25 @@ test("changing the state keeps the workspace filter", async () => {
     }),
   );
 });
+
+test.for([390, 1440])(
+  "workspace links preserve the deployment base path at %s pixels",
+  async (width) => {
+    // Arrange
+    await openApp(true, "/whadio/admin?job_type=notes&status=failed", "/whadio/");
+    stubViewportWidth(width);
+    server.use(
+      http.get("/api/v1/admin/jobs", () =>
+        HttpResponse.json(page([job({ workspace_id: WORKSPACE })])),
+      ),
+    );
+    // Act
+    const link = await screen.findByRole("link", { name: `Filter by workspace ${WORKSPACE}` });
+    // Assert
+    const address = new URL(link.getAttribute("href") ?? "", window.location.origin);
+    expect({ path: address.pathname, filters: Object.fromEntries(address.searchParams) }).toEqual({
+      path: "/whadio/admin",
+      filters: { job_type: "notes", status: "failed", workspace_id: WORKSPACE },
+    });
+  },
+);

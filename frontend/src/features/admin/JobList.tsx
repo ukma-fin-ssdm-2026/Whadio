@@ -21,8 +21,6 @@ import type { Schemas } from "@/shared/api/types";
 import { formatDuration } from "@/shared/lib/format-duration";
 import { useNotify } from "@/shared/ui/NotifyProvider";
 
-import type { JobFilters } from "./api/monitoring";
-
 type Job = Schemas["JobSnapshot"];
 const duration = (value: number | null) =>
   value === null ? "Unknown" : formatDuration(Math.floor(value));
@@ -41,18 +39,15 @@ function Identifier({
   id,
   kind,
   onWorkspace,
-  filters,
+  workspaceHref,
   compact = false,
 }: {
   id: string;
   kind: "Job" | "Workspace";
   compact?: boolean;
   onWorkspace: (id: string) => void;
-  filters: JobFilters;
+  workspaceHref: (id: string) => string;
 }) {
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(filters)) if (value) search.set(key, value);
-  search.set("workspace_id", id);
   const notify = useNotify();
   const copy = async () => {
     try {
@@ -67,7 +62,7 @@ function Identifier({
       {kind === "Workspace" ? (
         <Tooltip title={`Filter by workspace ${id}`} arrow>
           <Link
-            href={`/admin?${search}`}
+            href={workspaceHref(id)}
             onClick={(event) => {
               if (
                 event.button === 0 &&
@@ -137,13 +132,13 @@ function PreviousWait({ job }: { job: Job }) {
 export function JobList({
   pages,
   onWorkspace,
-  filters,
+  workspaceHref,
 }: {
   pages: Job[][];
   onWorkspace: (id: string) => void;
-  filters: JobFilters;
+  workspaceHref: (id: string) => string;
 }) {
-  const desktop = useMediaQuery(useTheme().breakpoints.up("sm"));
+  const desktop = useMediaQuery(useTheme().breakpoints.up("sm"), { noSsr: true });
   if (pages.every((page) => page.length === 0)) return null;
   if (desktop)
     return (
@@ -247,7 +242,7 @@ export function JobList({
                               compact
                               kind="Workspace"
                               onWorkspace={onWorkspace}
-                              filters={filters}
+                              workspaceHref={workspaceHref}
                             />
                           </TableCell>
                           <TableCell>
@@ -256,7 +251,7 @@ export function JobList({
                               compact
                               kind="Job"
                               onWorkspace={onWorkspace}
-                              filters={filters}
+                              workspaceHref={workspaceHref}
                             />
                           </TableCell>
                         </TableRow>
@@ -299,14 +294,14 @@ export function JobList({
                       id={job.job_id}
                       kind="Job"
                       onWorkspace={onWorkspace}
-                      filters={filters}
+                      workspaceHref={workspaceHref}
                     />
                     <Box>
                       <Identifier
                         id={job.workspace_id}
                         kind="Workspace"
                         onWorkspace={onWorkspace}
-                        filters={filters}
+                        workspaceHref={workspaceHref}
                       />
                     </Box>
                     <Typography>

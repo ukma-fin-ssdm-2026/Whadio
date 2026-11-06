@@ -23,10 +23,12 @@ export function AdminPage({
   filters,
   onFilters,
   onForbidden,
+  workspaceHref,
 }: {
   filters: JobFilters;
   onFilters: (filters: JobFilters) => void;
   onForbidden: () => void;
+  workspaceHref: (id: string) => string;
 }) {
   const client = useQueryClient();
   const [denied, setDenied] = useState(false);
@@ -159,7 +161,7 @@ export function AdminPage({
       {jobs.isSuccess && empty && <Alert severity="info">No jobs match these filters.</Alert>}
       <JobList
         pages={pages}
-        filters={filters}
+        workspaceHref={workspaceHref}
         onWorkspace={(workspace_id) => onFilters({ ...filters, workspace_id })}
       />
       {jobs.hasNextPage && (

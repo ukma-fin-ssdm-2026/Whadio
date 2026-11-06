@@ -89,7 +89,7 @@ function Value({
 }
 
 export function CountsTable({ counts }: { counts: Schemas["JobCounts"][] }) {
-  const desktop = useMediaQuery(useTheme().breakpoints.up("sm"));
+  const desktop = useMediaQuery(useTheme().breakpoints.up("sm"), { noSsr: true });
   if (!desktop)
     return (
       <Paper

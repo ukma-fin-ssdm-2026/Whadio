@@ -11,7 +11,9 @@ test.for([599, 600, 1440])("jobs use the appropriate layout at %s pixels", (widt
   // Arrange
   stubViewportWidth(width);
   // Act
-  renderWithProviders(<JobList pages={[[job()]]} filters={{}} onWorkspace={() => {}} />);
+  renderWithProviders(
+    <JobList pages={[[job()]]} workspaceHref={() => "#"} onWorkspace={() => {}} />,
+  );
   // Assert
   expect(screen.getByRole(width < 600 ? "list" : "table")).toBeVisible();
 });
@@ -24,7 +26,7 @@ test.for([390, 1440])("each fetched page has one observation time at %s pixels",
   renderWithProviders(
     <JobList
       pages={[[job(), job({ job_id: "job-2" })], [job({ job_id: "job-3", as_of: later })]]}
-      filters={{}}
+      workspaceHref={() => "#"}
       onWorkspace={() => {}}
     />,
   );
@@ -58,7 +60,7 @@ test("the desktop row retains failure and timing details", () => {
           }),
         ],
       ]}
-      filters={{}}
+      workspaceHref={() => "#"}
       onWorkspace={() => {}}
     />,
   );
@@ -73,7 +75,11 @@ test.for([390, 1440])("copying a workspace uses its complete ID at %s pixels", a
   stubViewportWidth(width);
   const id = "29dd39f7-c5c8-438b-9b4f-530839c8fc59";
   const { user } = renderWithProviders(
-    <JobList pages={[[job({ workspace_id: id })]]} filters={{}} onWorkspace={() => {}} />,
+    <JobList
+      pages={[[job({ workspace_id: id })]]}
+      workspaceHref={() => "#"}
+      onWorkspace={() => {}}
+    />,
   );
   // Act
   await user.click(screen.getByRole("button", { name: `Copy workspace ID ${id}` }));
@@ -81,20 +87,20 @@ test.for([390, 1440])("copying a workspace uses its complete ID at %s pixels", a
   expect(await navigator.clipboard.readText()).toBe(id);
 });
 
-test("the workspace link includes existing filters for opening in another tab", () => {
+test("the workspace link uses the address supplied by the route", () => {
   // Arrange
   stubViewportWidth(1440);
   // Act
   renderWithProviders(
     <JobList
       pages={[[job()]]}
-      filters={{ job_type: "notes", status: "failed" }}
+      workspaceHref={(id) => `/whadio/admin?job_type=notes&status=failed&workspace_id=${id}`}
       onWorkspace={() => {}}
     />,
   );
   // Assert
   expect(screen.getByRole("link", { name: "Filter by workspace workspace-alpha" })).toHaveAttribute(
     "href",
-    "/admin?job_type=notes&status=failed&workspace_id=workspace-alpha",
+    "/whadio/admin?job_type=notes&status=failed&workspace_id=workspace-alpha",
   );
 });
