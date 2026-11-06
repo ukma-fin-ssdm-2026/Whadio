@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
-from aio_pika.abc import AbstractIncomingMessage, AbstractRobustChannel
+from aio_pika.abc import AbstractIncomingMessage, AbstractQueue, AbstractRobustChannel
 from pydantic import ValidationError
 
 from ...contracts.common import JobMessage
@@ -148,7 +148,7 @@ async def serve_jobs[J: JobMessage, R: IResultMessage](
             )
             logger.info("Consuming %s", spec.queue.name)
             await stop.wait()
-            await jobs.cancel(tag)
+            await stop_consuming(jobs, tag, broker.timeout)
             await _finish(in_flight, options.shutdown_grace)
         finally:
             await runner.stop()
@@ -179,6 +179,16 @@ async def _handle[J: JobMessage, R: IResultMessage](
         # counts towards the limit, so one that keeps failing is dead-lettered; a nack would not.
         logger.exception("Handling a message from the job queue failed; stopping the worker")
         fail()
+
+
+async def stop_consuming(jobs: AbstractQueue, tag: str, deadline: timedelta) -> None:
+    # A broker that blocks its publishers stops reading the connection, so the cancellation goes
+    # unanswered. Closing the connection returns the job, so the worker carries on towards that.
+    try:
+        async with asyncio.timeout(deadline.total_seconds()):
+            await jobs.cancel(tag)
+    except TimeoutError:
+        logger.warning("RabbitMQ did not answer the cancelling of the consumer of %s", jobs.name)
 
 
 async def _finish(in_flight: set[asyncio.Task[None]], grace: timedelta) -> None:

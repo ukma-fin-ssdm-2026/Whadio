@@ -1,6 +1,7 @@
 import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
@@ -18,7 +19,13 @@ from ...contracts.transcription import (
 )
 from ...shared.broker import BrokerSettings, MessagePublisher, connect, declare_queue
 from .jobs import IResultMessage, RunFailure, WorkerSpec
-from .supervisor import ConsumerOptions, JobSupervisor, WorkerFailedError, serve_jobs
+from .supervisor import (
+    ConsumerOptions,
+    JobSupervisor,
+    WorkerFailedError,
+    serve_jobs,
+    stop_consuming,
+)
 
 type _Result = TranscriptReady | TranscriptionFailed
 
@@ -213,6 +220,18 @@ async def _serve_until_the_runner_fails_to_start(broker: BrokerSettings, runner:
             await results.delete(if_unused=False, if_empty=False)
 
 
+async def _stopping_ends_when_the_broker_never_answers() -> bool:
+    async def never_answers(_tag: str) -> None:
+        await asyncio.Event().wait()
+
+    jobs = Mock(spec=AbstractQueue, cancel=never_answers)
+    jobs.name = "jobs"
+    stopping = asyncio.create_task(stop_consuming(jobs, "tag", timedelta(milliseconds=10)))
+    done, _ = await asyncio.wait({stopping}, timeout=2)
+    stopping.cancel()
+    return stopping in done
+
+
 def test_job_is_acknowledged_only_after_its_result_is_published() -> None:
     # Arrange
     body = _JOB.model_dump_json().encode()
@@ -244,6 +263,14 @@ def test_job_interrupted_by_a_shutdown_goes_back_to_the_queue() -> None:
 
     # Assert
     assert events == ["publish job_started", "nack requeue=True"]
+
+
+def test_stopping_the_consumer_ends_when_the_broker_never_answers() -> None:
+    # Act
+    ended = asyncio.run(_stopping_ends_when_the_broker_never_answers())
+
+    # Assert
+    assert ended
 
 
 @pytest.mark.slow

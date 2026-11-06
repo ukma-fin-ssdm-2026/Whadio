@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
@@ -26,9 +27,12 @@ class BrokerSettings(BaseModel):
 
 
 async def connect(settings: BrokerSettings, *, name: str) -> AbstractRobustConnection:
+    # The timeout bounds one attempt. `fail_fast=0` in the URL would keep retrying past it in a
+    # background task, so this argument overrides the URL and the first failed attempt raises.
     return await aio_pika.connect_robust(
         settings.url.get_secret_value(),
         timeout=settings.timeout.total_seconds(),
+        fail_fast=True,
         client_properties={"connection_name": name},
     )
 
@@ -64,6 +68,6 @@ class MessagePublisher:
         )
         # aio-pika waits for the confirm without a limit by default, and a broker that blocks its
         # publishers (a memory or disk alarm) never sends one, while the caller may hold a row lock.
-        await self._channel.default_exchange.publish(
-            message, routing_key=queue, mandatory=True, timeout=self._timeout.total_seconds()
-        )
+        # Its own `timeout` argument starts only after the wait for a reconnecting connection.
+        async with asyncio.timeout(self._timeout.total_seconds()):
+            await self._channel.default_exchange.publish(message, routing_key=queue, mandatory=True)
