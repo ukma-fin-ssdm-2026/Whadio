@@ -72,9 +72,9 @@ async def connect_to_a_broker_that_never_answers() -> tuple[bool, int]:
         silent_clients.append(writer)
 
     server = await asyncio.start_server(accept_and_stay_silent, "127.0.0.1", 0)
-    port = int(server.sockets[0].getsockname()[1])
+    address = f"127.0.0.1:{server.sockets[0].getsockname()[1]}"
     settings = BrokerSettings(
-        url=SecretStr(f"amqp://whadio:p@127.0.0.1:{port}/whadio?fail_fast=0"),
+        url=SecretStr(f"amqp://whadio:p@{address}/whadio?fail_fast=0"),
         timeout=timedelta(milliseconds=10),
     )
     connecting = asyncio.create_task(connect(settings, name="test"))
