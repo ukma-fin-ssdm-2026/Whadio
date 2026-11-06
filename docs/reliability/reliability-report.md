@@ -172,8 +172,10 @@ await self._channel.default_exchange.publish(message, routing_key=queue, mandato
 ```
 
 **After.** `src/whadio/shared/broker.py`: connecting and publishing both give up after
-`WHADIO_BROKER__TIMEOUT` (ISO 8601 duration, default `PT10S`). `MessagePublisher` takes the timeout
-as a required keyword argument, so no caller can forget it:
+`WHADIO_BROKER__TIMEOUT` (ISO 8601 duration, default `PT10S`). `fail_fast=True` overrides the URL,
+because `fail_fast=0` there would keep retrying past the timeout. The publish deadline also covers
+the wait for a reconnecting connection, which aio-pika's own `timeout` argument does not.
+`MessagePublisher` takes the timeout as a required keyword argument, so no caller can forget it:
 
 ```python
 timeout: timedelta = Field(default=timedelta(seconds=10), gt=timedelta(0), ...)
@@ -181,13 +183,17 @@ timeout: timedelta = Field(default=timedelta(seconds=10), gt=timedelta(0), ...)
 await aio_pika.connect_robust(
     settings.url.get_secret_value(),
     timeout=settings.timeout.total_seconds(),
+    fail_fast=True,
     client_properties={"connection_name": name},
 )
 ...
-await self._channel.default_exchange.publish(
-    message, routing_key=queue, mandatory=True, timeout=self._timeout.total_seconds()
-)
+async with asyncio.timeout(self._timeout.total_seconds()):
+    await self._channel.default_exchange.publish(message, routing_key=queue, mandatory=True)
 ```
+
+`src/whadio/workers/supervision/supervisor.py`: a blocked broker stops reading the connection, so
+a worker whose result publish timed out would then wait forever for its consumer to be cancelled,
+and never close the connection that returns the job. That wait now ends after the same timeout.
 
 **Patterns.** A timeout on each attempt, then the retry `serve_publishing` already makes on its next
 round, then the logging already there. The timeout goes innermost (§3.5): before it, the retry code
@@ -206,8 +212,9 @@ could never run, because no exception ever reached it.
 The F2 and F6 fixes are in JavaScript, so their tests sit next to the code they test, as the
 repository's Vitest convention asks, and not under `src/whadio/`. The extension's Vitest
 configuration collects only `extension/*.test.js`. Each of those tests injects the failure through
-a test double that replaces `fetch` and answers late or never. The F1 tests use a test double for
-the exchange that does not confirm until the timeout runs out.
+a test double that replaces `fetch` and answers late or never. The F1 tests use test doubles for
+an exchange and a queue that never answer, and a local TCP server that accepts a connection and
+stays silent.
 
 | Test | Type | File |
 |---|---|---|
@@ -224,13 +231,18 @@ the exchange that does not confirm until the timeout runs out.
 | lets a write take longer than the read deadline | Boundary value | `frontend/src/shared/api/client.test.ts` |
 | publish the broker never confirms is logged as a failed round | Error handling | `src/whadio/processing/reliability/test_publish_deadline.py` |
 | job goes out once a silent broker answers again | External failure (fault injection) | `src/whadio/processing/reliability/test_publish_deadline.py` |
+| connect ends at the deadline with fail_fast off in the URL | External failure (fault injection) | `src/whadio/processing/reliability/test_publish_deadline.py` |
+| connect that gave up leaves no retry task running | External failure (fault injection) | `src/whadio/processing/reliability/test_publish_deadline.py` |
+| stopping the consumer ends when the broker never answers | External failure (fault injection) | `src/whadio/workers/supervision/test_supervisor.py` |
 | broker timeout of zero is refused | Boundary value | `src/whadio/processing/reliability/test_publish_deadline.py` |
 
 Run against the code before the fixes, the fault-injection, error-handling and at-the-deadline
 tests fail, while the just-under-the-deadline ones pass on both versions, as they should. Each
 part of the fixes is also covered by a test that fails when that part is removed: the caller's
 signal in the web app's composed signal, the deadline on signing in, and reading the body under
-the deadline. The two F1 tests that serve a job hang and fail when the publish has no timeout.
+the deadline. The two F1 tests that serve a job hang and fail when the publish has no timeout, and
+the F1 connect and consumer tests fail when `fail_fast=True` or the cancellation's deadline is
+removed.
 
 ## Open issues
 
