@@ -1,5 +1,6 @@
+import asyncio
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -13,6 +14,12 @@ class BrokerSettings(BaseModel):
         description="AMQP URL with this runtime's own credentials and the vhost, "
         "such as amqp://whadio:password@localhost:5672/whadio"
     )
+    timeout: timedelta = Field(
+        default=timedelta(seconds=10),
+        gt=timedelta(0),
+        description="Time after which connecting to the broker, or a publish it does not confirm, "
+        "is given up",
+    )
 
     @property
     def user(self) -> str | None:
@@ -20,8 +27,13 @@ class BrokerSettings(BaseModel):
 
 
 async def connect(settings: BrokerSettings, *, name: str) -> AbstractRobustConnection:
+    # The timeout bounds one attempt. `fail_fast=0` in the URL would keep retrying past it in a
+    # background task, so this argument overrides the URL and the first failed attempt raises.
     return await aio_pika.connect_robust(
-        settings.url.get_secret_value(), client_properties={"connection_name": name}
+        settings.url.get_secret_value(),
+        timeout=settings.timeout.total_seconds(),
+        fail_fast=True,
+        client_properties={"connection_name": name},
     )
 
 
@@ -32,9 +44,12 @@ async def declare_queue(
 
 
 class MessagePublisher:
-    def __init__(self, channel: AbstractChannel, user_id: str | None) -> None:
+    def __init__(
+        self, channel: AbstractChannel, user_id: str | None, *, timeout: timedelta
+    ) -> None:
         self._channel: AbstractChannel = channel
         self._user_id: str | None = user_id
+        self._timeout: timedelta = timeout
 
     async def publish(
         self, queue: str, body: bytes, *, message_type: str, correlation_id: str
@@ -51,4 +66,8 @@ class MessagePublisher:
             user_id=self._user_id,
             timestamp=datetime.now(UTC),
         )
-        await self._channel.default_exchange.publish(message, routing_key=queue, mandatory=True)
+        # aio-pika waits for the confirm without a limit by default, and a broker that blocks its
+        # publishers (a memory or disk alarm) never sends one, while the caller may hold a row lock.
+        # Its own `timeout` argument starts only after the wait for a reconnecting connection.
+        async with asyncio.timeout(self._timeout.total_seconds()):
+            await self._channel.default_exchange.publish(message, routing_key=queue, mandatory=True)

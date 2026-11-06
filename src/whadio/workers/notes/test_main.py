@@ -92,7 +92,7 @@ async def _run_one_job(broker: BrokerSettings, job: NotesRequested) -> list[str]
         channel = await connection.channel()
         jobs = await declare_queue(channel, spec.queue.name, spec.queue.arguments)
         results = await declare_queue(channel, spec.results.name, spec.results.arguments)
-        await MessagePublisher(channel, broker.user).publish(
+        await MessagePublisher(channel, broker.user, timeout=broker.timeout).publish(
             spec.queue.name,
             job.model_dump_json().encode(),
             message_type=job.type,

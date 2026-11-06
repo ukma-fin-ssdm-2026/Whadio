@@ -214,7 +214,7 @@ async def job_publisher(broker: BrokerSettings) -> AsyncGenerator[AmqpJobPublish
         channel = await connection.channel()
         for queue in ALL_QUEUES:
             await declare_queue(channel, queue.name, queue.arguments)
-        yield AmqpJobPublisher(MessagePublisher(channel, broker.user))
+        yield AmqpJobPublisher(MessagePublisher(channel, broker.user, timeout=broker.timeout))
 
 
 @dataclass(frozen=True, slots=True)
