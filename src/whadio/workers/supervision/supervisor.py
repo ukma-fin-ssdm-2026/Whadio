@@ -57,6 +57,12 @@ class ConsumerOptions:
     shutdown_grace: timedelta
 
 
+@dataclass(frozen=True, slots=True)
+class PublishRetry:
+    first: timedelta = timedelta(seconds=1)
+    longest: timedelta = timedelta(seconds=30)
+
+
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -67,11 +73,14 @@ class JobSupervisor[J: JobMessage, R: IResultMessage]:
         spec: WorkerSpec[J, R],
         runner: IJobRunner[J, R],
         publisher: IResultPublisher,
+        *,
+        retry: PublishRetry,
         now: Callable[[], datetime] = _utc_now,
     ) -> None:
         self._spec: WorkerSpec[J, R] = spec
         self._runner: IJobRunner[J, R] = runner
         self._publisher: IResultPublisher = publisher
+        self._retry: PublishRetry = retry
         self._now: Callable[[], datetime] = now
 
     async def handle(self, delivery: IDelivery) -> None:
@@ -92,13 +101,33 @@ class JobSupervisor[J: JobMessage, R: IResultMessage]:
                 kind=self._spec.kind,
                 started_at=self._now(),
             )
-            await self._publisher.publish(started)
+            await self._publish_until_confirmed(started)
             result = await self._runner.run(job)
-            await self._publisher.publish(result)
+            await self._publish_until_confirmed(result)
         except asyncio.CancelledError:
             await delivery.nack(requeue=True)
             raise
         await delivery.ack()
+
+    async def _publish_until_confirmed(self, message: IResultMessage) -> None:
+        # The job is fine when only the broker's confirmation is late: failing here would return
+        # the delivery and spend its delivery limit. The job stays unsettled meanwhile, so the
+        # consumer timeout or a shutdown still ends the wait, and Processing drops a repeat.
+        delay = self._retry.first
+        while True:
+            try:
+                await self._publisher.publish(message)
+            except TimeoutError:
+                logger.warning(
+                    "RabbitMQ did not confirm %s for job %s; retrying in %s",
+                    message.type,
+                    message.job_id,
+                    delay,
+                )
+            else:
+                return
+            await asyncio.sleep(delay.total_seconds())
+            delay = min(delay * 2, self._retry.longest)
 
 
 async def serve_jobs[J: JobMessage, R: IResultMessage](
@@ -118,7 +147,7 @@ async def serve_jobs[J: JobMessage, R: IResultMessage](
         publisher = AmqpResultPublisher(
             MessagePublisher(channel, broker.user, timeout=broker.timeout), spec.results.name
         )
-        supervisor = JobSupervisor(spec, runner, publisher)
+        supervisor = JobSupervisor(spec, runner, publisher, retry=PublishRetry())
         in_flight: set[asyncio.Task[None]] = set()
         failed = asyncio.Event()
 

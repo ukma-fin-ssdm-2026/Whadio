@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
@@ -22,6 +23,7 @@ from .jobs import IResultMessage, RunFailure, WorkerSpec
 from .supervisor import (
     ConsumerOptions,
     JobSupervisor,
+    PublishRetry,
     WorkerFailedError,
     serve_jobs,
     stop_consuming,
@@ -66,6 +68,7 @@ _SPEC = WorkerSpec(
 _OPTIONS = ConsumerOptions(
     concurrency=1, consumer_timeout=timedelta(minutes=1), shutdown_grace=timedelta(seconds=1)
 )
+_RETRY = PublishRetry(first=timedelta(milliseconds=1), longest=timedelta(milliseconds=4))
 
 
 class _Journal:
@@ -89,10 +92,16 @@ class _Delivery:
 
 
 class _Publisher:
-    def __init__(self, journal: _Journal) -> None:
+    """Times out the first `unconfirmed` publishes, as a broker that loses its confirmations."""
+
+    def __init__(self, journal: _Journal, unconfirmed: int = 0) -> None:
         self._journal: _Journal = journal
+        self._unconfirmed: int = unconfirmed
 
     async def publish(self, result: IResultMessage) -> None:
+        if self._unconfirmed:
+            self._unconfirmed -= 1
+            raise TimeoutError
         self._journal.events.append(f"publish {result.type}")
 
 
@@ -122,15 +131,37 @@ class _Runner:
 
 def _supervise(body: bytes, runner: _Runner) -> list[str]:
     journal = _Journal()
-    supervisor = JobSupervisor(_SPEC, runner, _Publisher(journal), now=lambda: _AT)
+    supervisor = JobSupervisor(_SPEC, runner, _Publisher(journal), retry=_RETRY, now=lambda: _AT)
     asyncio.run(supervisor.handle(_Delivery(body, journal)))
     return journal.events
 
 
 async def _shut_down_during(body: bytes) -> list[str]:
     journal = _Journal()
-    supervisor = JobSupervisor(_SPEC, _Runner(blocks=True), _Publisher(journal), now=lambda: _AT)
+    supervisor = JobSupervisor(
+        _SPEC, _Runner(blocks=True), _Publisher(journal), retry=_RETRY, now=lambda: _AT
+    )
     task = asyncio.create_task(supervisor.handle(_Delivery(body, journal)))
+    await asyncio.sleep(0.01)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+    return journal.events
+
+
+def _supervise_past_lost_confirmations(unconfirmed: int) -> list[str]:
+    journal = _Journal()
+    publisher = _Publisher(journal, unconfirmed)
+    supervisor = JobSupervisor(_SPEC, _Runner(), publisher, retry=_RETRY, now=lambda: _AT)
+    asyncio.run(supervisor.handle(_Delivery(_JOB.model_dump_json().encode(), journal)))
+    return journal.events
+
+
+async def _shut_down_while_confirmations_are_lost() -> list[str]:
+    journal = _Journal()
+    publisher = _Publisher(journal, unconfirmed=sys.maxsize)
+    supervisor = JobSupervisor(_SPEC, _Runner(), publisher, retry=_RETRY, now=lambda: _AT)
+    delivery = _Delivery(_JOB.model_dump_json().encode(), journal)
+    task = asyncio.create_task(supervisor.handle(delivery))
     await asyncio.sleep(0.01)
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
@@ -263,6 +294,25 @@ def test_job_interrupted_by_a_shutdown_goes_back_to_the_queue() -> None:
 
     # Assert
     assert events == ["publish job_started", "nack requeue=True"]
+
+
+def test_job_completes_after_more_lost_confirmations_than_its_delivery_limit() -> None:
+    # Arrange
+    unconfirmed = int(TRANSCRIPTION_REQUESTS.arguments["x-delivery-limit"]) + 1
+
+    # Act
+    events = _supervise_past_lost_confirmations(unconfirmed)
+
+    # Assert
+    assert events == ["publish job_started", "publish transcript_ready", "ack"]
+
+
+def test_shutdown_while_confirmations_are_lost_returns_the_job_to_the_queue() -> None:
+    # Act
+    events = asyncio.run(_shut_down_while_confirmations_are_lost())
+
+    # Assert
+    assert events == ["nack requeue=True"]
 
 
 def test_stopping_the_consumer_ends_when_the_broker_never_answers() -> None:
