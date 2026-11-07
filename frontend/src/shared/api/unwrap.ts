@@ -9,7 +9,10 @@ async function settle<T>(request: Promise<FetchResult<T>>): Promise<FetchResult<
     throw new ApiError({
       status: 0,
       code: NETWORK_ERROR,
-      message: "Could not reach the server. Check your connection and try again.",
+      message:
+        cause instanceof DOMException && cause.name === "TimeoutError"
+          ? "The server did not answer in time. Try again."
+          : "Could not reach the server. Check your connection and try again.",
       cause,
     });
   }

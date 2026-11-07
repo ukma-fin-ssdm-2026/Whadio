@@ -25,6 +25,7 @@ interface MeetingDetailProps {
   onTranscriptQuery: (query: string) => void;
   onRevision: (revisionId: string | null) => void;
   renderExport: (content: MeetingContent) => ReactNode;
+  actions?: ReactNode;
 }
 
 export function MeetingDetail({
@@ -36,6 +37,7 @@ export function MeetingDetail({
   onTranscriptQuery,
   onRevision,
   renderExport,
+  actions,
 }: MeetingDetailProps) {
   const id = useId();
   const notesResult = useQuery(meetingQueries.notes(meeting));
@@ -68,9 +70,12 @@ export function MeetingDetail({
         title={meeting.title}
         description={`${formatDate(meeting.date)} · ${meeting.source}`}
         actions={
-          <Fragment key={`${meeting.id}-${tab}-${transcript?.revision.id}`}>
-            {renderExport({ transcript, notes })}
-          </Fragment>
+          <>
+            <Fragment key={`${meeting.id}-${tab}-${transcript?.revision.id}`}>
+              {renderExport({ transcript, notes })}
+            </Fragment>
+            {actions}
+          </>
         }
       />
       <Tabs

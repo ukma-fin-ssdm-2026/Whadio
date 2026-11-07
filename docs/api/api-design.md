@@ -288,7 +288,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - Password change, session revocation and link consumption share one transaction. Failed
     validation leaves all three unchanged. Sign-in and reset serialize on the account row so
     a sign-in using the old password cannot leave an active session after reset commits.
-  - The reset SPA page and the self-service request endpoint remain separate work.
+  - The SPA completes operator-issued links at `/password-resets/{reset_id}` and then opens sign-in. The self-service request endpoint remains separate work (#189).
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used (section 6.3).
   - `422 VALIDATION_ERROR` on `password`: the password breaks the rule above.

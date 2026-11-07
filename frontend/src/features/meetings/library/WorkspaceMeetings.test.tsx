@@ -1,7 +1,7 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { useState } from "react";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Schemas } from "@/shared/api/types";
 import { errorBody, meetingSummary, page } from "@/shared/testing/fixtures";
 import { renderWithProviders } from "@/shared/testing/render";
@@ -14,6 +14,19 @@ const SECOND = meetingSummary({ id: "second", name: "Oldest sync" });
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+beforeEach(() => {
+  server.use(
+    http.get("/api/v1/workspaces/{workspace_id}/folders", ({ response }) =>
+      response(200).json(
+        page([
+          { id: "folder", name: "General", is_default: true, meeting_count: 1 },
+          { id: "planning", name: "Planning", is_default: false, meeting_count: 2 },
+        ]),
+      ),
+    ),
+  );
 });
 
 type MeetingList = (search: URLSearchParams) => ReturnType<typeof page<Schemas["MeetingSummary"]>>;
@@ -35,11 +48,15 @@ const twoPages: MeetingList = (search) =>
 
 function Library({ onMeeting = () => {} }: { onMeeting?: (id: string) => void }) {
   const [name, setName] = useState("");
+  const [folderId, setFolderId] = useState<string | null>(null);
   return (
     <WorkspaceMeetings
       workspaceId="workspace"
+      workspaceRole="owner"
       selectedMeetingId=""
       onMeeting={onMeeting}
+      folderId={folderId}
+      onFolder={setFolderId}
       name={name}
       stateFilter="all"
       onName={setName}
@@ -53,7 +70,9 @@ function renderMeetings() {
 }
 
 const rowTitles = () =>
-  screen.getAllByRole("listitem").map((row) => row.querySelector(".MuiListItemText-primary"));
+  within(screen.getByRole("list", { name: "Meetings" }))
+    .getAllByRole("listitem")
+    .map((row) => row.querySelector(".MuiListItemText-primary"));
 
 async function loadSecondPage() {
   const { user } = renderMeetings();
@@ -239,4 +258,30 @@ test("choosing a row opens its meeting", async () => {
 
   // Assert
   expect(onMeeting).toHaveBeenCalledExactlyOnceWith("first");
+});
+
+test("folders show their meeting counts", async () => {
+  // Arrange
+  serveMeetings(() => page([FIRST]));
+
+  // Act
+  renderMeetings();
+
+  // Assert
+  expect(await screen.findByRole("button", { name: /Planning 2 meetings/ })).toBeInTheDocument();
+});
+
+test("opening a folder lists only meetings in that folder", async () => {
+  // Arrange
+  serveMeetings((search) => page(search.get("folder_id") === "planning" ? [SECOND] : [FIRST]));
+  const { user } = renderMeetings();
+  await screen.findByText("Newest sync");
+
+  // Act
+  await user.click(screen.getByRole("button", { name: /Planning 2 meetings/ }));
+
+  // Assert
+  await waitFor(() =>
+    expect(rowTitles().map((title) => title?.textContent)).toEqual(["Oldest sync"]),
+  );
 });

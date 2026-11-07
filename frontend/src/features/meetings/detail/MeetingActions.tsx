@@ -1,0 +1,95 @@
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlineOutlined";
+import DriveFileMoveOutlinedIcon from "@mui/icons-material/DriveFileMoveOutlined";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+import { IconButton, Menu, MenuItem, Tooltip } from "@mui/material";
+import { useState } from "react";
+import type { Schemas } from "@/shared/api/types";
+import { canManage } from "@/shared/lib/roles";
+import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
+import { useNotify } from "@/shared/ui/NotifyProvider";
+import { useDeleteMeeting } from "../api/meetings";
+import type { Meeting } from "../model";
+import { MoveMeetingDialog } from "./MoveMeetingDialog";
+import { RenameMeetingDialog } from "./RenameMeetingDialog";
+
+type Folder = Schemas["FolderRead"];
+
+interface MeetingActionsProps {
+  meeting: Meeting;
+  role: Schemas["Role"];
+  userId: string;
+  folders: Folder[];
+  onDeleted: () => void;
+}
+
+type OpenDialog = "rename" | "move" | "delete" | null;
+
+export function MeetingActions({ meeting, role, userId, folders, onDeleted }: MeetingActionsProps) {
+  const notify = useNotify();
+  const deleteMeeting = useDeleteMeeting(meeting.id, meeting.workspaceId);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [dialog, setDialog] = useState<OpenDialog>(null);
+  const canDelete = canManage(role) || meeting.createdByUserId === userId;
+
+  const open = (next: OpenDialog) => {
+    setDialog(next);
+    setAnchor(null);
+  };
+  const close = () => setDialog(null);
+
+  const remove = async () => {
+    try {
+      await deleteMeeting.mutateAsync();
+      close();
+      notify("Meeting deleted.");
+      onDeleted();
+    } catch (error) {
+      close();
+      notify(error instanceof Error ? error.message : "The meeting could not be deleted.", "error");
+    }
+  };
+
+  return (
+    <>
+      <Tooltip title="Meeting actions" arrow>
+        <IconButton
+          aria-label="Meeting actions"
+          onClick={(event) => setAnchor(event.currentTarget)}
+        >
+          <MoreVertIcon />
+        </IconButton>
+      </Tooltip>
+      <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
+        <MenuItem onClick={() => open("rename")}>
+          <EditOutlinedIcon fontSize="small" sx={{ mr: 1 }} /> Rename
+        </MenuItem>
+        <MenuItem onClick={() => open("move")}>
+          <DriveFileMoveOutlinedIcon fontSize="small" sx={{ mr: 1 }} /> Move
+        </MenuItem>
+        {canDelete && (
+          <MenuItem onClick={() => open("delete")}>
+            <DeleteOutlineIcon fontSize="small" sx={{ mr: 1 }} /> Delete
+          </MenuItem>
+        )}
+      </Menu>
+
+      {dialog === "rename" && <RenameMeetingDialog meeting={meeting} onClose={close} />}
+      {dialog === "move" && (
+        <MoveMeetingDialog meeting={meeting} folders={folders} onClose={close} />
+      )}
+
+      <ConfirmDialog
+        open={dialog === "delete"}
+        title="Delete meeting?"
+        confirmLabel="Delete meeting"
+        destructive
+        pending={deleteMeeting.isPending}
+        onConfirm={remove}
+        onCancel={close}
+      >
+        This permanently deletes the recording, transcript and notes. This action cannot be undone.
+      </ConfirmDialog>
+    </>
+  );
+}
