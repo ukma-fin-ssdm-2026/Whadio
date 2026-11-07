@@ -155,6 +155,10 @@ compiler and the tests the branch can affect, and CI runs everything. The
 Styling is MUI only: the theme in `frontend/src/app/theme/` sets the colours and component
 defaults, and components add the rest with `sx`. There is no stylesheet.
 
+Operators maintain the public `/terms` text in
+[`frontend/src/routes/terms.tsx`](frontend/src/routes/terms.tsx) and must rebuild the SPA after
+changing it.
+
 The API's TypeScript types in `frontend/src/shared/api/schema.gen.ts` are generated from
 `docs/api/openapi-generated.json` by `npm run gen:api`. The push hook regenerates them whenever
 the specification or `frontend/` changes, and fails until the regenerated file is committed.
@@ -361,7 +365,7 @@ Testing policy and evidence are maintained in [`/docs/testing/`](docs/testing/).
 - [Debugging Log](docs/testing/debugging-log.md) — retry-limit fault, regression tests and lessons
 - [Boundary Cases](docs/testing/boundary-cases.md) — boundary value tests of the numeric and length limits
 - [Test Doubles](docs/testing/test-doubles.md) — doubles used at each test boundary
-- [Coverage Report](htmlcov/index.html) — browsable line and branch coverage, a snapshot of 2026-11-01
+- [Coverage Report](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/workflows/ci.yml?query=branch%3Amain) — browsable line and branch coverage, in the `test-reports` artifact of each CI run on `main`, kept for 14 days
 
 ## Validation Artifacts
 
@@ -379,7 +383,7 @@ Validation evidence is maintained in [`/docs/validation/`](docs/validation/).
 | 3 — Architecture and UML | [HLD](docs/architecture/high-level-design.md), [architecture traceability](docs/architecture/traceability-matrix.md), [data model](docs/architecture/data-model.md), [ER diagram](docs/architecture/uml/er-model.svg), [threat model](docs/architecture/threat-model.md), [UML](docs/architecture/uml/), [ADRs](docs/architecture/decisions/) | [Andrii](Labs/Lab03/video_Andrii.txt), [Denys](Labs/Lab03/video_Denys.txt), [Valeriia](Labs/Lab03/video_Valeriia.txt), [Zlata](Labs/Lab03/video_Zlata.txt) |
 | 4 — API and quality attributes | [API design](docs/api/api-design.md), [OpenAPI](docs/api/openapi-generated.yaml), [quality attributes](docs/api/quality-attributes.md) | [Andrii](Labs/Lab04/video_Andrii.txt), [Denys](Labs/Lab04/video_Denys.txt), [Valeriia](Labs/Lab04/video_Valeriia.txt), [Zlata](Labs/Lab04/video_Zlata.txt) |
 | 5 — Code quality and review | [Progress](docs/code-quality/progress.md), [static analysis](docs/code-quality/static-analysis.md), [review report](docs/code-quality/review-report.md), [database implementation](docs/architecture/database.md) | [Andrii](Labs/Lab05/video_Andrii.txt), [Denys](Labs/Lab05/video_Denys.txt), [Valeriia](Labs/Lab05/video_Valeriia.txt), [Zlata](Labs/Lab05/video_Zlata.txt) |
-| 6 — Unit testing and debugging | [Testing strategy](docs/testing/testing-strategy.md), [testing and coverage](docs/testing/testing.md), [coverage](htmlcov/index.html), [boundary cases](docs/testing/boundary-cases.md), [test doubles](docs/testing/test-doubles.md), [debugging log](docs/testing/debugging-log.md) | [Andrii](Labs/Lab06/video_Andrii.txt), [Denys](Labs/Lab06/video_Denys.txt), [Valeriia](Labs/Lab06/video_Valeriia.txt), [Zlata](Labs/Lab06/video_Zlata.txt) |
+| 6 — Unit testing and debugging | [Testing strategy](docs/testing/testing-strategy.md), [testing and coverage](docs/testing/testing.md), [coverage](https://github.com/ukma-fin-ssdm-2026/Whadio/tree/lab06-g5-deadline-2026-10-20/htmlcov), [boundary cases](docs/testing/boundary-cases.md), [test doubles](docs/testing/test-doubles.md), [debugging log](docs/testing/debugging-log.md) | [Andrii](Labs/Lab06/video_Andrii.txt), [Denys](Labs/Lab06/video_Denys.txt), [Valeriia](Labs/Lab06/video_Valeriia.txt), [Zlata](Labs/Lab06/video_Zlata.txt) |
 | 7 — Test planning and peer review | [Test plan](docs/validation/test-plan.md), [review log](docs/validation/review-log.md) | [Andrii](Labs/Lab07/video_Andrii.txt), [Denys](Labs/Lab07/video_Denys.txt), [Valeriia](Labs/Lab07/video_Valeriia.txt), [Zlata](Labs/Lab07/video_Zlata.txt) |
 
 ## AI usage

@@ -24,6 +24,8 @@ export type MeetingTab = (typeof MEETING_TABS)[number];
 export interface Meeting {
   id: string;
   workspaceId: string;
+  folderId: string;
+  createdByUserId: string | null;
   title: string;
   date: string;
   state: ProcessingState;
@@ -34,12 +36,16 @@ export interface Meeting {
 }
 
 type MeetingFields = Schemas["MeetingSummary"] &
-  Partial<Pick<Schemas["MeetingRead"], "recording_available" | "failure_reason">>;
+  Partial<
+    Pick<Schemas["MeetingRead"], "created_by_user_id" | "recording_available" | "failure_reason">
+  >;
 
 export function mapMeeting(item: MeetingFields): Meeting {
   return {
     id: item.id,
     workspaceId: item.workspace_id,
+    folderId: item.folder_id,
+    createdByUserId: item.created_by_user_id ?? null,
     title: item.name,
     date: item.recorded_at,
     state: item.processing_state,

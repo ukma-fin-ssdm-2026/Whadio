@@ -8,7 +8,10 @@ const SESSION_REFUSED =
   "You signed in, but the server did not accept the session. Check that this browser allows cookies, then try again.";
 
 export const Route = createFileRoute("/sign-in")({
-  validateSearch: z.object({ redirect: z.string().optional().catch(undefined) }),
+  validateSearch: z.object({
+    redirect: z.string().optional().catch(undefined),
+    passwordReset: z.boolean().optional().catch(undefined),
+  }),
   beforeLoad: async ({ context: { queryClient }, search }) => {
     // With the check unavailable the form still works, and signing in reports the failure.
     const user = await queryClient.query(sessionQueries.me()).catch(() => null);
@@ -19,12 +22,17 @@ export const Route = createFileRoute("/sign-in")({
 
 function SignInRoute() {
   const router = useRouter();
-  const { redirect: target } = Route.useSearch();
+  const { redirect: target, passwordReset } = Route.useSearch();
   const { onSignedIn } = Route.useRouteContext();
   const refused = useLocation({ select: (location) => location.state.sessionRefused });
 
   return (
     <SignInForm
+      confirmation={
+        passwordReset
+          ? "Your password has been changed. Sign in with your new password."
+          : undefined
+      }
       externalError={refused ? SESSION_REFUSED : undefined}
       onSignedIn={() => {
         onSignedIn();

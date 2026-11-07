@@ -1,6 +1,6 @@
 import { Dialog } from "@mui/material";
 import { render, screen } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { renderWithProviders } from "../testing/render";
 import { useNotify } from "./NotifyProvider";
 
@@ -64,4 +64,45 @@ test("useNotify outside a NotifyProvider throws", () => {
 
   // Assert
   expect(rendering).toThrow("NotifyProvider");
+});
+
+function NotifyWithAction({ onUndo }: { onUndo: () => void }) {
+  const notify = useNotify();
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => notify("Deleted", "success", { label: "Undo", onClick: onUndo })}
+      >
+        Delete
+      </button>
+      <button type="button">Elsewhere</button>
+    </>
+  );
+}
+
+test("a notification's action runs when chosen", async () => {
+  // Arrange
+  const onUndo = vi.fn();
+  const { user } = renderWithProviders(<NotifyWithAction onUndo={onUndo} />);
+  await user.click(screen.getByRole("button", { name: "Delete" }));
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "Undo" }));
+
+  // Assert
+  expect(onUndo).toHaveBeenCalledOnce();
+});
+
+test("a click elsewhere keeps a notification's action", async () => {
+  // Arrange
+  const { user } = renderWithProviders(<NotifyWithAction onUndo={() => {}} />);
+  await user.click(screen.getByRole("button", { name: "Delete" }));
+  await screen.findByRole("button", { name: "Undo" });
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Elsewhere" }));
+
+  // Assert
+  expect(screen.getByRole("button", { name: "Undo" })).toBeVisible();
 });
