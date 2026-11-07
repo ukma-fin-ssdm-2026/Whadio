@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from functools import partial
 from typing import Final
@@ -115,6 +115,7 @@ class FakeJobs:
         self.jobs: dict[UUID, Job] = {}
         self.published: set[UUID] = set()
         self.failure_reasons: dict[UUID, str | None] = {}
+        self.restarted: dict[UUID, datetime] = {}
 
     async def add(self, meeting_id: UUID, job_type: JobType) -> UUID:
         job_id = uuid4()
@@ -161,6 +162,9 @@ class FakeJobs:
     ) -> None:
         self.jobs[job_id] = replace(self.jobs[job_id], status=status)
         self.failure_reasons[job_id] = failure_reason
+
+    async def refresh_start(self, job_id: UUID, started_at: datetime) -> None:
+        self.restarted[job_id] = started_at
 
 
 @dataclass
@@ -1407,3 +1411,14 @@ def test_late_transcript_of_a_returned_job_counts_once_beside_its_republished_co
         JobType.TRANSCRIPTION,
         JobType.NOTES,
     ]
+
+
+def test_redelivered_start_of_a_running_job_restarts_its_clock_without_an_attempt() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION, attempts=1)
+    later = NOW + timedelta(hours=1)
+    # Act
+    handle(pipeline, started(pipeline, job_id).model_copy(update={"started_at": later}))
+    # Assert
+    assert (pipeline.jobs.restarted, pipeline.jobs.jobs[job_id].attempts) == ({job_id: later}, 1)

@@ -223,6 +223,8 @@ class ProcessingService:
         ):
             return
         match result:
+            case JobStarted() if job.status is JobStatus.RUNNING:
+                await self._jobs.refresh_start(job.job_id, result.started_at)
             case JobStarted():
                 await self._jobs.mark_running(job.job_id, result.started_at)
                 await self._meetings.save_processing_state(
@@ -430,7 +432,8 @@ def _job_type(result: ProcessingResult) -> JobType:
 def _accepted_statuses(result: ProcessingResult) -> frozenset[JobStatus]:
     match result:
         case JobStarted():
-            return frozenset({JobStatus.QUEUED})
+            # A redelivered job reports its start again, which restarts its running limit.
+            return frozenset({JobStatus.QUEUED, JobStatus.RUNNING})
         case TranscriptReady() | NotesReady():
             return frozenset({JobStatus.QUEUED, JobStatus.RUNNING})
         case TranscriptionFailed() | NotesFailed():

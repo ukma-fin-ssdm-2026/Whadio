@@ -49,6 +49,8 @@ class IJobRepository(Protocol):
         /,
     ) -> None: ...
 
+    async def refresh_start(self, job_id: UUID, started_at: datetime, /) -> None: ...
+
 
 class _SentMeeting(BaseModel):
     meeting_id: UUID = Field(description="Context meeting sent with the notes request")
@@ -138,6 +140,13 @@ class JobRepository:
             update(ProcessingJob)
             .where(ProcessingJob.processing_job_id == job_id)
             .values(status=status, finished_at=finished_at, failure_reason=failure_reason)
+        )
+
+    async def refresh_start(self, job_id: UUID, started_at: datetime) -> None:
+        await self._session.execute(
+            update(ProcessingJob)
+            .where(ProcessingJob.processing_job_id == job_id)
+            .values(started_at=func.greatest(ProcessingJob.started_at, started_at))
         )
 
     async def return_unstarted(self, published_before: datetime, limit: int) -> int:

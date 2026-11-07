@@ -341,3 +341,26 @@ def test_running_job_is_judged_by_the_limit_of_its_own_type(async_database: Asyn
     found = async_database.run(scenario)
     # Assert
     assert found is JobStatus.RUNNING
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    ("restarted_at", "started_at"),
+    [
+        pytest.param(LONG_AGO + timedelta(hours=1), LONG_AGO + timedelta(hours=1), id="later"),
+        pytest.param(LONG_AGO - timedelta(hours=1), LONG_AGO, id="earlier"),
+    ],
+)
+def test_restart_moves_the_start_forward_never_back(
+    async_database: AsyncDatabase, restarted_at: datetime, started_at: datetime
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> datetime | None:
+        jobs, job_id = await stored_job(session, JobStatus.RUNNING)
+        # Act
+        await jobs.refresh_start(job_id, restarted_at)
+        return (await stored(session, job_id)).started_at
+
+    found = async_database.run(scenario)
+    # Assert
+    assert found == started_at
