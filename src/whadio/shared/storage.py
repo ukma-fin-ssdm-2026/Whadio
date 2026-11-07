@@ -1,16 +1,24 @@
+import logging
+import random
+import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from http import HTTPStatus
 from typing import BinaryIO, Final, Protocol
 
 import urllib3
 from minio import Minio
-from minio.error import MinioException
+from minio.error import MinioException, S3Error, ServerError
 from pydantic import BaseModel, Field, HttpUrl, SecretStr
+
+logger = logging.getLogger(__name__)
 
 MIN_PRESIGNED_LIFETIME: Final = timedelta(seconds=1)
 MAX_PRESIGNED_LIFETIME: Final = timedelta(days=7)
 _PART_SIZE: Final = 16 * 1024 * 1024
+_BACKOFF_BASE: Final = 0.25
+_BACKOFF_CAP: Final = 2.0
 
 
 class ObjectStorageSettings(BaseModel):
@@ -28,6 +36,12 @@ class ObjectStorageSettings(BaseModel):
         default=timedelta(seconds=5),
         gt=timedelta(0),
         description="Time a connection to storage, or a wait for its next bytes, may take",
+    )
+    attempts: int = Field(
+        default=3,
+        ge=1,
+        le=5,
+        description="Tries a storage read or delete gets, the first included, before it fails",
     )
 
 
@@ -61,17 +75,40 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+@dataclass(frozen=True, slots=True)
+class Backoff:
+    attempts: int
+    uniform: Callable[[float, float], float] = field(
+        default_factory=lambda: random.SystemRandom().uniform
+    )
+    sleep: Callable[[float], None] = time.sleep
+
+    def wait(self, retry: int) -> None:
+        """Sleep before retry number `retry`, the first being 0."""
+        self.sleep(self.uniform(0.0, min(_BACKOFF_CAP, _BACKOFF_BASE * 2.0**retry)))
+
+
+def _is_transient(error: MinioException | urllib3.exceptions.HTTPError) -> bool:
+    if isinstance(error, ServerError):
+        return error.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR
+    if isinstance(error, S3Error):
+        return error.response.status >= HTTPStatus.INTERNAL_SERVER_ERROR
+    return isinstance(error, urllib3.exceptions.HTTPError)
+
+
 class S3ObjectStorage:
     def __init__(
         self,
         client: Minio,
         signer: Minio,
         bucket: str,
+        backoff: Backoff,
         now: Callable[[], datetime] = _utc_now,
     ) -> None:
         self._client: Minio = client
         self._signer: Minio = signer
         self._bucket: str = bucket
+        self._backoff: Backoff = backoff
         self._now: Callable[[], datetime] = now
 
     def put(self, key: str, data: BinaryIO, *, content_type: str) -> None:
@@ -83,21 +120,10 @@ class S3ObjectStorage:
             raise ObjectStorageError("Storing an object failed") from error
 
     def get(self, key: str) -> bytes:
-        try:
-            response = self._client.get_object(self._bucket, key)
-            try:
-                return response.read()
-            finally:
-                response.close()
-                response.release_conn()
-        except (MinioException, urllib3.exceptions.HTTPError) as error:
-            raise ObjectStorageError("Reading an object failed") from error
+        return self._retried("Reading an object", lambda: self._read(key))
 
     def delete(self, key: str) -> None:
-        try:
-            self._client.remove_object(self._bucket, key)
-        except (MinioException, urllib3.exceptions.HTTPError) as error:
-            raise ObjectStorageError("Deleting an object failed") from error
+        self._retried("Deleting an object", lambda: self._client.remove_object(self._bucket, key))
 
     def presign_get(self, key: str, *, expires_in: timedelta) -> PresignedUrl:
         check_presigned_lifetime(expires_in)
@@ -106,6 +132,28 @@ class S3ObjectStorage:
             self._bucket, key, expires=expires_in, request_date=now
         )
         return PresignedUrl(url=url, expires_at=now + expires_in)
+
+    def _read(self, key: str) -> bytes:
+        response = self._client.get_object(self._bucket, key)
+        try:
+            return response.read()
+        finally:
+            response.close()
+            response.release_conn()
+
+    def _retried[T](self, operation: str, call: Callable[[], T]) -> T:
+        attempt = 1
+        while True:
+            try:
+                return call()
+            except (MinioException, urllib3.exceptions.HTTPError) as error:
+                if not _is_transient(error):
+                    raise ObjectStorageError(f"{operation} failed") from error
+                if attempt >= self._backoff.attempts:
+                    logger.warning("%s failed after %d attempts", operation, attempt)
+                    raise ObjectStorageError(f"{operation} failed") from error
+            self._backoff.wait(attempt - 1)
+            attempt += 1
 
 
 def create_s3_client(
@@ -125,7 +173,9 @@ def create_s3_client(
     )
 
 
-def connect_s3_storage(settings: ObjectStorageSettings) -> S3ObjectStorage:
+def connect_s3_storage(
+    settings: ObjectStorageSettings, *, sleep: Callable[[float], None] = time.sleep
+) -> S3ObjectStorage:
     timeout = settings.timeout.total_seconds()
     # minio's own pool waits 300 s for each read and retries 5 times. `total=False` raises every
     # error to S3ObjectStorage instead, so retries happen at one level; the system CA store, which
@@ -144,4 +194,5 @@ def connect_s3_storage(settings: ObjectStorageSettings) -> S3ObjectStorage:
             settings, settings.public_endpoint_url or settings.endpoint_url, pool
         ),
         bucket=settings.bucket,
+        backoff=Backoff(settings.attempts, sleep=sleep),
     )
