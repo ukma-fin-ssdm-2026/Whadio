@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from httpx import AsyncClient
+from pydantic import JsonValue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -169,17 +170,26 @@ def test_cursor_of_another_caller_is_refused(async_database: AsyncDatabase) -> N
 
 def test_moderator_promotion_is_applied_and_audited(async_database: AsyncDatabase) -> None:
     # Arrange
-    async def scenario(session: AsyncSession) -> tuple[object, ...]:
-        async with AsyncDatabase.api_client(session) as client:
+    async def scenario(
+        session: AsyncSession,
+    ) -> tuple[
+        int, str, int, tuple[UUID, UUID | None, JsonValue] | None, tuple[UUID, UUID, JsonValue]
+    ]:
+        async with (
+            AsyncDatabase.api_client(session) as client,
+            AsyncDatabase.api_client(session) as member_client,
+        ):
             _, workspace = await _owner_workspace(client, session)
             moderator = await _join(session, workspace, WorkspaceRole.MODERATOR, 1)
             member = await _join(session, workspace, WorkspaceRole.MEMBER, 2)
             await _sign_in(client, moderator)
+            await _sign_in(member_client, member)
             # Act
             response = await client.patch(
                 f"/api/v1/workspaces/{workspace}/members/{member.user_id}",
                 json={"role": "moderator"},
             )
+            next_request = await member_client.get(f"/api/v1/workspaces/{workspace}/invitations")
             event = await session.scalar(
                 select(AuditEvent).where(
                     AuditEvent.workspace_id == workspace,
@@ -189,6 +199,7 @@ def test_moderator_promotion_is_applied_and_audited(async_database: AsyncDatabas
             return (
                 response.status_code,
                 MemberRead.model_validate_json(response.content).role.value,
+                next_request.status_code,
                 None if event is None else (event.actor_user_id, event.subject_id, event.details),
                 (
                     moderator.user_id,
@@ -197,10 +208,10 @@ def test_moderator_promotion_is_applied_and_audited(async_database: AsyncDatabas
                 ),
             )
 
-    status, role, recorded, expected = async_database.run(scenario)
+    status, role, next_status, recorded, expected = async_database.run(scenario)
 
     # Assert
-    assert (status, role, recorded) == (200, "moderator", expected)
+    assert (status, role, next_status, recorded) == (200, "moderator", 200, expected)
 
 
 def test_demoted_moderator_is_refused_on_their_next_request(
