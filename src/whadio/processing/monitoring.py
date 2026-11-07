@@ -42,7 +42,8 @@ class JobSnapshot(BaseModel):
     )
     finished_at: datetime | None = Field(description="Final completion time, null until terminal")
     attempts_started: int = Field(
-        description="Number of accepted attempt starts, including the first"
+        description="Attempts counted against the retry limit: accepted starts and republished "
+        "jobs no worker started"
     )
     as_of: datetime = Field(description="Common observation time used for duration calculations")
     queue_wait_seconds: float | None = Field(
