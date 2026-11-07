@@ -4,6 +4,12 @@ All notable changes to Whadio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-11-07
+
+### Fixed
+
+- Pin Swagger UI and check its integrity ([#297](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/297))
+
 ## [0.6.0] - 2026-11-05
 
 ### Added
