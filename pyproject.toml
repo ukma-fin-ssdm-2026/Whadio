@@ -1,6 +1,6 @@
 [project]
 name = "whadio"
-version = "0.6.0"
+version = "0.7.0"
 description = "Whadio backend: meeting recording, transcription and notes"
 readme = "README.md"
 requires-python = ">=3.13,<3.15"

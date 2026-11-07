@@ -292,6 +292,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List members
+         * @description Any member. Lists the workspace's members by joining time, oldest first.
+         */
+        get: operations["list_members_api_v1_workspaces__workspace_id__members_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces": {
         parameters: {
             query?: never;
@@ -1761,6 +1781,36 @@ export interface components {
              */
             folder_id?: string | null;
         };
+        /** MemberRead */
+        MemberRead: {
+            /**
+             * User Id
+             * Format: uuid
+             * @description The member's user identifier
+             * @example 3f6c1d2e-8a4b-4c5d-9e0f-1a2b3c4d5e6f
+             */
+            user_id: string;
+            /**
+             * Name
+             * @description The member's display name
+             * @example Bob
+             */
+            name: string;
+            /**
+             * Email
+             * @description The member's email address
+             * @example bob@whadio.dev
+             */
+            email: string;
+            /** @description The member's role in the workspace */
+            role: components["schemas"]["Role"];
+            /**
+             * Joined At
+             * Format: date-time
+             * @description When the member joined the workspace
+             */
+            joined_at: string;
+        };
         /** MembershipRead */
         MembershipRead: {
             /**
@@ -1922,6 +1972,15 @@ export interface components {
              * @description Items of this page, in the documented order
              */
             items: components["schemas"]["MeetingSummary"][];
+            pagination: components["schemas"]["PageInfo"];
+        };
+        /** Page[MemberRead] */
+        Page_MemberRead_: {
+            /**
+             * Items
+             * @description Items of this page, in the documented order
+             */
+            items: components["schemas"]["MemberRead"][];
             pagination: components["schemas"]["PageInfo"];
         };
         /** Page[NoteRead] */
@@ -3510,6 +3569,61 @@ export interface operations {
             };
             /** @description `INVITATION_NOT_PENDING`: the invitation was already answered or cancelled */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_members_api_v1_workspaces__workspace_id__members_get: {
+        parameters: {
+            query?: {
+                /** @description Maximum number of items to return */
+                limit?: number;
+                /** @description Opaque `next_cursor` from the previous page; omit for the first page */
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description Workspace identifier */
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of members */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_MemberRead_"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: the session is missing, expired or ended */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such workspace, or the caller is not a member */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

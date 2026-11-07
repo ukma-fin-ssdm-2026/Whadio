@@ -2,8 +2,6 @@ minimum_pre_commit_version: "4.4.0"
 default_install_hook_types: [pre-commit, commit-msg, pre-push]
 # `manual` is what `task check` runs, on all files: locally and in CI's static job.
 default_stages: [pre-commit, manual]
-# Generated coverage reports, committed for Lab 6.
-exclude: ^htmlcov(-before)?/
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks

@@ -26,7 +26,7 @@ ASR, and an optional Ollama profile supplies the built-in notes model.
 
 | Feature area | Built | Partial or missing |
 |---|---|---|
-| Accounts and workspaces | Stored accounts and Argon2id passwords; browser and extension sessions; workspace create, read, update and delete; operator registration and password-reset links; invitation creation, preview, acceptance, registration, decline and cancellation | Self-service registration and reset requests by email; SPA pages for workspace creation and deletion, registration, reset, invitations and member management; member role/removal API |
+| Accounts and workspaces | Stored accounts and Argon2id passwords; browser and extension sessions; workspace create, read, update and delete; operator registration and password-reset links; invitation creation, preview, acceptance, registration, decline and cancellation; the member list | Self-service registration and reset requests by email; SPA pages for workspace creation and deletion, registration, reset, invitations and member management; member role/removal API |
 | Capture and upload | Chrome extension consent flow, tab and microphone recording, chunk upload and completion; existing-file upload; storage validation and queued processing | Interrupted captures are not finalised by the scheduler; extension publication to the Chrome Web Store is out of scope |
 | Processing and workers | Transactional job outbox, least-privilege broker users, retries and failure reasons; Parakeet or Whisper recognition; pyannote diarization; Claude or Ollama notes; CPU and CUDA configurations | The planned full-system CI cases TC-PIPE-01, TC-PIPE-02 and TC-NFR-01 do not exist yet; the public CPU-host timing required by #182 has not been run |
 | Meetings and organisation | Meeting lists, name/date filters, rename, delete, playback, folders with restore, glossary CRUD, transcript revisions and speaker renaming; notes context from the folder's other readable meetings | Meeting rename, move and delete, folder and glossary management, transcript editing and speaker renaming are API-only; the SPA does not show which meetings were used as context; notes regeneration is deliberately refused for the MVP |
@@ -40,7 +40,7 @@ ASR, and an optional Ollama profile supplies the built-in notes model.
 
 ## Quality evidence
 
-- The latest committed [coverage report](../../htmlcov/index.html) comes from successful
+- The last committed [coverage report](https://github.com/ukma-fin-ssdm-2026/Whadio/tree/649377738acbd740ec84f26e77d2fd99aa22259b/htmlcov) comes from successful
   [CI run 41335159391](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/41335159391)
   at `3242e59` on 2026-11-01: 92.42% combined line and branch coverage.
 - The [test plan](../validation/test-plan.md#results) records the full CI suite, CPU/CUDA ASR,

@@ -22,6 +22,8 @@ from ..access_policy.services import (
 from ..accounts.administrators import AdministratorRepository, AdministratorService
 from ..accounts.contracts import UserProfile
 from ..accounts.enums import NotesTemplate, RegistrationMode
+from ..accounts.member_repository import MemberRepository
+from ..accounts.members import MemberService
 from ..accounts.password_resets import PasswordResetService
 from ..accounts.passwords import Argon2PasswordHasher
 from ..accounts.redemption import RedemptionService
@@ -548,6 +550,15 @@ def invitation_service(session: Session) -> InvitationService:
 
 
 Invitations = Annotated[InvitationService, Depends(invitation_service)]
+
+
+def member_service(session: Session) -> MemberService:
+    return MemberService(
+        MemberRepository(session), WorkspaceMembershipService(MembershipRepository(session))
+    )
+
+
+Members = Annotated[MemberService, Depends(member_service)]
 
 
 def redemption_service(session: Session, registrations: Registrations) -> RedemptionService:
