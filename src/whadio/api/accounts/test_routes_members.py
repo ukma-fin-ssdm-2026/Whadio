@@ -249,7 +249,9 @@ def test_role_change_is_refused(
             elif case == "owner-target":
                 target = owner
             elif case == "outsider-target":
-                target = await AsyncDatabase.add_account(session, PASSWORD)
+                _, elsewhere = await _owner_workspace(client, session)
+                target = await _join(session, elsewhere, WorkspaceRole.MEMBER, 1)
+                await _sign_in(client, owner)
             role = "owner" if case == "owner-role" else "moderator"
             # Act
             response = await client.patch(
