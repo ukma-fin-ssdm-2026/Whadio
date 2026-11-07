@@ -194,6 +194,10 @@ async with asyncio.timeout(self._timeout.total_seconds()):
 `src/whadio/workers/supervision/supervisor.py`: a blocked broker stops reading the connection, so
 a worker whose result publish timed out would then wait forever for its consumer to be cancelled,
 and never close the connection that returns the job. That wait now ends after the same timeout.
+A worker publish that times out is no longer a failure of the job: the worker keeps the delivery
+unsettled and publishes again with a backoff from 1 s up to 30 s, acknowledging the job only after
+its result is confirmed. Stopping the worker instead returned the job to the queue on every
+timeout, so six lost confirmations dead-lettered a valid job past its delivery limit of 5.
 
 **Patterns.** A timeout on each attempt, then the retry `serve_publishing` already makes on its next
 round, then the logging already there. The timeout goes innermost (§3.5): before it, the retry code
@@ -234,6 +238,8 @@ stays silent.
 | connect ends at the deadline with fail_fast off in the URL | External failure (fault injection) | `src/whadio/processing/reliability/test_publish_deadline.py` |
 | connect that gave up leaves no retry task running | External failure (fault injection) | `src/whadio/processing/reliability/test_publish_deadline.py` |
 | stopping the consumer ends when the broker never answers | External failure (fault injection) | `src/whadio/workers/supervision/test_supervisor.py` |
+| job completes after more lost confirmations than its delivery limit | External failure (fault injection) | `src/whadio/workers/supervision/test_supervisor.py` |
+| shutdown while confirmations are lost returns the job to the queue | Error handling | `src/whadio/workers/supervision/test_supervisor.py` |
 | broker timeout of zero is refused | Boundary value | `src/whadio/processing/reliability/test_publish_deadline.py` |
 
 Run against the code before the fixes, the fault-injection, error-handling and at-the-deadline
@@ -242,7 +248,7 @@ part of the fixes is also covered by a test that fails when that part is removed
 signal in the web app's composed signal, the deadline on signing in, and reading the body under
 the deadline. The two F1 tests that serve a job hang and fail when the publish has no timeout, and
 the F1 connect and consumer tests fail when `fail_fast=True` or the cancellation's deadline is
-removed.
+removed, and the lost-confirmation test fails when the worker's publish is not retried.
 
 ## Open issues
 
@@ -252,8 +258,9 @@ removed.
   alarm.
 - After F1, a publish that times out can still reach the broker late. The next round then sends the
   job again, so a worker may run it twice; `handle` absorbs the second result.
-- After F1, a blocked broker also fails a worker's result publish within the timeout. The worker
-  stops and the message returns to the queue, so a long block costs a worker restart.
+- After F1, a worker blocked by the broker keeps retrying its publish while it holds the job. A
+  block longer than the consumer timeout still makes RabbitMQ take the job back, and that counts
+  towards the delivery limit.
 - After F6, a write in the web app still has no client deadline, so an upload over a stalled
   connection keeps its progress state until the browser gives up. A deadline that resets on upload
   progress would bound it without breaking long uploads; `fetch` cannot report upload progress, so
