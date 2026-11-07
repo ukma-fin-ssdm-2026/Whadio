@@ -16,12 +16,14 @@ from .repositories import Job, JobRepository
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 
 
-async def add_job(session: AsyncSession) -> tuple[JobRepository, UUID, UUID]:
+async def add_job(
+    session: AsyncSession, job_type: JobType = JobType.TRANSCRIPTION
+) -> tuple[JobRepository, UUID, UUID]:
     meeting_id = await AsyncDatabase.add_meeting(
         session, await AsyncDatabase.add_workspace(session)
     )
     jobs = JobRepository(session)
-    return jobs, meeting_id, await jobs.add(meeting_id, JobType.TRANSCRIPTION)
+    return jobs, meeting_id, await jobs.add(meeting_id, job_type)
 
 
 async def only_new_jobs_unpublished(session: AsyncSession) -> None:
@@ -172,10 +174,13 @@ TICK = timedelta(microseconds=1)
 
 
 async def stored_job(
-    session: AsyncSession, status: JobStatus, published_at: datetime | None = LONG_AGO
+    session: AsyncSession,
+    status: JobStatus,
+    published_at: datetime | None = LONG_AGO,
+    job_type: JobType = JobType.TRANSCRIPTION,
 ) -> tuple[JobRepository, UUID]:
-    """A transcription job of a new meeting, brought into `status` long ago."""
-    jobs, _, job_id = await add_job(session)
+    """A job of a new meeting, brought into `status` long ago."""
+    jobs, _, job_id = await add_job(session, job_type)
     if published_at is not None:
         await jobs.mark_published(job_id, published_at, ())
     if status is not JobStatus.QUEUED:
@@ -291,3 +296,48 @@ def test_recovery_returns_at_most_its_batch_oldest_first(async_database: AsyncDa
     found = async_database.run(scenario)
     # Assert
     assert found == [True, False]
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("job_type", [JobType.TRANSCRIPTION, JobType.NOTES])
+@pytest.mark.parametrize(
+    ("started_before", "expected"),
+    [
+        pytest.param(LONG_AGO - TICK, (JobStatus.RUNNING, 1, LONG_AGO), id="bva-below-limit"),
+        pytest.param(LONG_AGO, (JobStatus.RUNNING, 1, LONG_AGO), id="bva-on-limit"),
+        pytest.param(LONG_AGO + TICK, (JobStatus.QUEUED, 1, None), id="bva-above-limit"),
+    ],
+)
+def test_running_job_is_returned_with_its_attempts_only_once_past_its_running_limit(
+    async_database: AsyncDatabase,
+    job_type: JobType,
+    started_before: datetime,
+    expected: tuple[JobStatus, int, datetime | None],
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[JobStatus, int, datetime | None]:
+        jobs, job_id = await stored_job(session, JobStatus.RUNNING, job_type=job_type)
+        # Act
+        await jobs.return_running({job_type: started_before}, BATCH_SIZE)
+        status, attempts, _, started_at = await state(session, job_id)
+        return status, attempts, started_at
+
+    found = async_database.run(scenario)
+    # Assert
+    assert found == expected
+
+
+@pytest.mark.slow
+def test_running_job_is_judged_by_the_limit_of_its_own_type(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> JobStatus:
+        jobs, job_id = await stored_job(session, JobStatus.RUNNING, job_type=JobType.NOTES)
+        # Act
+        await jobs.return_running(
+            {JobType.TRANSCRIPTION: LONG_AGO + TICK, JobType.NOTES: LONG_AGO}, BATCH_SIZE
+        )
+        return (await stored(session, job_id)).status
+
+    found = async_database.run(scenario)
+    # Assert
+    assert found is JobStatus.RUNNING

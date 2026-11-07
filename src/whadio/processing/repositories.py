@@ -1,10 +1,11 @@
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Final, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, Field, TypeAdapter
-from sqlalchemy import Select, Update, exists, func, select, update
+from sqlalchemy import Select, Update, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..meetings.contracts import ContextReference
@@ -149,6 +150,23 @@ class JobRepository:
             .order_by(ProcessingJob.published_at),
             limit,
             added_attempts=1,
+        )
+
+    async def return_running(self, started_before: Mapping[JobType, datetime], limit: int) -> int:
+        return await self._return_oldest(
+            select(ProcessingJob.processing_job_id)
+            .where(
+                ProcessingJob.status == JobStatus.RUNNING,
+                or_(
+                    *(
+                        (ProcessingJob.job_type == job_type) & (ProcessingJob.started_at < before)
+                        for job_type, before in started_before.items()
+                    )
+                ),
+            )
+            .order_by(ProcessingJob.started_at),
+            limit,
+            added_attempts=0,
         )
 
     async def _return_oldest(
