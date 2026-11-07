@@ -14,6 +14,10 @@ from ..retention.services import RetentionResult
 logger = logging.getLogger(__name__)
 
 
+class IJobRecovery(Protocol):
+    async def recover(self, now: datetime) -> int: ...
+
+
 class IRetentionJobs(Protocol):
     async def run(self, now: datetime) -> RetentionResult: ...
 
@@ -42,6 +46,7 @@ class PeriodicJobs:
 
     notifications: INotificationJobs | None = None
     registrations: IRegistrationJobs | None = None
+    job_recovery: IJobRecovery | None = None
 
 
 class RetentionScheduler:
@@ -93,6 +98,13 @@ class RetentionScheduler:
         except SQLAlchemyError:
             failed += 1
             logger.warning("Retention could not access the database")
+        if self._periodic.job_recovery is not None:
+            try:
+                returned = await self._periodic.job_recovery.recover(now)
+                logger.info("Job recovery: %d jobs returned to the queue", returned)
+            except SQLAlchemyError:
+                failed += 1
+                logger.warning("Job recovery could not access the database")
         if self._periodic.notifications is not None:
             failed += await self._deliver_notifications(self._periodic.notifications)
         return failed

@@ -177,3 +177,51 @@ def test_already_stopped_scheduler_runs_no_jobs() -> None:
 
     # Assert
     assert asyncio.run(scenario()) == []
+
+
+NOW = datetime(2026, 11, 7, 9, 30, tzinfo=UTC)
+
+
+class JobRecovery:
+    def __init__(self, calls: list[str], *, fail: bool = False) -> None:
+        self.calls: list[str] = calls
+        self.fail: bool = fail
+        self.recovered_at: datetime | None = None
+
+    async def recover(self, now: datetime) -> int:
+        self.calls.append("job recovery")
+        self.recovered_at = now
+        if self.fail:
+            raise OperationalError("database unavailable", None, RuntimeError())
+        return 1
+
+
+def scheduler_with_recovery(jobs: RetentionJobs, recovery: JobRecovery) -> RetentionScheduler:
+    periodic = PeriodicJobs(notifications=NotificationJobs(jobs.calls), job_recovery=recovery)
+    return RetentionScheduler(jobs, 60, lambda: NOW, periodic)
+
+
+def test_tick_recovers_jobs_by_the_scheduler_clock_after_retention_and_before_delivery() -> None:
+    # Arrange
+    jobs = RetentionJobs()
+    recovery = JobRecovery(jobs.calls)
+    # Act
+    asyncio.run(scheduler_with_recovery(jobs, recovery).tick())
+    # Assert
+    assert (recovery.recovered_at, jobs.calls) == (
+        NOW,
+        ["cleanup", "retention", "job recovery", "drain", "remove sent"],
+    )
+
+
+def test_job_recovery_failure_is_counted_and_the_other_jobs_still_run() -> None:
+    # Arrange
+    jobs = RetentionJobs()
+    scheduler = scheduler_with_recovery(jobs, JobRecovery(jobs.calls, fail=True))
+    # Act
+    failures = asyncio.run(scheduler.tick())
+    # Assert
+    assert (failures, jobs.calls) == (
+        2,
+        ["cleanup", "retention", "job recovery", "drain", "remove sent"],
+    )

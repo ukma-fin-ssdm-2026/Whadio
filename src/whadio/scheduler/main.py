@@ -7,7 +7,12 @@ from ..retention.services import RetentionService
 from ..retention.storage import RecordingStorage
 from ..shared.database import Database, DatabaseSettings
 from ..shared.storage import connect_s3_storage
-from .composition import RegistrationCleanupJobs, RetentionTransactions, notification_drainer
+from .composition import (
+    JobRecoveryJobs,
+    RegistrationCleanupJobs,
+    RetentionTransactions,
+    notification_drainer,
+)
 from .services import PeriodicJobs, RetentionScheduler
 from .settings import SchedulerSettings
 
@@ -30,7 +35,9 @@ async def run(*, once: bool = False) -> int:
             retention,
             settings.retention_interval_seconds,
             periodic=PeriodicJobs(
-                notifications=drainer, registrations=RegistrationCleanupJobs(database)
+                notifications=drainer,
+                registrations=RegistrationCleanupJobs(database),
+                job_recovery=JobRecoveryJobs(database, settings.job_recovery),
             ),
         )
         if once:
