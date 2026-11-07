@@ -72,6 +72,8 @@ async def connect_to_a_broker_that_never_answers() -> tuple[bool, int]:
         silent_clients.append(writer)
 
     server = await asyncio.start_server(accept_and_stay_silent, "127.0.0.1", 0)
+    # The Proactor event loop on Windows keeps a task of the server's own accepting.
+    before = asyncio.all_tasks()
     address = f"127.0.0.1:{server.sockets[0].getsockname()[1]}"
     settings = BrokerSettings(
         url=SecretStr(f"amqp://whadio:p@{address}/whadio?fail_fast=0"),
@@ -79,7 +81,7 @@ async def connect_to_a_broker_that_never_answers() -> tuple[bool, int]:
     )
     connecting = asyncio.create_task(connect(settings, name="test"))
     done, _ = await asyncio.wait({connecting}, timeout=LONG_ENOUGH_TO_NOTICE_A_HANG)
-    left_running = len(asyncio.all_tasks() - {asyncio.current_task(), connecting})
+    left_running = len(asyncio.all_tasks() - before - {connecting})
     timed_out = connecting in done and isinstance(connecting.exception(), TimeoutError)
     connecting.cancel()
     await asyncio.gather(connecting, return_exceptions=True)

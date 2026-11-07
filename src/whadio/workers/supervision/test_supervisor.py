@@ -258,9 +258,16 @@ async def _stopping_ends_when_the_broker_never_answers() -> bool:
     jobs = Mock(spec=AbstractQueue, cancel=never_answers)
     jobs.name = "jobs"
     stopping = asyncio.create_task(stop_consuming(jobs, "tag", timedelta(milliseconds=10)))
-    done, _ = await asyncio.wait({stopping}, timeout=2)
-    stopping.cancel()
-    return stopping in done
+    try:
+        done, _ = await asyncio.wait({stopping}, timeout=2)
+        if stopping not in done:
+            return False
+        # A timeout that escaped `stop_consuming` would skip the wait for the running jobs.
+        await stopping
+        return True
+    finally:
+        stopping.cancel()
+        await asyncio.gather(stopping, return_exceptions=True)
 
 
 def test_job_is_acknowledged_only_after_its_result_is_published() -> None:
