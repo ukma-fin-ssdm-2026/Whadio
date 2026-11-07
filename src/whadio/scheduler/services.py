@@ -35,6 +35,8 @@ class IRegistrationJobs(Protocol):
 
     async def remove_expired_password_resets(self, now: datetime) -> int: ...
 
+    async def remove_expired_sessions(self, now: datetime) -> int: ...
+
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
@@ -81,6 +83,12 @@ class RetentionScheduler:
             except SQLAlchemyError:
                 failed += 1
                 logger.warning("Password-reset cleanup could not access the database")
+            try:
+                removed = await registrations.remove_expired_sessions(now)
+                logger.info("Session cleanup: %d expired sessions deleted", removed)
+            except SQLAlchemyError:
+                failed += 1
+                logger.warning("Session cleanup could not access the database")
         try:
             failed += len(await self._retention.remove_deleted_meeting_recordings())
         except SQLAlchemyError:

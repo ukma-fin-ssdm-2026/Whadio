@@ -184,6 +184,10 @@ class ISessionRepository(Protocol):
     async def end_expired_sessions(self, user_id: UUID, now: datetime, /) -> None: ...
 
 
+class IExpiredSessionRepository(Protocol):
+    async def delete_expired(self, now: datetime, /) -> int: ...
+
+
 class SessionRepository:
     """Stores a session token only as its SHA-256 hash, as `IdentityRepository` looks it up."""
 
@@ -239,6 +243,12 @@ class SessionRepository:
         await self._session.execute(
             delete(Session).where(Session.user_id == user_id, Session.expires_at <= now)
         )
+
+    async def delete_expired(self, now: datetime) -> int:
+        deleted = await self._session.scalars(
+            delete(Session).where(Session.expires_at <= now).returning(Session.session_id)
+        )
+        return len(deleted.all())
 
 
 # --- MCP keys ---
