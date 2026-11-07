@@ -13,11 +13,9 @@ import { useEffect, useState } from "react";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { ADMIN_KEY, adminQueries, type JobFilters } from "./api/monitoring";
 import { CountsTable } from "./CountsTable";
+import { timestamp, title } from "./format";
 import { JobList } from "./JobList";
 import { adminSearch, JOB_STATUSES, JOB_TYPES } from "./search";
-
-const timestamp = (value: string) => new Date(value).toLocaleString();
-const title = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
 
 export function AdminPage({
   filters,

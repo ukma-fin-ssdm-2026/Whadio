@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import { renderWithProviders } from "@/shared/testing/render";
 import { stubViewportWidth } from "@/shared/testing/viewport";
@@ -7,16 +7,19 @@ import { job, STAMP } from "./testing";
 
 afterEach(() => vi.unstubAllGlobals());
 
-test.for([599, 600, 1440])("jobs use the appropriate layout at %s pixels", (width) => {
-  // Arrange
-  stubViewportWidth(width);
-  // Act
-  renderWithProviders(
-    <JobList pages={[[job()]]} workspaceHref={() => "#"} onWorkspace={() => {}} />,
-  );
-  // Assert
-  expect(screen.getByRole(width < 600 ? "list" : "table")).toBeVisible();
-});
+test.for([599, 600, 768, 1024, 1199, 1200, 1280, 1440])(
+  "jobs use the appropriate layout at %s pixels",
+  (width) => {
+    // Arrange
+    stubViewportWidth(width);
+    // Act
+    renderWithProviders(
+      <JobList pages={[[job()]]} workspaceHref={() => "#"} onWorkspace={() => {}} />,
+    );
+    // Assert
+    expect(screen.getByRole(width < 1200 ? "list" : "table")).toBeVisible();
+  },
+);
 
 test.for([390, 1440])("each fetched page has one observation time at %s pixels", (width) => {
   // Arrange
@@ -103,4 +106,75 @@ test("the workspace link uses the address supplied by the route", () => {
     "href",
     "/whadio/admin?job_type=notes&status=failed&workspace_id=workspace-alpha",
   );
+});
+
+test("a plain workspace click filters in place and prevents browser navigation", () => {
+  // Arrange
+  const onWorkspace = vi.fn();
+  renderWithProviders(
+    <JobList pages={[[job()]]} workspaceHref={() => "#"} onWorkspace={onWorkspace} />,
+  );
+  // Act
+  const defaultAllowed = fireEvent.click(
+    screen.getByRole("link", { name: "Filter by workspace workspace-alpha" }),
+  );
+  // Assert
+  expect({ defaultAllowed, calls: onWorkspace.mock.calls }).toEqual({
+    defaultAllowed: false,
+    calls: [["workspace-alpha"]],
+  });
+});
+
+test.for(["ctrlKey", "metaKey", "shiftKey", "altKey"])(
+  "a workspace click with %s preserves browser navigation",
+  (modifier) => {
+    // Arrange
+    const onWorkspace = vi.fn();
+    renderWithProviders(
+      <JobList pages={[[job()]]} workspaceHref={() => "#"} onWorkspace={onWorkspace} />,
+    );
+    // Act
+    const defaultAllowed = fireEvent.click(
+      screen.getByRole("link", { name: "Filter by workspace workspace-alpha" }),
+      { [modifier]: true },
+    );
+    // Assert
+    expect({ defaultAllowed, calls: onWorkspace.mock.calls }).toEqual({
+      defaultAllowed: true,
+      calls: [],
+    });
+  },
+);
+
+test.for([390, 1440])(
+  "a queued retry hides the previous attempt's queue wait at %s pixels",
+  (width) => {
+    // Arrange
+    stubViewportWidth(width);
+    // Act
+    renderWithProviders(
+      <JobList
+        pages={[[job({ attempts_started: 1, last_queue_wait_seconds: 12 })]]}
+        workspaceHref={() => "#"}
+        onWorkspace={() => {}}
+      />,
+    );
+    // Assert
+    expect(screen.queryByText(/Queue before attempt/)).not.toBeInTheDocument();
+  },
+);
+
+test.for([390, 1440])("an adjusted job explains clock skew at %s pixels", (width) => {
+  // Arrange
+  stubViewportWidth(width);
+  // Act
+  renderWithProviders(
+    <JobList
+      pages={[[job({ timing_anomaly: true })]]}
+      workspaceHref={() => "#"}
+      onWorkspace={() => {}}
+    />,
+  );
+  // Assert
+  expect(screen.getByText("Timing adjusted for clock skew.")).toBeVisible();
 });

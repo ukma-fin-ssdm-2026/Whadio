@@ -13,7 +13,7 @@ import {
   useTheme,
 } from "@mui/material";
 import type { Schemas } from "@/shared/api/types";
-import { formatDuration } from "@/shared/lib/format-duration";
+import { duration, title } from "./format";
 
 const LONG_WAIT_SECONDS = 15 * 60;
 const ROWS = [
@@ -52,9 +52,7 @@ function metricValue(count: Schemas["JobCounts"], key: Metric["key"]) {
     key === "oldest_queue_wait_seconds"
       ? count.queued === 0
         ? "None queued"
-        : value === null
-          ? "Unknown"
-          : formatDuration(Math.floor(value))
+        : duration(value)
       : value;
   return { displayed, warning };
 }
@@ -134,7 +132,7 @@ export function CountsTable({ counts }: { counts: Schemas["JobCounts"][] }) {
                     }}
                   >
                     <Typography component="dt" variant="caption" color="textSecondary">
-                      {count.job_type === "notes" ? "Notes" : "Transcription"}
+                      {title(count.job_type)}
                     </Typography>
                     <Typography
                       component="dd"
@@ -168,7 +166,7 @@ export function CountsTable({ counts }: { counts: Schemas["JobCounts"][] }) {
             <TableCell>Retained jobs</TableCell>
             {counts.map((count) => (
               <TableCell key={count.job_type} align="right" component="th" scope="col">
-                {count.job_type === "notes" ? "Notes" : "Transcription"}
+                {title(count.job_type)}
               </TableCell>
             ))}
           </TableRow>

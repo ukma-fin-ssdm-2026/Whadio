@@ -18,14 +18,10 @@ import {
   useTheme,
 } from "@mui/material";
 import type { Schemas } from "@/shared/api/types";
-import { formatDuration } from "@/shared/lib/format-duration";
 import { useNotify } from "@/shared/ui/NotifyProvider";
+import { duration, timestamp, title } from "./format";
 
 type Job = Schemas["JobSnapshot"];
-const duration = (value: number | null) =>
-  value === null ? "Unknown" : formatDuration(Math.floor(value));
-const timestamp = (value: string) => new Date(value).toLocaleString();
-const title = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
 const timing = (job: Job) =>
   job.status === "queued"
     ? `Waiting: ${duration(job.queue_wait_seconds)}`
@@ -138,7 +134,7 @@ export function JobList({
   onWorkspace: (id: string) => void;
   workspaceHref: (id: string) => string;
 }) {
-  const desktop = useMediaQuery(useTheme().breakpoints.up("sm"), { noSsr: true });
+  const desktop = useMediaQuery(useTheme().breakpoints.up("lg"), { noSsr: true });
   if (pages.every((page) => page.length === 0)) return null;
   if (desktop)
     return (
@@ -151,35 +147,20 @@ export function JobList({
                   Jobs observed {timestamp(page[0]?.as_of ?? "")}
                 </Typography>
                 <TableContainer component={Paper} variant="outlined">
-                  <Table
-                    size="small"
-                    aria-label="Processing jobs"
-                    sx={{
-                      minWidth: 1000,
-                      tableLayout: "fixed",
-                      "& td": { verticalAlign: "top" },
-                      "& th, & td": { px: 1 },
-                      "& th:nth-of-type(3), & td:nth-of-type(3)": {
-                        px: 2.5,
-                        verticalAlign: "middle",
-                      },
-                      "& th:nth-of-type(7), & td:nth-of-type(7)": { px: 2.5 },
-                      "& td:nth-of-type(7)": { verticalAlign: "top" },
-                    }}
-                  >
+                  <Table size="small" aria-label="Processing jobs">
                     <TableHead>
                       <TableRow>
                         {[
-                          ["Created", "13%"],
-                          ["Type", "10%"],
-                          ["State", "10%"],
-                          ["Wait / run", "15%"],
-                          ["Total", "11%"],
-                          ["Attempts", "7%"],
-                          ["Failure", "10%"],
-                          ["Workspace", "13%"],
-                          ["Job", "11%"],
-                        ].map(([label, width]) => (
+                          "Created",
+                          "Type",
+                          "State",
+                          "Wait / run",
+                          "Total",
+                          "Attempts",
+                          "Failure",
+                          "Workspace",
+                          "Job",
+                        ].map((label) => (
                           <TableCell
                             key={label}
                             component="th"
@@ -189,7 +170,7 @@ export function JobList({
                                 ? "center"
                                 : "left"
                             }
-                            sx={{ width }}
+                            sx={{ px: 0.75 }}
                           >
                             {label}
                           </TableCell>
@@ -199,19 +180,25 @@ export function JobList({
                     <TableBody>
                       {page.map((job) => (
                         <TableRow key={job.job_id}>
-                          <TableCell>
-                            <Typography variant="body2">
-                              Created {timestamp(job.created_at)}
-                            </Typography>
+                          <TableCell sx={{ px: 0.75, verticalAlign: "top" }}>
+                            <Typography variant="body2">{timestamp(job.created_at)}</Typography>
                             <AttemptTime job={job} />
                           </TableCell>
-                          <TableCell>{title(job.job_type)}</TableCell>
-                          <TableCell align="center" sx={{ verticalAlign: "middle" }}>
+                          <TableCell sx={{ px: 0.75, verticalAlign: "top" }}>
+                            {title(job.job_type)}
+                          </TableCell>
+                          <TableCell align="center" sx={{ px: 0.75, verticalAlign: "middle" }}>
                             <Status job={job} />
                           </TableCell>
-                          <TableCell>
-                            <Typography variant="body2">{timing(job)}</Typography>
-                            <Typography variant="caption" component="div">
+                          <TableCell sx={{ px: 0.75, verticalAlign: "top" }}>
+                            <Typography variant="body2" sx={{ whiteSpace: "nowrap" }}>
+                              {timing(job)}
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              component="div"
+                              sx={{ whiteSpace: "nowrap" }}
+                            >
                               <PreviousWait job={job} />
                             </Typography>
                             {job.timing_anomaly && (
@@ -220,23 +207,25 @@ export function JobList({
                               </Typography>
                             )}
                           </TableCell>
-                          <TableCell sx={{ whiteSpace: "nowrap" }}>
+                          <TableCell sx={{ px: 0.75, verticalAlign: "top", whiteSpace: "nowrap" }}>
                             <Typography variant="body2">
                               {duration(job.total_elapsed_seconds)}
                             </Typography>
                           </TableCell>
-                          <TableCell align="center">{job.attempts_started}</TableCell>
+                          <TableCell align="center" sx={{ px: 0.75, verticalAlign: "top" }}>
+                            {job.attempts_started}
+                          </TableCell>
                           <TableCell
                             align="center"
-                            style={{ verticalAlign: job.failure_description ? "top" : "middle" }}
                             sx={{
                               color: job.failure_description ? "error.main" : "text.secondary",
-                              minWidth: 85,
+                              px: 0.75,
+                              verticalAlign: job.failure_description ? "top" : "middle",
                             }}
                           >
                             {job.failure_description ?? "—"}
                           </TableCell>
-                          <TableCell>
+                          <TableCell sx={{ px: 0.75, verticalAlign: "top" }}>
                             <Identifier
                               id={job.workspace_id}
                               compact
@@ -245,7 +234,7 @@ export function JobList({
                               workspaceHref={workspaceHref}
                             />
                           </TableCell>
-                          <TableCell>
+                          <TableCell sx={{ px: 0.75, verticalAlign: "top" }}>
                             <Identifier
                               id={job.job_id}
                               compact
