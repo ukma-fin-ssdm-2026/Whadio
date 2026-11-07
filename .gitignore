@@ -10,6 +10,7 @@ recordings/
 node_modules/
 .coverage*
 reports/
+htmlcov/
 htmlcov-ci/
 whadio-extension-*.zip
 .hypothesis/

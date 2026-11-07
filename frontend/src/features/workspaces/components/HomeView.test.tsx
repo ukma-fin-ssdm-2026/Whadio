@@ -3,7 +3,12 @@ import { userEvent } from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import { HomeView } from "./HomeView";
 
-const WORKSPACE = { id: "alpha", name: "Alpha", role: "Owner", members: 1 };
+const WORKSPACE = {
+  id: "alpha",
+  name: "Alpha",
+  role: "owner" as const,
+  members: 1,
+};
 
 function renderHome(members = 1, onWorkspace = () => {}) {
   render(

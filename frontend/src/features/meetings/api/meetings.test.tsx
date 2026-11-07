@@ -12,7 +12,14 @@ import {
 } from "@/shared/testing/fixtures";
 import { createTestQueryClient, TestProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
-import { meetingQueries, TRANSCRIPT_PENDING, useUploadMeeting } from "./meetings";
+import { folderQueries } from "./folders";
+import {
+  meetingQueries,
+  TRANSCRIPT_PENDING,
+  useDeleteMeeting,
+  useUpdateMeeting,
+  useUploadMeeting,
+} from "./meetings";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -52,7 +59,7 @@ test("both list shapes sit under their workspace", () => {
 
   // Assert
   expect(keys).toEqual([
-    ["meetings", "list", "alpha", "pages", { name: "sync" }],
+    ["meetings", "list", "alpha", "pages", { name: "sync", folderId: null }],
     ["meetings", "list", "alpha", "latest", { name: "sync" }],
   ]);
 });
@@ -323,4 +330,115 @@ test("a failed upload refreshes nothing", async () => {
   expect(
     queryClient.getQueryState(meetingQueries.latest("workspace").queryKey)?.isInvalidated,
   ).toBe(false);
+});
+
+function seedCaches() {
+  const queryClient = createTestQueryClient();
+  for (const workspaceId of ["workspace", "other"]) {
+    queryClient.setQueryData(meetingQueries.latest(workspaceId).queryKey, page([meetingSummary()]));
+    queryClient.setQueryData(folderQueries.list(workspaceId).queryKey, page([]));
+  }
+  queryClient.setQueryData(meetingQueries.detail("meeting").queryKey, meetingRead());
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <TestProviders queryClient={queryClient}>{children}</TestProviders>
+  );
+  return { queryClient, wrapper };
+}
+
+const isInvalidated = (
+  queryClient: ReturnType<typeof createTestQueryClient>,
+  queryKey: readonly unknown[],
+) => queryClient.getQueryState(queryKey)?.isInvalidated;
+
+const RENAMED = meetingRead({ name: "Quarterly review" });
+
+async function updateMeeting() {
+  server.use(
+    http.patch("/api/v1/meetings/{meeting_id}", ({ response }) => response(200).json(RENAMED)),
+  );
+  const { queryClient, wrapper } = seedCaches();
+  const { result } = renderHook(() => useUpdateMeeting("meeting", "workspace"), { wrapper });
+  await result.current.mutateAsync({ name: "Quarterly review" });
+  return queryClient;
+}
+
+test("an update stores the server's copy of the meeting", async () => {
+  // Act
+  const queryClient = await updateMeeting();
+
+  // Assert
+  expect(queryClient.getQueryData(meetingQueries.detail("meeting").queryKey)).toEqual(RENAMED);
+});
+
+test("an update marks its workspace's meetings for a refetch", async () => {
+  // Act
+  const queryClient = await updateMeeting();
+
+  // Assert
+  expect(isInvalidated(queryClient, meetingQueries.latest("workspace").queryKey)).toBe(true);
+});
+
+test("an update marks its workspace's folders for a refetch", async () => {
+  // Act
+  const queryClient = await updateMeeting();
+
+  // Assert
+  expect(isInvalidated(queryClient, folderQueries.list("workspace").queryKey)).toBe(true);
+});
+
+test("an update leaves other workspaces alone", async () => {
+  // Act
+  const queryClient = await updateMeeting();
+
+  // Assert
+  expect(isInvalidated(queryClient, meetingQueries.latest("other").queryKey)).toBe(false);
+});
+
+test("a failed update refreshes nothing", async () => {
+  // Arrange
+  server.use(
+    http.patch("/api/v1/meetings/{meeting_id}", ({ response }) =>
+      response(404).json(errorBody("NOT_FOUND", "Not found")),
+    ),
+  );
+  const { queryClient, wrapper } = seedCaches();
+  const { result } = renderHook(() => useUpdateMeeting("meeting", "workspace"), { wrapper });
+
+  // Act
+  await expect(result.current.mutateAsync({ name: "Quarterly review" })).rejects.toThrow();
+
+  // Assert
+  expect(isInvalidated(queryClient, meetingQueries.latest("workspace").queryKey)).toBe(false);
+});
+
+async function deleteMeeting() {
+  server.use(http.delete("/api/v1/meetings/{meeting_id}", ({ response }) => response(204).empty()));
+  const { queryClient, wrapper } = seedCaches();
+  const { result } = renderHook(() => useDeleteMeeting("meeting", "workspace"), { wrapper });
+  await result.current.mutateAsync();
+  return queryClient;
+}
+
+test("a deletion forgets the meeting", async () => {
+  // Act
+  const queryClient = await deleteMeeting();
+
+  // Assert
+  expect(queryClient.getQueryData(meetingQueries.detail("meeting").queryKey)).toBeUndefined();
+});
+
+test("a deletion marks its workspace's meetings for a refetch", async () => {
+  // Act
+  const queryClient = await deleteMeeting();
+
+  // Assert
+  expect(isInvalidated(queryClient, meetingQueries.latest("workspace").queryKey)).toBe(true);
+});
+
+test("a deletion marks its workspace's folders for a refetch", async () => {
+  // Act
+  const queryClient = await deleteMeeting();
+
+  // Assert
+  expect(isInvalidated(queryClient, folderQueries.list("workspace").queryKey)).toBe(true);
 });

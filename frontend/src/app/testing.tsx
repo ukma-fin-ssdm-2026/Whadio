@@ -75,7 +75,7 @@ export function serveApi(signedIn: boolean): ApiTraffic {
           {
             id: "workspace",
             name: "Demo Workspace",
-            my_role: "Owner",
+            my_role: "owner",
             member_count: 1,
             notes_provider: "Whadio",
           },
@@ -91,15 +91,21 @@ export function serveApi(signedIn: boolean): ApiTraffic {
       member(() => page([])),
     ),
     http.get(
+      "/api/v1/workspaces/workspace/folders",
+      member(() => page([{ id: "folder", name: "General", is_default: true, meeting_count: 0 }])),
+    ),
+    http.get(
       "/api/v1/meetings/meeting",
       member(() => ({
         id: "meeting",
         workspace_id: "workspace",
+        folder_id: "folder",
         name: LINKED_TITLE,
         recorded_at: "2026-10-25T10:00:00Z",
         processing_state: "processed",
         duration_seconds: 5,
         source_type: "upload",
+        created_by_user_id: "member",
       })),
     ),
     http.get(
