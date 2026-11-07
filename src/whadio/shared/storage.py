@@ -24,6 +24,11 @@ class ObjectStorageSettings(BaseModel):
     bucket: str = Field(default="recordings", min_length=3, description="Bucket of recordings")
     access_key: SecretStr = Field(description="Access key id")
     secret_key: SecretStr = Field(description="Secret access key")
+    timeout: timedelta = Field(
+        default=timedelta(seconds=5),
+        gt=timedelta(0),
+        description="Time a connection to storage, or a wait for its next bytes, may take",
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,10 +126,22 @@ def create_s3_client(
 
 
 def connect_s3_storage(settings: ObjectStorageSettings) -> S3ObjectStorage:
+    timeout = settings.timeout.total_seconds()
+    # minio's own pool waits 300 s for each read and retries 5 times. `total=False` raises every
+    # error to S3ObjectStorage instead, so retries happen at one level; the system CA store, which
+    # honours SSL_CERT_FILE, replaces minio's certifi bundle.
+    pool = urllib3.PoolManager(
+        timeout=urllib3.Timeout(connect=timeout, read=timeout),
+        maxsize=10,
+        cert_reqs="CERT_REQUIRED",
+        retries=urllib3.Retry(total=False),
+    )
     # SigV4 signs the host, so a URL signed for the internal endpoint fails from outside it; the
     # signer only signs, for the public endpoint, and never connects.
     return S3ObjectStorage(
-        client=create_s3_client(settings, settings.endpoint_url),
-        signer=create_s3_client(settings, settings.public_endpoint_url or settings.endpoint_url),
+        client=create_s3_client(settings, settings.endpoint_url, pool),
+        signer=create_s3_client(
+            settings, settings.public_endpoint_url or settings.endpoint_url, pool
+        ),
         bucket=settings.bucket,
     )
