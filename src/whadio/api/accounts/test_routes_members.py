@@ -356,6 +356,46 @@ def test_removal_drops_the_grant_and_keeps_the_meeting_restricted_for_the_others
     assert found == expected
 
 
+def test_removal_keeps_the_membership_and_grant_in_another_workspace(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(
+        session: AsyncSession,
+    ) -> tuple[int, WorkspaceRole | None, tuple[AccessMode | None, set[UUID]], UUID]:
+        async with AsyncDatabase.api_client(session) as client:
+            owner, workspace = await _owner_workspace(client, session)
+            member = await _join(session, workspace, WorkspaceRole.MEMBER, 1)
+            created = await client.post("/api/v1/workspaces", json={"name": "Design team"})
+            other = WorkspaceRead.model_validate_json(created.content).id
+            session.add(
+                WorkspaceMembership(
+                    workspace_id=other, user_id=member.user_id, role=WorkspaceRole.MEMBER
+                )
+            )
+            meeting = await _restricted_to(session, other, owner, member)
+            # Act
+            removed = await client.delete(
+                f"/api/v1/workspaces/{workspace}/members/{member.user_id}"
+            )
+            kept = await session.scalar(
+                select(WorkspaceMembership.role).where(
+                    WorkspaceMembership.workspace_id == other,
+                    WorkspaceMembership.user_id == member.user_id,
+                )
+            )
+            return removed.status_code, kept, await _access(session, meeting), member.user_id
+
+    status, role, access, member_id = async_database.run(scenario)
+
+    # Assert
+    assert (status, role, access) == (
+        204,
+        WorkspaceRole.MEMBER,
+        (AccessMode.RESTRICTED, {member_id}),
+    )
+
+
 def test_removing_the_last_recipient_is_refused_and_opens_nothing(
     async_database: AsyncDatabase,
 ) -> None:
