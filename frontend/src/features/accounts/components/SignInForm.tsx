@@ -7,6 +7,9 @@ import type { Schemas } from "@/shared/api/types";
 import { FormTextField } from "@/shared/ui/FormTextField";
 import { type Credentials, useSignIn } from "../api/session";
 
+const SESSION_REFUSED =
+  "You signed in, but the server did not accept the session. Check that this browser allows cookies, then try again.";
+
 const credentials = z.object({
   email: z.string().min(1, "Enter your email address").pipe(z.email("Enter a valid email address")),
   password: z.string().min(1, "Enter your password"),
@@ -25,17 +28,18 @@ function showServerError(error: ApiError, setError: UseFormSetError<Credentials>
 
 interface SignInFormProps {
   onSignedIn: (user: Schemas["UserRead"]) => void;
-  externalError?: string;
+  sessionRefused?: boolean;
   confirmation?: string;
 }
 
-export function SignInForm({ onSignedIn, externalError, confirmation }: SignInFormProps) {
+export function SignInForm({ onSignedIn, sessionRefused, confirmation }: SignInFormProps) {
   const signIn = useSignIn();
   const { control, handleSubmit, setError, formState } = useForm({
     resolver: zodResolver(credentials),
     defaultValues: { email: "", password: "" },
   });
-  const error = formState.errors.root?.server?.message ?? externalError;
+  const error =
+    formState.errors.root?.server?.message ?? (sessionRefused ? SESSION_REFUSED : undefined);
 
   const submit = handleSubmit((values) =>
     signIn.mutate(values, {

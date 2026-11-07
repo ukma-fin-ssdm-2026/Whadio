@@ -39,7 +39,14 @@ export function useSignIn() {
 export function useSignOut() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => expectNoContent(apiClient.DELETE("/api/v1/sessions/current")),
+    mutationFn: async () => {
+      try {
+        await expectNoContent(apiClient.DELETE("/api/v1/sessions/current"));
+      } catch (error) {
+        // An expired session is already signed out; keep it out of global 401 navigation.
+        if (!(error instanceof ApiError && error.status === 401)) throw error;
+      }
+    },
     onSettled: () => {
       queryClient.clear();
       // A refused sign-out leaves the cookie, and asking again would sign the user straight back in.
