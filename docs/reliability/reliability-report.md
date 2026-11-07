@@ -198,6 +198,13 @@ A worker publish that times out is no longer a failure of the job: the worker ke
 unsettled and publishes again with a backoff from 1 s up to 30 s, acknowledging the job only after
 its result is confirmed. Stopping the worker instead returned the job to the queue on every
 timeout, so six lost confirmations dead-lettered a valid job past its delivery limit of 5.
+Every resend of a result keeps one message ID, and Processing records the IDs it applied in
+`processing_job.applied_result_ids` in the transaction that applies the result, then drops a
+copy it has seen. Without that, a failure whose confirmation was lost and that was resent after
+the next attempt had started failed the newer attempt and discarded its transcript. Cancelling
+the consumer is no longer awaited past the deadline either: aiormq answers a cancelled call by
+queueing a Channel.Close behind the frames the blocked broker does not read, so the worker leaves
+that call to end with the connection it closes and reaps it afterwards.
 
 **Patterns.** A timeout on each attempt, then the retry `serve_publishing` already makes on its next
 round, then the logging already there. The timeout goes innermost (§3.5): before it, the retry code
@@ -238,7 +245,13 @@ stays silent.
 | connect ends at the deadline with fail_fast off in the URL | External failure (fault injection) | `src/whadio/processing/reliability/test_publish_deadline.py` |
 | connect that gave up leaves no retry task running | External failure (fault injection) | `src/whadio/processing/reliability/test_publish_deadline.py` |
 | stopping the consumer ends when the broker never answers | External failure (fault injection) | `src/whadio/workers/supervision/test_supervisor.py` |
+| stopping the consumer ends when closing its channel stalls too | External failure (fault injection) | `src/whadio/workers/supervision/test_supervisor.py` |
 | job completes after more lost confirmations than its delivery limit | External failure (fault injection) | `src/whadio/workers/supervision/test_supervisor.py` |
+| job is acknowledged only after a final result with lost confirmations | External failure (fault injection) | `src/whadio/workers/supervision/test_supervisor.py` |
+| every resend of a result keeps its ID | Error handling | `src/whadio/workers/supervision/test_supervisor.py` |
+| resent failure leaves the next attempt running (transcription and notes) | Error handling | `src/whadio/processing/test_services.py` |
+| failure of the next attempt under a new ID is applied | Error handling | `src/whadio/processing/test_services.py` |
+| result without a valid message ID is rejected without requeue | Error handling | `src/whadio/processing/test_consumer.py` |
 | shutdown while confirmations are lost returns the job to the queue | Error handling | `src/whadio/workers/supervision/test_supervisor.py` |
 | broker timeout of zero is refused | Boundary value | `src/whadio/processing/reliability/test_publish_deadline.py` |
 
