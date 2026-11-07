@@ -8,7 +8,7 @@ from ..retention.storage import RecordingStorage
 from ..shared.database import Database, DatabaseSettings
 from ..shared.storage import connect_s3_storage
 from .composition import RegistrationCleanupJobs, RetentionTransactions, notification_drainer
-from .services import RetentionScheduler
+from .services import PeriodicJobs, RetentionScheduler
 from .settings import SchedulerSettings
 
 logger = logging.getLogger(__name__)
@@ -29,8 +29,9 @@ async def run(*, once: bool = False) -> int:
         scheduler = RetentionScheduler(
             retention,
             settings.retention_interval_seconds,
-            notifications=drainer,
-            registrations=RegistrationCleanupJobs(database),
+            periodic=PeriodicJobs(
+                notifications=drainer, registrations=RegistrationCleanupJobs(database)
+            ),
         )
         if once:
             return await scheduler.tick()
