@@ -293,8 +293,11 @@ the running limits of the two job types are swapped.
   This needs its own issue.
 - F2's deadline makes a stuck upload end, but the user still learns of the failure only at hang-up;
   telling them during the call is F3.
-- After F9, the copies of a job that waited in the queue through a long outage still run once a
-  worker returns. The first result counts and the rest change nothing, but each copy costs a run.
+- After F9, the copies of a job that waited in the queue through a long outage are all delivered
+  once a worker returns, oldest first. Each start counts an attempt, and a copy whose 24-hour audio
+  link has expired fails at once, so after an outage of about 5 days or more the stale copies can
+  use up the attempts and fail a meeting that a fresh copy would have processed. A message that
+  names its attempt (below) would let Processing ignore the stale copies.
 - After F9, a result names its job but not its attempt, so a late failure from a run that was
   handed back can count against the run that replaced it.
 - After F9, `started_at` comes from the worker's clock, so a worker whose clock is off by more
