@@ -77,11 +77,13 @@ class FakeDirectory:
     def __init__(self) -> None:
         self.roles: dict[tuple[UUID, UUID], WorkspaceRole] = {}
         self.profiles: dict[UUID, UserProfile] = {}
+        self.locked: list[tuple[UUID, UUID]] = []
 
     async def role(self, workspace_id: UUID, user_id: UUID) -> WorkspaceRole | None:
         return self.roles.get((workspace_id, user_id))
 
     async def lock_role(self, workspace_id: UUID, user_id: UUID) -> WorkspaceRole | None:
+        self.locked.append((workspace_id, user_id))
         return self.roles.get((workspace_id, user_id))
 
     async def members(self, workspace_id: UUID) -> list[UUID]:
@@ -178,6 +180,19 @@ def test_member_cannot_restrict_a_meeting() -> None:
     )
     # Assert
     assert failure is Failure.INSUFFICIENT_ROLE
+
+
+def test_outsider_is_refused_before_the_workspace_is_locked() -> None:
+    # Arrange
+    unit = world()
+    # Act
+    failure = refusal(
+        unit.access.replace_access(
+            unit.outsider, unit.meeting, {unit.outsider}, NOW, restricted=True
+        )
+    )
+    # Assert
+    assert (failure, unit.directory.locked) == (Failure.NOT_FOUND, [])
 
 
 def test_meeting_cannot_be_restricted_to_a_nonmember() -> None:
