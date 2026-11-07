@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
+from uuid import UUID, uuid4
 
 from aio_pika.abc import AbstractIncomingMessage, AbstractQueue, AbstractRobustChannel
 from pydantic import ValidationError
@@ -33,7 +34,7 @@ class IDelivery(Protocol):
 
 
 class IResultPublisher(Protocol):
-    async def publish(self, result: IResultMessage) -> None: ...
+    async def publish(self, result: IResultMessage, result_id: UUID) -> None: ...
 
 
 class AmqpResultPublisher:
@@ -41,10 +42,11 @@ class AmqpResultPublisher:
         self._publisher: MessagePublisher = publisher
         self._queue: str = queue
 
-    async def publish(self, result: IResultMessage) -> None:
+    async def publish(self, result: IResultMessage, result_id: UUID) -> None:
         await self._publisher.publish(
             self._queue,
             result.model_dump_json().encode(),
+            message_id=result_id,
             message_type=result.type,
             correlation_id=str(result.job_id),
         )
@@ -112,11 +114,13 @@ class JobSupervisor[J: JobMessage, R: IResultMessage]:
     async def _publish_until_confirmed(self, message: IResultMessage) -> None:
         # The job is fine when only the broker's confirmation is late: failing here would return
         # the delivery and spend its delivery limit. The job stays unsettled meanwhile, so the
-        # consumer timeout or a shutdown still ends the wait, and Processing drops a repeat.
+        # consumer timeout or a shutdown still ends the wait. Every resend keeps the ID, so
+        # Processing drops a copy it applied even after the job has moved on to a newer attempt.
+        result_id = uuid4()
         delay = self._retry.first
         while True:
             try:
-                await self._publisher.publish(message)
+                await self._publisher.publish(message, result_id)
             except TimeoutError:
                 logger.warning(
                     "RabbitMQ did not confirm %s for job %s; retrying in %s",

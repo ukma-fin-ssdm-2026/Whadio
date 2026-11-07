@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
-from uuid import uuid4
+from uuid import UUID
 
 import aio_pika
 from aio_pika.abc import AbstractChannel, AbstractQueue, AbstractRobustConnection, DeliveryMode
@@ -52,7 +52,7 @@ class MessagePublisher:
         self._timeout: timedelta = timeout
 
     async def publish(
-        self, queue: str, body: bytes, *, message_type: str, correlation_id: str
+        self, queue: str, body: bytes, *, message_id: UUID, message_type: str, correlation_id: str
     ) -> None:
         # RabbitMQ refuses a `user_id` other than the connection's user, so consumers can trust
         # it to name the runtime that published the message.
@@ -60,7 +60,7 @@ class MessagePublisher:
             body,
             content_type="application/json",
             delivery_mode=DeliveryMode.PERSISTENT,
-            message_id=uuid4().hex,
+            message_id=message_id.hex,
             correlation_id=correlation_id,
             type=message_type,
             user_id=self._user_id,

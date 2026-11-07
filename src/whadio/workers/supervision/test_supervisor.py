@@ -3,7 +3,7 @@ import sys
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from aio_pika.abc import AbstractChannel, AbstractIncomingMessage, AbstractQueue
@@ -92,14 +92,18 @@ class _Delivery:
 
 
 class _Publisher:
-    """Times out the first `unconfirmed` publishes, as a broker that loses its confirmations."""
+    """Times out the first `unconfirmed` publishes of `lost` results (any when None), as a broker
+    that loses its confirmations, and keeps the ID of every attempt by result type."""
 
-    def __init__(self, journal: _Journal, unconfirmed: int = 0) -> None:
+    def __init__(self, journal: _Journal, unconfirmed: int = 0, lost: str | None = None) -> None:
         self._journal: _Journal = journal
         self._unconfirmed: int = unconfirmed
+        self._lost: str | None = lost
+        self.result_ids: dict[str, list[UUID]] = {}
 
-    async def publish(self, result: IResultMessage) -> None:
-        if self._unconfirmed:
+    async def publish(self, result: IResultMessage, result_id: UUID) -> None:
+        self.result_ids.setdefault(result.type, []).append(result_id)
+        if self._unconfirmed and self._lost in (None, result.type):
             self._unconfirmed -= 1
             raise TimeoutError
         self._journal.events.append(f"publish {result.type}")
@@ -148,12 +152,14 @@ async def _shut_down_during(body: bytes) -> list[str]:
     return journal.events
 
 
-def _supervise_past_lost_confirmations(unconfirmed: int) -> list[str]:
+def _supervise_past_lost_confirmations(
+    unconfirmed: int, lost: str | None = None
+) -> tuple[list[str], dict[str, list[UUID]]]:
     journal = _Journal()
-    publisher = _Publisher(journal, unconfirmed)
+    publisher = _Publisher(journal, unconfirmed, lost)
     supervisor = JobSupervisor(_SPEC, _Runner(), publisher, retry=_RETRY, now=lambda: _AT)
     asyncio.run(supervisor.handle(_Delivery(_JOB.model_dump_json().encode(), journal)))
-    return journal.events
+    return journal.events, publisher.result_ids
 
 
 async def _shut_down_while_confirmations_are_lost() -> list[str]:
@@ -185,6 +191,7 @@ async def _publish_job(
     await MessagePublisher(channel, broker.user, timeout=broker.timeout).publish(
         spec.queue.name,
         _JOB.model_dump_json().encode(),
+        message_id=uuid4(),
         message_type=_JOB.type,
         correlation_id=str(_JOB.job_id),
     )
@@ -319,10 +326,30 @@ def test_job_completes_after_more_lost_confirmations_than_its_delivery_limit() -
     unconfirmed = int(TRANSCRIPTION_REQUESTS.arguments["x-delivery-limit"]) + 1
 
     # Act
-    events = _supervise_past_lost_confirmations(unconfirmed)
+    events, _ = _supervise_past_lost_confirmations(unconfirmed)
 
     # Assert
     assert events == ["publish job_started", "publish transcript_ready", "ack"]
+
+
+def test_job_is_acknowledged_only_after_a_final_result_with_lost_confirmations() -> None:
+    # Arrange
+    unconfirmed = int(TRANSCRIPTION_REQUESTS.arguments["x-delivery-limit"]) + 1
+
+    # Act
+    events, _ = _supervise_past_lost_confirmations(unconfirmed, lost="transcript_ready")
+
+    # Assert
+    assert events == ["publish job_started", "publish transcript_ready", "ack"]
+
+
+def test_every_resend_of_a_result_keeps_its_id() -> None:
+    # Act
+    _, result_ids = _supervise_past_lost_confirmations(3, lost="transcript_ready")
+
+    # Assert
+    sent = result_ids["transcript_ready"]
+    assert sent == [sent[0]] * 4
 
 
 def test_shutdown_while_confirmations_are_lost_returns_the_job_to_the_queue() -> None:

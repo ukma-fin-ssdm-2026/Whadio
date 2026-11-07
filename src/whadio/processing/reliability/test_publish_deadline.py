@@ -2,6 +2,7 @@ import asyncio
 import logging
 from datetime import timedelta
 from unittest.mock import Mock
+from uuid import uuid4
 
 import pytest
 from aio_pika.abc import AbstractChannel, AbstractMessage
@@ -42,7 +43,9 @@ class OneJob:
     async def publish_next(self) -> bool:
         if self._published:
             return False
-        await self._publisher.publish("jobs", b"{}", message_type="job", correlation_id="j1")
+        await self._publisher.publish(
+            "jobs", b"{}", message_id=uuid4(), message_type="job", correlation_id="j1"
+        )
         self._published = True
         return True
 
