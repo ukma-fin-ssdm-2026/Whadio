@@ -251,9 +251,16 @@ async def _serve_until_the_runner_fails_to_start(broker: BrokerSettings, runner:
             await results.delete(if_unused=False, if_empty=False)
 
 
-async def _stopping_ends_when_the_broker_never_answers() -> bool:
+async def _stopping_ends_when_the_broker_never_answers(*, close_stalls: bool) -> bool:
+    connection_closed = asyncio.Event()
+
     async def never_answers(_tag: str) -> None:
-        await asyncio.Event().wait()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            # aiormq queues a Channel.Close behind the frames a blocked broker does not read.
+            if close_stalls:
+                await connection_closed.wait()
 
     jobs = Mock(spec=AbstractQueue, cancel=never_answers)
     jobs.name = "jobs"
@@ -263,9 +270,13 @@ async def _stopping_ends_when_the_broker_never_answers() -> bool:
         if stopping not in done:
             return False
         # A timeout that escaped `stop_consuming` would skip the wait for the running jobs.
-        await stopping
+        cancelling = await stopping
+        connection_closed.set()
+        if cancelling is not None:
+            await asyncio.gather(cancelling, return_exceptions=True)
         return True
     finally:
+        connection_closed.set()
         stopping.cancel()
         await asyncio.gather(stopping, return_exceptions=True)
 
@@ -324,7 +335,15 @@ def test_shutdown_while_confirmations_are_lost_returns_the_job_to_the_queue() ->
 
 def test_stopping_the_consumer_ends_when_the_broker_never_answers() -> None:
     # Act
-    ended = asyncio.run(_stopping_ends_when_the_broker_never_answers())
+    ended = asyncio.run(_stopping_ends_when_the_broker_never_answers(close_stalls=False))
+
+    # Assert
+    assert ended
+
+
+def test_stopping_the_consumer_ends_when_closing_its_channel_stalls_too() -> None:
+    # Act
+    ended = asyncio.run(_stopping_ends_when_the_broker_never_answers(close_stalls=True))
 
     # Assert
     assert ended

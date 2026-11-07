@@ -165,6 +165,7 @@ async def serve_jobs[J: JobMessage, R: IResultMessage](
             fail()
 
         await _watch_consumer_cancel(channel, on_consumer_cancelled)
+        cancelling: asyncio.Task[None] | None = None
         try:
             await runner.start()
             # A job may hold its message for as long as its timeout allows; past the consumer
@@ -177,10 +178,12 @@ async def serve_jobs[J: JobMessage, R: IResultMessage](
             )
             logger.info("Consuming %s", spec.queue.name)
             await stop.wait()
-            await stop_consuming(jobs, tag, broker.timeout)
+            cancelling = await stop_consuming(jobs, tag, broker.timeout)
             await _finish(in_flight, options.shutdown_grace)
         finally:
             await runner.stop()
+    if cancelling is not None:
+        await _reap(cancelling, broker.timeout)
     if failed.is_set():
         raise WorkerFailedError(f"{spec.name} stopped after a failure; the log has its cause")
 
@@ -210,14 +213,35 @@ async def _handle[J: JobMessage, R: IResultMessage](
         fail()
 
 
-async def stop_consuming(jobs: AbstractQueue, tag: str, deadline: timedelta) -> None:
+async def stop_consuming(
+    jobs: AbstractQueue, tag: str, deadline: timedelta
+) -> asyncio.Task[None] | None:
+    """Return the cancellation still running past the deadline, for the caller to reap once the
+    connection is closed."""
+
     # A broker that blocks its publishers stops reading the connection, so the cancellation goes
-    # unanswered. Closing the connection returns the job, so the worker carries on towards that.
-    try:
-        async with asyncio.timeout(deadline.total_seconds()):
-            await jobs.cancel(tag)
-    except TimeoutError:
-        logger.warning("RabbitMQ did not answer the cancelling of the consumer of %s", jobs.name)
+    # unanswered. aiormq answers a cancelled call by queueing a Channel.Close, which waits behind
+    # the same unsent frames, so the call is left to end with the connection rather than awaited.
+    # Closing the connection returns the job, so the worker carries on towards that.
+    async def cancel() -> None:
+        await jobs.cancel(tag)
+
+    cancelling = asyncio.create_task(cancel())
+    done, _ = await asyncio.wait({cancelling}, timeout=deadline.total_seconds())
+    if cancelling in done:
+        await cancelling
+        return None
+    logger.warning("RabbitMQ did not answer the cancelling of the consumer of %s", jobs.name)
+    cancelling.cancel()
+    return cancelling
+
+
+async def _reap(task: asyncio.Task[None], deadline: timedelta) -> None:
+    done, _ = await asyncio.wait({task}, timeout=deadline.total_seconds())
+    if task in done:
+        await asyncio.gather(task, return_exceptions=True)
+    else:
+        logger.warning("Cancelling the consumer outlasted the closed connection; leaving it")
 
 
 async def _finish(in_flight: set[asyncio.Task[None]], grace: timedelta) -> None:
