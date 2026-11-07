@@ -49,6 +49,7 @@ from .repositories import Job
 from .services import (
     DEAD_LETTERED,
     MAX_ATTEMPTS,
+    STALLED,
     TRANSCRIPT_EXISTS,
     UNPUBLISHABLE,
     JobRequest,
@@ -1328,3 +1329,81 @@ def test_processing_a_meeting_neither_uploads_nor_deletes_its_recording(
     handle(pipeline, finish(pipeline, notes.job_id))
     # Assert
     assert (pipeline.storage.uploaded, pipeline.storage.deleted) == ([], [])
+
+
+# --- Jobs returned by job recovery ---
+
+
+def returned_job(pipeline: Pipeline, attempts: int) -> UUID:
+    """A transcription job that job recovery handed back to the publisher."""
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION, status=JobStatus.QUEUED, attempts=attempts)
+    pipeline.jobs.published.discard(job_id)
+    return job_id
+
+
+def test_returned_job_one_attempt_before_the_limit_is_published_again() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = returned_job(pipeline, MAX_ATTEMPTS - 1)
+    # Act
+    requests = publish_all(pipeline)
+    # Assert
+    assert [request.job_id for request in requests] == [job_id]
+
+
+def test_returned_job_that_used_its_attempts_is_not_published() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    returned_job(pipeline, MAX_ATTEMPTS)
+    # Act
+    requests = publish_all(pipeline)
+    # Assert
+    assert requests == []
+
+
+def test_returned_job_that_used_its_attempts_fails_its_meeting_as_timed_out() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    returned_job(pipeline, MAX_ATTEMPTS)
+    # Act
+    publish_all(pipeline)
+    # Assert
+    assert pipeline.meetings.update == ProcessingUpdate(
+        ProcessingState.FAILED, ProcessingFailure.PROCESSING_TIMEOUT
+    )
+
+
+def test_returned_job_that_used_its_attempts_records_that_it_stalled() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = returned_job(pipeline, MAX_ATTEMPTS)
+    # Act
+    publish_all(pipeline)
+    # Assert
+    assert pipeline.jobs.failure_reasons == {job_id: STALLED}
+
+
+def test_returned_job_that_used_its_attempts_notifies_the_uploader_once() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    returned_job(pipeline, MAX_ATTEMPTS)
+    publish_all(pipeline)
+    # Act
+    publish_all(pipeline)
+    # Assert
+    assert pipeline.notices.sent == [processing_notice(pipeline, ProcessingOutcome.FAILED)]
+
+
+def test_late_transcript_of_a_returned_job_counts_once_beside_its_republished_copy() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = returned_job(pipeline, 1)
+    publish_all(pipeline)
+    # Act
+    handle(pipeline, transcript_ready(pipeline, job_id))
+    handle(pipeline, transcript_ready(pipeline, job_id))
+    # Assert
+    assert [job.job_type for job in pipeline.jobs.jobs.values()] == [
+        JobType.TRANSCRIPTION,
+        JobType.NOTES,
+    ]

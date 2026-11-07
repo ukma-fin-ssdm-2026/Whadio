@@ -14,7 +14,7 @@ from ..meetings.monitoring import IMeetingMetadata
 from ..shared.pagination import ListWindow
 from .enums import JobStatus, JobType
 from .models import ProcessingJob
-from .services import DEAD_LETTERED, TRANSCRIPT_EXISTS, UNPUBLISHABLE
+from .services import DEAD_LETTERED, STALLED, TRANSCRIPT_EXISTS, UNPUBLISHABLE
 
 
 @dataclass(frozen=True)
@@ -85,7 +85,7 @@ def safe_failure(reason: str | None) -> str | None:
     if reason is None:
         return None
     allowed = {item.value for item in NotesFailure} | {item.value for item in TranscriptionFailure}
-    allowed.update((DEAD_LETTERED, TRANSCRIPT_EXISTS, UNPUBLISHABLE))
+    allowed.update((DEAD_LETTERED, STALLED, TRANSCRIPT_EXISTS, UNPUBLISHABLE))
     return reason if reason in allowed else "unknown_failure"
 
 
