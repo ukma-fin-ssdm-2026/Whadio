@@ -212,7 +212,7 @@ How the architecture meets fault tolerance (NFR-015) and recoverability (NFR-014
 
 | Failure | What keeps working | What happens to new work |
 |---|---|---|
-| GPU host or ASR worker down | Everything except new transcripts; recordings keep arriving. | Jobs wait in `transcription.requests` and run when a worker returns. A job no worker starts within 2 days is published again as one more attempt, so an outage of 10 days fails a meeting that waited all of it, with a notice, instead of leaving it waiting; the copies already in the queue still run once a worker returns, and their results change nothing. |
+| GPU host or ASR worker down | Everything except new transcripts; recordings keep arriving. | Jobs wait in `transcription.requests` and run when a worker returns. A job no worker starts within 2 days is published again as one more attempt. When a worker returns, each queued copy whose 24-hour audio link has expired also uses an attempt, so an outage of about 5 days or more can fail a waiting meeting, with a notice; with no worker at all, the meeting fails after 10 days. |
 | LLM runtime or notes worker down | Transcripts are readable. | Notes jobs wait in `notes.requests`; the meeting shows its transcript while processing. |
 | The configured provider fails | Transcripts are readable. | The job is retried for a temporary failure; a permanent or exhausted failure marks the meeting failed with its cause. Offering generation with the built-in model (FR-023) is designed, not built yet. |
 | Notes generation fails, so no name is proposed | The transcript and the meeting itself. | The meeting keeps a default name built from its date and time until the member names it or notes are regenerated (FR-033). |
