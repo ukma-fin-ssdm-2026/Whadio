@@ -14,7 +14,7 @@ and deterministic enough to run continuously.
 
 The latest recorded non-model line and branch coverage is **92.42%** overall, from successful
 [CI run 41335159391](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/41335159391).
-The committed [`htmlcov/`](../../htmlcov/index.html) report and [coverage report](testing.md) are
+The last committed [`htmlcov/`](https://github.com/ukma-fin-ssdm-2026/Whadio/tree/649377738acbd740ec84f26e77d2fd99aa22259b/htmlcov) report and [coverage report](testing.md) are
 the current baseline.
 The remaining lines are mainly defensive re-raises and concurrency guards that require genuine
 multi-transaction tests; two ordinary gaps remain: successful glossary rename and the happy path
