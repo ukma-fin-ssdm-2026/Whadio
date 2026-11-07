@@ -16,6 +16,7 @@ Each fix below names who made it.
 | F6 | The SPA's API client has no deadline | B | Low | **Fixed** |
 | F7 | Signing out ignores whether the server ended the session | D | Low | Open |
 | F8 | Asking which chunks the server holds fails silently | D | Low | Open |
+| F9 | A published job whose message or result is lost is never finished | B, D | Medium | **Fixed** |
 
 ## Fixes
 
@@ -156,6 +157,83 @@ user who retries could create a meeting twice.
 | What the user sees | After the retries run out, the page shows "The server did not answer in time. Try again." where its data would be |
 | Recovery | Automatic retries first; after that, the user reloads or revisits the page once the server answers again |
 
+### F9. A published job whose message or result is lost is never finished
+
+Fixed by Andrii Shalaiev in `fix(#294): return published jobs that no worker started to the
+queue`, `fix(#294): return running jobs past their limit to the queue`, `fix(#294): fail a job that
+has used its attempts instead of publishing it` and `fix(#294): restart the clock of a redelivered
+job`.
+
+**Before.** `src/whadio/processing/services.py`: the publisher takes only jobs that were never
+published, and nothing looks at a job after its publish:
+
+```python
+async def publish_next(self, publisher: IJobPublisher, now: datetime) -> bool:
+    job = await self._jobs.next_unpublished()  # queued, published_at is null
+    if job is None:
+        return False
+    ...
+    await publisher.publish(request)
+    await self._jobs.mark_published(job.job_id, now, context)
+    return True
+```
+
+**After.** `src/whadio/processing/recovery.py:32-42`, run on each scheduler tick
+(`src/whadio/scheduler/services.py:101-107`): a `queued` job published more than 2 days ago goes
+back to the publisher with one more attempt, and a `running` job started more than 5 h
+(transcription) or 1 h (notes) ago goes back with its attempts as they are. Each limit is a
+`WHADIO_JOB_RECOVERY__` setting, and a running limit must exceed its worker's startup and job
+timeouts:
+
+```python
+async def recover(self, now: datetime) -> int:
+    limits = self._limits
+    unstarted = await self._jobs.return_unstarted(now - limits.unstarted_limit, BATCH_SIZE)
+    running = await self._jobs.return_running(
+        {
+            JobType.TRANSCRIPTION: now - limits.transcription_running_limit,
+            JobType.NOTES: now - limits.notes_running_limit,
+        },
+        BATCH_SIZE,
+    )
+    return unstarted + running
+```
+
+`src/whadio/processing/repositories.py:181-195` returns at most 50 jobs of each kind, oldest first,
+in one statement, and skips a row whose result is being applied (`FOR UPDATE SKIP LOCKED`). The
+scheduler only writes the database; the publisher in `web` sends the jobs again.
+`src/whadio/processing/services.py:200-203`: a job that comes back with its five attempts used is
+failed instead of published:
+
+```python
+if job.attempts >= MAX_ATTEMPTS:
+    await self._finally_failed(job, now, STALLED, ProcessingFailure.PROCESSING_TIMEOUT)
+    return True
+```
+
+`:226-227` and `:436`: a start reported again for a running job, as after a redelivery, moves
+`started_at` forward, so a job that a second worker runs is not handed back early.
+
+Checked by hand against the Compose RabbitMQ and PostgreSQL, with no worker running, a scheduler
+with a 1-minute unstarted limit and a 10-second interval, and `transcription.requests` purged after
+each publish. An uploaded recording's job was published at 0 s and again at 90 s, 180 s, 270 s and
+360 s, one more attempt each time. At 450 s it failed as `stalled`, the meeting showed
+`processing_timeout`, and the failure email reached Mailpit 3 s later.
+
+**Patterns.** A timeout on each job, kept by the scheduler because a lost message raises nothing
+anywhere, then a bounded retry: the job is published again, up to the five attempts the queues'
+delivery limit also allows. There is no circuit breaker: the scheduler calls nothing but the
+database, and a job published again waits in its queue instead of loading a worker. Past the cap,
+graceful degradation: the meeting fails with a cause and a notice instead of waiting for ever.
+
+**Failure and recovery.**
+
+| | |
+|---|---|
+| Response | Fail-safe while attempts remain: a lost job is published again. Fail-fast at the cap: the meeting fails |
+| What the user sees | Nothing while a republished job succeeds, only a longer wait. At the cap the meeting shows "Processing took too long and was stopped." and the uploader gets the failure email |
+| Recovery | Automatic within the attempts. After that, the member uploads the recording again |
+
 ## Reliability tests
 
 The fixes are in JavaScript, so their tests sit next to the code they test, as the repository's
@@ -176,12 +254,24 @@ only `extension/*.test.js`. Each test injects the failure through a test double 
 | waits for the completion up to the deadline: answered after 24999 / 25000 ms | Boundary value | `extension/background.test.js` |
 | ends a read at once, as a cancellation, when its caller aborts it, or has already | Boundary value | `frontend/src/shared/api/client.test.ts` |
 | lets a write take longer than the read deadline | Boundary value | `frontend/src/shared/api/client.test.ts` |
+| job whose message was lost is published again after the unstarted limit | External failure (fault injection) | `src/whadio/processing/reliability/test_stalled_jobs.py` |
+| job whose result was lost is published again only once past its running limit: at it, and 1 µs past it | External failure (fault injection), boundary value | `src/whadio/processing/reliability/test_stalled_jobs.py` |
+| job lost on every publish fails its meeting with one notice after its attempts | Error handling | `src/whadio/processing/reliability/test_stalled_jobs.py` |
+| job recovery failure is counted and the other jobs still run | Error handling | `src/whadio/scheduler/test_services.py` |
+| published job is returned only once past the unstarted limit: 1 µs before, at and after it | Boundary value | `src/whadio/processing/test_repositories.py` |
+| running job is returned with its attempts only once past its running limit, per job type | Boundary value | `src/whadio/processing/test_repositories.py` |
 
 Run against the code before the fixes, the fault-injection, error-handling and at-the-deadline
 tests fail, while the just-under-the-deadline ones pass on both versions, as they should. Each
 part of the fixes is also covered by a test that fails when that part is removed: the caller's
 signal in the web app's composed signal, the deadline on signing in, and reading the body under
 the deadline.
+
+The F9 tests are in Python. The lab's own, in `src/whadio/processing/reliability/`, run Processing
+over the real job table in the test database, with test doubles for the broker, the worker and the
+meetings: a broker that accepts every job and delivers none, and a worker that reports a job started
+and never answers. They fail when recovery is skipped, when the publish guard is removed and when
+the running limits of the two job types are swapped.
 
 ## Open issues
 
@@ -203,8 +293,21 @@ the deadline.
   This needs its own issue.
 - F2's deadline makes a stuck upload end, but the user still learns of the failure only at hang-up;
   telling them during the call is F3.
+- After F9, the copies of a job that waited in the queue through a long outage still run once a
+  worker returns. The first result counts and the rest change nothing, but each copy costs a run.
+- After F9, a result names its job but not its attempt, so a late failure from a run that was
+  handed back can count against the run that replaced it.
+- After F9, `started_at` comes from the worker's clock, so a worker whose clock is off by more
+  than a limit's margin gets its job handed back early or late.
+- After F9, a lost message is noticed only after the unstarted limit. A check for a job that newer
+  jobs of its queue have overtaken would notice it sooner.
+- After F9, `attempts_started` in the admin job monitoring also counts publishes that no worker
+  started, so it is the count against the retry limit rather than of starts.
 
 ## AI Usage
 
 The F2 and F6 fixes, their tests and these sections were drafted with Claude Code
 (Claude Opus 5.5) and reviewed by Zlata Tsepkalo.
+
+The F9 fix, its tests and its sections were drafted with Claude Code and reviewed by Andrii
+Shalaiev.
