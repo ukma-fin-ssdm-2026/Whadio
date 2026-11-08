@@ -4,8 +4,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
+from uuid import UUID, uuid4
 
-from aio_pika.abc import AbstractIncomingMessage, AbstractRobustChannel
+from aio_pika.abc import AbstractIncomingMessage, AbstractQueue, AbstractRobustChannel
 from pydantic import ValidationError
 
 from ...contracts.common import JobMessage
@@ -33,7 +34,7 @@ class IDelivery(Protocol):
 
 
 class IResultPublisher(Protocol):
-    async def publish(self, result: IResultMessage) -> None: ...
+    async def publish(self, result: IResultMessage, result_id: UUID) -> None: ...
 
 
 class AmqpResultPublisher:
@@ -41,10 +42,11 @@ class AmqpResultPublisher:
         self._publisher: MessagePublisher = publisher
         self._queue: str = queue
 
-    async def publish(self, result: IResultMessage) -> None:
+    async def publish(self, result: IResultMessage, result_id: UUID) -> None:
         await self._publisher.publish(
             self._queue,
             result.model_dump_json().encode(),
+            message_id=result_id,
             message_type=result.type,
             correlation_id=str(result.job_id),
         )
@@ -57,6 +59,12 @@ class ConsumerOptions:
     shutdown_grace: timedelta
 
 
+@dataclass(frozen=True, slots=True)
+class PublishRetry:
+    first: timedelta = timedelta(seconds=1)
+    longest: timedelta = timedelta(seconds=30)
+
+
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -67,11 +75,14 @@ class JobSupervisor[J: JobMessage, R: IResultMessage]:
         spec: WorkerSpec[J, R],
         runner: IJobRunner[J, R],
         publisher: IResultPublisher,
+        *,
+        retry: PublishRetry,
         now: Callable[[], datetime] = _utc_now,
     ) -> None:
         self._spec: WorkerSpec[J, R] = spec
         self._runner: IJobRunner[J, R] = runner
         self._publisher: IResultPublisher = publisher
+        self._retry: PublishRetry = retry
         self._now: Callable[[], datetime] = now
 
     async def handle(self, delivery: IDelivery) -> None:
@@ -92,13 +103,35 @@ class JobSupervisor[J: JobMessage, R: IResultMessage]:
                 kind=self._spec.kind,
                 started_at=self._now(),
             )
-            await self._publisher.publish(started)
+            await self._publish_until_confirmed(started)
             result = await self._runner.run(job)
-            await self._publisher.publish(result)
+            await self._publish_until_confirmed(result)
         except asyncio.CancelledError:
             await delivery.nack(requeue=True)
             raise
         await delivery.ack()
+
+    async def _publish_until_confirmed(self, message: IResultMessage) -> None:
+        # The job is fine when only the broker's confirmation is late: failing here would return
+        # the delivery and spend its delivery limit. The job stays unsettled meanwhile, so the
+        # consumer timeout or a shutdown still ends the wait. Every resend keeps the ID, so
+        # Processing drops a copy it applied even after the job has moved on to a newer attempt.
+        result_id = uuid4()
+        delay = self._retry.first
+        while True:
+            try:
+                await self._publisher.publish(message, result_id)
+            except TimeoutError:
+                logger.warning(
+                    "RabbitMQ did not confirm %s for job %s; retrying in %s",
+                    message.type,
+                    message.job_id,
+                    delay,
+                )
+            else:
+                return
+            await asyncio.sleep(delay.total_seconds())
+            delay = min(delay * 2, self._retry.longest)
 
 
 async def serve_jobs[J: JobMessage, R: IResultMessage](
@@ -115,8 +148,10 @@ async def serve_jobs[J: JobMessage, R: IResultMessage](
         for queue in (DEAD_LETTERS, spec.results):
             await declare_queue(channel, queue.name, queue.arguments)
         jobs = await declare_queue(channel, spec.queue.name, spec.queue.arguments)
-        publisher = AmqpResultPublisher(MessagePublisher(channel, broker.user), spec.results.name)
-        supervisor = JobSupervisor(spec, runner, publisher)
+        publisher = AmqpResultPublisher(
+            MessagePublisher(channel, broker.user, timeout=broker.timeout), spec.results.name
+        )
+        supervisor = JobSupervisor(spec, runner, publisher, retry=PublishRetry())
         in_flight: set[asyncio.Task[None]] = set()
         failed = asyncio.Event()
 
@@ -134,6 +169,7 @@ async def serve_jobs[J: JobMessage, R: IResultMessage](
             fail()
 
         await _watch_consumer_cancel(channel, on_consumer_cancelled)
+        cancelling: asyncio.Task[None] | None = None
         try:
             await runner.start()
             # A job may hold its message for as long as its timeout allows; past the consumer
@@ -146,10 +182,12 @@ async def serve_jobs[J: JobMessage, R: IResultMessage](
             )
             logger.info("Consuming %s", spec.queue.name)
             await stop.wait()
-            await jobs.cancel(tag)
+            cancelling = await stop_consuming(jobs, tag, broker.timeout)
             await _finish(in_flight, options.shutdown_grace)
         finally:
             await runner.stop()
+    if cancelling is not None:
+        await _reap(cancelling, broker.timeout)
     if failed.is_set():
         raise WorkerFailedError(f"{spec.name} stopped after a failure; the log has its cause")
 
@@ -177,6 +215,37 @@ async def _handle[J: JobMessage, R: IResultMessage](
         # counts towards the limit, so one that keeps failing is dead-lettered; a nack would not.
         logger.exception("Handling a message from the job queue failed; stopping the worker")
         fail()
+
+
+async def stop_consuming(
+    jobs: AbstractQueue, tag: str, deadline: timedelta
+) -> asyncio.Task[None] | None:
+    """Return the cancellation still running past the deadline, for the caller to reap once the
+    connection is closed."""
+
+    # A broker that blocks its publishers stops reading the connection, so the cancellation goes
+    # unanswered. aiormq answers a cancelled call by queueing a Channel.Close, which waits behind
+    # the same unsent frames, so the call is left to end with the connection rather than awaited.
+    # Closing the connection returns the job, so the worker carries on towards that.
+    async def cancel() -> None:
+        await jobs.cancel(tag)
+
+    cancelling = asyncio.create_task(cancel())
+    done, _ = await asyncio.wait({cancelling}, timeout=deadline.total_seconds())
+    if cancelling in done:
+        await cancelling
+        return None
+    logger.warning("RabbitMQ did not answer the cancelling of the consumer of %s", jobs.name)
+    cancelling.cancel()
+    return cancelling
+
+
+async def _reap(task: asyncio.Task[None], deadline: timedelta) -> None:
+    done, _ = await asyncio.wait({task}, timeout=deadline.total_seconds())
+    if task in done:
+        await asyncio.gather(task, return_exceptions=True)
+    else:
+        logger.warning("Cancelling the consumer outlasted the closed connection; leaving it")
 
 
 async def _finish(in_flight: set[asyncio.Task[None]], grace: timedelta) -> None:
