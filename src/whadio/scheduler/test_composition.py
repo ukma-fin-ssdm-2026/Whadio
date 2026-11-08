@@ -22,9 +22,14 @@ from ..notifications.models import NotificationOutbox
 from ..notifications.services import NotificationDrainer, Recipient
 from ..notifications.settings import NotificationSettings, SmtpSettings
 from ..notifications.templates import NoticeKind, RecordingDeletionWarning
+from ..processing.enums import JobStatus, JobType
+from ..processing.models import ProcessingJob
+from ..processing.repositories import JobRepository
+from ..processing.settings import JobRecoverySettings
 from ..retention.services import RetentionService
 from .composition import (
     AccountRecipients,
+    JobRecoveryJobs,
     OutboxRetentionNotices,
     RegistrationCleanupJobs,
     RetentionTransactions,
@@ -323,3 +328,29 @@ def test_warned_recording_is_not_warned_again_after_its_notice_is_removed(
     warnings = async_database.run(scenario)
     # Assert
     assert warnings == []
+
+
+@pytest.mark.slow
+def test_job_recovery_returns_a_lost_job_to_the_queue_in_its_own_transaction(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    published_at = datetime(1990, 4, 1, tzinfo=UTC)
+    limits = JobRecoverySettings(unstarted_limit=timedelta(days=2))
+
+    async def scenario(session: AsyncSession) -> tuple[JobStatus, datetime | None]:
+        meeting = await AsyncDatabase.add_meeting(
+            session, await AsyncDatabase.add_workspace(session)
+        )
+        jobs = JobRepository(session)
+        job_id = await jobs.add(meeting, JobType.TRANSCRIPTION)
+        await jobs.mark_published(job_id, published_at, ())
+        recovery = JobRecoveryJobs(SavepointTransactions(session), limits)
+        # Act
+        await recovery.recover(published_at + timedelta(days=2, microseconds=1))
+        job = await session.get_one(ProcessingJob, job_id, populate_existing=True)
+        return job.status, job.published_at
+
+    found = async_database.run(scenario)
+    # Assert
+    assert found == (JobStatus.QUEUED, None)

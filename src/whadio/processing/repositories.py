@@ -4,7 +4,7 @@ from typing import Final, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, Field, TypeAdapter
-from sqlalchemy import exists, func, select, update
+from sqlalchemy import Select, Update, exists, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..meetings.contracts import ContextReference
@@ -20,6 +20,7 @@ class Job:
     status: JobStatus
     attempts: int
     sent_context: tuple[ContextReference, ...] = ()
+    applied_results: frozenset[UUID] = frozenset()
 
 
 class IJobRepository(Protocol):
@@ -36,6 +37,8 @@ class IJobRepository(Protocol):
     ) -> None: ...
 
     async def mark_running(self, job_id: UUID, started_at: datetime, /) -> None: ...
+
+    async def record_result(self, job_id: UUID, result_id: UUID, /) -> None: ...
 
     async def requeue(self, job_id: UUID, /) -> None: ...
 
@@ -125,17 +128,18 @@ class JobRepository:
             )
         )
 
-    async def requeue(self, job_id: UUID) -> None:
+    async def record_result(self, job_id: UUID, result_id: UUID) -> None:
         await self._session.execute(
             update(ProcessingJob)
             .where(ProcessingJob.processing_job_id == job_id)
             .values(
-                status=JobStatus.QUEUED,
-                published_at=None,
-                queued_at=func.clock_timestamp(),
-                started_at=None,
-                finished_at=None,
+                applied_result_ids=func.array_append(ProcessingJob.applied_result_ids, result_id)
             )
+        )
+
+    async def requeue(self, job_id: UUID) -> None:
+        await self._session.execute(
+            _to_publisher(update(ProcessingJob).where(ProcessingJob.processing_job_id == job_id))
         )
 
     async def finish(
@@ -147,6 +151,45 @@ class JobRepository:
             .values(status=status, finished_at=finished_at, failure_reason=failure_reason)
         )
 
+    async def return_unstarted(self, published_before: datetime, limit: int) -> int:
+        return await self._return_oldest(
+            select(ProcessingJob.processing_job_id)
+            .where(
+                ProcessingJob.status == JobStatus.QUEUED,
+                ProcessingJob.published_at < published_before,
+            )
+            .order_by(ProcessingJob.published_at),
+            limit,
+            added_attempts=1,
+        )
+
+    async def _return_oldest(
+        self, stalled: Select[UUID], limit: int, *, added_attempts: int
+    ) -> int:
+        # Skipping locked rows leaves a job alone while its result is being applied.
+        returned = await self._session.scalars(
+            _to_publisher(update(ProcessingJob))
+            .where(
+                ProcessingJob.processing_job_id.in_(
+                    stalled.limit(limit).with_for_update(skip_locked=True)
+                )
+            )
+            .values(attempts=ProcessingJob.attempts + added_attempts)
+            .returning(ProcessingJob.processing_job_id)
+        )
+        return len(returned.all())
+
+
+def _to_publisher(statement: Update) -> Update:
+    """The job waits for the publisher again, as before its first publish."""
+    return statement.values(
+        status=JobStatus.QUEUED,
+        published_at=None,
+        queued_at=func.clock_timestamp(),
+        started_at=None,
+        finished_at=None,
+    )
+
 
 def _job(found: ProcessingJob) -> Job:
     sent = [] if found.sent_context is None else _SENT_CONTEXT.validate_python(found.sent_context)
@@ -157,4 +200,5 @@ def _job(found: ProcessingJob) -> Job:
         status=found.status,
         attempts=found.attempts,
         sent_context=tuple(ContextReference(item.meeting_id, item.name) for item in sent),
+        applied_results=frozenset(found.applied_result_ids),
     )

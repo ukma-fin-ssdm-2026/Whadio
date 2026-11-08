@@ -4,6 +4,50 @@ All notable changes to Whadio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026-11-08
+
+### Fixed
+
+- Bound object storage calls with a timeout and jittered retries ([#323](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/323))
+- Recover processing jobs whose message was lost ([#324](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/324))
+
+## [0.10.0] - 2026-11-08
+
+### Added
+
+- Add administrator job monitoring page ([#305](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/305))
+
+## [0.9.0] - 2026-11-08
+
+### Added
+
+- Change a member's role ([#303](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/303))
+- Remove a member from a workspace ([#310](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/310))
+
+## [0.8.1] - 2026-11-08
+
+### Fixed
+
+- Give the broker connection and publishes a deadline ([#315](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/315))
+
+## [0.8.0] - 2026-11-08
+
+### Added
+
+- Add workspace invitations frontend ([#309](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/309))
+
+## [0.7.0] - 2026-11-07
+
+### Added
+
+- List workspace members ([#302](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/302))
+
+## [0.6.1] - 2026-11-07
+
+### Fixed
+
+- Pin Swagger UI and check its integrity ([#297](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/297))
+
 ## [0.6.0] - 2026-11-05
 
 ### Added

@@ -186,6 +186,18 @@ class InvitationCreated(InvitationRead):
     )
 
 
+class MemberUpdate(Input):
+    role: InvitedRole = Field(description="The member's new role; the Owner's cannot change")
+
+
+class MemberRead(Output):
+    user_id: UUID = Field(description="The member's user identifier", examples=[USER_ID_EXAMPLE])
+    name: str = Field(description="The member's display name", examples=["Bob"])
+    email: str = Field(description="The member's email address", examples=["bob@whadio.dev"])
+    role: Role = Field(description="The member's role in the workspace")
+    joined_at: datetime = Field(description="When the member joined the workspace")
+
+
 class RegistrationComplete(Input):
     # Per-field StringConstraints cannot preserve whitespace on SecretStr in both validation modes.
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", str_strip_whitespace=False)

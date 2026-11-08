@@ -292,6 +292,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List members
+         * @description Any member. Lists the workspace's members by joining time, oldest first.
+         */
+        get: operations["list_members_api_v1_workspaces__workspace_id__members_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/members/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a member
+         * @description Moderator or Owner only, a Moderator's own membership included. The member loses the workspace and its meetings at once, and their access grants go with the membership. Refused while they are the only one selected for a restricted meeting; the refusal names no meeting.
+         */
+        delete: operations["remove_member_api_v1_workspaces__workspace_id__members__user_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a member's role
+         * @description Moderator or Owner only. Switches a member between `member` and `moderator`, with effect from that member's next request. Giving the role the member already has changes nothing.
+         */
+        patch: operations["change_member_role_api_v1_workspaces__workspace_id__members__user_id__patch"];
+        trace?: never;
+    };
     "/api/v1/workspaces": {
         parameters: {
             query?: never;
@@ -1174,7 +1218,7 @@ export interface components {
          * ErrorCode
          * @enum {string}
          */
-        ErrorCode: "EMAIL_MISMATCH" | "ACCOUNT_EXISTS" | "NO_NOTES" | "INTEGRATION_UNAVAILABLE" | "TRANSCRIPT_EXISTS" | "ALREADY_PROCESSED" | "FOLDER_RECOVERY_CONFLICT" | "DEFAULT_FOLDER" | "FOLDER_EXISTS" | "TERM_EXISTS" | "STALE_REVISION" | "LINK_INVALID" | "ACCESS_REQUEST_EXISTS" | "ALREADY_HAS_ACCESS" | "ACCESS_REQUEST_NOT_PENDING" | "SHARE_ALREADY_BOUND" | "SHARE_REVOKED" | "MALFORMED_REQUEST" | "VALIDATION_ERROR" | "UNAUTHENTICATED" | "INVALID_CREDENTIALS" | "INSUFFICIENT_ROLE" | "NOT_FOUND" | "METHOD_NOT_ALLOWED" | "PERSONAL_WORKSPACE" | "ALREADY_MEMBER" | "INVITATION_LIMIT" | "INVITATION_COOLDOWN" | "INVITATION_NOT_PENDING" | "NOT_TRANSCRIBED" | "NOTES_IN_PROGRESS" | "RECORDING_NOT_READY" | "RECORDING_DELETED" | "REGENERATION_LIMIT" | "CHUNK_MISMATCH" | "CAPTURE_CLOSED" | "MISSING_CHUNKS" | "EMPTY_CAPTURE" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "RATE_LIMITED" | "HTTP_ERROR" | "INTERNAL_ERROR";
+        ErrorCode: "EMAIL_MISMATCH" | "ACCOUNT_EXISTS" | "NO_NOTES" | "INTEGRATION_UNAVAILABLE" | "TRANSCRIPT_EXISTS" | "ALREADY_PROCESSED" | "FOLDER_RECOVERY_CONFLICT" | "DEFAULT_FOLDER" | "FOLDER_EXISTS" | "TERM_EXISTS" | "STALE_REVISION" | "LINK_INVALID" | "ACCESS_REQUEST_EXISTS" | "ALREADY_HAS_ACCESS" | "ACCESS_REQUEST_NOT_PENDING" | "SHARE_ALREADY_BOUND" | "SHARE_REVOKED" | "MALFORMED_REQUEST" | "VALIDATION_ERROR" | "UNAUTHENTICATED" | "INVALID_CREDENTIALS" | "INSUFFICIENT_ROLE" | "NOT_FOUND" | "METHOD_NOT_ALLOWED" | "PERSONAL_WORKSPACE" | "ALREADY_MEMBER" | "INVITATION_LIMIT" | "INVITATION_COOLDOWN" | "INVITATION_NOT_PENDING" | "OWNER_IMMUTABLE" | "RESTRICTED_MEETING_REQUIRES_RECIPIENT" | "NOT_TRANSCRIBED" | "NOTES_IN_PROGRESS" | "RECORDING_NOT_READY" | "RECORDING_DELETED" | "REGENERATION_LIMIT" | "CHUNK_MISMATCH" | "CAPTURE_CLOSED" | "MISSING_CHUNKS" | "EMPTY_CAPTURE" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "RATE_LIMITED" | "HTTP_ERROR" | "INTERNAL_ERROR";
         /** ErrorDetail */
         ErrorDetail: {
             /**
@@ -1460,7 +1504,7 @@ export interface components {
             finished_at: string | null;
             /**
              * Attempts Started
-             * @description Number of accepted attempt starts, including the first
+             * @description Attempts counted against the retry limit: accepted starts and republished jobs no worker started
              */
             attempts_started: number;
             /**
@@ -1761,6 +1805,41 @@ export interface components {
              */
             folder_id?: string | null;
         };
+        /** MemberRead */
+        MemberRead: {
+            /**
+             * User Id
+             * Format: uuid
+             * @description The member's user identifier
+             * @example 3f6c1d2e-8a4b-4c5d-9e0f-1a2b3c4d5e6f
+             */
+            user_id: string;
+            /**
+             * Name
+             * @description The member's display name
+             * @example Bob
+             */
+            name: string;
+            /**
+             * Email
+             * @description The member's email address
+             * @example bob@whadio.dev
+             */
+            email: string;
+            /** @description The member's role in the workspace */
+            role: components["schemas"]["Role"];
+            /**
+             * Joined At
+             * Format: date-time
+             * @description When the member joined the workspace
+             */
+            joined_at: string;
+        };
+        /** MemberUpdate */
+        MemberUpdate: {
+            /** @description The member's new role; the Owner's cannot change */
+            role: components["schemas"]["InvitedRole"];
+        };
         /** MembershipRead */
         MembershipRead: {
             /**
@@ -1922,6 +2001,15 @@ export interface components {
              * @description Items of this page, in the documented order
              */
             items: components["schemas"]["MeetingSummary"][];
+            pagination: components["schemas"]["PageInfo"];
+        };
+        /** Page[MemberRead] */
+        Page_MemberRead_: {
+            /**
+             * Items
+             * @description Items of this page, in the documented order
+             */
+            items: components["schemas"]["MemberRead"][];
             pagination: components["schemas"]["PageInfo"];
         };
         /** Page[NoteRead] */
@@ -3509,6 +3597,212 @@ export interface operations {
                 };
             };
             /** @description `INVITATION_NOT_PENDING`: the invitation was already answered or cancelled */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_members_api_v1_workspaces__workspace_id__members_get: {
+        parameters: {
+            query?: {
+                /** @description Maximum number of items to return */
+                limit?: number;
+                /** @description Opaque `next_cursor` from the previous page; omit for the first page */
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description Workspace identifier */
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of members */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_MemberRead_"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: the session is missing, expired or ended */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such workspace, or the caller is not a member */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    remove_member_api_v1_workspaces__workspace_id__members__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace identifier */
+                workspace_id: string;
+                /** @description The member's user identifier */
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The member was removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `UNAUTHENTICATED`: the session is missing, expired or ended */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `INSUFFICIENT_ROLE`: Moderator or Owner required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such workspace or member, or the caller is not a member */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `OWNER_IMMUTABLE`: the member is the Owner; `RESTRICTED_MEETING_REQUIRES_RECIPIENT`: the member is the only one selected for a restricted meeting, so another member must be selected for it first */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    change_member_role_api_v1_workspaces__workspace_id__members__user_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace identifier */
+                workspace_id: string;
+                /** @description The member's user identifier */
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemberUpdate"];
+            };
+        };
+        responses: {
+            /** @description The member with their new role */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberRead"];
+                };
+            };
+            /** @description `MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: the session is missing, expired or ended */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `INSUFFICIENT_ROLE`: Moderator or Owner required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such workspace or member, or the caller is not a member */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `OWNER_IMMUTABLE`: the member is the Owner */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6806,7 +7100,7 @@ type ReadonlyArray<T> = [
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
 export const accessModeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["AccessMode"]> = ["workspace", "restricted"];
 export const captureStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CaptureStatus"]> = ["recording", "idle", "assembled", "abandoned"];
-export const errorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorCode"]> = ["EMAIL_MISMATCH", "ACCOUNT_EXISTS", "NO_NOTES", "INTEGRATION_UNAVAILABLE", "TRANSCRIPT_EXISTS", "ALREADY_PROCESSED", "FOLDER_RECOVERY_CONFLICT", "DEFAULT_FOLDER", "FOLDER_EXISTS", "TERM_EXISTS", "STALE_REVISION", "LINK_INVALID", "ACCESS_REQUEST_EXISTS", "ALREADY_HAS_ACCESS", "ACCESS_REQUEST_NOT_PENDING", "SHARE_ALREADY_BOUND", "SHARE_REVOKED", "MALFORMED_REQUEST", "VALIDATION_ERROR", "UNAUTHENTICATED", "INVALID_CREDENTIALS", "INSUFFICIENT_ROLE", "NOT_FOUND", "METHOD_NOT_ALLOWED", "PERSONAL_WORKSPACE", "ALREADY_MEMBER", "INVITATION_LIMIT", "INVITATION_COOLDOWN", "INVITATION_NOT_PENDING", "NOT_TRANSCRIBED", "NOTES_IN_PROGRESS", "RECORDING_NOT_READY", "RECORDING_DELETED", "REGENERATION_LIMIT", "CHUNK_MISMATCH", "CAPTURE_CLOSED", "MISSING_CHUNKS", "EMPTY_CAPTURE", "PAYLOAD_TOO_LARGE", "UNSUPPORTED_MEDIA_TYPE", "RATE_LIMITED", "HTTP_ERROR", "INTERNAL_ERROR"];
+export const errorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorCode"]> = ["EMAIL_MISMATCH", "ACCOUNT_EXISTS", "NO_NOTES", "INTEGRATION_UNAVAILABLE", "TRANSCRIPT_EXISTS", "ALREADY_PROCESSED", "FOLDER_RECOVERY_CONFLICT", "DEFAULT_FOLDER", "FOLDER_EXISTS", "TERM_EXISTS", "STALE_REVISION", "LINK_INVALID", "ACCESS_REQUEST_EXISTS", "ALREADY_HAS_ACCESS", "ACCESS_REQUEST_NOT_PENDING", "SHARE_ALREADY_BOUND", "SHARE_REVOKED", "MALFORMED_REQUEST", "VALIDATION_ERROR", "UNAUTHENTICATED", "INVALID_CREDENTIALS", "INSUFFICIENT_ROLE", "NOT_FOUND", "METHOD_NOT_ALLOWED", "PERSONAL_WORKSPACE", "ALREADY_MEMBER", "INVITATION_LIMIT", "INVITATION_COOLDOWN", "INVITATION_NOT_PENDING", "OWNER_IMMUTABLE", "RESTRICTED_MEETING_REQUIRES_RECIPIENT", "NOT_TRANSCRIBED", "NOTES_IN_PROGRESS", "RECORDING_NOT_READY", "RECORDING_DELETED", "REGENERATION_LIMIT", "CHUNK_MISMATCH", "CAPTURE_CLOSED", "MISSING_CHUNKS", "EMPTY_CAPTURE", "PAYLOAD_TOO_LARGE", "UNSUPPORTED_MEDIA_TYPE", "RATE_LIMITED", "HTTP_ERROR", "INTERNAL_ERROR"];
 export const exportFormatValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ExportFormat"]> = ["markdown", "vtt"];
 export const exportVersionValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ExportVersion"]> = ["current", "original"];
 export const invitationStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["InvitationState"]> = ["pending", "accepted", "declined", "cancelled"];

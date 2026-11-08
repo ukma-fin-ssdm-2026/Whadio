@@ -12,6 +12,7 @@ from pydantic import HttpUrl, SecretStr
 from conftest import refused_fields
 
 from .storage import (
+    Backoff,
     ObjectStorageError,
     ObjectStorageSettings,
     S3ObjectStorage,
@@ -56,7 +57,9 @@ class _FakeServer(urllib3.PoolManager):
 
 def _storage_on(server: _FakeServer) -> S3ObjectStorage:
     client = create_s3_client(_SETTINGS, _SETTINGS.endpoint_url, http_client=server)
-    return S3ObjectStorage(client=client, signer=client, bucket=_SETTINGS.bucket)
+    return S3ObjectStorage(
+        client=client, signer=client, bucket=_SETTINGS.bucket, backoff=Backoff(attempts=1)
+    )
 
 
 def test_presigned_url_is_made_for_the_public_endpoint() -> None:
@@ -95,7 +98,13 @@ def test_presigned_url_carries_the_requested_lifetime() -> None:
 def test_presigned_url_reports_when_it_expires() -> None:
     # Arrange
     client = create_s3_client(_SETTINGS, _SETTINGS.endpoint_url)
-    storage = S3ObjectStorage(client=client, signer=client, bucket="recordings", now=lambda: _NOW)
+    storage = S3ObjectStorage(
+        client=client,
+        signer=client,
+        bucket="recordings",
+        backoff=Backoff(attempts=1),
+        now=lambda: _NOW,
+    )
 
     # Act
     presigned = storage.presign_get(_KEY, expires_in=timedelta(hours=2))

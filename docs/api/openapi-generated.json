@@ -3,7 +3,7 @@
   "info": {
     "title": "Whadio API",
     "description": "Whadio records Google Meet calls from the browser, transcribes them with speaker labels and\nwrites notes, inside workspaces with roles, restrictions and sharing.\n\nSign-in, workspaces, meeting content, folders, glossary, revisions, restrictions and shares are\nstored in PostgreSQL. Requests need a stored, unexpired session; MCP needs a stored personal key.\nAn upload is stored in object storage and queued for transcription and notes, which the workers\nrun.\n\nNotes regeneration is not built yet: it returns `503 INTEGRATION_UNAVAILABLE`, as does an upload\non a server without a broker or object storage. A share access request reserves an email to the\nshare's creator with the request; the scheduler sends it when an SMTP relay is configured. The API\ncontract is in `docs/api/api-design.md`.\n\n## Conventions\n- **Errors:** every 4xx and 5xx body is `{\"error\": {\"code\", \"message\", \"details\",\n  \"request_id\"}}`. Branch on `code`; `request_id` equals the `X-Request-ID` response header.\n- **Lists:** `limit` (1-100, default 20) and `cursor`; responses are\n  `{\"items\": [...], \"pagination\": {\"limit\", \"next_cursor\", \"has_more\"}}`.\n- **Visibility:** a resource the caller cannot see is `404`, never `403`, so its existence does\n  not leak. `403` means the caller can see it but their role does not allow the action.\n- **Time:** ISO 8601 with an offset; returned in UTC.",
-    "version": "0.6.0"
+    "version": "0.10.1"
   },
   "paths": {
     "/api/v1/invitations/{invitation_id}/preview": {
@@ -1224,6 +1224,343 @@
           },
           "409": {
             "description": "`INVITATION_NOT_PENDING`: the invitation was already answered or cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/members": {
+      "get": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "List members",
+        "description": "Any member. Lists the workspace's members by joining time, oldest first.",
+        "operationId": "list_members_api_v1_workspaces__workspace_id__members_get",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Workspace identifier",
+              "examples": [
+                "7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d"
+              ],
+              "title": "Workspace Id"
+            },
+            "description": "Workspace identifier"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of items to return",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Maximum number of items to return"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque `next_cursor` from the previous page; omit for the first page",
+              "title": "Cursor"
+            },
+            "description": "Opaque `next_cursor` from the previous page; omit for the first page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of members",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_MemberRead_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`NOT_FOUND`: no such workspace, or the caller is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/members/{user_id}": {
+      "patch": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Change a member's role",
+        "description": "Moderator or Owner only. Switches a member between `member` and `moderator`, with effect from that member's next request. Giving the role the member already has changes nothing.",
+        "operationId": "change_member_role_api_v1_workspaces__workspace_id__members__user_id__patch",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Workspace identifier",
+              "examples": [
+                "7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d"
+              ],
+              "title": "Workspace Id"
+            },
+            "description": "Workspace identifier"
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The member's user identifier",
+              "examples": [
+                "3f6c1d2e-8a4b-4c5d-9e0f-1a2b3c4d5e6f"
+              ],
+              "title": "User Id"
+            },
+            "description": "The member's user identifier"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The member with their new role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`INSUFFICIENT_ROLE`: Moderator or Owner required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`NOT_FOUND`: no such workspace or member, or the caller is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`OWNER_IMMUTABLE`: the member is the Owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Remove a member",
+        "description": "Moderator or Owner only, a Moderator's own membership included. The member loses the workspace and its meetings at once, and their access grants go with the membership. Refused while they are the only one selected for a restricted meeting; the refusal names no meeting.",
+        "operationId": "remove_member_api_v1_workspaces__workspace_id__members__user_id__delete",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Workspace identifier",
+              "examples": [
+                "7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d"
+              ],
+              "title": "Workspace Id"
+            },
+            "description": "Workspace identifier"
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The member's user identifier",
+              "examples": [
+                "3f6c1d2e-8a4b-4c5d-9e0f-1a2b3c4d5e6f"
+              ],
+              "title": "User Id"
+            },
+            "description": "The member's user identifier"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The member was removed"
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`INSUFFICIENT_ROLE`: Moderator or Owner required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`NOT_FOUND`: no such workspace or member, or the caller is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`OWNER_IMMUTABLE`: the member is the Owner; `RESTRICTED_MEETING_REQUIRES_RECIPIENT`: the member is the only one selected for a restricted meeting, so another member must be selected for it first",
             "content": {
               "application/json": {
                 "schema": {
@@ -6666,6 +7003,8 @@
           "INVITATION_LIMIT",
           "INVITATION_COOLDOWN",
           "INVITATION_NOT_PENDING",
+          "OWNER_IMMUTABLE",
+          "RESTRICTED_MEETING_REQUIRES_RECIPIENT",
           "NOT_TRANSCRIBED",
           "NOTES_IN_PROGRESS",
           "RECORDING_NOT_READY",
@@ -7162,7 +7501,7 @@
           "attempts_started": {
             "type": "integer",
             "title": "Attempts Started",
-            "description": "Number of accepted attempt starts, including the first"
+            "description": "Attempts counted against the retry limit: accepted starts and republished jobs no worker started"
           },
           "as_of": {
             "type": "string",
@@ -7732,6 +8071,68 @@
         "type": "object",
         "title": "MeetingUpdate"
       },
+      "MemberRead": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id",
+            "description": "The member's user identifier",
+            "examples": [
+              "3f6c1d2e-8a4b-4c5d-9e0f-1a2b3c4d5e6f"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "The member's display name",
+            "examples": [
+              "Bob"
+            ]
+          },
+          "email": {
+            "type": "string",
+            "title": "Email",
+            "description": "The member's email address",
+            "examples": [
+              "bob@whadio.dev"
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role",
+            "description": "The member's role in the workspace"
+          },
+          "joined_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Joined At",
+            "description": "When the member joined the workspace"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "name",
+          "email",
+          "role",
+          "joined_at"
+        ],
+        "title": "MemberRead"
+      },
+      "MemberUpdate": {
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/InvitedRole",
+            "description": "The member's new role; the Owner's cannot change"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "title": "MemberUpdate"
+      },
       "MembershipRead": {
         "properties": {
           "user_id": {
@@ -8040,6 +8441,27 @@
           "pagination"
         ],
         "title": "Page[MeetingSummary]"
+      },
+      "Page_MemberRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MemberRead"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Items of this page, in the documented order"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "pagination"
+        ],
+        "title": "Page[MemberRead]"
       },
       "Page_NoteRead_": {
         "properties": {
