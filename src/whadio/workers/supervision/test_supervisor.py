@@ -1,7 +1,9 @@
 import asyncio
+import sys
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from unittest.mock import Mock
+from uuid import UUID, uuid4
 
 import pytest
 from aio_pika.abc import AbstractChannel, AbstractIncomingMessage, AbstractQueue
@@ -18,7 +20,14 @@ from ...contracts.transcription import (
 )
 from ...shared.broker import BrokerSettings, MessagePublisher, connect, declare_queue
 from .jobs import IResultMessage, RunFailure, WorkerSpec
-from .supervisor import ConsumerOptions, JobSupervisor, WorkerFailedError, serve_jobs
+from .supervisor import (
+    ConsumerOptions,
+    JobSupervisor,
+    PublishRetry,
+    WorkerFailedError,
+    serve_jobs,
+    stop_consuming,
+)
 
 type _Result = TranscriptReady | TranscriptionFailed
 
@@ -59,6 +68,7 @@ _SPEC = WorkerSpec(
 _OPTIONS = ConsumerOptions(
     concurrency=1, consumer_timeout=timedelta(minutes=1), shutdown_grace=timedelta(seconds=1)
 )
+_RETRY = PublishRetry(first=timedelta(milliseconds=1), longest=timedelta(milliseconds=4))
 
 
 class _Journal:
@@ -82,10 +92,20 @@ class _Delivery:
 
 
 class _Publisher:
-    def __init__(self, journal: _Journal) -> None:
-        self._journal: _Journal = journal
+    """Times out the first `unconfirmed` publishes of `lost` results (any when None), as a broker
+    that loses its confirmations, and keeps the ID of every attempt by result type."""
 
-    async def publish(self, result: IResultMessage) -> None:
+    def __init__(self, journal: _Journal, unconfirmed: int = 0, lost: str | None = None) -> None:
+        self._journal: _Journal = journal
+        self._unconfirmed: int = unconfirmed
+        self._lost: str | None = lost
+        self.result_ids: dict[str, list[UUID]] = {}
+
+    async def publish(self, result: IResultMessage, result_id: UUID) -> None:
+        self.result_ids.setdefault(result.type, []).append(result_id)
+        if self._unconfirmed and self._lost in (None, result.type):
+            self._unconfirmed -= 1
+            raise TimeoutError
         self._journal.events.append(f"publish {result.type}")
 
 
@@ -115,15 +135,39 @@ class _Runner:
 
 def _supervise(body: bytes, runner: _Runner) -> list[str]:
     journal = _Journal()
-    supervisor = JobSupervisor(_SPEC, runner, _Publisher(journal), now=lambda: _AT)
+    supervisor = JobSupervisor(_SPEC, runner, _Publisher(journal), retry=_RETRY, now=lambda: _AT)
     asyncio.run(supervisor.handle(_Delivery(body, journal)))
     return journal.events
 
 
 async def _shut_down_during(body: bytes) -> list[str]:
     journal = _Journal()
-    supervisor = JobSupervisor(_SPEC, _Runner(blocks=True), _Publisher(journal), now=lambda: _AT)
+    supervisor = JobSupervisor(
+        _SPEC, _Runner(blocks=True), _Publisher(journal), retry=_RETRY, now=lambda: _AT
+    )
     task = asyncio.create_task(supervisor.handle(_Delivery(body, journal)))
+    await asyncio.sleep(0.01)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+    return journal.events
+
+
+def _supervise_past_lost_confirmations(
+    unconfirmed: int, lost: str | None = None
+) -> tuple[list[str], dict[str, list[UUID]]]:
+    journal = _Journal()
+    publisher = _Publisher(journal, unconfirmed, lost)
+    supervisor = JobSupervisor(_SPEC, _Runner(), publisher, retry=_RETRY, now=lambda: _AT)
+    asyncio.run(supervisor.handle(_Delivery(_JOB.model_dump_json().encode(), journal)))
+    return journal.events, publisher.result_ids
+
+
+async def _shut_down_while_confirmations_are_lost() -> list[str]:
+    journal = _Journal()
+    publisher = _Publisher(journal, unconfirmed=sys.maxsize)
+    supervisor = JobSupervisor(_SPEC, _Runner(), publisher, retry=_RETRY, now=lambda: _AT)
+    delivery = _Delivery(_JOB.model_dump_json().encode(), journal)
+    task = asyncio.create_task(supervisor.handle(delivery))
     await asyncio.sleep(0.01)
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
@@ -144,9 +188,10 @@ async def _publish_job(
     broker: BrokerSettings,
     spec: WorkerSpec[TranscriptionRequested, _Result],
 ) -> None:
-    await MessagePublisher(channel, broker.user).publish(
+    await MessagePublisher(channel, broker.user, timeout=broker.timeout).publish(
         spec.queue.name,
         _JOB.model_dump_json().encode(),
+        message_id=uuid4(),
         message_type=_JOB.type,
         correlation_id=str(_JOB.job_id),
     )
@@ -213,6 +258,36 @@ async def _serve_until_the_runner_fails_to_start(broker: BrokerSettings, runner:
             await results.delete(if_unused=False, if_empty=False)
 
 
+async def _stopping_ends_when_the_broker_never_answers(*, close_stalls: bool) -> bool:
+    connection_closed = asyncio.Event()
+
+    async def never_answers(_tag: str) -> None:
+        try:
+            await asyncio.Event().wait()
+        finally:
+            # aiormq queues a Channel.Close behind the frames a blocked broker does not read.
+            if close_stalls:
+                await connection_closed.wait()
+
+    jobs = Mock(spec=AbstractQueue, cancel=never_answers)
+    jobs.name = "jobs"
+    stopping = asyncio.create_task(stop_consuming(jobs, "tag", timedelta(milliseconds=10)))
+    try:
+        done, _ = await asyncio.wait({stopping}, timeout=2)
+        if stopping not in done:
+            return False
+        # A timeout that escaped `stop_consuming` would skip the wait for the running jobs.
+        cancelling = await stopping
+        connection_closed.set()
+        if cancelling is not None:
+            await asyncio.gather(cancelling, return_exceptions=True)
+        return True
+    finally:
+        connection_closed.set()
+        stopping.cancel()
+        await asyncio.gather(stopping, return_exceptions=True)
+
+
 def test_job_is_acknowledged_only_after_its_result_is_published() -> None:
     # Arrange
     body = _JOB.model_dump_json().encode()
@@ -244,6 +319,61 @@ def test_job_interrupted_by_a_shutdown_goes_back_to_the_queue() -> None:
 
     # Assert
     assert events == ["publish job_started", "nack requeue=True"]
+
+
+def test_job_completes_after_more_lost_confirmations_than_its_delivery_limit() -> None:
+    # Arrange
+    unconfirmed = int(TRANSCRIPTION_REQUESTS.arguments["x-delivery-limit"]) + 1
+
+    # Act
+    events, _ = _supervise_past_lost_confirmations(unconfirmed)
+
+    # Assert
+    assert events == ["publish job_started", "publish transcript_ready", "ack"]
+
+
+def test_job_is_acknowledged_only_after_a_final_result_with_lost_confirmations() -> None:
+    # Arrange
+    unconfirmed = int(TRANSCRIPTION_REQUESTS.arguments["x-delivery-limit"]) + 1
+
+    # Act
+    events, _ = _supervise_past_lost_confirmations(unconfirmed, lost="transcript_ready")
+
+    # Assert
+    assert events == ["publish job_started", "publish transcript_ready", "ack"]
+
+
+def test_every_resend_of_a_result_keeps_its_id() -> None:
+    # Act
+    _, result_ids = _supervise_past_lost_confirmations(3, lost="transcript_ready")
+
+    # Assert
+    sent = result_ids["transcript_ready"]
+    assert sent == [sent[0]] * 4
+
+
+def test_shutdown_while_confirmations_are_lost_returns_the_job_to_the_queue() -> None:
+    # Act
+    events = asyncio.run(_shut_down_while_confirmations_are_lost())
+
+    # Assert
+    assert events == ["nack requeue=True"]
+
+
+def test_stopping_the_consumer_ends_when_the_broker_never_answers() -> None:
+    # Act
+    ended = asyncio.run(_stopping_ends_when_the_broker_never_answers(close_stalls=False))
+
+    # Assert
+    assert ended
+
+
+def test_stopping_the_consumer_ends_when_closing_its_channel_stalls_too() -> None:
+    # Act
+    ended = asyncio.run(_stopping_ends_when_the_broker_never_answers(close_stalls=True))
+
+    # Assert
+    assert ended
 
 
 @pytest.mark.slow

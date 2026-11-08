@@ -396,16 +396,17 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /workspaces/{workspace_id}/members` · List members
 
-- **Status:** Designed · **Caller:** any member · **Success:** `200`, a page of members, by
-  joining time
+- **Status:** Implemented · **Caller:** any member · **Success:** `200`, a page of members, by
+  joining time, oldest first
 - **Errors:**
   - `404 NOT_FOUND`: no such workspace, or the caller is not a member.
 
 #### `PATCH /workspaces/{workspace_id}/members/{user_id}` · Change a member's role
 
-- **Status:** Designed · **Caller:** Moderator or Owner · **Success:** `200`, the member
+- **Status:** Implemented · **Caller:** Moderator or Owner · **Success:** `200`, the member
 - **Rules:** switches between `member` and `moderator`. The change applies from the member's
-  next request (FR-007).
+  next request (FR-007). A Moderator may change their own role. Giving a member the role they
+  already have changes nothing and records nothing.
 - **Errors:**
   - `403 INSUFFICIENT_ROLE`: the caller is a plain member.
   - `404 NOT_FOUND`: no such workspace or member.
@@ -413,12 +414,16 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `DELETE /workspaces/{workspace_id}/members/{user_id}` · Remove a member
 
-- **Status:** Designed · **Caller:** Moderator or Owner · **Success:** `204`
-- **Rules:** the member loses access to the workspace and all of its meetings at once.
+- **Status:** Implemented · **Caller:** Moderator or Owner · **Success:** `204`
+- **Rules:** the member loses access to the workspace and all of its meetings at once; their
+  access grants go with the membership. A Moderator may remove themselves.
   Before removing a restricted meeting's last selected recipient, a Moderator must explicitly
   select another remaining member through the meeting access endpoint. Removal is refused
   while any affected restricted meeting would have no recipient; it never grants the Owner
-  access automatically or changes the meeting to workspace access.
+  access automatically or changes the meeting to workspace access. The refusal names no
+  meeting, since the caller may not be able to see it (section 6.4). Shares approved for the
+  removed account stay until their creators revoke them, as for any account outside the
+  workspace (FR-038).
 - **Errors:**
   - `403 INSUFFICIENT_ROLE`: the caller is a plain member.
   - `404 NOT_FOUND`: no such workspace or member.
@@ -919,8 +924,8 @@ All capture operations accept the extension's bearer token as well as the browse
 
 #### `GET /admin/jobs`, `GET /admin/metrics` · Operational job monitoring
 
-- **Status:** Implemented backend. The dashboard and host/model telemetry remain pending under
-  #139; these APIs do not complete US-019/FR-045 by themselves.
+- **Status:** Implemented backend and job dashboard at `/admin` (#180). Host/model telemetry
+  remains pending under #139; that part of US-019/FR-045 is not complete.
 - **Caller:** signed-in instance administrator; workspace roles alone grant no access.
 - **Jobs:** workspace UUID, job type/state, stored attempt counter and safe failure descriptions.
   Times distinguish original creation, entry into the current queue period and attempt start/end.
@@ -986,6 +991,8 @@ Each status code has one meaning:
 - **`413`, `415`:** the audio is too large, or is not a supported audio format.
 - **`422`:** the input was parsed, but is invalid.
 - **`429`:** a limit was reached. `Retry-After` says how many seconds to wait.
+- **`503`:** a service the operation depends on, such as object storage, is not configured, is
+  down, or did not answer in time. The client can repeat the request later.
 
 **Business limits are `429`, not `409`.** The invitation limits of FR-006 are rate limits: the
 client's only remedy is to wait, which `429` and `Retry-After` express. A `409` would suggest
@@ -1012,6 +1019,11 @@ These apply to many operations, so section 4 does not repeat them:
 - **`404 NOT_FOUND`, `405 METHOD_NOT_ALLOWED`:** an unknown path, or a method the path does
   not support.
 - **`500 INTERNAL_ERROR`:** an unexpected failure. The body carries only the `request_id`.
+- **`503 INTEGRATION_UNAVAILABLE`:** uploading a recording, storing a capture chunk or completing
+  a capture, when object storage is not configured, refuses the request, or does not answer in
+  time; and playing a recording when storage is not configured. Each storage request has a short
+  timeout, and reads and deletes are retried a few times, so the request ends with this answer
+  instead of hanging.
 
 ### 5.4 Error catalogue
 
@@ -1120,7 +1132,8 @@ status, and which operations return it.
   only.
 - **`RATE_LIMITED`** (`429`): see section 5.3.
 - **`MALFORMED_REQUEST`** (`400`), **`METHOD_NOT_ALLOWED`** (`405`), **`INTERNAL_ERROR`**
-  (`500`): see section 5.3. **`HTTP_ERROR`** covers any other status the framework raises.
+  (`500`), **`INTEGRATION_UNAVAILABLE`** (`503`): see section 5.3. **`HTTP_ERROR`** covers any
+  other status the framework raises.
 
 ## 6. Design decisions
 
@@ -1326,3 +1339,7 @@ These PR #63 review revisions were assisted by OpenAI Codex. Everything was revi
 The Export implementation and review changes were assisted by OpenAI Codex.
 
 Later revisions were assisted by OpenAI Codex and verified by author.
+
+OpenAI Codex implemented and verified the #180 dashboard and its API documentation update.
+
+The member endpoints (#184) were implemented with Claude Code and reviewed by the author.

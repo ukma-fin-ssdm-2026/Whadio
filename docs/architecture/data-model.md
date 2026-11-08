@@ -145,6 +145,11 @@ The model covers the data required for these key project functions:
 - `NOTE_CONTEXT_MEETING.context_meeting_id` is optional so the note can remain unchanged after a context meeting is deleted; `context_meeting_name_snapshot` preserves what was shown to readers.
 - `LLM_PROVIDER_CONFIG.api_key_encrypted` is required unless `provider = Whadio`.
 - `PROCESSING_JOB.created_at` stores when the job was queued, and `attempts` stores retry count for monitoring and retry limits.
+- `PROCESSING_JOB.attempts` counts the starts a worker reported and the publishes no worker started.
+  The scheduler hands a `queued` job published longer ago than a limit (2 days by default) back to
+  the publisher, as a retry does, and adds one to `attempts`; the publisher fails a job whose
+  `attempts` has reached the attempt limit with the reason `stalled` instead of publishing it.
+- Implementation-only `PROCESSING_JOB.applied_result_ids` holds the message IDs of the worker results applied to the job. A worker resends a result under the same ID, and a result whose ID is already there is dropped in the transaction that would apply it.
 - `PROCESSING_JOB.queued_at` stores entry into the current queued period. A retry resets it and
   clears the previous attempt timestamps; publication alone leaves it unchanged. Initial queues
   retain their creation time after migration. Historical retry queue times remain null when they
@@ -202,7 +207,7 @@ The model covers the data required for these key project functions:
 | Accounts & Workspaces | `provider_configured` | — | provider, enabled |
 | Accounts & Workspaces | `mcp_key_created`, `mcp_key_revoked` | `mcp_key_id` | — |
 
-Restricting a meeting writes `meeting_restricted` and one `access_granted` per selected member; unrestricting writes only `meeting_unrestricted`. Deleting a folder writes one `meeting_moved` per meeting it moves to the default folder. Deleting or evicting a meeting writes one `meeting_deleted` or `meeting_evicted`; its shares and access grants disappear with it without events of their own. Deleting a workspace writes only `workspace_deleted`, not an event per meeting. `notes_regenerated` is written when the regenerated notes are saved, with the requester from `NOTE.created_by_user_id`, so a failed run writes nothing.
+Restricting a meeting writes `meeting_restricted` and one `access_granted` per selected member; unrestricting writes only `meeting_unrestricted`. Deleting a folder writes one `meeting_moved` per meeting it moves to the default folder. Deleting or evicting a meeting writes one `meeting_deleted` or `meeting_evicted`; its shares and access grants disappear with it without events of their own. Deleting a workspace writes only `workspace_deleted`, not an event per meeting. `notes_regenerated` is written when the regenerated notes are saved, with the requester from `NOTE.created_by_user_id`, so a failed run writes nothing. Giving a member the role they already have writes no `member_role_changed`. Removing a member writes only `member_removed`; their access grants go with the membership without events of their own.
 
 Changes the system makes on its own are not recorded, because they have no actor: Retention's deletion of recordings, the assembly of an interrupted capture, the first notes and the generated meeting name. Glossary changes are not recorded either: they affect later transcriptions, not an existing meeting, and `GLOSSARY_TERM.created_by_user_id` records who added a term. Registration, password resets and sign-ins are not recorded: they change no meeting content or access. Joining through an invitation writes `member_joined`. An invitation that stops working because its creator lost the Moderator role writes nothing, since nothing in it changes.
 
@@ -234,3 +239,5 @@ These fields should drive the next threat-analysis step, especially for access c
 ## AI Usage
 
 This document and the accompanying data model diagram were prepared and revised with the assistance of Codex (GPT-5.5) and Claude Code (Claude Opus 5.5) and discussed in the working session of 2026-09-26. Reviewed by the author and the team before committing.
+
+The audit rules for member role changes and removal (#184) were added with Claude Code and reviewed by the author.

@@ -6,7 +6,7 @@ from sqlalchemy.exc import OperationalError
 
 from ..notifications.services import DrainResult
 from ..retention.services import RetentionResult
-from .services import RetentionScheduler
+from .services import PeriodicJobs, RetentionScheduler
 
 
 class RetentionJobs:
@@ -75,7 +75,7 @@ def test_tick_cleans_registrations_using_the_scheduler_clock() -> None:
     now = datetime(2026, 10, 29, tzinfo=UTC)
     jobs = RetentionJobs()
     registrations = RegistrationJobs(jobs.calls)
-    scheduler = RetentionScheduler(jobs, 60, lambda: now, registrations=registrations)
+    scheduler = RetentionScheduler(jobs, 60, lambda: now, PeriodicJobs(registrations=registrations))
     # Act
     asyncio.run(scheduler.tick())
     # Assert
@@ -91,8 +91,10 @@ def test_registration_cleanup_failure_does_not_stop_other_scheduler_jobs() -> No
     scheduler = RetentionScheduler(
         jobs,
         60,
-        notifications=NotificationJobs(jobs.calls),
-        registrations=RegistrationJobs(jobs.calls, fail=True),
+        periodic=PeriodicJobs(
+            notifications=NotificationJobs(jobs.calls),
+            registrations=RegistrationJobs(jobs.calls, fail=True),
+        ),
     )
     # Act
     failures = asyncio.run(scheduler.tick())
@@ -106,7 +108,9 @@ def test_registration_cleanup_failure_does_not_stop_other_scheduler_jobs() -> No
 def test_tick_delivers_notifications_after_retention() -> None:
     # Arrange
     jobs = RetentionJobs()
-    scheduler = RetentionScheduler(jobs, 60, notifications=NotificationJobs(jobs.calls))
+    scheduler = RetentionScheduler(
+        jobs, 60, periodic=PeriodicJobs(notifications=NotificationJobs(jobs.calls))
+    )
     # Act
     asyncio.run(scheduler.tick())
     # Assert
@@ -117,7 +121,7 @@ def test_failed_deliveries_count_as_failures_of_the_tick() -> None:
     # Arrange
     jobs = RetentionJobs()
     notifications = NotificationJobs(jobs.calls, DrainResult(sent=3, failed=2))
-    scheduler = RetentionScheduler(jobs, 60, notifications=notifications)
+    scheduler = RetentionScheduler(jobs, 60, periodic=PeriodicJobs(notifications=notifications))
     # Act
     failures = asyncio.run(scheduler.tick())
     # Assert
@@ -129,7 +133,7 @@ def test_sent_notices_are_removed_when_delivery_database_access_fails() -> None:
     jobs = RetentionJobs()
     notifications = NotificationJobs(jobs.calls)
     notifications.fail_drain = True
-    scheduler = RetentionScheduler(jobs, 60, notifications=notifications)
+    scheduler = RetentionScheduler(jobs, 60, periodic=PeriodicJobs(notifications=notifications))
     # Act
     failures = asyncio.run(scheduler.tick())
     # Assert
@@ -173,3 +177,51 @@ def test_already_stopped_scheduler_runs_no_jobs() -> None:
 
     # Assert
     assert asyncio.run(scenario()) == []
+
+
+NOW = datetime(2026, 11, 7, 9, 30, tzinfo=UTC)
+
+
+class JobRecovery:
+    def __init__(self, calls: list[str], *, fail: bool = False) -> None:
+        self.calls: list[str] = calls
+        self.fail: bool = fail
+        self.recovered_at: datetime | None = None
+
+    async def recover(self, now: datetime) -> int:
+        self.calls.append("job recovery")
+        self.recovered_at = now
+        if self.fail:
+            raise OperationalError("database unavailable", None, RuntimeError())
+        return 1
+
+
+def scheduler_with_recovery(jobs: RetentionJobs, recovery: JobRecovery) -> RetentionScheduler:
+    periodic = PeriodicJobs(notifications=NotificationJobs(jobs.calls), job_recovery=recovery)
+    return RetentionScheduler(jobs, 60, lambda: NOW, periodic)
+
+
+def test_tick_recovers_jobs_by_the_scheduler_clock_after_retention_and_before_delivery() -> None:
+    # Arrange
+    jobs = RetentionJobs()
+    recovery = JobRecovery(jobs.calls)
+    # Act
+    asyncio.run(scheduler_with_recovery(jobs, recovery).tick())
+    # Assert
+    assert (recovery.recovered_at, jobs.calls) == (
+        NOW,
+        ["cleanup", "retention", "job recovery", "drain", "remove sent"],
+    )
+
+
+def test_job_recovery_failure_is_counted_and_the_other_jobs_still_run() -> None:
+    # Arrange
+    jobs = RetentionJobs()
+    scheduler = scheduler_with_recovery(jobs, JobRecovery(jobs.calls, fail=True))
+    # Act
+    failures = asyncio.run(scheduler.tick())
+    # Assert
+    assert (failures, jobs.calls) == (
+        2,
+        ["cleanup", "retention", "job recovery", "drain", "remove sent"],
+    )

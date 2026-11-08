@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID
@@ -11,6 +12,10 @@ from ..notifications.services import DrainResult
 from ..retention.services import RetentionResult
 
 logger = logging.getLogger(__name__)
+
+
+class IJobRecovery(Protocol):
+    async def recover(self, now: datetime) -> int: ...
 
 
 class IRetentionJobs(Protocol):
@@ -35,35 +40,43 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+@dataclass(frozen=True, slots=True)
+class PeriodicJobs:
+    """The jobs each tick runs besides retention; one left out is skipped."""
+
+    notifications: INotificationJobs | None = None
+    registrations: IRegistrationJobs | None = None
+    job_recovery: IJobRecovery | None = None
+
+
 class RetentionScheduler:
     def __init__(
         self,
         retention: IRetentionJobs,
         interval_seconds: float,
         now: Callable[[], datetime] = utc_now,
-        notifications: INotificationJobs | None = None,
-        registrations: IRegistrationJobs | None = None,
+        periodic: PeriodicJobs | None = None,
     ) -> None:
         if interval_seconds <= 0:
             raise ValueError("The retention interval must be positive")
         self._retention: IRetentionJobs = retention
         self._interval_seconds: float = interval_seconds
         self._now: Callable[[], datetime] = now
-        self._notifications: INotificationJobs | None = notifications
-        self._registrations: IRegistrationJobs | None = registrations
+        self._periodic: PeriodicJobs = periodic or PeriodicJobs()
 
     async def tick(self) -> int:
         failed = 0
         now = self._now()
-        if self._registrations is not None:
+        registrations = self._periodic.registrations
+        if registrations is not None:
             try:
-                removed = await self._registrations.remove_expired(now)
+                removed = await registrations.remove_expired(now)
                 logger.info("Account link cleanup: %d expired links deleted", removed)
             except SQLAlchemyError:
                 failed += 1
                 logger.warning("Account link cleanup could not access the database")
             try:
-                removed = await self._registrations.remove_expired_password_resets(now)
+                removed = await registrations.remove_expired_password_resets(now)
                 logger.info("Password-reset cleanup: %d expired links deleted", removed)
             except SQLAlchemyError:
                 failed += 1
@@ -85,8 +98,15 @@ class RetentionScheduler:
         except SQLAlchemyError:
             failed += 1
             logger.warning("Retention could not access the database")
-        if self._notifications is not None:
-            failed += await self._deliver_notifications(self._notifications)
+        if self._periodic.job_recovery is not None:
+            try:
+                returned = await self._periodic.job_recovery.recover(now)
+                logger.info("Job recovery: %d jobs returned to the queue", returned)
+            except SQLAlchemyError:
+                failed += 1
+                logger.warning("Job recovery could not access the database")
+        if self._periodic.notifications is not None:
+            failed += await self._deliver_notifications(self._periodic.notifications)
         return failed
 
     @staticmethod

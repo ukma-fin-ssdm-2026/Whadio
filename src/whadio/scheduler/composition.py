@@ -27,6 +27,9 @@ from ..notifications.services import DeliveryUnit, NotificationDrainer, Recipien
 from ..notifications.settings import NotificationSettings
 from ..notifications.smtp import SmtpMailSender
 from ..notifications.templates import AppLinks, NoticeKind, RecordingDeletionWarning
+from ..processing.recovery import JobRecovery
+from ..processing.repositories import JobRepository
+from ..processing.settings import JobRecoverySettings
 from ..shared.database import IUseCaseTransactions
 
 
@@ -133,3 +136,13 @@ def notification_drainer(
         AppLinks(delivery.public_url),
         settings.outbox,
     )
+
+
+class JobRecoveryJobs:
+    def __init__(self, database: IUseCaseTransactions, limits: JobRecoverySettings) -> None:
+        self._database: IUseCaseTransactions = database
+        self._limits: JobRecoverySettings = limits
+
+    async def recover(self, now: datetime) -> int:
+        async with self._database.transaction() as session:
+            return await JobRecovery(JobRepository(session), self._limits).recover(now)

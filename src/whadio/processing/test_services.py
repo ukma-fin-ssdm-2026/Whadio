@@ -49,6 +49,7 @@ from .repositories import Job
 from .services import (
     DEAD_LETTERED,
     MAX_ATTEMPTS,
+    STALLED,
     TRANSCRIPT_EXISTS,
     UNPUBLISHABLE,
     JobRequest,
@@ -150,6 +151,10 @@ class FakeJobs:
     async def mark_running(self, job_id: UUID, _started_at: datetime) -> None:
         job = self.jobs[job_id]
         self.jobs[job_id] = replace(job, status=JobStatus.RUNNING, attempts=job.attempts + 1)
+
+    async def record_result(self, job_id: UUID, result_id: UUID) -> None:
+        job = self.jobs[job_id]
+        self.jobs[job_id] = replace(job, applied_results=job.applied_results | {result_id})
 
     async def requeue(self, job_id: UUID) -> None:
         self.published.discard(job_id)
@@ -372,8 +377,8 @@ def notes_ready(
     )
 
 
-def handle(pipeline: Pipeline, result: ProcessingResult) -> None:
-    asyncio.run(pipeline.service.handle(result))
+def handle(pipeline: Pipeline, result: ProcessingResult, result_id: UUID | None = None) -> None:
+    asyncio.run(pipeline.service.handle(result, uuid4() if result_id is None else result_id))
 
 
 def queue(pipeline: Pipeline) -> None:
@@ -873,6 +878,49 @@ def test_redelivered_failure_of_a_requeued_job_publishes_nothing_more() -> None:
     assert len(publish_all(pipeline)) == 1
 
 
+def test_resent_failure_leaves_the_next_attempt_running() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION)
+    failed = transcription_failed(pipeline, job_id, TranscriptionFailure.AUDIO_LINK_EXPIRED)
+    result_id = uuid4()
+    handle(pipeline, failed, result_id)
+    publish_all(pipeline)
+    handle(pipeline, started(pipeline, job_id))
+    # Act
+    handle(pipeline, failed, result_id)
+    # Assert
+    assert pipeline.jobs.jobs[job_id].status is JobStatus.RUNNING
+
+
+def test_resent_notes_failure_leaves_the_next_attempt_running() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.NOTES)
+    failed = notes_failed(pipeline, job_id, NotesFailure.PROVIDER_UNAVAILABLE)
+    result_id = uuid4()
+    handle(pipeline, failed, result_id)
+    handle(pipeline, started(pipeline, job_id, JobKind.NOTES))
+    # Act
+    handle(pipeline, failed, result_id)
+    # Assert
+    assert pipeline.jobs.jobs[job_id].status is JobStatus.RUNNING
+
+
+def test_failure_of_the_next_attempt_under_a_new_id_is_applied() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION)
+    failed = transcription_failed(pipeline, job_id, TranscriptionFailure.AUDIO_LINK_EXPIRED)
+    handle(pipeline, failed)
+    publish_all(pipeline)
+    handle(pipeline, started(pipeline, job_id))
+    # Act
+    handle(pipeline, failed)
+    # Assert
+    assert pipeline.jobs.jobs[job_id].status is JobStatus.QUEUED
+
+
 def test_retryable_failure_one_attempt_before_the_limit_publishes_the_job_again() -> None:
     # Arrange
     pipeline = make_pipeline()
@@ -1328,3 +1376,81 @@ def test_processing_a_meeting_neither_uploads_nor_deletes_its_recording(
     handle(pipeline, finish(pipeline, notes.job_id))
     # Assert
     assert (pipeline.storage.uploaded, pipeline.storage.deleted) == ([], [])
+
+
+# --- Jobs returned by job recovery ---
+
+
+def returned_job(pipeline: Pipeline, attempts: int) -> UUID:
+    """A transcription job that job recovery handed back to the publisher."""
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION, status=JobStatus.QUEUED, attempts=attempts)
+    pipeline.jobs.published.discard(job_id)
+    return job_id
+
+
+def test_returned_job_one_attempt_before_the_limit_is_published_again() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = returned_job(pipeline, MAX_ATTEMPTS - 1)
+    # Act
+    requests = publish_all(pipeline)
+    # Assert
+    assert [request.job_id for request in requests] == [job_id]
+
+
+def test_returned_job_that_used_its_attempts_is_not_published() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    returned_job(pipeline, MAX_ATTEMPTS)
+    # Act
+    requests = publish_all(pipeline)
+    # Assert
+    assert requests == []
+
+
+def test_returned_job_that_used_its_attempts_fails_its_meeting_as_timed_out() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    returned_job(pipeline, MAX_ATTEMPTS)
+    # Act
+    publish_all(pipeline)
+    # Assert
+    assert pipeline.meetings.update == ProcessingUpdate(
+        ProcessingState.FAILED, ProcessingFailure.PROCESSING_TIMEOUT
+    )
+
+
+def test_returned_job_that_used_its_attempts_records_that_it_stalled() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = returned_job(pipeline, MAX_ATTEMPTS)
+    # Act
+    publish_all(pipeline)
+    # Assert
+    assert pipeline.jobs.failure_reasons == {job_id: STALLED}
+
+
+def test_returned_job_that_used_its_attempts_notifies_the_uploader_once() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    returned_job(pipeline, MAX_ATTEMPTS)
+    publish_all(pipeline)
+    # Act
+    publish_all(pipeline)
+    # Assert
+    assert pipeline.notices.sent == [processing_notice(pipeline, ProcessingOutcome.FAILED)]
+
+
+def test_late_transcript_of_a_returned_job_counts_once_beside_its_republished_copy() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = returned_job(pipeline, 1)
+    publish_all(pipeline)
+    # Act
+    handle(pipeline, transcript_ready(pipeline, job_id))
+    handle(pipeline, transcript_ready(pipeline, job_id))
+    # Assert
+    assert [job.job_type for job in pipeline.jobs.jobs.values()] == [
+        JobType.TRANSCRIPTION,
+        JobType.NOTES,
+    ]

@@ -9,7 +9,6 @@ import { render, screen } from "@testing-library/react";
 import type { UserEvent } from "@testing-library/user-event";
 import { HttpResponse, type HttpResponseResolver, http, type JsonBodyType } from "msw";
 import type { ReactElement } from "react";
-import { vi } from "vitest";
 import { page } from "@/shared/testing/fixtures";
 import { server } from "@/shared/testing/server";
 
@@ -126,20 +125,7 @@ export async function signIn(user: UserEvent) {
   await user.click(screen.getByRole("button", { name: "Sign in" }));
 }
 
-export function stubViewportWidth(width: number) {
-  vi.stubGlobal("matchMedia", (query: string) => {
-    const min = /min-width:\s*([\d.]+)px/.exec(query)?.[1];
-    const max = /max-width:\s*([\d.]+)px/.exec(query)?.[1];
-    return {
-      matches: (!min || width >= Number(min)) && (!max || width <= Number(max)),
-      media: query,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      addListener: () => {},
-      removeListener: () => {},
-    };
-  });
-}
+export { stubViewportWidth } from "@/shared/testing/viewport";
 
 // For components that hold links: any path matches, and only `ui` renders.
 export function renderAtPath(ui: ReactElement, path = "/") {
