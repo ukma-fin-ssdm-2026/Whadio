@@ -53,6 +53,15 @@ async def _join(
     return member
 
 
+async def _member_of_another_workspace(
+    client: AsyncClient, session: AsyncSession, caller: User
+) -> User:
+    _, elsewhere = await _owner_workspace(client, session)
+    member = await _join(session, elsewhere, WorkspaceRole.MEMBER, 1)
+    await _sign_in(client, caller)
+    return member
+
+
 def _error(response: bytes) -> str:
     return ErrorResponse.model_validate_json(response).error.code
 
@@ -264,9 +273,7 @@ def test_role_change_is_refused(
             elif case == "owner-target":
                 target = owner
             elif case == "outsider-target":
-                _, elsewhere = await _owner_workspace(client, session)
-                target = await _join(session, elsewhere, WorkspaceRole.MEMBER, 1)
-                await _sign_in(client, owner)
+                target = await _member_of_another_workspace(client, session, owner)
             role = "owner" if case == "owner-role" else "moderator"
             # Act
             response = await client.patch(
@@ -465,7 +472,7 @@ def test_removal_is_refused(
             elif case == "owner-target":
                 target = owner
             elif case == "outsider-target":
-                target = await AsyncDatabase.add_account(session, PASSWORD)
+                target = await _member_of_another_workspace(client, session, owner)
             # Act
             response = await client.delete(
                 f"/api/v1/workspaces/{workspace}/members/{target.user_id}"
