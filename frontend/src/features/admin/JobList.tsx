@@ -194,11 +194,7 @@ export function JobList({
                             <Typography variant="body2" sx={{ whiteSpace: "nowrap" }}>
                               {timing(job)}
                             </Typography>
-                            <Typography
-                              variant="caption"
-                              component="div"
-                              sx={{ whiteSpace: "nowrap" }}
-                            >
+                            <Typography variant="caption" component="div">
                               <PreviousWait job={job} />
                             </Typography>
                             {job.timing_anomaly && (
