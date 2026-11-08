@@ -15,5 +15,17 @@ test("a workspace takes its role and member count from the summary", () => {
     name: "Alpha",
     role: "moderator",
     members: 2,
+    personal: false,
   });
+});
+
+test("a personal workspace is marked personal", () => {
+  // Arrange
+  const summary = workspaceSummary({ is_personal: true });
+
+  // Act
+  const workspace = mapWorkspace(summary);
+
+  // Assert
+  expect(workspace.personal).toBe(true);
 });

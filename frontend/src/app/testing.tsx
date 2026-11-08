@@ -91,6 +91,10 @@ export function serveApi(signedIn: boolean): ApiTraffic {
       member(() => page([])),
     ),
     http.get(
+      "/api/v1/workspaces/workspace/members",
+      member(() => page([])),
+    ),
+    http.get(
       "/api/v1/workspaces/workspace/folders",
       member(() => page([{ id: "folder", name: "General", is_default: true, meeting_count: 0 }])),
     ),

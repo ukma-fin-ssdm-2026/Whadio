@@ -15,6 +15,7 @@ import { Route as AuthedMeetingsMeetingIdRouteImport } from './routes/_authed/me
 import { Route as AuthedSettingsAssistantRouteImport } from './routes/_authed/settings/assistant'
 import { Route as AuthedWorkspacesWorkspaceIdRouteRouteImport } from './routes/_authed/workspaces/$workspaceId/route'
 import { Route as AuthedWorkspacesWorkspaceIdIndexRouteImport } from './routes/_authed/workspaces/$workspaceId/index'
+import { Route as AuthedWorkspacesWorkspaceIdMembersRouteImport } from './routes/_authed/workspaces/$workspaceId/members'
 import { Route as AuthedWorkspacesWorkspaceIdSettingsRouteImport } from './routes/_authed/workspaces/$workspaceId/settings'
 
 const AuthedRoute = AuthedRouteImport.update({
@@ -79,6 +80,12 @@ const AuthedWorkspacesWorkspaceIdIndexRoute =
     path: '/',
     getParentRoute: () => AuthedWorkspacesWorkspaceIdRouteRoute,
   } as any)
+const AuthedWorkspacesWorkspaceIdMembersRoute =
+  AuthedWorkspacesWorkspaceIdMembersRouteImport.update({
+    id: '/members',
+    path: '/members',
+    getParentRoute: () => AuthedWorkspacesWorkspaceIdRouteRoute,
+  } as any)
 const AuthedWorkspacesWorkspaceIdSettingsRoute =
   AuthedWorkspacesWorkspaceIdSettingsRouteImport.update({
     id: '/settings',
@@ -97,6 +104,7 @@ export interface FileRoutesByFullPath {
   '/meetings/$meetingId': typeof AuthedMeetingsMeetingIdRoute
   '/settings/assistant': typeof AuthedSettingsAssistantRoute
   '/meetings/': typeof AuthedMeetingsIndexRoute
+  '/workspaces/$workspaceId/members': typeof AuthedWorkspacesWorkspaceIdMembersRoute
   '/workspaces/$workspaceId/settings': typeof AuthedWorkspacesWorkspaceIdSettingsRoute
   '/workspaces/$workspaceId/': typeof AuthedWorkspacesWorkspaceIdIndexRoute
 }
@@ -110,6 +118,7 @@ export interface FileRoutesByTo {
   '/meetings/$meetingId': typeof AuthedMeetingsMeetingIdRoute
   '/settings/assistant': typeof AuthedSettingsAssistantRoute
   '/meetings': typeof AuthedMeetingsIndexRoute
+  '/workspaces/$workspaceId/members': typeof AuthedWorkspacesWorkspaceIdMembersRoute
   '/workspaces/$workspaceId/settings': typeof AuthedWorkspacesWorkspaceIdSettingsRoute
   '/workspaces/$workspaceId': typeof AuthedWorkspacesWorkspaceIdIndexRoute
 }
@@ -126,6 +135,7 @@ export interface FileRoutesById {
   '/_authed/meetings/$meetingId': typeof AuthedMeetingsMeetingIdRoute
   '/_authed/settings/assistant': typeof AuthedSettingsAssistantRoute
   '/_authed/meetings/': typeof AuthedMeetingsIndexRoute
+  '/_authed/workspaces/$workspaceId/members': typeof AuthedWorkspacesWorkspaceIdMembersRoute
   '/_authed/workspaces/$workspaceId/settings': typeof AuthedWorkspacesWorkspaceIdSettingsRoute
   '/_authed/workspaces/$workspaceId/': typeof AuthedWorkspacesWorkspaceIdIndexRoute
 }
@@ -142,6 +152,7 @@ export interface FileRouteTypes {
     | '/meetings/$meetingId'
     | '/settings/assistant'
     | '/meetings/'
+    | '/workspaces/$workspaceId/members'
     | '/workspaces/$workspaceId/settings'
     | '/workspaces/$workspaceId/'
   fileRoutesByTo: FileRoutesByTo
@@ -155,6 +166,7 @@ export interface FileRouteTypes {
     | '/meetings/$meetingId'
     | '/settings/assistant'
     | '/meetings'
+    | '/workspaces/$workspaceId/members'
     | '/workspaces/$workspaceId/settings'
     | '/workspaces/$workspaceId'
   id:
@@ -170,6 +182,7 @@ export interface FileRouteTypes {
     | '/_authed/meetings/$meetingId'
     | '/_authed/settings/assistant'
     | '/_authed/meetings/'
+    | '/_authed/workspaces/$workspaceId/members'
     | '/_authed/workspaces/$workspaceId/settings'
     | '/_authed/workspaces/$workspaceId/'
   fileRoutesById: FileRoutesById
@@ -269,6 +282,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedWorkspacesWorkspaceIdIndexRouteImport
       parentRoute: typeof AuthedWorkspacesWorkspaceIdRouteRoute
     }
+    '/_authed/workspaces/$workspaceId/members': {
+      id: '/_authed/workspaces/$workspaceId/members'
+      path: '/members'
+      fullPath: '/workspaces/$workspaceId/members'
+      preLoaderRoute: typeof AuthedWorkspacesWorkspaceIdMembersRouteImport
+      parentRoute: typeof AuthedWorkspacesWorkspaceIdRouteRoute
+    }
     '/_authed/workspaces/$workspaceId/settings': {
       id: '/_authed/workspaces/$workspaceId/settings'
       path: '/settings'
@@ -280,12 +300,15 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthedWorkspacesWorkspaceIdRouteRouteChildren {
+  AuthedWorkspacesWorkspaceIdMembersRoute: typeof AuthedWorkspacesWorkspaceIdMembersRoute
   AuthedWorkspacesWorkspaceIdSettingsRoute: typeof AuthedWorkspacesWorkspaceIdSettingsRoute
   AuthedWorkspacesWorkspaceIdIndexRoute: typeof AuthedWorkspacesWorkspaceIdIndexRoute
 }
 
 const AuthedWorkspacesWorkspaceIdRouteRouteChildren: AuthedWorkspacesWorkspaceIdRouteRouteChildren =
   {
+    AuthedWorkspacesWorkspaceIdMembersRoute:
+      AuthedWorkspacesWorkspaceIdMembersRoute,
     AuthedWorkspacesWorkspaceIdSettingsRoute:
       AuthedWorkspacesWorkspaceIdSettingsRoute,
     AuthedWorkspacesWorkspaceIdIndexRoute:

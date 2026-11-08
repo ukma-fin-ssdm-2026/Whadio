@@ -9,6 +9,7 @@ import {
   meetingSummary,
   page,
   workspaceRead,
+  workspaceSummary,
 } from "@/shared/testing/fixtures";
 import { server } from "@/shared/testing/server";
 import { App } from "./App";
@@ -410,16 +411,17 @@ describe("the not-found page", () => {
     expect(await screen.findByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
   });
 
-  test.for(["/workspaces/not-mine", "/workspaces/not-mine/settings"])(
-    "answers %s, a workspace the user is not in",
-    async (path) => {
-      // Act
-      open(path);
+  test.for([
+    "/workspaces/not-mine",
+    "/workspaces/not-mine/settings",
+    "/workspaces/not-mine/members",
+  ])("answers %s, a workspace the user is not in", async (path) => {
+    // Act
+    open(path);
 
-      // Assert
-      expect(await screen.findByRole("heading", { name: "Page not found" })).toBeInTheDocument();
-    },
-  );
+    // Assert
+    expect(await screen.findByRole("heading", { name: "Page not found" })).toBeInTheDocument();
+  });
 });
 
 test("the library has its own address", async () => {
@@ -485,39 +487,71 @@ describe("a workspace page", () => {
   });
 
   test.for([
-    ["/workspaces/workspace", "false"],
-    ["/workspaces/workspace/settings", "true"],
-  ])("at %s has the settings button pressed: %s", async ([path, pressed]) => {
+    ["Workspace settings", "/workspaces/workspace", "false"],
+    ["Workspace settings", "/workspaces/workspace/settings", "true"],
+    ["Workspace members", "/workspaces/workspace", "false"],
+    ["Workspace members", "/workspaces/workspace/members", "true"],
+  ])("has the %s button at %s pressed: %s", async ([name, path, pressed]) => {
     // Act
     open(path ?? "");
 
     // Assert
-    expect(await screen.findByRole("button", { name: "Workspace settings" })).toHaveAttribute(
-      "aria-pressed",
-      pressed,
-    );
+    expect(await screen.findByRole("button", { name })).toHaveAttribute("aria-pressed", pressed);
   });
 
-  test("the settings button opens the settings", async () => {
+  const PAGE_BUTTONS = [
+    ["Workspace settings", "/workspaces/workspace/settings"],
+    ["Workspace members", "/workspaces/workspace/members"],
+  ] as const;
+
+  test.for(PAGE_BUTTONS)("the %s button opens %s", async ([name, target]) => {
     // Arrange
     const { user } = open("/workspaces/workspace");
 
     // Act
-    await user.click(await screen.findByRole("button", { name: "Workspace settings" }));
+    await user.click(await screen.findByRole("button", { name }));
 
     // Assert
-    await waitFor(() => expect(currentPath()).toBe("/workspaces/workspace/settings"));
+    await waitFor(() => expect(currentPath()).toBe(target));
   });
 
-  test("the settings button closes the settings", async () => {
+  test.for(PAGE_BUTTONS)("the %s button closes %s", async ([name, target]) => {
     // Arrange
-    const { user } = open("/workspaces/workspace/settings");
+    const { user } = open(target);
 
     // Act
-    await user.click(await screen.findByRole("button", { name: "Workspace settings" }));
+    await user.click(await screen.findByRole("button", { name }));
 
     // Assert
     await waitFor(() => expect(currentPath()).toBe("/workspaces/workspace"));
+  });
+
+  test("a personal workspace has no members button", async () => {
+    // Arrange
+    open("/workspaces/workspace");
+    server.use(
+      http.get("/api/v1/workspaces", () =>
+        HttpResponse.json(page([workspaceSummary({ is_personal: true })])),
+      ),
+    );
+
+    // Act
+    await screen.findByRole("button", { name: "Workspace settings" });
+
+    // Assert
+    expect(screen.queryByRole("button", { name: "Workspace members" })).not.toBeInTheDocument();
+  });
+
+  test("the settings show an Owner no invitations", async () => {
+    // Arrange
+    open("/workspaces/workspace/settings");
+    server.use(http.get("/api/v1/workspaces/workspace", () => HttpResponse.json(workspaceRead())));
+
+    // Act
+    await screen.findByRole("heading", { name: "Workspace settings" });
+
+    // Assert
+    expect(screen.queryByRole("heading", { name: "Invitations" })).not.toBeInTheDocument();
   });
 });
 
