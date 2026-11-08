@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from functools import partial
 from typing import Final
@@ -115,6 +115,7 @@ class FakeJobs:
         self.jobs: dict[UUID, Job] = {}
         self.published: set[UUID] = set()
         self.failure_reasons: dict[UUID, str | None] = {}
+        self.restarted: dict[UUID, datetime] = {}
 
     async def add(self, meeting_id: UUID, job_type: JobType) -> UUID:
         job_id = uuid4()
@@ -148,9 +149,11 @@ class FakeJobs:
         self.published.add(job_id)
         self.jobs[job_id] = replace(self.jobs[job_id], sent_context=context)
 
-    async def mark_running(self, job_id: UUID, _started_at: datetime) -> None:
+    async def mark_running(self, job_id: UUID, started_at: datetime) -> None:
         job = self.jobs[job_id]
-        self.jobs[job_id] = replace(job, status=JobStatus.RUNNING, attempts=job.attempts + 1)
+        self.jobs[job_id] = replace(
+            job, status=JobStatus.RUNNING, attempts=job.attempts + 1, started_at=started_at
+        )
 
     async def record_result(self, job_id: UUID, result_id: UUID) -> None:
         job = self.jobs[job_id]
@@ -158,13 +161,16 @@ class FakeJobs:
 
     async def requeue(self, job_id: UUID) -> None:
         self.published.discard(job_id)
-        self.jobs[job_id] = replace(self.jobs[job_id], status=JobStatus.QUEUED)
+        self.jobs[job_id] = replace(self.jobs[job_id], status=JobStatus.QUEUED, started_at=None)
 
     async def finish(
         self, job_id: UUID, status: JobStatus, _finished_at: datetime, failure_reason: str | None
     ) -> None:
         self.jobs[job_id] = replace(self.jobs[job_id], status=status)
         self.failure_reasons[job_id] = failure_reason
+
+    async def refresh_start(self, job_id: UUID, started_at: datetime) -> None:
+        self.restarted[job_id] = started_at
 
 
 @dataclass
@@ -1454,3 +1460,68 @@ def test_late_transcript_of_a_returned_job_counts_once_beside_its_republished_co
         JobType.TRANSCRIPTION,
         JobType.NOTES,
     ]
+
+
+def test_redelivered_start_of_a_running_job_restarts_its_clock_without_an_attempt() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION, attempts=1)
+    later = NOW + timedelta(hours=1)
+    # Act
+    handle(pipeline, started(pipeline, job_id).model_copy(update={"started_at": later}))
+    # Assert
+    assert (pipeline.jobs.restarted, pipeline.jobs.jobs[job_id].attempts) == ({job_id: later}, 1)
+
+
+def test_resent_start_under_the_same_id_does_not_restart_the_clock() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION, status=JobStatus.QUEUED, attempts=0)
+    start, start_id = started(pipeline, job_id), uuid4()
+    handle(pipeline, start, start_id)
+    # Act
+    handle(pipeline, start, start_id)
+    # Assert
+    assert pipeline.jobs.restarted == {}
+
+
+@pytest.mark.parametrize(
+    ("job_type", "fail"),
+    [
+        pytest.param(
+            JobType.TRANSCRIPTION,
+            partial(transcription_failed, reason=TranscriptionFailure.UNSUPPORTED_AUDIO),
+            id="transcription",
+        ),
+        pytest.param(
+            JobType.NOTES,
+            partial(notes_failed, reason=NotesFailure.PROVIDER_AUTH_FAILED),
+            id="notes",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("finished_after_the_start", "status"),
+    [
+        pytest.param(-timedelta(microseconds=1), JobStatus.RUNNING, id="bva-before-the-start"),
+        pytest.param(timedelta(0), JobStatus.FAILED, id="bva-at-the-start"),
+        pytest.param(timedelta(microseconds=1), JobStatus.FAILED, id="bva-after-the-start"),
+    ],
+)
+def test_failure_counts_only_if_it_finished_after_the_current_attempt_started(
+    job_type: JobType,
+    fail: Callable[[Pipeline, UUID], ProcessingResult],
+    finished_after_the_start: timedelta,
+    status: JobStatus,
+) -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, job_type, status=JobStatus.QUEUED, attempts=0)
+    handle(pipeline, started(pipeline, job_id, JobKind(job_type.value)))
+    failure = fail(pipeline, job_id).model_copy(
+        update={"finished_at": NOW + finished_after_the_start}
+    )
+    # Act
+    handle(pipeline, failure)
+    # Assert
+    assert pipeline.jobs.jobs[job_id].status is status

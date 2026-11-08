@@ -5,7 +5,7 @@ scheduler) and the SPA's API client (`frontend/src/shared/api/`), as the issue s
 browser extension (`extension/`), which uploads every recording and so carries most of the risk of
 losing one.
 
-Eight findings, each with its category from the hunt's checklist: A error handling · B external
+Nine findings, each with its category from the hunt's checklist: A error handling · B external
 dependencies · C input validation · D silent failures · E performance and blocking.
 
 ## Stage 1: Findings
@@ -175,6 +175,34 @@ logged.
 **Potential impact.** Diagnosis only. A series of failed retries leaves no record of whether
 `GET` failed as well as `PUT`.
 
+### F9. A published job whose message or result is lost is never finished (B, D)
+
+Added from #294. `src/whadio/processing/services.py:196`, `:205-206` (`publish_next` and its call
+to `mark_published`), and `src/whadio/processing/repositories.py:78-86` (`next_unpublished`):
+
+```python
+job = await self._jobs.next_unpublished()
+...
+await publisher.publish(request)
+await self._jobs.mark_published(job.job_id, now, context)
+```
+
+```python
+select(ProcessingJob)
+.where(ProcessingJob.status == JobStatus.QUEUED, ProcessingJob.published_at.is_(None))
+```
+
+**Why it is dangerous.** Once `published_at` is set, the publisher never looks at the job again,
+and nothing else does. If the message is lost (a purged queue, a recreated broker volume), the row
+stays `queued` with `published_at` set. If a worker reported `job_started` and its result never
+came (a host that did not come back, a result queue that was deleted), the row stays `running`.
+The queues' delivery limit covers a worker that crashes while it holds the message; it does not
+cover a message that is gone.
+
+**Potential impact.** The meeting shows "queued" or "processing" for ever. No error is logged and
+the uploader is never notified. Processing refuses to queue the meeting's transcription again while
+the job is unfinished, so nothing retries it (NFR-014).
+
 ### Reviewed and kept
 
 These look like the checklist's anti-patterns but are deliberate boundaries:
@@ -212,6 +240,7 @@ column describes what a user or another system sees once the chain completes.
 | F6 | The SPA's `fetch` has no deadline | A query stays in its loading state | A page spins with no error or retry offered | **Low** |
 | F7 | `.catch(() => {})` around session revocation | The server-side session is still active | The extension session stays usable for up to 24 h after sign-out | **Low** |
 | F8 | `.catch(() => null)` without a log | The retry proceeds without knowing what the server holds | No user-visible failure, as the duplicates are absorbed; a support engineer cannot tell from the logs whether the status request failed | **Low** |
+| F9 | No lease or timeout on a published or running job | A `queued` row with `published_at` set, or a `running` row, whose message or result is gone | The meeting stays queued or processing for ever, with no notice, and its transcription cannot be queued again | **Medium** |
 
 F5 is High because a few stalled calls fill the database pool and the executor that Argon2 sign-in
 hashing shares, and a single one stalls the scheduler's sequential tick.
@@ -228,6 +257,7 @@ answer or no answer (§3.1). The fixes, before and after, are in
 | F2 | No answer: a chunk that waits forever loses the whole call | **Fail-safe.** A request that runs out is retried; once retries are spent the call is saved locally | Timeout per request → retry with backoff (existing) → local file fallback (existing) | Zlata, `fix(#287): give the extension's requests a deadline` |
 | F5 | No answer: a call that waits half an hour holds a transaction and an executor thread, and stops the scheduler | **Fail-fast** in the API: an upload or a chunk that storage does not serve answers `503` within one storage operation's budget of about 16 s; a capture completion whose read fails also runs a cleanup delete, about 31.5 s at worst, so the extension's 25 s deadline fires first and the call is saved locally. **Fail-safe** in cleanup: a delete that fails keeps its row for the next pass | Timeout per connection and read → bounded retry with full jitter, for reads and deletes only → no circuit breaker: the API builds a storage client for each request, so a breaker would forget every failure, and one storage operation already ends within about 16 s → `503` (existing) / next scheduler pass (existing) | Andrii, `fix(#287): give object storage calls a timeout and turn off hidden retries` |
 | F6 | No answer for reads: a page loads forever. A wrong answer for writes: giving up on an upload that still lands invites a duplicate | **Fail-fast** for reads: the read ends with an error that says it timed out, and the page shows it instead of loading forever. Writes keep no client deadline | Timeout on reads → retry by React Query (existing) → clear error message | Zlata, `fix(#287): give the web app's reads a deadline` |
+| F9 | No answer: a meeting that waits for ever is worse than one that fails with a notice and can be uploaded again | **Fail-safe** while attempts remain: the job is published again. **Fail-fast** at the cap: the meeting is failed | Timeout per job (unstarted, or running per type) → bounded retry: the job goes back to the publisher, 5 attempts → no circuit breaker: the scheduler only looks at the database, and a republished job waits in the queue instead of calling anything → degradation: a failed meeting with a notice, which the member can upload again | Andrii, `fix(#294): return published jobs that no worker started to the queue` |
 
 ## Stage 4: The finding to present
 

@@ -1,10 +1,11 @@
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Final, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, Field, TypeAdapter
-from sqlalchemy import Select, Update, exists, func, select, update
+from sqlalchemy import Select, Update, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..meetings.contracts import ContextReference
@@ -21,6 +22,7 @@ class Job:
     attempts: int
     sent_context: tuple[ContextReference, ...] = ()
     applied_results: frozenset[UUID] = frozenset()
+    started_at: datetime | None = None
 
 
 class IJobRepository(Protocol):
@@ -50,6 +52,8 @@ class IJobRepository(Protocol):
         failure_reason: str | None,
         /,
     ) -> None: ...
+
+    async def refresh_start(self, job_id: UUID, started_at: datetime, /) -> None: ...
 
 
 class _SentMeeting(BaseModel):
@@ -151,6 +155,13 @@ class JobRepository:
             .values(status=status, finished_at=finished_at, failure_reason=failure_reason)
         )
 
+    async def refresh_start(self, job_id: UUID, started_at: datetime) -> None:
+        await self._session.execute(
+            update(ProcessingJob)
+            .where(ProcessingJob.processing_job_id == job_id)
+            .values(started_at=func.greatest(ProcessingJob.started_at, started_at))
+        )
+
     async def return_unstarted(self, published_before: datetime, limit: int) -> int:
         return await self._return_oldest(
             select(ProcessingJob.processing_job_id)
@@ -161,6 +172,23 @@ class JobRepository:
             .order_by(ProcessingJob.published_at),
             limit,
             added_attempts=1,
+        )
+
+    async def return_running(self, started_before: Mapping[JobType, datetime], limit: int) -> int:
+        return await self._return_oldest(
+            select(ProcessingJob.processing_job_id)
+            .where(
+                ProcessingJob.status == JobStatus.RUNNING,
+                or_(
+                    *(
+                        (ProcessingJob.job_type == job_type) & (ProcessingJob.started_at < before)
+                        for job_type, before in started_before.items()
+                    )
+                ),
+            )
+            .order_by(ProcessingJob.started_at),
+            limit,
+            added_attempts=0,
         )
 
     async def _return_oldest(
@@ -201,4 +229,5 @@ def _job(found: ProcessingJob) -> Job:
         attempts=found.attempts,
         sent_context=tuple(ContextReference(item.meeting_id, item.name) for item in sent),
         applied_results=frozenset(found.applied_result_ids),
+        started_at=found.started_at,
     )
