@@ -403,9 +403,10 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `PATCH /workspaces/{workspace_id}/members/{user_id}` · Change a member's role
 
-- **Status:** Designed · **Caller:** Moderator or Owner · **Success:** `200`, the member
+- **Status:** Implemented · **Caller:** Moderator or Owner · **Success:** `200`, the member
 - **Rules:** switches between `member` and `moderator`. The change applies from the member's
-  next request (FR-007).
+  next request (FR-007). A Moderator may change their own role. Giving a member the role they
+  already have changes nothing and records nothing.
 - **Errors:**
   - `403 INSUFFICIENT_ROLE`: the caller is a plain member.
   - `404 NOT_FOUND`: no such workspace or member.

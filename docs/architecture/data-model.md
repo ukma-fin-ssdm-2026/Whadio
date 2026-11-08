@@ -203,7 +203,7 @@ The model covers the data required for these key project functions:
 | Accounts & Workspaces | `provider_configured` | — | provider, enabled |
 | Accounts & Workspaces | `mcp_key_created`, `mcp_key_revoked` | `mcp_key_id` | — |
 
-Restricting a meeting writes `meeting_restricted` and one `access_granted` per selected member; unrestricting writes only `meeting_unrestricted`. Deleting a folder writes one `meeting_moved` per meeting it moves to the default folder. Deleting or evicting a meeting writes one `meeting_deleted` or `meeting_evicted`; its shares and access grants disappear with it without events of their own. Deleting a workspace writes only `workspace_deleted`, not an event per meeting. `notes_regenerated` is written when the regenerated notes are saved, with the requester from `NOTE.created_by_user_id`, so a failed run writes nothing.
+Restricting a meeting writes `meeting_restricted` and one `access_granted` per selected member; unrestricting writes only `meeting_unrestricted`. Deleting a folder writes one `meeting_moved` per meeting it moves to the default folder. Deleting or evicting a meeting writes one `meeting_deleted` or `meeting_evicted`; its shares and access grants disappear with it without events of their own. Deleting a workspace writes only `workspace_deleted`, not an event per meeting. `notes_regenerated` is written when the regenerated notes are saved, with the requester from `NOTE.created_by_user_id`, so a failed run writes nothing. Giving a member the role they already have writes no `member_role_changed`.
 
 Changes the system makes on its own are not recorded, because they have no actor: Retention's deletion of recordings, the assembly of an interrupted capture, the first notes and the generated meeting name. Glossary changes are not recorded either: they affect later transcriptions, not an existing meeting, and `GLOSSARY_TERM.created_by_user_id` records who added a term. Registration, password resets and sign-ins are not recorded: they change no meeting content or access. Joining through an invitation writes `member_joined`. An invitation that stops working because its creator lost the Moderator role writes nothing, since nothing in it changes.
 
@@ -235,3 +235,5 @@ These fields should drive the next threat-analysis step, especially for access c
 ## AI Usage
 
 This document and the accompanying data model diagram were prepared and revised with the assistance of Codex (GPT-5.5) and Claude Code (Claude Opus 5.5) and discussed in the working session of 2026-09-26. Reviewed by the author and the team before committing.
+
+The audit rules for member role changes and removal (#184) were added with Claude Code and reviewed by the author.
