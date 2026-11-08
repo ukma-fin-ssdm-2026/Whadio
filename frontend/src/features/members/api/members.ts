@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { apiClient } from "@/shared/api/client";
 import type { Schemas } from "@/shared/api/types";
-import { unwrap } from "@/shared/api/unwrap";
+import { expectNoContent, unwrap } from "@/shared/api/unwrap";
 
 export type Member = Schemas["MemberRead"];
 export type AssignableRole = Schemas["InvitedRole"];
@@ -52,5 +52,24 @@ export function useChangeMemberRole(workspaceId: string) {
           !matchQuery({ queryKey: ["workspaces", workspaceId, "invitations"] }, query),
       });
     },
+  });
+}
+
+export function useRemoveMember(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId }: { userId: string; leaving: boolean }) =>
+      expectNoContent(
+        apiClient.DELETE("/api/v1/workspaces/{workspace_id}/members/{user_id}", {
+          params: { path: { workspace_id: workspaceId, user_id: userId } },
+        }),
+      ),
+    onSettled: (_data, error, { leaving }) =>
+      queryClient.invalidateQueries({
+        queryKey: ["workspaces"],
+        // The pages of a workspace just left stay open until the caller moves away, and
+        // refetching what they show would only be refused.
+        refetchType: leaving && !error ? "none" : "active",
+      }),
   });
 }

@@ -40,29 +40,39 @@ function serveMembers(answer: (cursor: string | null) => MemberPage) {
 
 function serveTeam() {
   let members = [OWNER, MODERATOR, MEMBER];
-  const changes: object[] = [];
+  const sent = { changes: [] as object[], removals: [] as string[] };
   serveMembers(() => page(members));
   server.use(
     http.patch(
       "/api/v1/workspaces/{workspace_id}/members/{user_id}",
       async ({ params, request, response }) => {
         const body = await request.json();
-        changes.push({ user: params.user_id, body });
+        sent.changes.push({ user: params.user_id, body });
         members = members.map((item) =>
           item.user_id === params.user_id ? { ...item, ...body } : item,
         );
         return response(200).json(memberRead({ user_id: params.user_id, ...body }));
       },
     ),
+    http.delete("/api/v1/workspaces/{workspace_id}/members/{user_id}", ({ params, response }) => {
+      sent.removals.push(params.user_id);
+      members = members.filter((item) => item.user_id !== params.user_id);
+      return response(204).empty();
+    }),
   );
-  return changes;
+  return sent;
 }
 
 const twoPages = (cursor: string | null) => (cursor ? page([MEMBER]) : page([OWNER], "next-page"));
 
 const renderPanel = (myRole: Schemas["Role"] = "member") =>
   renderWithProviders(
-    <MemberPanel workspaceId="workspace" myRole={myRole} currentUserId={SELF[myRole].user_id} />,
+    <MemberPanel
+      workspaceId="workspace"
+      myRole={myRole}
+      currentUserId={SELF[myRole].user_id}
+      onLeft={() => {}}
+    />,
   );
 
 const listedRows = async () =>
@@ -90,6 +100,18 @@ async function chooseRole(myRole: Schemas["Role"], name: string, role: string) {
   await rendered.user.click(screen.getByRole("option", { name: role }));
   return rendered;
 }
+
+async function openRemoval(myRole: Schemas["Role"], label: string) {
+  const rendered = renderPanel(myRole);
+  await rendered.user.click(await screen.findByRole("button", { name: label }));
+  return rendered;
+}
+
+const OPEN = {
+  demotion: () => chooseRole("moderator", MODERATOR.name, "Member"),
+  removal: () => openRemoval("owner", "Remove Demo Member"),
+  leaving: () => openRemoval("moderator", "Leave workspace"),
+};
 
 async function loadSecondPage() {
   const { user } = renderPanel();
@@ -148,7 +170,7 @@ test("a failed load shows the server's message", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent("Workspace not found");
 });
 
-test("a Member has no role select", async () => {
+test("a Member has no role select or remove button", async () => {
   // Arrange
   serveTeam();
 
@@ -159,7 +181,7 @@ test("a Member has no role select", async () => {
   expect(controlsIn(await screen.findByRole("list", { name: "Workspace members" }))).toEqual([]);
 });
 
-test.each(MANAGERS)("a %s can change another member's role", async (myRole) => {
+test.each(MANAGERS)("a %s can change another member's role or remove them", async (myRole) => {
   // Arrange
   serveTeam();
 
@@ -167,7 +189,10 @@ test.each(MANAGERS)("a %s can change another member's role", async (myRole) => {
   renderPanel(myRole);
 
   // Assert
-  expect(controlsIn(await rowOf(MEMBER.name))).toEqual(["Role of Demo Member"]);
+  expect(controlsIn(await rowOf(MEMBER.name))).toEqual([
+    "Role of Demo Member",
+    "Remove Demo Member",
+  ]);
 });
 
 test.each(MANAGERS)("a %s has no actions on the Owner's row", async (myRole) => {
@@ -183,13 +208,15 @@ test.each(MANAGERS)("a %s has no actions on the Owner's row", async (myRole) => 
 
 test("a role change sends the new role for that member", async () => {
   // Arrange
-  const changes = serveTeam();
+  const sent = serveTeam();
 
   // Act
   await chooseRole("owner", MEMBER.name, "Moderator");
 
   // Assert
-  await waitFor(() => expect(changes).toEqual([{ user: "member", body: { role: "moderator" } }]));
+  await waitFor(() =>
+    expect(sent.changes).toEqual([{ user: "member", body: { role: "moderator" } }]),
+  );
 });
 
 test("a changed role shows once the list is refreshed", async () => {
@@ -223,41 +250,86 @@ test("a refused role change shows the server's message", async () => {
   expect(await screen.findByText("Only a Moderator may change roles")).toBeInTheDocument();
 });
 
-test("demoting yourself asks first", async () => {
+test.each([
+  [
+    "demotion",
+    "Change your role to Member?",
+    "You will no longer manage members or invitations. Only the Owner or another Moderator can make you a Moderator again.",
+  ],
+  [
+    "removal",
+    "Remove Demo Member?",
+    "Demo Member (member@example.test) will lose access to this workspace and all of its meetings.",
+  ],
+  [
+    "leaving",
+    "Leave this workspace?",
+    "You will lose access to this workspace and all of its meetings.",
+  ],
+] as const)("a %s asks first", async (kind, title, description) => {
   // Arrange
   serveTeam();
 
   // Act
-  await chooseRole("moderator", MODERATOR.name, "Member");
+  await OPEN[kind]();
 
   // Assert
-  expect(
-    screen.getByRole("dialog", { name: "Change your role to Member?" }),
-  ).toHaveAccessibleDescription(
-    "You will no longer manage members or invitations. Only the Owner or another Moderator can make you a Moderator again.",
-  );
+  expect(screen.getByRole("dialog", { name: title })).toHaveAccessibleDescription(description);
 });
 
-test("a cancelled demotion sends nothing", async () => {
+test.each(["demotion", "removal"] as const)("a cancelled %s sends nothing", async (kind) => {
   // Arrange
-  const changes = serveTeam();
-  const { user } = await chooseRole("moderator", MODERATOR.name, "Member");
+  const sent = serveTeam();
+  const { user } = await OPEN[kind]();
 
   // Act
   await user.click(screen.getByRole("button", { name: "Cancel" }));
 
   // Assert
-  expect(changes).toEqual([]);
+  expect(sent).toEqual({ changes: [], removals: [] });
 });
 
-test("a confirmed demotion is sent", async () => {
+test.each([
+  ["demotion", "Change role", { changes: [{ user: "moderator", body: { role: "member" } }] }],
+  ["removal", "Remove", { removals: ["member"] }],
+] as const)("a confirmed %s is sent", async (kind, confirm, expected) => {
   // Arrange
-  const changes = serveTeam();
-  const { user } = await chooseRole("moderator", MODERATOR.name, "Member");
+  const sent = serveTeam();
+  const { user } = await OPEN[kind]();
 
   // Act
-  await user.click(screen.getByRole("button", { name: "Change role" }));
+  await user.click(screen.getByRole("button", { name: confirm }));
 
   // Assert
-  await waitFor(() => expect(changes).toEqual([{ user: "moderator", body: { role: "member" } }]));
+  await waitFor(() => expect(sent).toEqual({ changes: [], removals: [], ...expected }));
+});
+
+test("a removed member leaves the list", async () => {
+  // Arrange
+  serveTeam();
+  const { user } = await OPEN.removal();
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Remove" }));
+
+  // Assert
+  await waitFor(() => expect(screen.queryByText(MEMBER.name)).not.toBeInTheDocument());
+});
+
+test("a refused removal shows the server's message in the dialog", async () => {
+  // Arrange
+  const message = "This member is the only one selected for a restricted meeting";
+  serveTeam();
+  server.use(
+    http.delete("/api/v1/workspaces/{workspace_id}/members/{user_id}", ({ response }) =>
+      response(409).json(errorBody("RESTRICTED_MEETING_REQUIRES_RECIPIENT", message)),
+    ),
+  );
+  const { user } = await OPEN.removal();
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Remove" }));
+
+  // Assert
+  expect(await within(screen.getByRole("dialog")).findByRole("alert")).toHaveTextContent(message);
 });

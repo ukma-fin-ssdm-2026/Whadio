@@ -7,6 +7,7 @@ import {
   errorBody,
   meetingRead,
   meetingSummary,
+  memberRead,
   page,
   workspaceRead,
   workspaceSummary,
@@ -552,6 +553,50 @@ describe("a workspace page", () => {
 
     // Assert
     expect(screen.queryByRole("heading", { name: "Invitations" })).not.toBeInTheDocument();
+  });
+});
+
+describe("leaving a workspace", () => {
+  const WORKSPACE_API = "/api/v1/workspaces/workspace";
+
+  async function leave() {
+    const { user } = open("/workspaces/workspace/members");
+    server.use(
+      http.get(WORKSPACE_API, () => HttpResponse.json(workspaceRead({ my_role: "moderator" }))),
+      http.get(`${WORKSPACE_API}/members`, () =>
+        HttpResponse.json(page([memberRead({ role: "moderator" })])),
+      ),
+      http.get(`${WORKSPACE_API}/invitations`, () => HttpResponse.json(page([]))),
+      http.delete(`${WORKSPACE_API}/members/member`, () => new HttpResponse(null, { status: 204 })),
+    );
+    await user.click(await screen.findByRole("button", { name: "Leave workspace" }));
+    const requests: string[] = [];
+    server.use(
+      http.all("*", ({ request }) => {
+        requests.push(`${request.method} ${new URL(request.url).pathname}`);
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Leave" }));
+    await screen.findByRole("heading", { name: "Workspaces" });
+    return requests;
+  }
+
+  test("goes Home", async () => {
+    // Act
+    await leave();
+
+    // Assert
+    expect(currentPath()).toBe("/");
+  });
+
+  test("asks nothing more of the workspace left", async () => {
+    // Act
+    const requests = await leave();
+
+    // Assert
+    expect(requests.filter((request) => request.includes(WORKSPACE_API))).toEqual([
+      `DELETE ${WORKSPACE_API}/members/member`,
+    ]);
   });
 });
 
