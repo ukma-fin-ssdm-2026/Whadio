@@ -140,7 +140,7 @@ export function CountsTable({ counts }: { counts: Schemas["JobCounts"][] }) {
                       sx={{
                         m: 0,
                         textAlign: "right",
-                        paddingInlineEnd: "3.5ch",
+                        paddingInlineEnd: "2ch",
                         fontWeight: 400,
                         "& svg": { fontSize: 14 },
                         "& > span": { gap: 0.25 },
