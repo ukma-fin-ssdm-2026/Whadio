@@ -273,8 +273,11 @@ if job.attempts >= MAX_ATTEMPTS:
     return True
 ```
 
-`:229-230` and `:439`: a start reported again for a running job, as after a redelivery, moves
-`started_at` forward, so a job that a second worker runs is not handed back early.
+`:231-232` and `:441`: a start reported again for a running job, as after a redelivery, moves
+`started_at` forward, so a job that a second worker runs is not handed back early. `:226` and
+`:450-457`: a failure that finished before the job's current attempt started belongs to an earlier
+attempt and is dropped, so the late `timed_out` of an attempt that was handed back cannot fail the
+attempt that replaced it.
 
 Checked by hand against the Compose RabbitMQ and PostgreSQL, with no worker running, a scheduler
 with a 1-minute unstarted limit and a 10-second interval, and `transcription.requests` purged after
@@ -338,6 +341,8 @@ stays silent.
 | job recovery failure is counted and the other jobs still run | Error handling | `src/whadio/scheduler/test_services.py` |
 | published job is returned only once past the unstarted limit: 1 µs before, at and after it | Boundary value | `src/whadio/processing/test_repositories.py` |
 | running job is returned with its attempts only once past its running limit, per job type | Boundary value | `src/whadio/processing/test_repositories.py` |
+| late failure of a handed-back attempt leaves its replacement to finish | Error handling | `src/whadio/processing/reliability/test_stalled_jobs.py` |
+| failure counts only if it finished after the current attempt started: 1 µs before, at and after | Boundary value | `src/whadio/processing/test_services.py` |
 
 Run against the code before the fixes, the fault-injection, error-handling and at-the-deadline
 tests fail, while the just-under-the-deadline ones pass on both versions, as they should. Each
@@ -385,8 +390,14 @@ the running limits of the two job types are swapped.
   link has expired fails at once, so after an outage of about 5 days or more the stale copies can
   use up the attempts and fail a meeting that a fresh copy would have processed. A message that
   names its attempt (below) would let Processing ignore the stale copies.
-- After F9, a result names its job but not its attempt, so a late failure from a run that was
-  handed back can count against the run that replaced it.
+- After F9, a failure that finished before the job's current attempt started is dropped as an
+  earlier attempt's. A result still names its job, not its attempt, so an earlier attempt that fails
+  after the new one started cannot be told apart. That happens with a worker timeout set above the
+  running limit, or with worker clocks that disagree. The failure is never silently lost: it counts
+  against the new attempt. While attempts remain, a retryable one requeues the job, and the new
+  attempt's result still counts. Otherwise, or for a permanent one such as `timed_out`, the meeting
+  fails with a notice, and the new attempt's transcript is then dropped. Results that name their
+  attempt, a change to the job contracts, would close this.
 - After F9, `started_at` comes from the worker's clock, so a worker whose clock is off by more
   than a limit's margin gets its job handed back early or late.
 - After F9, a lost message is noticed only after the unstarted limit. A check for a job that newer
