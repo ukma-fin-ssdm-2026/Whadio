@@ -153,6 +153,10 @@ class FakeJobs:
         job = self.jobs[job_id]
         self.jobs[job_id] = replace(job, status=JobStatus.RUNNING, attempts=job.attempts + 1)
 
+    async def record_result(self, job_id: UUID, result_id: UUID) -> None:
+        job = self.jobs[job_id]
+        self.jobs[job_id] = replace(job, applied_results=job.applied_results | {result_id})
+
     async def requeue(self, job_id: UUID) -> None:
         self.published.discard(job_id)
         self.jobs[job_id] = replace(self.jobs[job_id], status=JobStatus.QUEUED)
@@ -377,8 +381,8 @@ def notes_ready(
     )
 
 
-def handle(pipeline: Pipeline, result: ProcessingResult) -> None:
-    asyncio.run(pipeline.service.handle(result))
+def handle(pipeline: Pipeline, result: ProcessingResult, result_id: UUID | None = None) -> None:
+    asyncio.run(pipeline.service.handle(result, uuid4() if result_id is None else result_id))
 
 
 def queue(pipeline: Pipeline) -> None:
@@ -876,6 +880,49 @@ def test_redelivered_failure_of_a_requeued_job_publishes_nothing_more() -> None:
     handle(pipeline, failed)
     # Assert
     assert len(publish_all(pipeline)) == 1
+
+
+def test_resent_failure_leaves_the_next_attempt_running() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION)
+    failed = transcription_failed(pipeline, job_id, TranscriptionFailure.AUDIO_LINK_EXPIRED)
+    result_id = uuid4()
+    handle(pipeline, failed, result_id)
+    publish_all(pipeline)
+    handle(pipeline, started(pipeline, job_id))
+    # Act
+    handle(pipeline, failed, result_id)
+    # Assert
+    assert pipeline.jobs.jobs[job_id].status is JobStatus.RUNNING
+
+
+def test_resent_notes_failure_leaves_the_next_attempt_running() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.NOTES)
+    failed = notes_failed(pipeline, job_id, NotesFailure.PROVIDER_UNAVAILABLE)
+    result_id = uuid4()
+    handle(pipeline, failed, result_id)
+    handle(pipeline, started(pipeline, job_id, JobKind.NOTES))
+    # Act
+    handle(pipeline, failed, result_id)
+    # Assert
+    assert pipeline.jobs.jobs[job_id].status is JobStatus.RUNNING
+
+
+def test_failure_of_the_next_attempt_under_a_new_id_is_applied() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION)
+    failed = transcription_failed(pipeline, job_id, TranscriptionFailure.AUDIO_LINK_EXPIRED)
+    handle(pipeline, failed)
+    publish_all(pipeline)
+    handle(pipeline, started(pipeline, job_id))
+    # Act
+    handle(pipeline, failed)
+    # Assert
+    assert pipeline.jobs.jobs[job_id].status is JobStatus.QUEUED
 
 
 def test_retryable_failure_one_attempt_before_the_limit_publishes_the_job_again() -> None:

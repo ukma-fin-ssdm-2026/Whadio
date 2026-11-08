@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Final
+from uuid import uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,7 +70,7 @@ class Processing:
 
 
 async def deliver(service: ProcessingService, result: ProcessingResult) -> None:
-    await service.handle(result)
+    await service.handle(result, uuid4())
 
 
 async def processing_with_a_queued_meeting(session: AsyncSession) -> Processing:

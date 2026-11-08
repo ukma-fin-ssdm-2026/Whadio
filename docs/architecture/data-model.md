@@ -152,6 +152,7 @@ The model covers the data required for these key project functions:
   A `running` job started longer ago than its type's limit (5 hours for transcription, 1 hour for
   notes by default) is handed back the same way with `attempts` unchanged; a start reported again
   for a `running` job only moves `started_at` forward.
+- Implementation-only `PROCESSING_JOB.applied_result_ids` holds the message IDs of the worker results applied to the job. A worker resends a result under the same ID, and a result whose ID is already there is dropped in the transaction that would apply it.
 - `PROCESSING_JOB.queued_at` stores entry into the current queued period. A retry resets it and
   clears the previous attempt timestamps; publication alone leaves it unchanged. Initial queues
   retain their creation time after migration. Historical retry queue times remain null when they

@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import ClassVar, Final, Protocol
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from aio_pika.abc import AbstractChannel, AbstractIncomingMessage
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -40,6 +40,9 @@ class IDelivery(Protocol):
     @property
     def user_id(self) -> str | None: ...
 
+    @property
+    def message_id(self) -> str | None: ...
+
     async def ack(self) -> None: ...
 
     async def reject(self, *, requeue: bool = False) -> None: ...
@@ -48,14 +51,21 @@ class IDelivery(Protocol):
 class IResultHandler(Protocol):
     """Each call runs in a transaction of its own and returns after the commit."""
 
-    async def handle(self, result: ProcessingResult, /) -> None: ...
+    async def handle(self, result: ProcessingResult, result_id: UUID, /) -> None: ...
 
     async def dead_lettered(self, job_id: UUID, /) -> None: ...
 
 
 class IMessagePublisher(Protocol):
     async def publish(
-        self, queue: str, body: bytes, /, *, message_type: str, correlation_id: str
+        self,
+        queue: str,
+        body: bytes,
+        /,
+        *,
+        message_id: UUID,
+        message_type: str,
+        correlation_id: str,
     ) -> None: ...
 
 
@@ -72,6 +82,7 @@ class AmqpJobPublisher:
         await self._publisher.publish(
             queue.name,
             request.model_dump_json().encode(),
+            message_id=uuid4(),
             message_type=request.type,
             correlation_id=str(request.job_id),
         )
@@ -103,7 +114,7 @@ class WorkerUsers:
 
 async def handle_delivery(
     delivery: IDelivery,
-    handle: Callable[[ProcessingResult], Awaitable[None]],
+    handle: Callable[[ProcessingResult, UUID], Awaitable[None]],
     workers: WorkerUsers,
 ) -> None:
     """Leave a delivery whose handling raised unsettled, for the caller to return to the queue."""
@@ -127,8 +138,23 @@ async def handle_delivery(
         logger.warning("Rejected a %s from the other worker's broker user", result.type)
         await delivery.reject(requeue=False)
         return
-    await handle(result)
+    result_id = _result_id(delivery.message_id)
+    if result_id is None:
+        logger.warning("Rejected a %s without a valid message ID", result.type)
+        await delivery.reject(requeue=False)
+        return
+    await handle(result, result_id)
     await delivery.ack()
+
+
+def _result_id(message_id: str | None) -> UUID | None:
+    # A worker keeps the ID across the resends of one result, which is what makes a copy known.
+    if message_id is None:
+        return None
+    try:
+        return UUID(hex=message_id)
+    except ValueError:
+        return None
 
 
 async def handle_dead_letter(
@@ -171,9 +197,9 @@ class ProcessingTransactions:
         self._publisher: IJobPublisher = publisher
         self._queued: asyncio.Event = queued
 
-    async def handle(self, result: ProcessingResult) -> None:
+    async def handle(self, result: ProcessingResult, result_id: UUID) -> None:
         async with self._database.transaction() as session:
-            await self._processing(session).handle(result)
+            await self._processing(session).handle(result, result_id)
         self._queued.set()
 
     async def dead_lettered(self, job_id: UUID) -> None:
@@ -214,7 +240,7 @@ async def job_publisher(broker: BrokerSettings) -> AsyncGenerator[AmqpJobPublish
         channel = await connection.channel()
         for queue in ALL_QUEUES:
             await declare_queue(channel, queue.name, queue.arguments)
-        yield AmqpJobPublisher(MessagePublisher(channel, broker.user))
+        yield AmqpJobPublisher(MessagePublisher(channel, broker.user, timeout=broker.timeout))
 
 
 @dataclass(frozen=True, slots=True)

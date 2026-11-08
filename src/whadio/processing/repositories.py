@@ -21,6 +21,7 @@ class Job:
     status: JobStatus
     attempts: int
     sent_context: tuple[ContextReference, ...] = ()
+    applied_results: frozenset[UUID] = frozenset()
 
 
 class IJobRepository(Protocol):
@@ -37,6 +38,8 @@ class IJobRepository(Protocol):
     ) -> None: ...
 
     async def mark_running(self, job_id: UUID, started_at: datetime, /) -> None: ...
+
+    async def record_result(self, job_id: UUID, result_id: UUID, /) -> None: ...
 
     async def requeue(self, job_id: UUID, /) -> None: ...
 
@@ -128,6 +131,15 @@ class JobRepository:
             )
         )
 
+    async def record_result(self, job_id: UUID, result_id: UUID) -> None:
+        await self._session.execute(
+            update(ProcessingJob)
+            .where(ProcessingJob.processing_job_id == job_id)
+            .values(
+                applied_result_ids=func.array_append(ProcessingJob.applied_result_ids, result_id)
+            )
+        )
+
     async def requeue(self, job_id: UUID) -> None:
         await self._session.execute(
             _to_publisher(update(ProcessingJob).where(ProcessingJob.processing_job_id == job_id))
@@ -215,4 +227,5 @@ def _job(found: ProcessingJob) -> Job:
         status=found.status,
         attempts=found.attempts,
         sent_context=tuple(ContextReference(item.meeting_id, item.name) for item in sent),
+        applied_results=frozenset(found.applied_result_ids),
     )
