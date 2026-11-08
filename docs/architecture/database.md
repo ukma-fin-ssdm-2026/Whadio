@@ -128,7 +128,11 @@ discard unsent notices.
 
 Revision `0009` adds `processing_job.queued_at`, the start of a job's current queued period,
 which defaults to the insert time. Existing jobs never attempted take their creation time,
-retried ones keep it null, and queued jobs lose their `started_at`. The current head is `0009`.
+retried ones keep it null, and queued jobs lose their `started_at`.
+
+Revision `0010` adds `processing_job.applied_result_ids`, a `uuid[]` defaulting to empty: the
+message IDs of the worker results already applied to the job, so a resent copy changes nothing.
+The current head is `0010`.
 
 Cleanup passes use UUID keyset windows and advance after each batch, including failed or locked
 items. Each pass attempts each selected item at most once; failed items remain durable for the

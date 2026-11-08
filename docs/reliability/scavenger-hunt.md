@@ -217,6 +217,7 @@ answer or no answer (§3.1). The fixes, before and after, are in
 
 | # | Worse here | Response | Patterns, in the order of §3.5 | Fixed by |
 |---|---|---|---|---|
+| F1 | No answer: one publish that never returns stops publishing for the whole instance, with the row locked and nothing logged | **Fail-fast.** A publish the broker does not confirm in time raises, the transaction rolls back and the job stays unpublished | Timeout per attempt → retry on the next round (existing) → logging (existing) | Denys, `fix(#287): give the broker connection and publishes a deadline` |
 | F2 | No answer: a chunk that waits forever loses the whole call | **Fail-safe.** A request that runs out is retried; once retries are spent the call is saved locally | Timeout per request → retry with backoff (existing) → local file fallback (existing) | Zlata, `fix(#287): give the extension's requests a deadline` |
 | F6 | No answer for reads: a page loads forever. A wrong answer for writes: giving up on an upload that still lands invites a duplicate | **Fail-fast** for reads: the read ends with an error that says it timed out, and the page shows it instead of loading forever. Writes keep no client deadline | Timeout on reads → retry by React Query (existing) → clear error message | Zlata, `fix(#287): give the web app's reads a deadline` |
 
