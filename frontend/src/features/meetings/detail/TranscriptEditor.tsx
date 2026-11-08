@@ -252,7 +252,7 @@ interface TranscriptEditorProps {
   base: TranscriptRead;
   segments: LabelledSegment[];
   onClose: () => void;
-  onSaved: () => void;
+  onShowCurrent: () => void;
   onUnsavedChange: (unsaved: boolean) => void;
 }
 
@@ -261,7 +261,7 @@ export function TranscriptEditor({
   base,
   segments,
   onClose,
-  onSaved,
+  onShowCurrent,
   onUnsavedChange,
 }: TranscriptEditorProps) {
   const notify = useNotify();
@@ -285,7 +285,7 @@ export function TranscriptEditor({
       onSuccess: () => {
         notify("Transcript saved. The original stays available.");
         onClose();
-        onSaved();
+        onShowCurrent();
       },
       onError: (error) => {
         if (error.code !== "STALE_REVISION") {
@@ -297,6 +297,7 @@ export function TranscriptEditor({
           "warning",
         );
         onClose();
+        onShowCurrent();
       },
     });
   });

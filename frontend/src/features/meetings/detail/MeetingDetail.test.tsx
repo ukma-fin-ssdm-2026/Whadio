@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { expect, test, vi } from "vitest";
 import { ExportMenu } from "@/features/export/components/ExportMenu";
@@ -46,11 +46,13 @@ function serveContent() {
   return requests;
 }
 
-function serveSpokenTranscript() {
+function serveSpokenTranscript(changes: Partial<Schemas["TranscriptRead"]> = {}) {
   const segment = { id: "one", speaker_id: null, start_seconds: 0, end_seconds: 5 };
   server.use(
     http.get("/api/v1/meetings/{meeting_id}/transcript", ({ response }) =>
-      response(200).json(transcriptRead({ segments: [{ ...segment, text: "Budget agreed" }] })),
+      response(200).json(
+        transcriptRead({ segments: [{ ...segment, text: "Budget agreed" }], ...changes }),
+      ),
     ),
   );
 }
@@ -691,14 +693,74 @@ function serveSavedCorrection() {
   );
 }
 
-async function saveCorrection(changes: Partial<ComponentProps<typeof MeetingDetail>> = {}) {
+async function correct(changes: Partial<ComponentProps<typeof MeetingDetail>> = {}) {
   const view = renderDetail({ tab: "transcript", ...changes });
   await view.user.click(await screen.findByRole("button", { name: "Edit transcript" }));
   await view.user.click(screen.getByRole("button", { name: /^Edit text at 00:00/ }));
   await view.user.type(screen.getByLabelText("Text at 00:00"), " in full");
+  return view;
+}
+
+async function saveCorrection(changes: Partial<ComponentProps<typeof MeetingDetail>> = {}) {
+  const view = await correct(changes);
   await view.user.click(screen.getByRole("button", { name: "Save" }));
   return view;
 }
+
+async function correctWhileSomeoneElseSaves(
+  changes: Partial<ComponentProps<typeof MeetingDetail>> = {},
+) {
+  serveContent();
+  serveSpokenTranscript();
+  const view = await correct({ revisionId: "revision", ...changes });
+  serveSpokenTranscript({
+    revision: { ...transcriptRead().revision, is_current: false },
+    is_edited: true,
+  });
+  server.use(
+    http.post("/api/v1/meetings/{meeting_id}/transcript/revisions", ({ response }) =>
+      response(409).json(errorBody("STALE_REVISION", "Edited since")),
+    ),
+  );
+  await act(async () => {
+    await view.queryClient.invalidateQueries();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  return view;
+}
+
+test("a refetch that finds the edited revision replaced keeps the draft", async () => {
+  // Act
+  await correctWhileSomeoneElseSaves();
+
+  // Assert
+  expect(screen.getByText("Changed")).toBeInTheDocument();
+});
+
+test("saving a draft of a replaced revision says that someone else edited the transcript", async () => {
+  // Arrange
+  const { user } = await correctWhileSomeoneElseSaves();
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Save" }));
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Someone else edited this transcript, so it was reloaded.",
+  );
+});
+
+test("a stale revision opened from a revision link shows the current transcript", async () => {
+  // Arrange
+  const onRevision = vi.fn();
+  const { user } = await correctWhileSomeoneElseSaves({ onRevision });
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Save" }));
+
+  // Assert
+  await waitFor(() => expect(onRevision).toHaveBeenCalledWith(null));
+});
 
 test("a saved correction leaves the original one action away", async () => {
   // Arrange

@@ -133,7 +133,7 @@ export function MeetingDetail({
               query={transcriptQuery}
               onQuery={onTranscriptQuery}
               onRevision={onRevision}
-              onSaved={() => {
+              onShowCurrent={() => {
                 if (revisionId) onRevision(null);
               }}
               onUnsavedChange={onUnsavedChange}
