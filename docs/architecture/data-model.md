@@ -149,6 +149,7 @@ The model covers the data required for these key project functions:
   The scheduler hands a `queued` job published longer ago than a limit (2 days by default) back to
   the publisher, as a retry does, and adds one to `attempts`; the publisher fails a job whose
   `attempts` has reached the attempt limit with the reason `stalled` instead of publishing it.
+- Implementation-only `PROCESSING_JOB.applied_result_ids` holds the message IDs of the worker results applied to the job. A worker resends a result under the same ID, and a result whose ID is already there is dropped in the transaction that would apply it.
 - `PROCESSING_JOB.queued_at` stores entry into the current queued period. A retry resets it and
   clears the previous attempt timestamps; publication alone leaves it unchanged. Initial queues
   retain their creation time after migration. Historical retry queue times remain null when they

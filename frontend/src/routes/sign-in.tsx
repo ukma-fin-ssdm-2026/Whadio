@@ -4,9 +4,6 @@ import { safeReturnPath } from "@/app/navigation/return-to";
 import { sessionQueries } from "@/features/accounts/api/session";
 import { SignInForm } from "@/features/accounts/components/SignInForm";
 
-const SESSION_REFUSED =
-  "You signed in, but the server did not accept the session. Check that this browser allows cookies, then try again.";
-
 export const Route = createFileRoute("/sign-in")({
   validateSearch: z.object({
     redirect: z.string().optional().catch(undefined),
@@ -33,7 +30,7 @@ function SignInRoute() {
           ? "Your password has been changed. Sign in with your new password."
           : undefined
       }
-      externalError={refused ? SESSION_REFUSED : undefined}
+      sessionRefused={refused}
       onSignedIn={() => {
         onSignedIn();
         void router.navigate({ href: safeReturnPath(target), replace: true });

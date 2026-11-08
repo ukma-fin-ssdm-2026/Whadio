@@ -211,17 +211,20 @@ class ProcessingService:
         await self._jobs.mark_published(job.job_id, now, context)
         return True
 
-    async def handle(self, result: ProcessingResult) -> None:
-        """Drop a result that does not fit its job's state, type or meeting, changing nothing."""
+    async def handle(self, result: ProcessingResult, result_id: UUID) -> None:
+        """Drop a result that does not fit its job's state, type or meeting, or that was already
+        applied under the same `result_id`, changing nothing."""
         job = await self._jobs.lock(result.job_id)
         # A job of a deleted meeting is gone with it.
         if (
             job is None
             or job.meeting_id != result.meeting_id
             or job.job_type != _job_type(result)
+            or result_id in job.applied_results
             or job.status not in _accepted_statuses(result)
         ):
             return
+        await self._jobs.record_result(job.job_id, result_id)
         match result:
             case JobStarted():
                 await self._jobs.mark_running(job.job_id, result.started_at)

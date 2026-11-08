@@ -9,10 +9,11 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Text,
+    Uuid,
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, MappedColumn
 
 from ..shared.database import Base, enum_type
@@ -45,6 +46,10 @@ class ProcessingJob(Base):
     published_at: Mapped[datetime | None] = MappedColumn[datetime | None](DateTime(timezone=True))
     sent_context: Mapped[JsonValue | None] = MappedColumn[JsonValue | None](
         JSONB(none_as_null=True), nullable=True
+    )
+    # Message IDs of the results applied to the job; a worker resends a result under its ID.
+    applied_result_ids: Mapped[list[UUID]] = MappedColumn[list[UUID]](
+        ARRAY(Uuid()), server_default=text("'{}'")
     )
 
     __table_args__: tuple[Constraint | Index, ...] = (

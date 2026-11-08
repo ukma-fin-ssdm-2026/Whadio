@@ -53,9 +53,12 @@ WORKERS = WorkerUsers(transcription=WORKER, notes="whadio-notes")
 
 
 class FakeDelivery:
-    def __init__(self, body: bytes, user_id: str | None = WORKER) -> None:
+    def __init__(
+        self, body: bytes, user_id: str | None = WORKER, message_id: str | None = None
+    ) -> None:
         self._body: bytes = body
         self._user_id: str | None = user_id
+        self._message_id: str | None = uuid4().hex if message_id is None else message_id
         self.outcome: str = "unsettled"
 
     @property
@@ -65,6 +68,10 @@ class FakeDelivery:
     @property
     def user_id(self) -> str | None:
         return self._user_id
+
+    @property
+    def message_id(self) -> str | None:
+        return self._message_id
 
     async def ack(self) -> None:
         self.outcome = "ack"
@@ -86,8 +93,15 @@ class FakeMessagePublisher:
         self.messages: list[tuple[str, str, str]] = []
 
     async def publish(
-        self, queue: str, _body: bytes, *, message_type: str, correlation_id: str
+        self,
+        queue: str,
+        _body: bytes,
+        *,
+        message_id: UUID,
+        message_type: str,
+        correlation_id: str,
     ) -> None:
+        del message_id
         self.messages.append((queue, message_type, correlation_id))
 
 
@@ -95,7 +109,7 @@ class RecordingHandler:
     def __init__(self) -> None:
         self.handled: asyncio.Queue[UUID] = asyncio.Queue()
 
-    async def handle(self, result: ProcessingResult) -> None:
+    async def handle(self, result: ProcessingResult, _result_id: UUID) -> None:
         await self.handled.put(result.job_id)
 
     async def dead_lettered(self, job_id: UUID) -> None:
@@ -134,7 +148,7 @@ def notes_request() -> NotesRequested:
     )
 
 
-async def accept(_result: ProcessingResult) -> None:
+async def accept(_result: ProcessingResult, _result_id: UUID) -> None:
     pass
 
 
@@ -160,8 +174,12 @@ async def _serve_one_result(broker: BrokerSettings) -> tuple[UUID, UUID]:
                 .model_dump_json()
                 .encode()
             )
-            await MessagePublisher(channel, broker.user).publish(
-                results.name, body, message_type="job_started", correlation_id=str(job_id)
+            await MessagePublisher(channel, broker.user, timeout=broker.timeout).publish(
+                results.name,
+                body,
+                message_id=uuid4(),
+                message_type="job_started",
+                correlation_id=str(job_id),
             )
             consumer = asyncio.create_task(
                 serve_results(
@@ -214,6 +232,16 @@ def test_result_without_a_publisher_is_rejected_without_requeue() -> None:
     assert delivery.outcome == "reject requeue=False"
 
 
+@pytest.mark.parametrize("message_id", ["", "not-a-uuid"])
+def test_result_without_a_valid_message_id_is_rejected_without_requeue(message_id: str) -> None:
+    # Arrange
+    delivery = FakeDelivery(started_body(), message_id=message_id)
+    # Act
+    asyncio.run(handle_delivery(delivery, accept, WORKERS))
+    # Assert
+    assert delivery.outcome == "reject requeue=False"
+
+
 def test_handled_result_is_acknowledged() -> None:
     # Arrange
     delivery = FakeDelivery(started_body())
@@ -260,7 +288,7 @@ def test_result_whose_handling_fails_is_left_unsettled() -> None:
     # Arrange
     delivery = FakeDelivery(started_body())
 
-    async def handle(_result: ProcessingResult) -> None:
+    async def handle(_result: ProcessingResult, _result_id: UUID) -> None:
         raise RuntimeError("database unavailable")
 
     # Act
@@ -434,7 +462,8 @@ def test_handled_result_changes_the_database(async_database: AsyncDatabase) -> N
         await transactions(session, FakePublisher()).handle(
             JobStarted(
                 job_id=job_id, meeting_id=meeting_id, kind=JobKind.TRANSCRIPTION, started_at=NOW
-            )
+            ),
+            uuid4(),
         )
         return await session.scalar(
             select(Meeting.processing_state).where(Meeting.meeting_id == meeting_id)

@@ -4,7 +4,7 @@ import json
 import wave
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from functools import partial
@@ -1354,6 +1354,7 @@ def test_meeting_readers_pass_on_failures_other_than_a_missing_meeting(
 class WorkerDelivery:
     body: bytes
     user_id: str | None = "notes-worker"
+    message_id: str | None = field(default_factory=lambda: uuid4().hex)
 
     async def ack(self) -> None:
         pass

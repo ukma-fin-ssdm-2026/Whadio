@@ -8,7 +8,7 @@ Each fix below names who made it.
 
 | # | Finding | Category | Severity | Status |
 |---|---|---|---|---|
-| F1 | Job publish to RabbitMQ waits without a limit while holding a row lock | B, E | High | Open |
+| F1 | Job publish to RabbitMQ waits without a limit while holding a row lock | B, E | High | **Fixed** |
 | F2 | Extension requests to the server have no deadline | B, E | High | **Fixed**; not yet checked with a real recording |
 | F3 | A failed upload is given up without a log or a word to the user | D, A | Medium | Open |
 | F4 | A recording that could not be saved vanishes in an unawaited listener | A, D | High | Open |
@@ -156,12 +156,76 @@ user who retries could create a meeting twice.
 | What the user sees | After the retries run out, the page shows "The server did not answer in time. Try again." where its data would be |
 | Recovery | Automatic retries first; after that, the user reloads or revisits the page once the server answers again |
 
+### F1. Job publish to RabbitMQ waits without a limit while holding a row lock
+
+Fixed by Denys Zabiiaka in `fix(#287): give the broker connection and publishes a deadline`.
+
+**Before.** `src/whadio/shared/broker.py`: aio-pika waits forever by default, so a broker that never
+confirms leaves `publish_next` inside its transaction, holding the job row's lock:
+
+```python
+await aio_pika.connect_robust(
+    settings.url.get_secret_value(), client_properties={"connection_name": name}
+)
+...
+await self._channel.default_exchange.publish(message, routing_key=queue, mandatory=True)
+```
+
+**After.** `src/whadio/shared/broker.py`: connecting and publishing both give up after
+`WHADIO_BROKER__TIMEOUT` (ISO 8601 duration, default `PT10S`). `fail_fast=True` overrides the URL,
+because `fail_fast=0` there would keep retrying past the timeout. The publish deadline also covers
+the wait for a reconnecting connection, which aio-pika's own `timeout` argument does not.
+`MessagePublisher` takes the timeout as a required keyword argument, so no caller can forget it:
+
+```python
+timeout: timedelta = Field(default=timedelta(seconds=10), gt=timedelta(0), ...)
+...
+await aio_pika.connect_robust(
+    settings.url.get_secret_value(),
+    timeout=settings.timeout.total_seconds(),
+    fail_fast=True,
+    client_properties={"connection_name": name},
+)
+...
+async with asyncio.timeout(self._timeout.total_seconds()):
+    await self._channel.default_exchange.publish(message, routing_key=queue, mandatory=True)
+```
+
+`src/whadio/workers/supervision/supervisor.py`: a blocked broker stops reading the connection, so
+a worker whose result publish timed out would then wait forever for its consumer to be cancelled,
+and never close the connection that returns the job. That wait now ends after the same timeout.
+A worker publish that times out is no longer a failure of the job: the worker keeps the delivery
+unsettled and publishes again with a backoff from 1 s up to 30 s, acknowledging the job only after
+its result is confirmed. Stopping the worker instead returned the job to the queue on every
+timeout, so six lost confirmations dead-lettered a valid job past its delivery limit of 5.
+Every resend of a result keeps one message ID, and Processing records the IDs it applied in
+`processing_job.applied_result_ids` in the transaction that applies the result, then drops a
+copy it has seen. Without that, a failure whose confirmation was lost and that was resent after
+the next attempt had started failed the newer attempt and discarded its transcript. Cancelling
+the consumer is no longer awaited past the deadline either: aiormq answers a cancelled call by
+queueing a Channel.Close behind the frames the blocked broker does not read, so the worker leaves
+that call to end with the connection it closes and reaps it afterwards.
+
+**Patterns.** A timeout on each attempt, then the retry `serve_publishing` already makes on its next
+round, then the logging already there. The timeout goes innermost (§3.5): before it, the retry code
+could never run, because no exception ever reached it.
+
+**Failure and recovery.**
+
+| | |
+|---|---|
+| Response | Fail-fast: a job must not count as published unless the broker confirmed it, so there is no safe value to return instead |
+| What the user sees | The meeting stays "queued" while the broker is down, and processing starts once it is back |
+| Recovery | Automatic: the transaction rolls back, the row lock is released, the failure is logged and the next round sends the job again |
+
 ## Reliability tests
 
-The fixes are in JavaScript, so their tests sit next to the code they test, as the repository's
-Vitest convention asks, and not under `src/whadio/`. The extension's Vitest configuration collects
-only `extension/*.test.js`. Each test injects the failure through a test double that replaces
-`fetch` and answers late or never.
+The F2 and F6 fixes are in JavaScript, so their tests sit next to the code they test, as the
+repository's Vitest convention asks, and not under `src/whadio/`. The extension's Vitest
+configuration collects only `extension/*.test.js`. Each of those tests injects the failure through
+a test double that replaces `fetch` and answers late or never. The F1 tests use test doubles for
+an exchange and a queue that never answer, and a local TCP server that accepts a connection and
+stays silent.
 
 | Test | Type | File |
 |---|---|---|
@@ -176,17 +240,40 @@ only `extension/*.test.js`. Each test injects the failure through a test double 
 | waits for the completion up to the deadline: answered after 24999 / 25000 ms | Boundary value | `extension/background.test.js` |
 | ends a read at once, as a cancellation, when its caller aborts it, or has already | Boundary value | `frontend/src/shared/api/client.test.ts` |
 | lets a write take longer than the read deadline | Boundary value | `frontend/src/shared/api/client.test.ts` |
+| publish the broker never confirms is logged as a failed round | Error handling | `src/whadio/processing/reliability/test_publish_deadline.py` |
+| job goes out once a silent broker answers again | External failure (fault injection) | `src/whadio/processing/reliability/test_publish_deadline.py` |
+| connect ends at the deadline with fail_fast off in the URL | External failure (fault injection) | `src/whadio/processing/reliability/test_publish_deadline.py` |
+| connect that gave up leaves no retry task running | External failure (fault injection) | `src/whadio/processing/reliability/test_publish_deadline.py` |
+| stopping the consumer ends when the broker never answers | External failure (fault injection) | `src/whadio/workers/supervision/test_supervisor.py` |
+| stopping the consumer ends when closing its channel stalls too | External failure (fault injection) | `src/whadio/workers/supervision/test_supervisor.py` |
+| job completes after more lost confirmations than its delivery limit | External failure (fault injection) | `src/whadio/workers/supervision/test_supervisor.py` |
+| job is acknowledged only after a final result with lost confirmations | External failure (fault injection) | `src/whadio/workers/supervision/test_supervisor.py` |
+| every resend of a result keeps its ID | Error handling | `src/whadio/workers/supervision/test_supervisor.py` |
+| resent failure leaves the next attempt running (transcription and notes) | Error handling | `src/whadio/processing/test_services.py` |
+| failure of the next attempt under a new ID is applied | Error handling | `src/whadio/processing/test_services.py` |
+| result without a valid message ID is rejected without requeue | Error handling | `src/whadio/processing/test_consumer.py` |
+| shutdown while confirmations are lost returns the job to the queue | Error handling | `src/whadio/workers/supervision/test_supervisor.py` |
+| broker timeout of zero is refused | Boundary value | `src/whadio/processing/reliability/test_publish_deadline.py` |
 
 Run against the code before the fixes, the fault-injection, error-handling and at-the-deadline
 tests fail, while the just-under-the-deadline ones pass on both versions, as they should. Each
 part of the fixes is also covered by a test that fails when that part is removed: the caller's
 signal in the web app's composed signal, the deadline on signing in, and reading the body under
-the deadline.
+the deadline. The two F1 tests that serve a job hang and fail when the publish has no timeout, and
+the F1 connect and consumer tests fail when `fail_fast=True` or the cancellation's deadline is
+removed, and the lost-confirmation test fails when the worker's publish is not retried.
 
 ## Open issues
 
-- F1, F3, F4, F5, F7 and F8 are open; each keeps its chain in
+- F3, F4, F5, F7 and F8 are open; each keeps its chain in
   [`scavenger-hunt.md`](scavenger-hunt.md).
+- F1 is checked with a test double only, not with a RabbitMQ that really raises a memory or disk
+  alarm.
+- After F1, a publish that times out can still reach the broker late. The next round then sends the
+  job again, so a worker may run it twice; `handle` absorbs the second result.
+- After F1, a worker blocked by the broker keeps retrying its publish while it holds the job. A
+  block longer than the consumer timeout still makes RabbitMQ take the job back, and that counts
+  towards the delivery limit.
 - After F6, a write in the web app still has no client deadline, so an upload over a stalled
   connection keeps its progress state until the browser gives up. A deadline that resets on upload
   progress would bound it without breaking long uploads; `fetch` cannot report upload progress, so
@@ -208,3 +295,6 @@ the deadline.
 
 The F2 and F6 fixes, their tests and these sections were drafted with Claude Code
 (Claude Opus 5.5) and reviewed by Zlata Tsepkalo.
+
+The F1 fix, its tests and its sections were drafted with Claude Code (Claude Opus 5.5) and
+reviewed by Denys Zabiiaka.
