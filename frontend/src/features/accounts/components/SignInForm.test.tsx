@@ -35,10 +35,10 @@ function answerSignIn(status: 201 | 401 | 422, body?: ErrorEnvelope) {
   return requests;
 }
 
-function renderForm(externalError?: string) {
+function renderForm(sessionRefused?: boolean) {
   const onSignedIn = vi.fn();
   const rendered = renderWithProviders(
-    <SignInForm onSignedIn={onSignedIn} externalError={externalError} />,
+    <SignInForm onSignedIn={onSignedIn} sessionRefused={sessionRefused} />,
   );
   return { ...rendered, onSignedIn };
 }
@@ -137,10 +137,10 @@ test("a successful sign-in hands over the user", async () => {
   await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith(USER));
 });
 
-test("shows an error raised outside the form", () => {
+test("explains a refused session", () => {
   // Act
-  renderForm("Could not load your workspaces");
+  renderForm(true);
 
   // Assert
-  expect(screen.getByRole("alert")).toHaveTextContent("Could not load your workspaces");
+  expect(screen.getByRole("alert")).toHaveTextContent("the server did not accept the session");
 });
