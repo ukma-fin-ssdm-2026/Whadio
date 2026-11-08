@@ -1469,3 +1469,15 @@ def test_redelivered_start_of_a_running_job_restarts_its_clock_without_an_attemp
     handle(pipeline, started(pipeline, job_id).model_copy(update={"started_at": later}))
     # Assert
     assert (pipeline.jobs.restarted, pipeline.jobs.jobs[job_id].attempts) == ({job_id: later}, 1)
+
+
+def test_resent_start_under_the_same_id_does_not_restart_the_clock() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, JobType.TRANSCRIPTION, status=JobStatus.QUEUED, attempts=0)
+    start, start_id = started(pipeline, job_id), uuid4()
+    handle(pipeline, start, start_id)
+    # Act
+    handle(pipeline, start, start_id)
+    # Assert
+    assert pipeline.jobs.restarted == {}
