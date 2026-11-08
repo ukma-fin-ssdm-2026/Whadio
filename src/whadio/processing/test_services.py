@@ -149,9 +149,11 @@ class FakeJobs:
         self.published.add(job_id)
         self.jobs[job_id] = replace(self.jobs[job_id], sent_context=context)
 
-    async def mark_running(self, job_id: UUID, _started_at: datetime) -> None:
+    async def mark_running(self, job_id: UUID, started_at: datetime) -> None:
         job = self.jobs[job_id]
-        self.jobs[job_id] = replace(job, status=JobStatus.RUNNING, attempts=job.attempts + 1)
+        self.jobs[job_id] = replace(
+            job, status=JobStatus.RUNNING, attempts=job.attempts + 1, started_at=started_at
+        )
 
     async def record_result(self, job_id: UUID, result_id: UUID) -> None:
         job = self.jobs[job_id]
@@ -159,7 +161,7 @@ class FakeJobs:
 
     async def requeue(self, job_id: UUID) -> None:
         self.published.discard(job_id)
-        self.jobs[job_id] = replace(self.jobs[job_id], status=JobStatus.QUEUED)
+        self.jobs[job_id] = replace(self.jobs[job_id], status=JobStatus.QUEUED, started_at=None)
 
     async def finish(
         self, job_id: UUID, status: JobStatus, _finished_at: datetime, failure_reason: str | None
@@ -1481,3 +1483,45 @@ def test_resent_start_under_the_same_id_does_not_restart_the_clock() -> None:
     handle(pipeline, start, start_id)
     # Assert
     assert pipeline.jobs.restarted == {}
+
+
+@pytest.mark.parametrize(
+    ("job_type", "fail"),
+    [
+        pytest.param(
+            JobType.TRANSCRIPTION,
+            partial(transcription_failed, reason=TranscriptionFailure.UNSUPPORTED_AUDIO),
+            id="transcription",
+        ),
+        pytest.param(
+            JobType.NOTES,
+            partial(notes_failed, reason=NotesFailure.PROVIDER_AUTH_FAILED),
+            id="notes",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("finished_after_the_start", "status"),
+    [
+        pytest.param(-timedelta(microseconds=1), JobStatus.RUNNING, id="bva-before-the-start"),
+        pytest.param(timedelta(0), JobStatus.FAILED, id="bva-at-the-start"),
+        pytest.param(timedelta(microseconds=1), JobStatus.FAILED, id="bva-after-the-start"),
+    ],
+)
+def test_failure_counts_only_if_it_finished_after_the_current_attempt_started(
+    job_type: JobType,
+    fail: Callable[[Pipeline, UUID], ProcessingResult],
+    finished_after_the_start: timedelta,
+    status: JobStatus,
+) -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_job(pipeline, job_type, status=JobStatus.QUEUED, attempts=0)
+    handle(pipeline, started(pipeline, job_id, JobKind(job_type.value)))
+    failure = fail(pipeline, job_id).model_copy(
+        update={"finished_at": NOW + finished_after_the_start}
+    )
+    # Act
+    handle(pipeline, failure)
+    # Assert
+    assert pipeline.jobs.jobs[job_id].status is status

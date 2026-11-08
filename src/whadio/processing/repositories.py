@@ -22,6 +22,7 @@ class Job:
     attempts: int
     sent_context: tuple[ContextReference, ...] = ()
     applied_results: frozenset[UUID] = frozenset()
+    started_at: datetime | None = None
 
 
 class IJobRepository(Protocol):
@@ -228,4 +229,5 @@ def _job(found: ProcessingJob) -> Job:
         attempts=found.attempts,
         sent_context=tuple(ContextReference(item.meeting_id, item.name) for item in sent),
         applied_results=frozenset(found.applied_result_ids),
+        started_at=found.started_at,
     )

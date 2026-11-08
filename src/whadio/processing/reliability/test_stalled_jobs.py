@@ -8,8 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from conftest import AsyncDatabase
 
-from ...contracts.common import JobKind
+from ...contracts.common import JobKind, Segment, Transcript
+from ...contracts.notes import NotesPreset, NotesProvider, NotesReady, NotesRequested
 from ...contracts.results import JobStarted, ProcessingResult
+from ...contracts.transcription import TranscriptionFailed, TranscriptionFailure, TranscriptReady
 from ...meetings.contracts import ProcessingUpdate
 from ...meetings.enums import ProcessingFailure, ProcessingState
 from ...shared.fakes import FixedClock, InMemoryObjectStorage
@@ -96,16 +98,48 @@ async def processing_with_a_queued_meeting(session: AsyncSession) -> Processing:
     return Processing(service, JobRecovery(jobs, LIMITS), LosingBroker(), meetings, notices)
 
 
-async def start_and_stall(processing: Processing, started_at: datetime) -> None:
-    """A worker that takes the last job published, reports it started and never sends a result."""
+async def start_last(processing: Processing, started_at: datetime) -> None:
+    """A worker takes the last job published and reports it started."""
     request = processing.broker.requests[-1]
+    kind = JobKind.NOTES if isinstance(request, NotesRequested) else JobKind.TRANSCRIPTION
     await deliver(
         processing.service,
         JobStarted(
-            job_id=request.job_id,
-            meeting_id=request.meeting_id,
-            kind=JobKind.TRANSCRIPTION,
-            started_at=started_at,
+            job_id=request.job_id, meeting_id=request.meeting_id, kind=kind, started_at=started_at
+        ),
+    )
+
+
+async def answer_last(processing: Processing, finished_at: datetime) -> None:
+    """The worker of the last job published sends its successful result."""
+    request = processing.broker.requests[-1]
+    job_id, meeting_id = request.job_id, request.meeting_id
+    if isinstance(request, NotesRequested):
+        await deliver(
+            processing.service,
+            NotesReady(
+                job_id=job_id,
+                meeting_id=meeting_id,
+                finished_at=finished_at,
+                preset=NotesPreset.DETAILED,
+                provider=NotesProvider.ANTHROPIC,
+                model_name="claude",
+                content="## Summary",
+                proposed_name="Planning",
+                context_meeting_ids=(),
+            ),
+        )
+        return
+    segment = Segment(start_seconds=0.0, end_seconds=1.0, speaker="Speaker 1", text="Привіт")
+    await deliver(
+        processing.service,
+        TranscriptReady(
+            job_id=job_id,
+            meeting_id=meeting_id,
+            finished_at=finished_at,
+            model_name="parakeet",
+            duration_seconds=1.0,
+            transcript=Transcript(language="uk", speakers=("Speaker 1",), segments=(segment,)),
         ),
     )
 
@@ -166,7 +200,7 @@ def test_job_whose_result_was_lost_is_published_again_only_once_past_its_running
     async def scenario(session: AsyncSession) -> int:
         processing = await processing_with_a_queued_meeting(session)
         await processing.publish(QUEUED_AT)
-        await start_and_stall(processing, QUEUED_AT)
+        await start_last(processing, QUEUED_AT)
         # Act
         await processing.recover(QUEUED_AT + LIMITS.transcription_running_limit + past_the_limit)
         return len(processing.broker.requests)
@@ -174,3 +208,40 @@ def test_job_whose_result_was_lost_is_published_again_only_once_past_its_running
     found = async_database.run(scenario)
     # Assert
     assert found == publishes
+
+
+@pytest.mark.slow
+def test_late_failure_of_a_handed_back_attempt_leaves_its_replacement_to_finish(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    second_start = QUEUED_AT + LIMITS.transcription_running_limit + TICK
+
+    async def scenario(
+        session: AsyncSession,
+    ) -> tuple[bool, ProcessingState, list[ProcessingOutcome]]:
+        processing = await processing_with_a_queued_meeting(session)
+        await processing.publish(QUEUED_AT)
+        await start_last(processing, QUEUED_AT)
+        first = processing.broker.requests[-1]
+        await processing.recover(second_start)
+        await start_last(processing, second_start)
+        late_failure = TranscriptionFailed(
+            job_id=first.job_id,
+            meeting_id=first.meeting_id,
+            finished_at=QUEUED_AT + timedelta(hours=2),
+            reason=TranscriptionFailure.TIMED_OUT,
+        )
+        # Act
+        await deliver(processing.service, late_failure)
+        await answer_last(processing, second_start + timedelta(minutes=1))
+        await processing.publish(second_start + timedelta(minutes=1))
+        await start_last(processing, second_start + timedelta(minutes=2))
+        await answer_last(processing, second_start + timedelta(minutes=3))
+        meetings = processing.meetings
+        outcomes = [notice.outcome for notice in processing.notices.sent]
+        return meetings.saved is not None, meetings.update.state, outcomes
+
+    found = async_database.run(scenario)
+    # Assert
+    assert found == (True, ProcessingState.PROCESSED, [ProcessingOutcome.FINISHED])
