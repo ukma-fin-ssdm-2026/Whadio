@@ -95,6 +95,24 @@ def test_published_job_keeps_the_context_it_was_sent(async_database: AsyncDataba
 
 
 @pytest.mark.slow
+def test_job_keeps_the_ids_of_its_applied_results(async_database: AsyncDatabase) -> None:
+    # Arrange
+    first, second = uuid4(), uuid4()
+
+    async def scenario(session: AsyncSession) -> frozenset[UUID] | None:
+        jobs, _, job_id = await add_job(session)
+        # Act
+        await jobs.record_result(job_id, first)
+        await jobs.record_result(job_id, second)
+        found = await jobs.lock(job_id)
+        return None if found is None else found.applied_results
+
+    applied = async_database.run(scenario)
+    # Assert
+    assert applied == {first, second}
+
+
+@pytest.mark.slow
 def test_new_job_is_queued_without_attempts(async_database: AsyncDatabase) -> None:
     # Arrange
     async def scenario(session: AsyncSession) -> Job | None:

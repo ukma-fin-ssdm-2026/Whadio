@@ -1,23 +1,20 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  Checkbox,
-  FormControlLabel,
-  Link,
-  Typography,
-} from "@mui/material";
+import { Alert, Box, Button, Card, Link, Typography } from "@mui/material";
 import { useState } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { ApiError } from "@/shared/api/errors";
 import type { Schemas } from "@/shared/api/types";
 import { FormTextField } from "@/shared/ui/FormTextField";
+import {
+  PASSWORD_RULE,
+  registrationSchema,
+  showRegistrationError,
+  TermsField,
+} from "@/shared/ui/RegistrationFields";
 import { completePasswordReset, completeRegistration } from "../api/account-links";
 
-const PASSWORD_RULE = "Use 12–128 characters, including at least one capital letter and one number";
+const resetSchema = registrationSchema.extend({ name: z.string(), accept_terms: z.boolean() });
 const INVALID_LINK = "This link cannot be used. Ask your operator for a new link.";
 const validId = z.uuid();
 
@@ -33,27 +30,8 @@ interface Props {
 export function AccountLinkForm({ kind, id, token, termsHref, signInHref, onComplete }: Props) {
   const registration = kind === "registration";
   const [invalid, setInvalid] = useState(false);
-  const schema = z.object({
-    name: registration ? z.string().trim().min(1, "Enter your name").max(100) : z.string(),
-    password: z.string().refine((value) => {
-      const characters = Array.from(value);
-      return (
-        characters.length >= 12 &&
-        characters.length <= 128 &&
-        /\p{Uppercase}/u.test(value) &&
-        // Python's isdigit accepts more than decimal digits; the server validates the exact set.
-        /\p{N}/u.test(value)
-      );
-    }, PASSWORD_RULE),
-    accept_terms: z
-      .boolean()
-      .refine(
-        (value) => !registration || value,
-        "Accept the Terms and Conditions to create your account",
-      ),
-  });
   const { control, handleSubmit, setError, reset, formState } = useForm({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(registration ? registrationSchema : resetSchema),
     defaultValues: { name: "", password: "", accept_terms: false },
   });
   const unusable = invalid || !token || !validId.safeParse(id).success;
@@ -70,14 +48,7 @@ export function AccountLinkForm({ kind, id, token, termsHref, signInHref, onComp
         setInvalid(true);
         reset();
       } else if (error instanceof ApiError) {
-        let fieldError = false;
-        for (const { field, message } of error.details) {
-          if (field === "name" || field === "password" || field === "accept_terms") {
-            setError(field, { type: "server", message });
-            fieldError = true;
-          }
-        }
-        if (!fieldError) setError("root.server", { message: error.message });
+        showRegistrationError(error, setError);
       } else {
         setError("root.server", { message: "Could not complete this request. Try again." });
       }
@@ -128,48 +99,7 @@ export function AccountLinkForm({ kind, id, token, termsHref, signInHref, onComp
               slotProps={{ formHelperText: { sx: { mx: 0, width: "100%" } } }}
               required
             />
-            {registration && (
-              <>
-                <Controller
-                  control={control}
-                  name="accept_terms"
-                  render={({ field }) => (
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={field.value}
-                          onChange={(_, checked) => field.onChange(checked)}
-                          onBlur={field.onBlur}
-                          slotProps={{
-                            input: {
-                              ref: field.ref,
-                              "aria-invalid": Boolean(formState.errors.accept_terms),
-                              "aria-describedby": formState.errors.accept_terms
-                                ? "terms-error"
-                                : undefined,
-                            },
-                          }}
-                          name={field.name}
-                        />
-                      }
-                      label={
-                        <>
-                          I accept the{" "}
-                          <Link href={termsHref} target="_blank" rel="noopener noreferrer">
-                            Terms and Conditions
-                          </Link>
-                        </>
-                      }
-                    />
-                  )}
-                />
-                {formState.errors.accept_terms && (
-                  <Typography id="terms-error" color="error" role="alert">
-                    {formState.errors.accept_terms.message}
-                  </Typography>
-                )}
-              </>
-            )}
+            {registration && <TermsField control={control} termsHref={termsHref} />}
             {formState.errors.root?.server && (
               <Alert severity="error">{formState.errors.root.server.message}</Alert>
             )}
