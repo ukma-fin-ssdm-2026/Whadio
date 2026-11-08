@@ -346,6 +346,9 @@ once, and a test double for the connection pool that times out or answers with a
 | wait before retry n is drawn up to a quarter second doubled n times | Boundary value | `src/whadio/shared/reliability/test_storage_deadline.py` |
 | wait stops growing at two seconds | Boundary value | `src/whadio/shared/reliability/test_storage_deadline.py` |
 | storage settings bound the timeout and the attempts | Boundary value | `src/whadio/shared/reliability/test_storage_deadline.py` |
+| call answered 5xx recovers on its last attempt: get and delete, for `S3Error` and `ServerError` | Error handling | `src/whadio/shared/reliability/test_storage_deadline.py` |
+| call answered 5xx every time gives up after its attempts: get and delete, for `S3Error` and `ServerError` | Boundary value | `src/whadio/shared/reliability/test_storage_deadline.py` |
+| pool waits the timeout to connect and for each read, and retries nothing | Error handling | `src/whadio/shared/reliability/test_storage_deadline.py` |
 
 Run against the code before the fixes, the fault-injection, error-handling and at-the-deadline
 tests fail, while the just-under-the-deadline ones pass on both versions, as they should. Each
@@ -357,7 +360,8 @@ removed, and the lost-confirmation test fails when the worker's publish is not r
 test fails when the part it guards is broken: the pool left with urllib3's default retries (12
 connections instead of 3), no pool given to the client (the get hangs until a 60 s limit stops it),
 a 4xx treated as transient, the retry removed, one attempt too many, a fixed or uncapped wait, the
-warning removed, and the put retried.
+warning removed, the put retried, either 5xx branch of `_is_transient` returning False, and no
+connect timeout.
 
 ## Open issues
 
@@ -442,6 +446,7 @@ them: the timeout bounds each attempt, and the retry wraps the attempts.
   `test_wait_stops_growing_at_two_seconds` prove the formula and the cap;
   `test_call_to_a_failing_store_is_given_up_after_its_attempts`,
   `test_get_that_succeeds_on_the_last_attempt_returns_the_object` and
-  `test_get_that_would_succeed_one_attempt_later_raises` prove the number of attempts;
+  `test_get_that_would_succeed_one_attempt_later_raises` and
+  `test_call_answered_5xx_every_time_gives_up_after_its_attempts` prove the number of attempts;
   `test_get_that_times_out_on_every_attempt_logs_one_warning_without_the_key` proves the reaction
   after the last one; all in `src/whadio/shared/reliability/test_storage_deadline.py`.
