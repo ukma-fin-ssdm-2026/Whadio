@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol
 from uuid import UUID
@@ -35,6 +36,14 @@ class IAccessRepository(Protocol):
     async def save_share(self, share: ExternalShare) -> None: ...
 
     async def save_request(self, request: ShareAccessRequest) -> None: ...
+
+
+class IMemberGrantRepository(Protocol):
+    async def meetings_granted_to(self, user_id: UUID, /) -> list[UUID]: ...
+
+    async def grants(self, meeting_id: UUID, /) -> set[UUID]: ...
+
+    async def revoke(self, user_id: UUID, meeting_ids: Sequence[UUID], /) -> None: ...
 
 
 class AccessRepository:
@@ -114,6 +123,21 @@ class AccessRepository:
                 select(MeetingAccessGrant.user_id).where(
                     MeetingAccessGrant.meeting_id == meeting_id
                 )
+            )
+        )
+
+    async def meetings_granted_to(self, user_id: UUID) -> list[UUID]:
+        return list(
+            await self._session.scalars(
+                self.granted_meetings(user_id).order_by(MeetingAccessGrant.meeting_id)
+            )
+        )
+
+    async def revoke(self, user_id: UUID, meeting_ids: Sequence[UUID]) -> None:
+        await self._session.execute(
+            delete(MeetingAccessGrant).where(
+                MeetingAccessGrant.user_id == user_id,
+                MeetingAccessGrant.meeting_id.in_(meeting_ids),
             )
         )
 

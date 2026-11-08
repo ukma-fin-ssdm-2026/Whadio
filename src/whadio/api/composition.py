@@ -18,6 +18,7 @@ from ..access_policy.services import (
     AccessPolicy,
     AccessService,
     IShareRequestNotifier,
+    MemberAccessRelease,
 )
 from ..accounts.administrators import AdministratorRepository, AdministratorService
 from ..accounts.contracts import UserProfile
@@ -554,7 +555,10 @@ Invitations = Annotated[InvitationService, Depends(invitation_service)]
 
 def member_service(session: Session) -> MemberService:
     return MemberService(
-        MemberRepository(session), WorkspaceMembershipService(MembershipRepository(session))
+        MemberRepository(session),
+        WorkspaceMembershipService(MembershipRepository(session)),
+        MemberAccessRelease(AccessRepository(session), MeetingRepository(session)),
+        AuditWriter(session),
     )
 
 

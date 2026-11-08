@@ -1,6 +1,6 @@
 import asyncio
 import hashlib
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -15,7 +15,7 @@ from ..shared.errors import Failure, UseCaseError
 from ..shared.pagination import ListWindow
 from .contracts import MeetingScope
 from .models import ExternalShare, MeetingAccessGrant, ShareAccessRequest
-from .services import AccessCollaborators, AccessService, ContentPath
+from .services import AccessCollaborators, AccessService, ContentPath, MemberAccessRelease
 from .test_services import FakeMeetings, FakeNotices
 
 NOW = datetime(2026, 10, 13, 9, 0, tzinfo=UTC)
@@ -77,11 +77,13 @@ class FakeDirectory:
     def __init__(self) -> None:
         self.roles: dict[tuple[UUID, UUID], WorkspaceRole] = {}
         self.profiles: dict[UUID, UserProfile] = {}
+        self.locked: list[tuple[UUID, UUID]] = []
 
     async def role(self, workspace_id: UUID, user_id: UUID) -> WorkspaceRole | None:
         return self.roles.get((workspace_id, user_id))
 
     async def lock_role(self, workspace_id: UUID, user_id: UUID) -> WorkspaceRole | None:
+        self.locked.append((workspace_id, user_id))
         return self.roles.get((workspace_id, user_id))
 
     async def members(self, workspace_id: UUID) -> list[UUID]:
@@ -178,6 +180,19 @@ def test_member_cannot_restrict_a_meeting() -> None:
     )
     # Assert
     assert failure is Failure.INSUFFICIENT_ROLE
+
+
+def test_outsider_is_refused_before_the_workspace_is_locked() -> None:
+    # Arrange
+    unit = world()
+    # Act
+    failure = refusal(
+        unit.access.replace_access(
+            unit.outsider, unit.meeting, {unit.outsider}, NOW, restricted=True
+        )
+    )
+    # Assert
+    assert (failure, unit.directory.locked) == (Failure.NOT_FOUND, [])
 
 
 def test_meeting_cannot_be_restricted_to_a_nonmember() -> None:
@@ -336,3 +351,84 @@ def test_other_member_cannot_see_the_requester_profile() -> None:
     failure = refusal(unit.access.requester_profile(unit.member, request.share_access_request_id))
     # Assert
     assert failure is Failure.INSUFFICIENT_ROLE
+
+
+# --- Releasing a departing member's access ---
+
+
+class FakeMemberGrants:
+    def __init__(self, rows: dict[UUID, set[UUID]]) -> None:
+        self.rows: dict[UUID, set[UUID]] = rows
+
+    async def meetings_granted_to(self, user_id: UUID) -> list[UUID]:
+        return sorted(meeting for meeting, users in self.rows.items() if user_id in users)
+
+    async def grants(self, meeting_id: UUID) -> set[UUID]:
+        return set(self.rows.get(meeting_id, set()))
+
+    async def revoke(self, user_id: UUID, meeting_ids: Sequence[UUID]) -> None:
+        for meeting_id in meeting_ids:
+            self.rows[meeting_id].discard(user_id)
+
+
+class FakeMeetingLocks:
+    def __init__(self, *scopes: MeetingScope) -> None:
+        self.scopes: dict[UUID, MeetingScope] = {scope.meeting_id: scope for scope in scopes}
+
+    async def lock_scopes(
+        self, workspace_id: UUID, meeting_ids: Sequence[UUID]
+    ) -> list[MeetingScope]:
+        return [
+            self.scopes[meeting_id]
+            for meeting_id in sorted(meeting_ids)
+            if self.scopes[meeting_id].workspace_id == workspace_id
+        ]
+
+
+DEPARTING, STAYING, WORKSPACE = uuid4(), uuid4(), uuid4()
+
+
+def _restricted(workspace_id: UUID = WORKSPACE) -> MeetingScope:
+    return MeetingScope(uuid4(), workspace_id, STAYING, restricted=True)
+
+
+def test_last_recipient_of_a_restricted_meeting_is_kept() -> None:
+    # Arrange
+    meeting = _restricted()
+    grants = FakeMemberGrants({meeting.meeting_id: {DEPARTING}})
+    release = MemberAccessRelease(grants, FakeMeetingLocks(meeting))
+
+    # Act
+    failure = refusal(release.release(WORKSPACE, DEPARTING))
+
+    # Assert
+    assert (failure, grants.rows) == (
+        Failure.RESTRICTED_MEETING_REQUIRES_RECIPIENT,
+        {meeting.meeting_id: {DEPARTING}},
+    )
+
+
+def test_departing_member_loses_a_meeting_others_were_selected_for() -> None:
+    # Arrange
+    meeting = _restricted()
+    grants = FakeMemberGrants({meeting.meeting_id: {DEPARTING, STAYING}})
+    release = MemberAccessRelease(grants, FakeMeetingLocks(meeting))
+
+    # Act
+    asyncio.run(release.release(WORKSPACE, DEPARTING))
+
+    # Assert
+    assert grants.rows == {meeting.meeting_id: {STAYING}}
+
+
+def test_grants_in_another_workspace_are_kept() -> None:
+    # Arrange
+    elsewhere = _restricted(uuid4())
+    grants = FakeMemberGrants({elsewhere.meeting_id: {DEPARTING}})
+    release = MemberAccessRelease(grants, FakeMeetingLocks(elsewhere))
+
+    # Act
+    asyncio.run(release.release(WORKSPACE, DEPARTING))
+
+    # Assert
+    assert grants.rows == {elsewhere.meeting_id: {DEPARTING}}

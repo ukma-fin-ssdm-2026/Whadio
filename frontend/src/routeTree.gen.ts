@@ -7,6 +7,7 @@ import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
+import { Route as AuthedAdminRouteImport } from './routes/_authed/admin'
 import { Route as InvitationsInvitationIdRouteImport } from './routes/invitations/$invitationId'
 import { Route as PasswordResetsResetIdRouteImport } from './routes/password-resets/$resetId'
 import { Route as RegistrationsRegistrationIdRouteImport } from './routes/registrations/$registrationId'
@@ -34,6 +35,11 @@ const TermsRoute = TermsRouteImport.update({
 const AuthedIndexRoute = AuthedIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedAdminRoute = AuthedAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => AuthedRoute,
 } as any)
 const InvitationsInvitationIdRoute = InvitationsInvitationIdRouteImport.update({
@@ -90,6 +96,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
   '/sign-in': typeof SignInRoute
   '/terms': typeof TermsRoute
+  '/admin': typeof AuthedAdminRoute
   '/invitations/$invitationId': typeof InvitationsInvitationIdRoute
   '/password-resets/$resetId': typeof PasswordResetsResetIdRoute
   '/registrations/$registrationId': typeof RegistrationsRegistrationIdRoute
@@ -103,6 +110,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/terms': typeof TermsRoute
+  '/admin': typeof AuthedAdminRoute
   '/invitations/$invitationId': typeof InvitationsInvitationIdRoute
   '/password-resets/$resetId': typeof PasswordResetsResetIdRoute
   '/registrations/$registrationId': typeof RegistrationsRegistrationIdRoute
@@ -118,6 +126,7 @@ export interface FileRoutesById {
   '/_authed': typeof AuthedRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/terms': typeof TermsRoute
+  '/_authed/admin': typeof AuthedAdminRoute
   '/invitations/$invitationId': typeof InvitationsInvitationIdRoute
   '/password-resets/$resetId': typeof PasswordResetsResetIdRoute
   '/registrations/$registrationId': typeof RegistrationsRegistrationIdRoute
@@ -135,6 +144,7 @@ export interface FileRouteTypes {
     | '/'
     | '/sign-in'
     | '/terms'
+    | '/admin'
     | '/invitations/$invitationId'
     | '/password-resets/$resetId'
     | '/registrations/$registrationId'
@@ -148,6 +158,7 @@ export interface FileRouteTypes {
   to:
     | '/sign-in'
     | '/terms'
+    | '/admin'
     | '/invitations/$invitationId'
     | '/password-resets/$resetId'
     | '/registrations/$registrationId'
@@ -162,6 +173,7 @@ export interface FileRouteTypes {
     | '/_authed'
     | '/sign-in'
     | '/terms'
+    | '/_authed/admin'
     | '/invitations/$invitationId'
     | '/password-resets/$resetId'
     | '/registrations/$registrationId'
@@ -211,6 +223,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AuthedIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/admin': {
+      id: '/_authed/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AuthedAdminRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/invitations/$invitationId': {
@@ -298,6 +317,7 @@ const AuthedWorkspacesWorkspaceIdRouteRouteWithChildren =
   )
 
 interface AuthedRouteChildren {
+  AuthedAdminRoute: typeof AuthedAdminRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedWorkspacesWorkspaceIdRouteRoute: typeof AuthedWorkspacesWorkspaceIdRouteRouteWithChildren
   AuthedMeetingsMeetingIdRoute: typeof AuthedMeetingsMeetingIdRoute
@@ -306,6 +326,7 @@ interface AuthedRouteChildren {
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
+  AuthedAdminRoute: AuthedAdminRoute,
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedWorkspacesWorkspaceIdRouteRoute:
     AuthedWorkspacesWorkspaceIdRouteRouteWithChildren,
