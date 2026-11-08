@@ -22,6 +22,7 @@ from ..storage import (
     ObjectStorageError,
     ObjectStorageSettings,
     S3ObjectStorage,
+    bounded_pool,
     connect_s3_storage,
     create_s3_client,
 )
@@ -144,6 +145,13 @@ def _storage_on(
         bucket=settings.bucket,
         backoff=Backoff(attempts, uniform=waits.uniform, sleep=waits.sleep),
     )
+
+
+def _configured[T](pool: urllib3.PoolManager, name: str, kind: type[T]) -> T:
+    value = pool.connection_pool_kw.get(name)
+    if not isinstance(value, kind):
+        raise TypeError(f"the pool has no {kind.__name__} {name}")
+    return value
 
 
 def _timed_out() -> urllib3.exceptions.ReadTimeoutError:
@@ -318,6 +326,18 @@ def test_wait_stops_growing_at_two_seconds(retry: int) -> None:
 
     # Assert
     assert jitter.ranges == [(0.0, 2.0)]
+
+
+def test_pool_waits_the_timeout_to_connect_and_for_each_read_and_retries_nothing() -> None:
+    # Arrange
+    pool = bounded_pool(_settings(HttpUrl("http://storage.test:8333")))
+
+    # Act
+    timeout = _configured(pool, "timeout", urllib3.Timeout)
+    retries = _configured(pool, "retries", urllib3.Retry)
+
+    # Assert
+    assert (timeout.connect_timeout, timeout.read_timeout, retries.total) == (0.05, 0.05, False)
 
 
 @pytest.mark.parametrize(

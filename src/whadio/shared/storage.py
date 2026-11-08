@@ -173,19 +173,23 @@ def create_s3_client(
     )
 
 
-def connect_s3_storage(
-    settings: ObjectStorageSettings, *, sleep: Callable[[float], None] = time.sleep
-) -> S3ObjectStorage:
+def bounded_pool(settings: ObjectStorageSettings) -> urllib3.PoolManager:
     timeout = settings.timeout.total_seconds()
     # minio's own pool waits 300 s for each read and retries 5 times. `total=False` raises every
     # error to S3ObjectStorage instead, so retries happen at one level; the system CA store, which
     # honours SSL_CERT_FILE, replaces minio's certifi bundle.
-    pool = urllib3.PoolManager(
+    return urllib3.PoolManager(
         timeout=urllib3.Timeout(connect=timeout, read=timeout),
         maxsize=10,
         cert_reqs="CERT_REQUIRED",
         retries=urllib3.Retry(total=False),
     )
+
+
+def connect_s3_storage(
+    settings: ObjectStorageSettings, *, sleep: Callable[[float], None] = time.sleep
+) -> S3ObjectStorage:
+    pool = bounded_pool(settings)
     # SigV4 signs the host, so a URL signed for the internal endpoint fails from outside it; the
     # signer only signs, for the public endpoint, and never connects.
     return S3ObjectStorage(
