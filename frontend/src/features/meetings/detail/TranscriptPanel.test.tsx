@@ -27,7 +27,7 @@ function renderPanel(changes: Partial<ComponentProps<typeof TranscriptPanel>> = 
       query=""
       onQuery={() => {}}
       onRevision={() => {}}
-      onSaved={() => {}}
+      onShowCurrent={() => {}}
       {...changes}
     />,
   );
