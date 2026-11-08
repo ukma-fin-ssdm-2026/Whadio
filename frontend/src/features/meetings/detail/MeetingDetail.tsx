@@ -1,4 +1,4 @@
-import { Box, Stack, Tab, Tabs } from "@mui/material";
+import { Box, Chip, Stack, Tab, Tabs } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 import { Fragment, type ReactNode, useEffect, useId } from "react";
 import type { NoteRead, TranscriptRead } from "@/shared/api/types";
@@ -71,6 +71,7 @@ export function MeetingDetail({
         description={`${formatDate(meeting.date)} · ${meeting.source}`}
         actions={
           <>
+            {meeting.isEdited && <Chip label="Edited" size="small" variant="outlined" />}
             <Fragment key={`${meeting.id}-${tab}-${transcript?.revision.id}`}>
               {renderExport({ transcript, notes })}
             </Fragment>
@@ -122,6 +123,7 @@ export function MeetingDetail({
           >
             {tab === "recording" && <RecordingPlayer key={meeting.id} meeting={meeting} />}
             <TranscriptPanel
+              meeting={meeting}
               transcript={transcript}
               missing={transcriptAnswer === null}
               loading={transcriptResult.isLoading}
@@ -129,6 +131,9 @@ export function MeetingDetail({
               query={transcriptQuery}
               onQuery={onTranscriptQuery}
               onRevision={onRevision}
+              onShowCurrent={() => {
+                if (revisionId) onRevision(null);
+              }}
             />
           </Box>
         )}

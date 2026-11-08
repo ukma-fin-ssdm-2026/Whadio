@@ -17,6 +17,7 @@ import {
   meetingQueries,
   TRANSCRIPT_PENDING,
   useDeleteMeeting,
+  useEditTranscript,
   useUpdateMeeting,
   useUploadMeeting,
 } from "./meetings";
@@ -441,4 +442,104 @@ test("a deletion marks its workspace's folders for a refetch", async () => {
 
   // Assert
   expect(isInvalidated(queryClient, folderQueries.list("workspace").queryKey)).toBe(true);
+});
+
+const PROCESSED = { id: "meeting", state: "processed" } as const;
+const CURRENT = meetingQueries.transcript(PROCESSED, null).queryKey;
+const ORIGINAL = meetingQueries.transcript(PROCESSED, "revision").queryKey;
+const RECORDING_LINK = meetingQueries.recording({
+  id: "meeting",
+  recordingAvailable: true,
+}).queryKey;
+const CORRECTION = { base_revision_id: "revision", segments: [{ id: "one", text: "Agreed" }] };
+const SAVED_REVISION = transcriptRead({
+  revision: { ...transcriptRead().revision, id: "edited", revision_type: "edited" },
+  is_edited: true,
+});
+
+function renderTranscriptEdit() {
+  const { queryClient, wrapper } = seedCaches();
+  queryClient.setQueryData(CURRENT, transcriptRead());
+  queryClient.setQueryData(ORIGINAL, transcriptRead());
+  queryClient.setQueryData(RECORDING_LINK, { url: "", expires_at: "2026-10-25T10:05:00Z" });
+  const { result } = renderHook(() => useEditTranscript(PROCESSED), { wrapper });
+  return { queryClient, result };
+}
+
+async function editTranscript() {
+  server.use(
+    http.post("/api/v1/meetings/{meeting_id}/transcript/revisions", ({ response }) =>
+      response(201).json(SAVED_REVISION),
+    ),
+  );
+  const { queryClient, result } = renderTranscriptEdit();
+  await result.current.mutateAsync(CORRECTION);
+  return queryClient;
+}
+
+async function refuseTranscriptEdit(status: 404 | 409, code: "NOT_FOUND" | "STALE_REVISION") {
+  server.use(
+    http.post("/api/v1/meetings/{meeting_id}/transcript/revisions", ({ response }) =>
+      response(status).json(errorBody(code, "Refused")),
+    ),
+  );
+  const { queryClient, result } = renderTranscriptEdit();
+  await expect(result.current.mutateAsync(CORRECTION)).rejects.toThrow();
+  return queryClient;
+}
+
+test("a saved revision becomes the current transcript", async () => {
+  // Act
+  const queryClient = await editTranscript();
+
+  // Assert
+  expect(queryClient.getQueryData(CURRENT)).toEqual(SAVED_REVISION);
+});
+
+test("a saved revision needs no second request to show", async () => {
+  // Act
+  const queryClient = await editTranscript();
+
+  // Assert
+  expect(isInvalidated(queryClient, CURRENT)).toBe(false);
+});
+
+test("a saved revision marks the other revisions for a refetch", async () => {
+  // Act
+  const queryClient = await editTranscript();
+
+  // Assert
+  expect(isInvalidated(queryClient, ORIGINAL)).toBe(true);
+});
+
+test("a saved revision marks the meeting for a refetch", async () => {
+  // Act
+  const queryClient = await editTranscript();
+
+  // Assert
+  expect(isInvalidated(queryClient, meetingQueries.detail("meeting").queryKey)).toBe(true);
+});
+
+test("a saved revision leaves the recording link alone", async () => {
+  // Act
+  const queryClient = await editTranscript();
+
+  // Assert
+  expect(isInvalidated(queryClient, RECORDING_LINK)).toBe(false);
+});
+
+test("a stale revision marks the current transcript for a reload", async () => {
+  // Act
+  const queryClient = await refuseTranscriptEdit(409, "STALE_REVISION");
+
+  // Assert
+  expect(isInvalidated(queryClient, CURRENT)).toBe(true);
+});
+
+test("an edit refused otherwise reloads nothing", async () => {
+  // Act
+  const queryClient = await refuseTranscriptEdit(404, "NOT_FOUND");
+
+  // Assert
+  expect(isInvalidated(queryClient, CURRENT)).toBe(false);
 });
