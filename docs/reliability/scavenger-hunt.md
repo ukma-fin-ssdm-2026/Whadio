@@ -120,12 +120,16 @@ return Minio(
 
 **Why it is dangerous.** Without an `http_client`, MinIO builds its own pool:
 `Timeout(connect=300, read=300)` and `Retry(total=5)` (minio 7.2, `api.py`). Every `put`, `get`
-and `delete` runs in `asyncio.to_thread` inside API request handlers (upload, capture assembly,
-deletion). If storage does not answer, one call can take 6 × 300 s.
+and `delete` runs in `asyncio.to_thread`: in API request handlers for an upload, a capture chunk
+and the capture's assembly, which delete only to clean up after a failure, and in the scheduler.
+Deleting a meeting only queues its recording, and the scheduler deletes it. If storage does not
+answer, one call can make six attempts of up to 300 s each, and a multipart upload more.
 
 **Potential impact.** The HTTP request hangs until nginx or the browser gives up. Each stuck call
 holds a thread from the default executor and a database transaction. A few of them exhaust the
 pool, and then password hashing, which uses the same executor, stalls as well, so sign-ins hang too.
+The scheduler runs its jobs one after another, so one stuck delete also holds up retention and the
+email delivery that follows it.
 
 ### F6. The SPA's API client has no deadline (B)
 
@@ -204,10 +208,13 @@ column describes what a user or another system sees once the chain completes.
 | F2 | `fetch()` called without an abort signal | One chunk `PUT` stays pending; `upload.queue` and `finish()` wait on it | The recording reaches neither the server nor the user's disk: the call's audio is lost | **High** |
 | F3 | `catch` sets `failed = true` and drops the error | The upload has stopped, but the user and the logs do not know | The user records a whole call believing it is being uploaded; support cannot tell why it failed | **Medium** |
 | F4 | An `async` listener's rejection is not handled | `saveLocally` failed; the offscreen document may stay open | A recording that failed to upload is not saved either, with no message and no log | **High** |
-| F5 | MinIO's default 300 s timeouts and 5 retries | Request handlers and executor threads wait on storage for up to 30 minutes | Uploads and deletions hang; under load, sign-ins stall too because the thread pool is exhausted | **Medium** |
+| F5 | MinIO's default 300 s timeouts and 5 retries | Request handlers, executor threads and the scheduler wait on storage for up to 30 minutes | Uploads and captures hang, and so does the scheduler's cleanup; under load, sign-ins stall too because the thread pool is exhausted | **High** |
 | F6 | The SPA's `fetch` has no deadline | A query stays in its loading state | A page spins with no error or retry offered | **Low** |
 | F7 | `.catch(() => {})` around session revocation | The server-side session is still active | The extension session stays usable for up to 24 h after sign-out | **Low** |
 | F8 | `.catch(() => null)` without a log | The retry proceeds without knowing what the server holds | No user-visible failure, as the duplicates are absorbed; a support engineer cannot tell from the logs whether the status request failed | **Low** |
+
+F5 is High because a few stalled calls fill the database pool and the executor that Argon2 sign-in
+hashing shares, and a single one stalls the scheduler's sequential tick.
 
 ## Stage 3: Remediation
 
@@ -219,6 +226,7 @@ answer or no answer (§3.1). The fixes, before and after, are in
 |---|---|---|---|---|
 | F1 | No answer: one publish that never returns stops publishing for the whole instance, with the row locked and nothing logged | **Fail-fast.** A publish the broker does not confirm in time raises, the transaction rolls back and the job stays unpublished | Timeout per attempt → retry on the next round (existing) → logging (existing) | Denys, `fix(#287): give the broker connection and publishes a deadline` |
 | F2 | No answer: a chunk that waits forever loses the whole call | **Fail-safe.** A request that runs out is retried; once retries are spent the call is saved locally | Timeout per request → retry with backoff (existing) → local file fallback (existing) | Zlata, `fix(#287): give the extension's requests a deadline` |
+| F5 | No answer: a call that waits half an hour holds a transaction and an executor thread, and stops the scheduler | **Fail-fast** in the API: an upload or a chunk that storage does not serve answers `503` within one storage operation's budget of about 16 s; a capture completion whose read fails also runs a cleanup delete, about 31.5 s at worst, so the extension's 25 s deadline fires first and the call is saved locally. **Fail-safe** in cleanup: a delete that fails keeps its row for the next pass | Timeout per connection and read → bounded retry with full jitter, for reads and deletes only → no circuit breaker: the API builds a storage client for each request, so a breaker would forget every failure, and one storage operation already ends within about 16 s → `503` (existing) / next scheduler pass (existing) | Andrii, `fix(#287): give object storage calls a timeout and turn off hidden retries` |
 | F6 | No answer for reads: a page loads forever. A wrong answer for writes: giving up on an upload that still lands invites a duplicate | **Fail-fast** for reads: the read ends with an error that says it timed out, and the page shows it instead of loading forever. Writes keep no client deadline | Timeout on reads → retry by React Query (existing) → clear error message | Zlata, `fix(#287): give the web app's reads a deadline` |
 
 ## Stage 4: The finding to present

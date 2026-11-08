@@ -23,7 +23,7 @@ info:
     - **Visibility:** a resource the caller cannot see is `404`, never `403`, so its existence does
       not leak. `403` means the caller can see it but their role does not allow the action.
     - **Time:** ISO 8601 with an offset; returned in UTC.
-  version: 0.8.1
+  version: 0.10.0
 paths:
   /api/v1/invitations/{invitation_id}/preview:
     post:
@@ -914,6 +914,163 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: '`NOT_FOUND`: no such workspace, or the caller is not a member'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/workspaces/{workspace_id}/members/{user_id}:
+    patch:
+      tags:
+      - workspaces
+      summary: Change a member's role
+      description: Moderator or Owner only. Switches a member between `member` and
+        `moderator`, with effect from that member's next request. Giving the role
+        the member already has changes nothing.
+      operationId: change_member_role_api_v1_workspaces__workspace_id__members__user_id__patch
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: The member's user identifier
+          examples:
+          - 3f6c1d2e-8a4b-4c5d-9e0f-1a2b3c4d5e6f
+          title: User Id
+        description: The member's user identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberUpdate'
+      responses:
+        '200':
+          description: The member with their new role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberRead'
+        '400':
+          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
+            valid JSON'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: '`INSUFFICIENT_ROLE`: Moderator or Owner required'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`NOT_FOUND`: no such workspace or member, or the caller is
+            not a member'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`OWNER_IMMUTABLE`: the member is the Owner'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - workspaces
+      summary: Remove a member
+      description: Moderator or Owner only, a Moderator's own membership included.
+        The member loses the workspace and its meetings at once, and their access
+        grants go with the membership. Refused while they are the only one selected
+        for a restricted meeting; the refusal names no meeting.
+      operationId: remove_member_api_v1_workspaces__workspace_id__members__user_id__delete
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: Workspace identifier
+          examples:
+          - 7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d
+          title: Workspace Id
+        description: Workspace identifier
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          description: The member's user identifier
+          examples:
+          - 3f6c1d2e-8a4b-4c5d-9e0f-1a2b3c4d5e6f
+          title: User Id
+        description: The member's user identifier
+      responses:
+        '204':
+          description: The member was removed
+        '401':
+          description: '`UNAUTHENTICATED`: the session is missing, expired or ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: '`INSUFFICIENT_ROLE`: Moderator or Owner required'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`NOT_FOUND`: no such workspace or member, or the caller is
+            not a member'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`OWNER_IMMUTABLE`: the member is the Owner; `RESTRICTED_MEETING_REQUIRES_RECIPIENT`:
+            the member is the only one selected for a restricted meeting, so another
+            member must be selected for it first'
           content:
             application/json:
               schema:
@@ -4465,6 +4622,8 @@ components:
       - INVITATION_LIMIT
       - INVITATION_COOLDOWN
       - INVITATION_NOT_PENDING
+      - OWNER_IMMUTABLE
+      - RESTRICTED_MEETING_REQUIRES_RECIPIENT
       - NOT_TRANSCRIBED
       - NOTES_IN_PROGRESS
       - RECORDING_NOT_READY
@@ -5279,6 +5438,16 @@ components:
       - role
       - joined_at
       title: MemberRead
+    MemberUpdate:
+      properties:
+        role:
+          $ref: '#/components/schemas/InvitedRole'
+          description: The member's new role; the Owner's cannot change
+      additionalProperties: false
+      type: object
+      required:
+      - role
+      title: MemberUpdate
     MembershipRead:
       properties:
         user_id:

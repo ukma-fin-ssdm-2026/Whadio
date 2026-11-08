@@ -100,13 +100,15 @@ class MembershipRepository:
             .where(Workspace.workspace_id == workspace_id)
             .with_for_update()
         )
+        # NO KEY UPDATE still stops the role changing, but lets the meeting-access trigger's
+        # KEY SHARE checks at commit pass; FOR UPDATE deadlocks against a concurrent meeting move.
         return await self._session.scalar(
             select(WorkspaceMembership.role)
             .where(
                 WorkspaceMembership.workspace_id == workspace_id,
                 WorkspaceMembership.user_id == user_id,
             )
-            .with_for_update()
+            .with_for_update(key_share=True)
         )
 
     async def profile(self, user_id: UUID) -> UserProfile | None:
