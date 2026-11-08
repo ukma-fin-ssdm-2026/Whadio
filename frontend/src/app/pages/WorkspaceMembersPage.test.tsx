@@ -1,4 +1,5 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import type { Schemas } from "@/shared/api/types";
 import { memberRead, page, workspaceRead } from "@/shared/testing/fixtures";
@@ -9,15 +10,24 @@ import { WorkspaceMembersPage } from "./WorkspaceMembersPage";
 
 const MEMBER = memberRead();
 
-function openMembers(changes: Partial<Schemas["WorkspaceRead"]>) {
+function openMembers(changes: Partial<Schemas["WorkspaceRead"]>, members = [MEMBER]) {
   const reads = { members: 0, invitations: 0 };
   server.use(
+    http.get("/api/v1/users/me", ({ response }) =>
+      response(200).json({
+        id: MEMBER.user_id,
+        email: MEMBER.email,
+        name: MEMBER.name,
+        is_administrator: false,
+        created_at: MEMBER.joined_at,
+      }),
+    ),
     http.get("/api/v1/workspaces/{workspace_id}", ({ response }) =>
       response(200).json(workspaceRead(changes)),
     ),
     http.get("/api/v1/workspaces/{workspace_id}/members", ({ response }) => {
       reads.members += 1;
-      return response(200).json(page([MEMBER]));
+      return response(200).json(page(members));
     }),
     http.get("/api/v1/workspaces/{workspace_id}/invitations", ({ response }) => {
       reads.invitations += 1;
@@ -87,4 +97,48 @@ test("a personal workspace is not found and requests no members", async () => {
 
   // Assert
   expect(reads.members).toBe(0);
+});
+
+async function demoteYourself() {
+  const workspace: Partial<Schemas["WorkspaceRead"]> = { my_role: "moderator" };
+  const members = [memberRead({ role: "moderator" })];
+  server.use(
+    http.patch(
+      "/api/v1/workspaces/{workspace_id}/members/{user_id}",
+      async ({ request, response }) => {
+        const { role } = await request.json();
+        workspace.my_role = role;
+        members.splice(0, 1, memberRead({ role }));
+        return response(200).json(memberRead({ role }));
+      },
+    ),
+  );
+  const user = userEvent.setup();
+  const reads = openMembers(workspace, members);
+  await user.click(await screen.findByRole("combobox", { name: `Role of ${MEMBER.name}` }));
+  await user.click(screen.getByRole("option", { name: "Member" }));
+  await user.click(screen.getByRole("button", { name: "Change role" }));
+  return reads;
+}
+
+test("demoting yourself leaves no member or invitation management", async () => {
+  // Act
+  await demoteYourself();
+
+  // Assert
+  await waitFor(() =>
+    expect([
+      screen.queryByRole("heading", { name: "Invitations" }),
+      screen.queryByRole("combobox"),
+    ]).toEqual([null, null]),
+  );
+});
+
+test("demoting yourself asks nothing more of the invitations", async () => {
+  // Act
+  const reads = await demoteYourself();
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+  // Assert
+  expect(reads.invitations).toBe(1);
 });
