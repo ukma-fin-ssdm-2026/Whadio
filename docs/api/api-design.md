@@ -414,12 +414,16 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `DELETE /workspaces/{workspace_id}/members/{user_id}` · Remove a member
 
-- **Status:** Designed · **Caller:** Moderator or Owner · **Success:** `204`
-- **Rules:** the member loses access to the workspace and all of its meetings at once.
+- **Status:** Implemented · **Caller:** Moderator or Owner · **Success:** `204`
+- **Rules:** the member loses access to the workspace and all of its meetings at once; their
+  access grants go with the membership. A Moderator may remove themselves.
   Before removing a restricted meeting's last selected recipient, a Moderator must explicitly
   select another remaining member through the meeting access endpoint. Removal is refused
   while any affected restricted meeting would have no recipient; it never grants the Owner
-  access automatically or changes the meeting to workspace access.
+  access automatically or changes the meeting to workspace access. The refusal names no
+  meeting, since the caller may not be able to see it (section 6.4). Shares approved for the
+  removed account stay until their creators revoke them, as for any account outside the
+  workspace (FR-038).
 - **Errors:**
   - `403 INSUFFICIENT_ROLE`: the caller is a plain member.
   - `404 NOT_FOUND`: no such workspace or member.

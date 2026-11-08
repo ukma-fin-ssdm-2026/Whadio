@@ -98,6 +98,13 @@ def test_invalid_path_parameter_is_echoed() -> None:
         (Failure.INVALID_CREDENTIALS, "Unknown email address or wrong password"),
         (Failure.PERSONAL_WORKSPACE, "A personal workspace cannot be changed this way"),
         (Failure.OWNER_IMMUTABLE, "The Owner can be neither re-roled nor removed"),
+        (
+            Failure.RESTRICTED_MEETING_REQUIRES_RECIPIENT,
+            (
+                "This member is the only one selected for a restricted meeting; "
+                "select another member for it first"
+            ),
+        ),
         (Failure.FOLDER_EXISTS, "A folder with this name already exists"),
         (Failure.TERM_EXISTS, "This glossary term already exists"),
         (Failure.NOT_TRANSCRIBED, "The meeting has not been transcribed yet"),

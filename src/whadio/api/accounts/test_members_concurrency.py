@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from conftest import AsyncDatabase
 
 from ...access_policy.models import MeetingAccessGrant
+from ...access_policy.repositories import AccessRepository
+from ...access_policy.services import AccessCollaborators, AccessService, MemberAccessRelease
 from ...accounts.enums import InvitationRole, WorkspaceRole
 from ...accounts.member_repository import MemberRepository
 from ...accounts.members import MemberService
@@ -24,6 +26,7 @@ from ...audit.models import AuditEvent
 from ...audit.services import AuditWriter
 from ...meetings.enums import AccessMode
 from ...meetings.models import Folder, Meeting
+from ...meetings.repositories import MeetingRepository
 from ...shared.database import (
     Database,
     DatabaseSettings,
@@ -31,7 +34,7 @@ from ...shared.database import (
     create_migration_engine,
 )
 from ...shared.errors import UseCaseError
-from ..composition import meeting_service
+from ..composition import meeting_service, share_notifications
 
 pytestmark = pytest.mark.slow
 
@@ -50,7 +53,9 @@ class World:
 
 
 @asynccontextmanager
-async def world(settings: DatabaseSettings) -> AsyncGenerator[World]:
+async def world(
+    settings: DatabaseSettings, *, member_granted: bool = False
+) -> AsyncGenerator[World]:
     database = Database(settings)
     users: list[UUID] = []
     workspace: UUID | None = None
@@ -78,8 +83,9 @@ async def world(settings: DatabaseSettings) -> AsyncGenerator[World]:
             meeting = await AsyncDatabase.add_meeting(
                 session, (owner, folder), access_mode=AccessMode.RESTRICTED
             )
-            session.add(
-                MeetingAccessGrant(meeting_id=meeting, user_id=moderator, granted_by_user_id=owner)
+            session.add_all(
+                MeetingAccessGrant(meeting_id=meeting, user_id=recipient, granted_by_user_id=owner)
+                for recipient in ([moderator, member] if member_granted else [moderator])
             )
             archive = Folder(workspace_id=workspace, name="Archive")
             session.add(archive)
@@ -136,15 +142,69 @@ class ObservedMembershipRepository(MembershipRepository):
 async def _operate(
     place: World, session: AsyncSession, operation: str, memberships: MembershipRepository
 ) -> None:
+    directory = WorkspaceMembershipService(memberships)
+    now = datetime.now(UTC)
     members = MemberService(
-        MemberRepository(session), WorkspaceMembershipService(memberships), AuditWriter(session)
+        MemberRepository(session),
+        directory,
+        MemberAccessRelease(AccessRepository(session), MeetingRepository(session)),
+        AuditWriter(session),
     )
-    actor, target, role = {
-        "demote": (place.moderator, place.moderator, InvitationRole.MEMBER),
-        "dismiss": (place.owner, place.moderator, InvitationRole.MEMBER),
-        "promote": (place.moderator, place.member, InvitationRole.MODERATOR),
-    }[operation]
-    await members.change_role(actor, place.workspace, target, role, datetime.now(UTC))
+    if operation == "remove":
+        await members.remove(place.owner, place.workspace, place.member, now)
+    elif operation == "grant":
+        access = AccessService(
+            AccessCollaborators(
+                AccessRepository(session),
+                MeetingRepository(session),
+                directory,
+                AuditWriter(session),
+                share_notifications(session),
+            )
+        )
+        await access.replace_access(
+            place.moderator, place.meeting, {place.moderator, place.member}, now, restricted=True
+        )
+    else:
+        actor, target, role = {
+            "demote": (place.moderator, place.moderator, InvitationRole.MEMBER),
+            "dismiss": (place.owner, place.moderator, InvitationRole.MEMBER),
+            "promote": (place.moderator, place.member, InvitationRole.MODERATOR),
+        }[operation]
+        await members.change_role(actor, place.workspace, target, role, now)
+
+
+async def _serialized(place: World, first: str, second: str) -> list[str]:
+    """Run `first` and keep it uncommitted until `second` reaches the membership locks."""
+    held, attempted = asyncio.Event(), asyncio.Event()
+
+    async def perform(operation: str) -> str:
+        leads = operation == first
+        if not leads:
+            await held.wait()
+        try:
+            async with place.database.transaction() as session:
+                await _operate(
+                    place,
+                    session,
+                    operation,
+                    MembershipRepository(session)
+                    if leads
+                    else ObservedMembershipRepository(session, attempted),
+                )
+                if leads:
+                    held.set()
+                    await attempted.wait()
+                    await asyncio.sleep(0.5)
+        except UseCaseError as error:
+            return f"{operation}: {error.code.value}"
+        except DBAPIError as error:
+            return f"{operation}: {type(error.orig).__name__}"
+        return f"{operation}: done"
+
+    return sorted(
+        await asyncio.wait_for(asyncio.gather(perform(first), perform(second)), timeout=20)
+    )
 
 
 @pytest.mark.parametrize(
@@ -162,36 +222,8 @@ def test_a_moderators_demotion_and_their_concurrent_role_change_serialize(
     # Arrange
     async def scenario() -> list[str]:
         async with world(database_settings) as place:
-            held, attempted = asyncio.Event(), asyncio.Event()
-
-            async def perform(operation: str) -> str:
-                leads = operation == first
-                if not leads:
-                    await held.wait()
-                try:
-                    async with place.database.transaction() as session:
-                        await _operate(
-                            place,
-                            session,
-                            operation,
-                            MembershipRepository(session)
-                            if leads
-                            else ObservedMembershipRepository(session, attempted),
-                        )
-                        if leads:
-                            held.set()
-                            await attempted.wait()
-                            await asyncio.sleep(0.5)
-                except UseCaseError as error:
-                    return f"{operation}: {error.code.value}"
-                return f"{operation}: done"
-
             # Act
-            return sorted(
-                await asyncio.wait_for(
-                    asyncio.gather(perform("dismiss"), perform("promote")), timeout=20
-                )
-            )
+            return await _serialized(place, first, "promote" if first == "dismiss" else "dismiss")
 
     results = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
 
@@ -199,12 +231,62 @@ def test_a_moderators_demotion_and_their_concurrent_role_change_serialize(
     assert results == expected
 
 
-def test_a_recipient_demoting_themselves_waits_for_a_concurrent_move(
-    database_settings: DatabaseSettings,
+@pytest.mark.parametrize(
+    ("first", "expected"),
+    [
+        pytest.param("remove", ["grant: VALIDATION_ERROR", "remove: done"], id="removal-first"),
+        pytest.param("grant", ["grant: done", "remove: done"], id="access-change-first"),
+    ],
+)
+def test_removal_and_a_concurrent_grant_to_the_departing_member_serialize(
+    database_settings: DatabaseSettings, first: str, expected: list[str]
+) -> None:
+    # Arrange
+    async def scenario() -> tuple[list[str], set[UUID], bool, set[UUID]]:
+        async with world(database_settings) as place:
+            # Act
+            results = await _serialized(place, first, "grant" if first == "remove" else "remove")
+            async with place.database.transaction() as session:
+                granted = set(
+                    await session.scalars(
+                        select(MeetingAccessGrant.user_id).where(
+                            MeetingAccessGrant.meeting_id == place.meeting
+                        )
+                    )
+                )
+                still_member = (
+                    await session.scalar(
+                        select(WorkspaceMembership.user_id).where(
+                            WorkspaceMembership.workspace_id == place.workspace,
+                            WorkspaceMembership.user_id == place.member,
+                        )
+                    )
+                    is not None
+                )
+                return results, granted, still_member, {place.moderator}
+
+    results, granted, still_member, recipients = asyncio.run(
+        scenario(), loop_factory=asyncio.SelectorEventLoop
+    )
+
+    # Assert
+    assert (results, granted, still_member) == (expected, recipients, False)
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        pytest.param("grant", id="a-recipient-changes-the-access"),
+        pytest.param("demote", id="a-recipient-demotes-themselves"),
+        pytest.param("remove", id="a-recipient-is-removed"),
+    ],
+)
+def test_membership_and_access_changes_wait_for_a_concurrent_move(
+    database_settings: DatabaseSettings, operation: str
 ) -> None:
     # Arrange
     async def scenario() -> list[str]:
-        async with world(database_settings) as place:
+        async with world(database_settings, member_granted=operation == "remove") as place:
             held, attempted = asyncio.Event(), asyncio.Event()
 
             async def move() -> str:
@@ -230,12 +312,12 @@ def test_a_recipient_demoting_themselves_waits_for_a_concurrent_move(
                         await _operate(
                             place,
                             session,
-                            "demote",
+                            operation,
                             ObservedMembershipRepository(session, attempted),
                         )
                 except DBAPIError as error:
-                    return f"demote: {type(error.orig).__name__}"
-                return "demote: done"
+                    return f"{operation}: {type(error.orig).__name__}"
+                return f"{operation}: done"
 
             # Act
             return sorted(await asyncio.wait_for(asyncio.gather(move(), change()), timeout=20))
@@ -243,4 +325,4 @@ def test_a_recipient_demoting_themselves_waits_for_a_concurrent_move(
     results = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
 
     # Assert
-    assert results == ["demote: done", "move: done"]
+    assert results == sorted(["move: done", f"{operation}: done"])

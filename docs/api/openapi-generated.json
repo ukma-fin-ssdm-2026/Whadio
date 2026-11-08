@@ -1480,6 +1480,106 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Remove a member",
+        "description": "Moderator or Owner only, a Moderator's own membership included. The member loses the workspace and its meetings at once, and their access grants go with the membership. Refused while they are the only one selected for a restricted meeting; the refusal names no meeting.",
+        "operationId": "remove_member_api_v1_workspaces__workspace_id__members__user_id__delete",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Workspace identifier",
+              "examples": [
+                "7b1e9c40-2d3f-4a5b-8c6d-0e1f2a3b4c5d"
+              ],
+              "title": "Workspace Id"
+            },
+            "description": "Workspace identifier"
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The member's user identifier",
+              "examples": [
+                "3f6c1d2e-8a4b-4c5d-9e0f-1a2b3c4d5e6f"
+              ],
+              "title": "User Id"
+            },
+            "description": "The member's user identifier"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The member was removed"
+          },
+          "401": {
+            "description": "`UNAUTHENTICATED`: the session is missing, expired or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`INSUFFICIENT_ROLE`: Moderator or Owner required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`NOT_FOUND`: no such workspace or member, or the caller is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`OWNER_IMMUTABLE`: the member is the Owner; `RESTRICTED_MEETING_REQUIRES_RECIPIENT`: the member is the only one selected for a restricted meeting, so another member must be selected for it first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/workspaces": {
@@ -6904,6 +7004,7 @@
           "INVITATION_COOLDOWN",
           "INVITATION_NOT_PENDING",
           "OWNER_IMMUTABLE",
+          "RESTRICTED_MEETING_REQUIRES_RECIPIENT",
           "NOT_TRANSCRIBED",
           "NOTES_IN_PROGRESS",
           "RECORDING_NOT_READY",
