@@ -4,6 +4,13 @@ All notable changes to Whadio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026-11-08
+
+### Fixed
+
+- Bound object storage calls with a timeout and jittered retries ([#323](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/323))
+- Recover processing jobs whose message was lost ([#324](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/324))
+
 ## [0.10.0] - 2026-11-08
 
 ### Added
