@@ -145,6 +145,7 @@ The model covers the data required for these key project functions:
 - `NOTE_CONTEXT_MEETING.context_meeting_id` is optional so the note can remain unchanged after a context meeting is deleted; `context_meeting_name_snapshot` preserves what was shown to readers.
 - `LLM_PROVIDER_CONFIG.api_key_encrypted` is required unless `provider = Whadio`.
 - `PROCESSING_JOB.created_at` stores when the job was queued, and `attempts` stores retry count for monitoring and retry limits.
+- Implementation-only `PROCESSING_JOB.applied_result_ids` holds the message IDs of the worker results applied to the job. A worker resends a result under the same ID, and a result whose ID is already there is dropped in the transaction that would apply it.
 - `PROCESSING_JOB.queued_at` stores entry into the current queued period. A retry resets it and
   clears the previous attempt timestamps; publication alone leaves it unchanged. Initial queues
   retain their creation time after migration. Historical retry queue times remain null when they
