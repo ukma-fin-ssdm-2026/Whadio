@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import pytest
 import urllib3
+from minio.error import ServerError
 from pydantic import HttpUrl, JsonValue, SecretStr
 
 from conftest import refused_fields
@@ -80,13 +81,16 @@ def _stay_silent(connection: socket.socket) -> None:
     del connection
 
 
+type _Answer = HTTPStatus | urllib3.exceptions.HTTPError | ServerError
+
+
 class _ScriptedPool(urllib3.PoolManager):
     """Answers each request with the next of `answers`, and every later one with the last."""
 
-    def __init__(self, *answers: HTTPStatus | urllib3.exceptions.HTTPError) -> None:
+    def __init__(self, *answers: _Answer) -> None:
         super().__init__()
         self.requests: int = 0
-        self._answers: tuple[HTTPStatus | urllib3.exceptions.HTTPError, ...] = answers
+        self._answers: tuple[_Answer, ...] = answers
 
     @override
     def urlopen(
@@ -94,7 +98,8 @@ class _ScriptedPool(urllib3.PoolManager):
     ) -> urllib3.BaseHTTPResponse:
         answer = self._answers[min(self.requests, len(self._answers) - 1)]
         self.requests += 1
-        if isinstance(answer, urllib3.exceptions.HTTPError):
+        # minio 7.2 raises ServerError for a 5xx only on HEAD; for get and delete only a double can.
+        if not isinstance(answer, HTTPStatus):
             raise answer
         return urllib3.HTTPResponse(
             body=io.BytesIO(_BODIES[answer]),
@@ -237,6 +242,46 @@ def test_get_that_would_succeed_one_attempt_later_raises(attempts: int) -> None:
     # Act / Assert
     with pytest.raises(ObjectStorageError, match="Reading an object failed"):
         _storage_on(pool, attempts=attempts).get(_KEY)
+
+
+_OPERATIONS = [pytest.param(_get, id="get"), pytest.param(_delete, id="delete")]
+_SERVER_FAILURES = [
+    pytest.param(HTTPStatus.SERVICE_UNAVAILABLE, id="s3-error-503"),
+    pytest.param(
+        ServerError("server failed", HTTPStatus.SERVICE_UNAVAILABLE), id="server-error-503"
+    ),
+]
+
+
+@pytest.mark.parametrize("failure", _SERVER_FAILURES)
+@pytest.mark.parametrize("call", _OPERATIONS)
+def test_call_answered_5xx_recovers_on_its_last_attempt(
+    call: Callable[[S3ObjectStorage], None], failure: _Answer
+) -> None:
+    # Arrange
+    pool = _ScriptedPool(*[failure] * (_ATTEMPTS - 1), HTTPStatus.OK)
+
+    # Act
+    call(_storage_on(pool))
+
+    # Assert
+    assert pool.requests == _ATTEMPTS
+
+
+@pytest.mark.parametrize("failure", _SERVER_FAILURES)
+@pytest.mark.parametrize("call", _OPERATIONS)
+def test_call_answered_5xx_every_time_gives_up_after_its_attempts(
+    call: Callable[[S3ObjectStorage], None], failure: _Answer
+) -> None:
+    # Arrange
+    pool = _ScriptedPool(failure)
+
+    # Act
+    with pytest.raises(ObjectStorageError):
+        call(_storage_on(pool))
+
+    # Assert
+    assert pool.requests == _ATTEMPTS
 
 
 def test_wait_before_retry_n_is_drawn_up_to_a_quarter_second_doubled_n_times() -> None:
