@@ -136,7 +136,7 @@ The deployable processes, all but the off-the-shelf services built from the same
 | Unit | Runs | Host | Instances |
 |---|---|---|---|
 | `web` | All backend modules except Retention; consumes `processing.results` | Main host | 1, stateless; more can run behind nginx |
-| `scheduler` | Retention and recording deletion, deleting expired registration, invitation and password-reset links, and sending or removing notification outbox entries; finalising interrupted captures is designed, not built yet | Main host | Exactly 1 |
+| `scheduler` | Retention and recording deletion, deleting expired sessions and registration, invitation and password-reset links, returning processing jobs whose message or result was lost to the queue, and sending or removing notification outbox entries; finalising interrupted captures is designed, not built yet | Main host | Exactly 1 |
 | `notes-worker` | Notes pipeline | Main host (CPU only) | 1 or more, competing consumers |
 | `asr-worker` | Transcription pipeline | GPU host | 1 per GPU |
 | `llm-runtime` | The built-in language model, on Ollama | GPU host | 1 |
@@ -165,9 +165,12 @@ message schemas are specified with the API design, not here.
 **Job delivery.** A worker acknowledges a job only after publishing its result, so every job is
 delivered at least once and the backend ignores a duplicate result. Each worker takes one job at a
 time, which gives backpressure: load peaks wait in the queue instead of overloading the GPU. A job
-that keeps failing is retried up to a limit and then recorded as failed. A job carries everything the
-worker needs, so workers never read the database; audio is fetched through a time-limited presigned
-URL, and a workspace's own provider key travels only to the notes worker on the main host.
+that keeps failing is retried up to a limit and then recorded as failed. A job whose message is lost,
+so that no worker starts it within a time limit, is handed back to the publisher by the scheduler as
+one more attempt, and one that has used its attempts is failed instead of published. A job carries
+everything the worker needs, so workers never read the database; audio is fetched through a
+time-limited presigned URL, and a workspace's own provider key travels only to the notes worker on
+the main host.
 
 **Infrastructure.** The backend uses PostgreSQL over SQL and object storage over the S3 API, and
 sends email to the SMTP relay over SMTP with STARTTLS. The notes worker calls `llm-runtime` over
@@ -209,11 +212,12 @@ How the architecture meets fault tolerance (NFR-015) and recoverability (NFR-014
 
 | Failure | What keeps working | What happens to new work |
 |---|---|---|
-| GPU host or ASR worker down | Everything except new transcripts; recordings keep arriving. | Jobs wait in `transcription.requests` and run when a worker returns. |
+| GPU host or ASR worker down | Everything except new transcripts; recordings keep arriving. | Jobs wait in `transcription.requests` and run when a worker returns. A job no worker starts within 2 days is published again as one more attempt. When a worker returns, each queued copy whose 24-hour audio link has expired also uses an attempt, so an outage of about 5 days or more can fail a waiting meeting, with a notice; with no worker at all, the meeting fails after 10 days. |
 | LLM runtime or notes worker down | Transcripts are readable. | Notes jobs wait in `notes.requests`; the meeting shows its transcript while processing. |
 | The configured provider fails | Transcripts are readable. | The job is retried for a temporary failure; a permanent or exhausted failure marks the meeting failed with its cause. Offering generation with the built-in model (FR-023) is designed, not built yet. |
 | Notes generation fails, so no name is proposed | The transcript and the meeting itself. | The meeting keeps a default name built from its date and time until the member names it or notes are regenerated (FR-033). |
 | A job fails repeatedly | Everything else. | Past the delivery limit, the meeting is failed with the cause and the member is notified (FR-014, FR-024). |
+| A job's message is lost (a purged queue, a recreated broker volume) | Everything else. | 2 days after the publish, the scheduler hands the job back to the publisher as one more attempt, and the meeting is processed from the new message; a job whose attempts are used up is failed as timed out, and the member is notified (FR-014, FR-024). |
 | The extension loses its connection | Acknowledged chunks stay stored. | The scheduler finalises a partial recording. *Designed; not built yet:* today the capture stays unfinalised. |
 | Broker down | Reading, editing, sharing, export. | Meetings stay `queued`; `web` keeps retrying their unpublished jobs and publishes them once the broker is back. |
 | Object storage slow or down | Everything that does not move recordings: transcripts, notes, sharing, signing in. | Storage calls give up after a short timeout, and reads and deletes after a few spaced retries, so an upload, a capture chunk or the completion of a capture is refused with `503` instead of hanging; the extension retries its chunks and, if storage stays down, saves the call locally. A transcription job that cannot fetch its recording is retried, and recordings due for deletion are deleted on a later scheduler pass. |

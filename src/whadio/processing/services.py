@@ -52,6 +52,7 @@ MAX_ATTEMPTS: Final = 5
 # retryable failure, and the retry gets a fresh one.
 AUDIO_LINK_LIFETIME: Final = timedelta(hours=24)
 DEAD_LETTERED: Final = "dead_lettered"
+STALLED: Final = "stalled"
 TRANSCRIPT_EXISTS: Final = "transcript_exists"
 UNPUBLISHABLE: Final = "unpublishable"
 
@@ -196,6 +197,10 @@ class ProcessingService:
         job = await self._jobs.next_unpublished()
         if job is None:
             return False
+        if job.attempts >= MAX_ATTEMPTS:
+            # Only job recovery hands back a job at the limit: a failure there fails it at once.
+            await self._finally_failed(job, now, STALLED, ProcessingFailure.PROCESSING_TIMEOUT)
+            return True
         try:
             request, context = await self._request(job)
         except UseCaseError:

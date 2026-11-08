@@ -1504,7 +1504,7 @@ export interface components {
             finished_at: string | null;
             /**
              * Attempts Started
-             * @description Number of accepted attempt starts, including the first
+             * @description Attempts counted against the retry limit: accepted starts and republished jobs no worker started
              */
             attempts_started: number;
             /**

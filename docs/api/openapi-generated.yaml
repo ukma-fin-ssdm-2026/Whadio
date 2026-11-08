@@ -4996,7 +4996,8 @@ components:
         attempts_started:
           type: integer
           title: Attempts Started
-          description: Number of accepted attempt starts, including the first
+          description: 'Attempts counted against the retry limit: accepted starts
+            and republished jobs no worker started'
         as_of:
           type: string
           format: date-time

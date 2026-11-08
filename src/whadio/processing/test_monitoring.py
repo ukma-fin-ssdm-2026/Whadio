@@ -13,6 +13,7 @@ from .enums import JobStatus, JobType
 from .models import ProcessingJob
 from .monitoring import JobFilter, JobMonitoring, safe_failure, snapshot
 from .repositories import JobRepository
+from .services import STALLED
 
 NOW = datetime(2026, 10, 17, 12, tzinfo=UTC)
 
@@ -98,9 +99,8 @@ def test_unknown_failure_strings_never_reach_monitoring(reason: str) -> None:
     )
 
 
-def test_known_failure_reason_remains_useful() -> None:
-    # Arrange
-    reason = "provider_rate_limited"
+@pytest.mark.parametrize("reason", ["provider_rate_limited", STALLED])
+def test_known_failure_reason_remains_useful(reason: str) -> None:
     # Act
     code = safe_failure(reason)
     # Assert
