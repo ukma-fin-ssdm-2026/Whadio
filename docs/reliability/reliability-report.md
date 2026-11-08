@@ -445,7 +445,7 @@ them: the timeout bounds each attempt, and the retry wraps the attempts.
 - **The tests.** `test_wait_before_retry_n_is_drawn_up_to_a_quarter_second_doubled_n_times` and
   `test_wait_stops_growing_at_two_seconds` prove the formula and the cap;
   `test_call_to_a_failing_store_is_given_up_after_its_attempts`,
-  `test_get_that_succeeds_on_the_last_attempt_returns_the_object` and
+  `test_get_that_succeeds_on_the_last_attempt_returns_the_object`,
   `test_get_that_would_succeed_one_attempt_later_raises` and
   `test_call_answered_5xx_every_time_gives_up_after_its_attempts` prove the number of attempts;
   `test_get_that_times_out_on_every_attempt_logs_one_warning_without_the_key` proves the reaction
