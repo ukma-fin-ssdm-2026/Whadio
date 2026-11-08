@@ -46,6 +46,7 @@ class ErrorCode(StrEnum):
     INVITATION_COOLDOWN = "INVITATION_COOLDOWN"
     INVITATION_NOT_PENDING = "INVITATION_NOT_PENDING"
     OWNER_IMMUTABLE = "OWNER_IMMUTABLE"
+    RESTRICTED_MEETING_REQUIRES_RECIPIENT = "RESTRICTED_MEETING_REQUIRES_RECIPIENT"
     NOT_TRANSCRIBED = "NOT_TRANSCRIBED"
     NOTES_IN_PROGRESS = "NOTES_IN_PROGRESS"
     RECORDING_NOT_READY = "RECORDING_NOT_READY"
@@ -154,6 +155,10 @@ _FAILURE_MESSAGES: Final[Mapping[Failure, str]] = {
     Failure.INVITATION_COOLDOWN: "This email address was invited recently; try again later",
     Failure.INVITATION_NOT_PENDING: "This invitation is no longer pending",
     Failure.OWNER_IMMUTABLE: "The Owner can be neither re-roled nor removed",
+    Failure.RESTRICTED_MEETING_REQUIRES_RECIPIENT: (
+        "This member is the only one selected for a restricted meeting; "
+        "select another member for it first"
+    ),
     Failure.FOLDER_EXISTS: "A folder with this name already exists",
     Failure.TERM_EXISTS: "This glossary term already exists",
     Failure.NOT_TRANSCRIBED: "The meeting has not been transcribed yet",

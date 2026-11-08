@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Path, Query
+from fastapi import APIRouter, Path, Query, Response
 
 from ...accounts.enums import InvitationRole
 from ...accounts.member_repository import WorkspaceMember
@@ -30,6 +30,11 @@ _NOT_FOUND = "`NOT_FOUND`: no such workspace, or the caller is not a member"
 _MEMBER_NOT_FOUND = "`NOT_FOUND`: no such workspace or member, or the caller is not a member"
 _MODERATOR_ONLY = f"`{ErrorCode.INSUFFICIENT_ROLE}`: Moderator or Owner required"
 _OWNER_IMMUTABLE = f"`{ErrorCode.OWNER_IMMUTABLE}`: the member is the Owner"
+_REMOVAL_CONFLICT = (
+    f"`{ErrorCode.OWNER_IMMUTABLE}`: the member is the Owner; "
+    f"`{ErrorCode.RESTRICTED_MEETING_REQUIRES_RECIPIENT}`: the member is the only one selected "
+    "for a restricted meeting, so another member must be selected for it first"
+)
 
 
 def member_read(member: WorkspaceMember) -> MemberRead:
@@ -95,3 +100,29 @@ async def change_member_role(
         datetime.now(UTC),
     )
     return member_read(member)
+
+
+@router.delete(
+    "/{user_id}",
+    status_code=204,
+    summary="Remove a member",
+    description="Moderator or Owner only, a Moderator's own membership included. The member "
+    "loses the workspace and its meetings at once, and their access grants go with the "
+    "membership. Refused while they are the only one selected for a restricted meeting; the "
+    "refusal names no meeting.",
+    response_description="The member was removed",
+    responses=error_responses(
+        {
+            401: DOC_UNAUTHENTICATED,
+            403: _MODERATOR_ONLY,
+            404: _MEMBER_NOT_FOUND,
+            409: _REMOVAL_CONFLICT,
+            422: DOC_INVALID,
+        }
+    ),
+)
+async def remove_member(
+    workspace_id: WorkspaceId, user_id: MemberId, user: BrowserUser, members: Members
+) -> Response:
+    await members.remove(user.id, workspace_id, user_id, datetime.now(UTC))
+    return Response(status_code=204)

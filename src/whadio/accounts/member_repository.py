@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import Select, select, update
+from sqlalchemy import Select, delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..shared.pagination import ListWindow
@@ -26,6 +26,8 @@ class IMemberRepository(Protocol):
     async def find(self, workspace_id: UUID, user_id: UUID, /) -> WorkspaceMember | None: ...
 
     async def set_role(self, workspace_id: UUID, user_id: UUID, role: WorkspaceRole, /) -> None: ...
+
+    async def remove(self, workspace_id: UUID, user_id: UUID, /) -> None: ...
 
 
 class MemberRepository:
@@ -73,6 +75,14 @@ class MemberRepository:
                 WorkspaceMembership.user_id == user_id,
             )
             .values(role=role)
+        )
+
+    async def remove(self, workspace_id: UUID, user_id: UUID) -> None:
+        await self._session.execute(
+            delete(WorkspaceMembership).where(
+                WorkspaceMembership.workspace_id == workspace_id,
+                WorkspaceMembership.user_id == user_id,
+            )
         )
 
     @staticmethod
