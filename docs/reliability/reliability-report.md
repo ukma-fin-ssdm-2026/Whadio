@@ -239,15 +239,15 @@ def connect_s3_storage(settings: ObjectStorageSettings) -> S3ObjectStorage:
 
 **After.** `src/whadio/shared/storage.py:35-45`: `WHADIO_STORAGE__TIMEOUT` (ISO 8601 duration,
 default `PT5S`) bounds connecting and each read, and `WHADIO_STORAGE__ATTEMPTS` (default 3, from 1
-to 5) bounds the tries of a read or a delete. `:176-198`: both clients share one pool with that
-timeout and no retries of its own, so every error reaches `S3ObjectStorage`. The pool trusts the
-system CA store, which honours `SSL_CERT_FILE`, instead of the bundle minio's pool loaded.
-`:78-96`, `:122-126`, `:144-156`: a read or a delete that fails with a transient error (a
+to 5) bounds the tries of a read or a delete. `:176-202`: `bounded_pool` builds one pool for both
+clients, with that timeout and no retries of its own, so every error reaches `S3ObjectStorage`. It
+trusts the system CA store, which honours `SSL_CERT_FILE`, instead of the bundle minio's pool
+loaded. `:78-96`, `:122-126`, `:144-156`: a read or a delete that fails with a transient error (a
 connection or read error, or a 5xx answer) is tried again after a random wait; a 4xx such as
 `AccessDenied` fails at once:
 
 ```python
-pool = urllib3.PoolManager(
+return urllib3.PoolManager(
     timeout=urllib3.Timeout(connect=timeout, read=timeout),
     maxsize=10,
     cert_reqs="CERT_REQUIRED",
@@ -290,14 +290,14 @@ local port that accepts and never answers, a get gave up after 15.46 s and a del
 exponential backoff and full jitter, for the idempotent calls only and at one level only, then the
 reactions already there: the API answers `503 INTEGRATION_UNAVAILABLE`, and the scheduler counts
 the item as failed and tries it on its next pass. There is no circuit breaker: the API builds a
-storage client for each request, so a breaker inside it would forget every failure, and a call
-already ends within about 16 s.
+storage client for each request, so a breaker inside it would forget every failure, and one
+storage operation already ends within about 16 s.
 
 **Failure and recovery.**
 
 | | |
 |---|---|
-| Response | Fail-fast in the API: an upload, a chunk or a capture completion that storage does not serve answers `503` within about 16 s, and frees its thread and transaction. Fail-safe in cleanup: a delete that fails keeps its row, so the recording is deleted later rather than forgotten |
+| Response | Fail-fast in the API: an upload or a chunk that storage does not serve answers `503` within one storage operation's budget of about 16 s, and frees its thread and transaction. A capture completion whose read fails also runs a retried cleanup delete, so it answers within about 31.5 s at worst. Fail-safe in cleanup: a delete that fails keeps its row, so the recording is deleted later rather than forgotten |
 | What the user sees | Nothing for a brief fault, which a retry absorbs. Otherwise an upload in the web app fails with "A service Whadio depends on is unavailable; try again later", and the extension retries the chunk and, if storage stays down, saves the call locally. Signing in no longer waits behind stalled storage calls |
 | Recovery | Automatic for reads, deletes, chunks and cleanup: the retries within the call, then the extension's retries and the scheduler's next pass. The user repeats a failed upload in the web app |
 
@@ -382,6 +382,10 @@ warning removed, and the put retried.
 - After F5, a capture assembly that fails can leave its object behind: when deleting it fails too,
   `_discard` in `src/whadio/capture/services.py` only logs it, and no row refers to the object, so
   no later pass deletes it.
+- After F5, a capture completion against a store that does not answer runs a retried read and then
+  `_discard`'s retried delete: about 31.5 s at worst, measured 30.94 s over six connections. The
+  extension's 25 s deadline on `/complete` fires first, and the extension then saves the call
+  locally; the capture stays open on the server.
 - After F6, a write in the web app still has no client deadline, so an upload over a stalled
   connection keeps its progress state until the browser gives up. A deadline that resets on upload
   progress would bound it without breaking long uploads; `fetch` cannot report upload progress, so
@@ -428,7 +432,9 @@ them: the timeout bounds each attempt, and the retry wraps the attempts.
 - **The bound.** Against a store that does not answer, a call ends after at most 3 × 5 s of
   waiting and 0.25 + 0.5 s of backoff, about 15.75 s; measured, 15.46 s for a get and 15.53 s for
   a delete. That is under the extension's 25 s deadline, so the server answers a stalled chunk
-  before the extension gives up on it.
+  before the extension gives up on it. A capture completion whose read fails also runs a cleanup
+  delete, about 31.5 s at worst, so there the extension's deadline fires first and the call is
+  saved locally.
 - **After the last attempt.** One warning, such as "Reading an object failed after 3 attempts",
   that never names the object key, then `ObjectStorageError`: the API answers
   `503 INTEGRATION_UNAVAILABLE`, and the scheduler keeps the item for its next pass.
