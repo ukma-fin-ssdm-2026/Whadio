@@ -82,7 +82,10 @@ beforeEach(() => {
   };
 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 async function click(label) {
   [...document.querySelectorAll("#recovery button")]
@@ -138,6 +141,34 @@ test("a failed retry shows a readable error and leaves both recovery actions usa
       .textContent.includes("private server details"),
     disabled: [...document.querySelectorAll("#recovery button")].some((button) => button.disabled),
   }).toEqual({ hidden: false, leaked: false, disabled: false });
+});
+
+test("a failed retry stays visible for 2.5 seconds through a list refresh", async () => {
+  // Arrange
+  vi.useFakeTimers();
+  await showRecovery();
+  const action = Promise.withResolvers();
+  const refresh = Promise.withResolvers();
+  chrome.runtime.sendMessage
+    .mockReturnValueOnce(action.promise)
+    .mockReturnValueOnce(refresh.promise);
+  const error = document.getElementById("recovery-error");
+
+  // Act
+  document.querySelector("#recovery-list button").click();
+  chrome.storage.onChanged.addListener.mock.calls[0][0]({ recoveryChangedAt: {} }, "local");
+  action.resolve({ error: "Download failed" });
+  await vi.advanceTimersByTimeAsync(0);
+  refresh.resolve({ recordings: [recording] });
+  await vi.advanceTimersByTimeAsync(2499);
+  const visibleDuringRefresh = !error.hidden;
+  await vi.advanceTimersByTimeAsync(1);
+
+  // Assert
+  expect({ visibleDuringRefresh, hiddenAfterTimeout: error.hidden }).toEqual({
+    visibleDuringRefresh: true,
+    hiddenAfterTimeout: true,
+  });
 });
 
 test("discard asks for confirmation before removing the local recording", async () => {

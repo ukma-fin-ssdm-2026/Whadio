@@ -13,8 +13,14 @@ function open() {
   });
 }
 
-async function transaction(mode, operation) {
+async function transaction(mode, operation, authorize) {
   const database = await open();
+  try {
+    await authorize?.();
+  } catch (failure) {
+    database.close();
+    throw failure;
+  }
   return new Promise((resolve, reject) => {
     const transaction = database.transaction(STORE, mode, { durability: "strict" });
     let result;
@@ -34,7 +40,7 @@ async function transaction(mode, operation) {
 
 export const recoveryStore = {
   put: (recording) => transaction("readwrite", (store) => store.put(recording)),
-  remove: (id) => transaction("readwrite", (store) => store.delete(id)),
+  remove: (id, authorize) => transaction("readwrite", (store) => store.delete(id), authorize),
   get: (id) =>
     transaction("readonly", (store, done) => {
       store.get(id).onsuccess = (event) => done(event.target.result);

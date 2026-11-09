@@ -2,13 +2,17 @@ import { RecordingRecovery } from "./recovery.js";
 
 const owner = { server: "https://whadio.example", userId: "original" };
 const recording = { id: "one", startedAt: 1, slices: ["YWI="], owner };
+const currentOwner = async () => owner;
 
 function setup() {
   const saved = new Map();
   const store = {
     put: vi.fn(async (value) => saved.set(value.id, structuredClone(value))),
     get: vi.fn(async (id) => saved.get(id)),
-    remove: vi.fn(async (id) => saved.delete(id)),
+    remove: vi.fn(async (id, authorize) => {
+      await authorize?.();
+      saved.delete(id);
+    }),
     list: vi.fn(async () =>
       [...saved.values()].map(({ id, startedAt, owner }) => ({ id, startedAt, owner })),
     ),
@@ -27,7 +31,7 @@ test("a failed retry retains the saved copy for the next attempt", async () => {
   download.mockRejectedValue(new Error("Disk unavailable"));
 
   // Act
-  await expect(recovery.retry(recording.id, owner)).rejects.toThrow("Disk unavailable");
+  await expect(recovery.retry(recording.id, currentOwner)).rejects.toThrow("Disk unavailable");
 
   // Assert
   expect(await recovery.list()).toEqual([{ id: "one", startedAt: 1, busy: false }]);
@@ -44,22 +48,22 @@ test("a pending backup blocks discard and starts downloading only after commit",
     await put(value);
   });
   download.mockReturnValueOnce(saving);
-  const pending = recovery.retain(recording, async () => owner).catch(() => {});
+  const pending = recovery.retain(recording, currentOwner).catch(() => {});
 
   // Act
-  const hidden = await recovery.list(owner);
+  const hidden = await recovery.list(currentOwner);
   const earlyDiscard = await recovery
-    .discard(recording.id, owner)
+    .discard(recording.id, currentOwner)
     .catch((failure) => failure.message);
   const downloadsBeforeCommit = download.mock.calls.length;
   allowCommit();
   await vi.waitFor(() => expect(download).toHaveBeenCalledOnce());
   const discardDuringSave = await recovery
-    .discard(recording.id, owner)
+    .discard(recording.id, currentOwner)
     .catch((failure) => failure.message);
   failSave(new Error("Disk unavailable"));
   await pending;
-  await recovery.discard(recording.id, owner);
+  await recovery.discard(recording.id, currentOwner);
   const restarted = new RecordingRecovery(store, download, async () => {});
 
   // Assert
@@ -68,7 +72,7 @@ test("a pending backup blocks discard and starts downloading only after commit",
     earlyDiscard,
     downloadsBeforeCommit,
     discardDuringSave,
-    afterRestart: await restarted.list(owner),
+    afterRestart: await restarted.list(currentOwner),
   }).toEqual({
     hidden: [],
     earlyDiscard: "This recording is already being saved.",
@@ -111,12 +115,12 @@ test("a restart exposes only metadata and can recover the complete stored record
 
   // Act
   const listed = await restarted.list();
-  await restarted.retry(recording.id, owner);
+  await restarted.retry(recording.id, currentOwner);
 
   // Assert
   expect({ listed, audio: download.mock.calls, remaining: await restarted.list() }).toEqual({
     listed: [{ id: "one", startedAt: 1, busy: false }],
-    audio: [[1, { id: "one" }]],
+    audio: [[1, { id: "one" }, expect.any(Function)]],
     remaining: [],
   });
 });
@@ -128,7 +132,7 @@ test("saving one recording leaves the other pending recording available", async 
   await recovery.retain({ ...recording, id: "two" });
 
   // Act
-  await recovery.retry("one", owner);
+  await recovery.retry("one", currentOwner);
 
   // Assert
   expect(await recovery.list()).toEqual([{ id: "two", startedAt: 1, busy: false }]);
@@ -145,12 +149,12 @@ test("concurrent retries cannot download the same recording twice or discard it 
         finish = resolve;
       }),
   );
-  const first = recovery.retry(recording.id, owner);
+  const first = recovery.retry(recording.id, currentOwner);
   await Promise.resolve();
 
   // Act
-  await expect(recovery.retry(recording.id, owner)).rejects.toThrow("already being saved");
-  await expect(recovery.discard(recording.id, owner)).rejects.toThrow("already being saved");
+  await expect(recovery.retry(recording.id, currentOwner)).rejects.toThrow("already being saved");
+  await expect(recovery.discard(recording.id, currentOwner)).rejects.toThrow("already being saved");
   finish();
   await first;
 
@@ -181,7 +185,9 @@ test("a failed deletion keeps the backup available rather than claiming it was d
   store.remove.mockRejectedValue(new Error("Database unavailable"));
 
   // Act
-  await expect(recovery.discard(recording.id, owner)).rejects.toThrow("Database unavailable");
+  await expect(recovery.discard(recording.id, currentOwner)).rejects.toThrow(
+    "Database unavailable",
+  );
 
   // Assert
   expect(await recovery.list()).toHaveLength(1);
@@ -193,17 +199,18 @@ test.for([null, { ...owner, userId: "other" }, { ...owner, server: "https://othe
     // Arrange
     const { recovery, download } = setup();
     await recovery.retain(recording);
+    const otherOwner = async () => stranger;
 
     // Act
-    const listed = await recovery.list(stranger);
-    await expect(recovery.retry(recording.id, stranger)).rejects.toThrow("original account");
-    await expect(recovery.discard(recording.id, stranger)).rejects.toThrow("original account");
+    const listed = await recovery.list(otherOwner);
+    await expect(recovery.retry(recording.id, otherOwner)).rejects.toThrow("original account");
+    await expect(recovery.discard(recording.id, otherOwner)).rejects.toThrow("original account");
 
     // Assert
     expect({
       listed,
       downloads: download.mock.calls.length,
-      retained: await recovery.list(owner),
+      retained: await recovery.list(currentOwner),
     }).toEqual({
       listed: [],
       downloads: 0,
