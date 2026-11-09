@@ -8,6 +8,7 @@ const WORKSPACE = {
   name: "Alpha",
   role: "owner" as const,
   members: 1,
+  personal: false,
 };
 
 function renderHome(members = 1, onWorkspace = () => {}) {
