@@ -240,6 +240,34 @@ describe("a recording whose local save fails", () => {
     await hangUp(recording);
   }
 
+  test("waits for the recovery transaction to commit before attempting the fallback download", async () => {
+    // Arrange
+    fakeServer(failingPuts(Number.POSITIVE_INFINITY));
+    const { promise, resolve } = Promise.withResolvers();
+    const put = recoveryStore.put.getMockImplementation();
+    recoveryStore.put.mockImplementationOnce(async (recording) => {
+      await promise;
+      await put(recording);
+    });
+    const recording = await connect();
+    speak(recording, 15);
+
+    // Act
+    await hangUp(recording);
+    const beforeCommit = {
+      writes: recoveryStore.put.mock.calls.length,
+      downloads: chrome.downloads.download.mock.calls.length,
+    };
+    resolve();
+    await vi.runAllTimersAsync();
+
+    // Assert
+    expect({ beforeCommit, afterCommit: chrome.downloads.download.mock.calls.length }).toEqual({
+      beforeCommit: { writes: 1, downloads: 0 },
+      afterCommit: 1,
+    });
+  });
+
   test("retains the full recording after a download fails without an unhandled rejection", async () => {
     // Arrange
     vi.spyOn(console, "warn").mockImplementation(() => {});

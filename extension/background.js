@@ -235,9 +235,8 @@ class Upload {
       }
     }
     if (this.slices.length > 0) {
-      await recovery.retain(this.recoverable());
       this.retained = true;
-      await recovery.retry(this.id, await sessionOwner());
+      await recovery.retain(this.recoverable(), sessionOwner);
     }
   }
 

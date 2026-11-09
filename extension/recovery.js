@@ -32,55 +32,61 @@ export class RecordingRecovery {
       .map(({ owner: _owner, ...item }) => ({ ...item, busy: this.busy.has(item.id) }));
   }
 
-  async retain(recording) {
-    this.temporary.set(recording.id, recording);
-    try {
-      await this.store.put(recording);
-      this.temporary.delete(recording.id);
-    } catch {
-      console.warn("Whadio could not persist a recording for recovery.");
-    }
-    await this.changed();
+  async retain(recording, currentOwner) {
+    await this.withLock(recording.id, async () => {
+      try {
+        await this.store.put(recording);
+      } catch {
+        this.temporary.set(recording.id, recording);
+        console.warn("Whadio could not persist a recording for recovery.");
+      }
+      if (currentOwner) {
+        await this.save(recording, await currentOwner());
+      }
+    });
   }
 
   async retry(id, owner) {
+    await this.withLock(id, async () => {
+      const recording = this.temporary.get(id) ?? (await this.store.get(id));
+      if (!recording) {
+        throw new Error("This recording is no longer available.");
+      }
+      await this.save(recording, owner);
+    });
+  }
+
+  async discard(id, owner) {
+    await this.withLock(id, async () => {
+      const recording = this.temporary.get(id) ?? (await this.store.get(id));
+      if (!ownedBy(recording, owner)) {
+        throw new Error("Sign in to the original account to discard this recording.");
+      }
+      await this.remove(id);
+    });
+  }
+
+  async save(recording, owner) {
+    if (!ownedBy(recording, owner)) {
+      throw new Error("Sign in to the original account to recover this recording.");
+    }
+    await this.download(recording.startedAt, recording.slices);
+    await this.remove(recording.id);
+  }
+
+  async remove(id) {
+    if (!this.temporary.delete(id)) {
+      await this.store.remove(id);
+    }
+  }
+
+  async withLock(id, operation) {
     if (this.busy.has(id)) {
       throw new Error("This recording is already being saved.");
     }
     this.busy.add(id);
     try {
-      const recording = this.temporary.get(id) ?? (await this.store.get(id));
-      if (!recording) {
-        throw new Error("This recording is no longer available.");
-      }
-      if (!ownedBy(recording, owner)) {
-        throw new Error("Sign in to the original account to recover this recording.");
-      }
-      await this.download(recording.startedAt, recording.slices);
-      if (!this.temporary.has(id)) {
-        await this.store.remove(id);
-      }
-      this.temporary.delete(id);
-    } finally {
-      this.busy.delete(id);
-      await this.changed();
-    }
-  }
-
-  async discard(id, owner) {
-    if (this.busy.has(id)) {
-      throw new Error("Wait for the download to finish before discarding this recording.");
-    }
-    this.busy.add(id);
-    try {
-      const recording = this.temporary.get(id) ?? (await this.store.get(id));
-      if (!ownedBy(recording, owner)) {
-        throw new Error("Sign in to the original account to discard this recording.");
-      }
-      if (!this.temporary.has(id)) {
-        await this.store.remove(id);
-      }
-      this.temporary.delete(id);
+      await operation();
     } finally {
       this.busy.delete(id);
       await this.changed();
