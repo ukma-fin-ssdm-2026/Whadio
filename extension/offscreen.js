@@ -1,3 +1,5 @@
+import { recoveryStore } from "./recovery-store.js";
+
 // Records the calls started from the popup or the shortcut. Capturing a tab silences it for the user, so the
 // call has to be played back, and played back inside the captured tab it would be captured again and echo
 // without end. This document is not captured, so the call plays from here. The recorders are keyed by tab.
@@ -99,7 +101,52 @@ async function record(tabId, streamId) {
   return { startedAt };
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+function decode(chunk) {
+  return Uint8Array.from(atob(chunk), (char) => char.charCodeAt(0));
+}
+
+function blobUrl(parts) {
+  return URL.createObjectURL(new Blob(parts, { type: "audio/webm" }));
+}
+
+function fromWorker(sender) {
+  return !sender.tab && sender.url === chrome.runtime.getURL("background.js");
+}
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "recovery-blob" || !fromWorker(port.sender ?? {})) {
+    return;
+  }
+  const parts = [];
+  port.onMessage.addListener((message) => {
+    if (typeof message.chunk === "string") {
+      try {
+        parts.push(decode(message.chunk));
+      } catch {
+        port.postMessage({ accepted: false });
+        return;
+      }
+      port.postMessage({ accepted: true });
+    } else if (message.complete) {
+      const url = blobUrl(parts);
+      parts.length = 0;
+      port.postMessage({ url });
+    }
+  });
+  port.onDisconnect.addListener(() => {
+    parts.length = 0;
+  });
+});
+
+async function storedBlob(id) {
+  const recording = await recoveryStore.get(id);
+  if (!recording) {
+    throw new Error("The recording file could not be prepared.");
+  }
+  return { url: blobUrl(recording.slices.map(decode)) };
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.target !== "offscreen") {
     return false;
   }
@@ -118,14 +165,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   // A service worker cannot make a blob URL, so a recording the server did not take becomes one here,
   // released once its download ends.
-  if (message.type === "blob") {
-    const parts = message.chunks.map((chunk) =>
-      Uint8Array.from(atob(chunk), (char) => char.charCodeAt(0)),
-    );
-    sendResponse({ url: URL.createObjectURL(new Blob(parts, { type: "audio/webm" })) });
-    return false;
+  if (message.type === "blob" && fromWorker(sender)) {
+    storedBlob(message.id).then(sendResponse, () => sendResponse({}));
+    return true;
   }
-  if (message.type === "revoke") {
+  if (message.type === "revoke" && fromWorker(sender)) {
     URL.revokeObjectURL(message.url);
     sendResponse({});
   }

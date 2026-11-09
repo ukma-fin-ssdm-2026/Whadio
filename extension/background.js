@@ -39,22 +39,60 @@ async function closeOffscreenIfIdle() {
   }
 }
 
-async function saveLocally(startedAt, slices) {
-  if (slices.length === 0) {
-    return;
+// Keep each port message well below Chromium's serialized message limit. Base64 can be split on four-character boundaries.
+const BLOB_CHUNK_SIZE = 1024 * 1024;
+
+async function temporaryBlob(slices) {
+  const port = chrome.runtime.connect({ name: "recovery-blob" });
+  let reply;
+  let disconnected = false;
+  port.onMessage.addListener((message) => reply?.resolve(message));
+  port.onDisconnect.addListener(() => {
+    disconnected = true;
+    reply?.reject(new Error("The recording file could not be prepared."));
+  });
+  function send(message) {
+    let timeout;
+    return new Promise((resolve, reject) => {
+      if (disconnected) {
+        reject(new Error("The recording file could not be prepared."));
+        return;
+      }
+      reply = { resolve, reject };
+      timeout = setTimeout(
+        () => reject(new Error("The recording file could not be prepared.")),
+        5000,
+      );
+      port.postMessage(message);
+    }).finally(() => clearTimeout(timeout));
   }
+  try {
+    for (const slice of slices) {
+      for (let offset = 0; offset < slice.length; offset += BLOB_CHUNK_SIZE) {
+        const response = await send({ chunk: slice.slice(offset, offset + BLOB_CHUNK_SIZE) });
+        if (!response?.accepted) {
+          throw new Error("The recording file could not be prepared.");
+        }
+      }
+    }
+    return await send({ complete: true });
+  } finally {
+    port.disconnect();
+  }
+}
+
+async function saveLocally(startedAt, source) {
   pending += 1;
   let url;
   try {
     await offscreen();
-    ({ url } = await chrome.runtime.sendMessage({
-      target: "offscreen",
-      type: "blob",
-      chunks: slices,
-    }));
-    if (typeof url !== "string" || !url.startsWith("blob:")) {
+    const prepared = source.slices
+      ? await temporaryBlob(source.slices)
+      : await chrome.runtime.sendMessage({ target: "offscreen", type: "blob", id: source.id });
+    if (typeof prepared?.url !== "string" || !prepared.url.startsWith("blob:")) {
       throw new Error("The recording file could not be prepared.");
     }
+    url = prepared.url;
     const stamp = new Date(startedAt).toISOString().slice(0, 19).replaceAll(":", "-");
     const downloadId = await chrome.downloads.download({ url, filename: `whadio-${stamp}.webm` });
     await downloaded(downloadId);

@@ -116,7 +116,7 @@ test("a restart exposes only metadata and can recover the complete stored record
   // Assert
   expect({ listed, audio: download.mock.calls, remaining: await restarted.list() }).toEqual({
     listed: [{ id: "one", startedAt: 1, busy: false }],
-    audio: [[1, ["YWI="]]],
+    audio: [[1, { id: "one" }]],
     remaining: [],
   });
 });

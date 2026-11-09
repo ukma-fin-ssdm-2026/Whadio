@@ -376,6 +376,43 @@ describe("a recording whose local save fails", () => {
     expect(await recoveryStore.list()).toHaveLength(1);
   });
 
+  test("keeps the backup and refuses to download a malformed Blob reply", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    chrome.runtime.sendMessage.mockResolvedValue({ url: "https://whadio.example/invalid" });
+
+    // Act
+    await failSaving();
+
+    // Assert
+    expect({
+      copies: (await recoveryStore.list()).length,
+      downloads: chrome.downloads.download.mock.calls.length,
+    }).toEqual({ copies: 1, downloads: 0 });
+  });
+
+  test("revokes the Blob URL after a download fails while another tab keeps offscreen alive", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await connect(8);
+
+    // Act
+    await failSaving();
+
+    // Assert
+    expect({
+      revocations: chrome.runtime.sendMessage.mock.calls
+        .map(([message]) => message)
+        .filter((message) => message.type === "revoke"),
+      copies: (await recoveryStore.list()).length,
+      closes: chrome.offscreen.closeDocument.mock.calls.length,
+    }).toEqual({
+      revocations: [{ target: "offscreen", type: "revoke", url: "blob:call" }],
+      copies: 1,
+      closes: 0,
+    });
+  });
+
   test("recovers after a worker restart, retries without server access and removes the local copy", async () => {
     // Arrange
     vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -654,9 +691,18 @@ describe("a recording's upload", () => {
     expect({
       completed: sent(requests, "POST").includes("/captures/c1/complete"),
       saved: chrome.downloads.download.mock.calls.map(([options]) => options.filename),
-      slices: chrome.runtime.sendMessage.mock.calls.find(([m]) => m.type === "blob")[0].chunks
-        .length,
-    }).toEqual({ completed: false, saved: ["whadio-2026-11-03T10-00-00.webm"], slices: 15 });
+      slices: recoveryStore.put.mock.calls[0][0].slices.length,
+      blobRequest: chrome.runtime.sendMessage.mock.calls.find(([m]) => m.type === "blob")[0],
+    }).toEqual({
+      completed: false,
+      saved: ["whadio-2026-11-03T10-00-00.webm"],
+      slices: 15,
+      blobRequest: {
+        target: "offscreen",
+        type: "blob",
+        id: recoveryStore.put.mock.calls[0][0].id,
+      },
+    });
   });
 
   test("leaves the capture open and saves nothing when the call ends before any audio", async () => {

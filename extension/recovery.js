@@ -70,7 +70,10 @@ export class RecordingRecovery {
     if (!ownedBy(recording, owner)) {
       throw new Error("Sign in to the original account to recover this recording.");
     }
-    await this.download(recording.startedAt, recording.slices);
+    const source = this.temporary.has(recording.id)
+      ? { slices: recording.slices }
+      : { id: recording.id };
+    await this.download(recording.startedAt, source);
     await this.remove(recording.id);
   }
 
