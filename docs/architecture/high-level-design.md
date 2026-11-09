@@ -165,10 +165,10 @@ message schemas are specified with the API design, not here.
 **Job delivery.** A worker acknowledges a job only after publishing its result, so every job is
 delivered at least once and the backend ignores a duplicate result. Each worker takes one job at a
 time, which gives backpressure: load peaks wait in the queue instead of overloading the GPU. A job
-that keeps failing is retried up to a limit and then recorded as failed. A job whose message is lost,
-so that no worker starts it within a time limit, is handed back to the publisher by the scheduler as
-one more attempt, and one that has used its attempts is failed instead of published. A job carries
-everything the worker needs, so workers never read the database; audio is fetched through a
+that keeps failing is retried up to a limit and then recorded as failed. A job whose message or
+result is lost, so that no worker starts or finishes it within a time limit, is handed back to the
+publisher by the scheduler, and one that has used its attempts is failed instead of published. A job
+carries everything the worker needs, so workers never read the database; audio is fetched through a
 time-limited presigned URL, and a workspace's own provider key travels only to the notes worker on
 the main host.
 
@@ -218,6 +218,7 @@ How the architecture meets fault tolerance (NFR-015) and recoverability (NFR-014
 | Notes generation fails, so no name is proposed | The transcript and the meeting itself. | The meeting keeps a default name built from its date and time until the member names it or notes are regenerated (FR-033). |
 | A job fails repeatedly | Everything else. | Past the delivery limit, the meeting is failed with the cause and the member is notified (FR-014, FR-024). |
 | A job's message is lost (a purged queue, a recreated broker volume) | Everything else. | 2 days after the publish, the scheduler hands the job back to the publisher as one more attempt, and the meeting is processed from the new message; a job whose attempts are used up is failed as timed out, and the member is notified (FR-014, FR-024). |
+| A worker is lost with a job's result (a host that does not come back, a deleted results queue) | Everything else. | Once the job has run past its type's limit, 5 h for transcription and 1 h for notes, both above the workers' own timeouts, the scheduler hands it back to the publisher; its attempt was counted when it started. A job whose attempts are used up is failed as timed out, and the member is notified. A redelivered job reports its start again, which restarts its limit. |
 | The extension loses its connection | Acknowledged chunks stay stored. | The scheduler finalises a partial recording. *Designed; not built yet:* today the capture stays unfinalised. |
 | Broker down | Reading, editing, sharing, export. | Meetings stay `queued`; `web` keeps retrying their unpublished jobs and publishes them once the broker is back. |
 | Object storage slow or down | Everything that does not move recordings: transcripts, notes, sharing, signing in. | Storage calls give up after a short timeout, and reads and deletes after a few spaced retries, so an upload, a capture chunk or the completion of a capture is refused with `503` instead of hanging; the extension retries its chunks and, if storage stays down, saves the call locally. A transcription job that cannot fetch its recording is retried, and recordings due for deletion are deleted on a later scheduler pass. |

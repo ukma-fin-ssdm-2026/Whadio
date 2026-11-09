@@ -49,6 +49,7 @@ test.for([
   ["Beta", "/workspaces/beta?q=weekly"],
   ["Beta", "/workspaces/beta?state=failed"],
   ["Beta", "/workspaces/beta/settings"],
+  ["Beta", "/workspaces/beta/members"],
 ] as const)("marks %s as the current page at %s", async ([label, path]) => {
   // Act
   const { nav } = await renderSidebar(path);

@@ -19,9 +19,17 @@ interface MeetingPageProps {
   tab: MeetingTab;
   onTab: (tab: MeetingTab) => void;
   onRevision: (revisionId: string | null) => void;
+  onUnsavedChange: (unsaved: boolean) => void;
 }
 
-export function MeetingPage({ meetingId, revisionId, tab, onTab, onRevision }: MeetingPageProps) {
+export function MeetingPage({
+  meetingId,
+  revisionId,
+  tab,
+  onTab,
+  onRevision,
+  onUnsavedChange,
+}: MeetingPageProps) {
   const navigate = useNavigate();
   const opened = useQuery(meetingQueries.detail(meetingId));
   const { data: workspaces } = useQuery(workspaceQueries.list());
@@ -57,6 +65,7 @@ export function MeetingPage({ meetingId, revisionId, tab, onTab, onRevision }: M
           onTranscriptQuery={setTranscriptQuery}
           onTab={onTab}
           onRevision={onRevision}
+          onUnsavedChange={onUnsavedChange}
           renderExport={({ transcript, notes }) => (
             <ExportMenu meetingId={meeting.id} tab={tab} transcript={transcript} notes={notes} />
           )}

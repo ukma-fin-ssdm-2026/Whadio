@@ -7,6 +7,7 @@ export interface Workspace {
   name: string;
   role: Schemas["Role"];
   members: number;
+  personal: boolean;
 }
 
 export function mapWorkspace(item: Schemas["WorkspaceSummary"]): Workspace {
@@ -15,5 +16,6 @@ export function mapWorkspace(item: Schemas["WorkspaceSummary"]): Workspace {
     name: item.name,
     role: item.my_role,
     members: item.member_count,
+    personal: item.is_personal,
   };
 }

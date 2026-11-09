@@ -33,11 +33,15 @@ export interface Meeting {
   source: "Google Meet" | "Upload";
   recordingAvailable: boolean;
   failureReason: string | null;
+  isEdited: boolean;
 }
 
 type MeetingFields = Schemas["MeetingSummary"] &
   Partial<
-    Pick<Schemas["MeetingRead"], "created_by_user_id" | "recording_available" | "failure_reason">
+    Pick<
+      Schemas["MeetingRead"],
+      "created_by_user_id" | "recording_available" | "failure_reason" | "is_edited"
+    >
   >;
 
 export function mapMeeting(item: MeetingFields): Meeting {
@@ -53,6 +57,7 @@ export function mapMeeting(item: MeetingFields): Meeting {
     source: item.source_type === "extension" ? "Google Meet" : "Upload",
     recordingAvailable: item.recording_available ?? false,
     failureReason: item.failure_reason ?? null,
+    isEdited: item.is_edited ?? false,
   };
 }
 

@@ -245,6 +245,8 @@ services:
       WHADIO_OUTBOX__MAX_ATTEMPTS:
       WHADIO_OUTBOX__RETENTION:
       WHADIO_JOB_RECOVERY__UNSTARTED_LIMIT:
+      WHADIO_JOB_RECOVERY__TRANSCRIPTION_RUNNING_LIMIT:
+      WHADIO_JOB_RECOVERY__NOTES_RUNNING_LIMIT:
     healthcheck:
       <<: *healthcheck
       test: [CMD, python, -c, "import os; os.kill(1, 0)"]
