@@ -212,8 +212,9 @@ class ProcessingService:
         return True
 
     async def handle(self, result: ProcessingResult, result_id: UUID) -> None:
-        """Drop a result that does not fit its job's state, type or meeting, or that was already
-        applied under the same `result_id`, changing nothing."""
+        """Drop a result that does not fit its job's state, type or meeting, that was already
+        applied under the same `result_id`, or a failure that finished before the job's current
+        attempt started, changing nothing."""
         job = await self._jobs.lock(result.job_id)
         # A job of a deleted meeting is gone with it.
         if (
@@ -222,10 +223,13 @@ class ProcessingService:
             or job.job_type != _job_type(result)
             or result_id in job.applied_results
             or job.status not in _accepted_statuses(result)
+            or _failed_before_the_current_start(job, result)
         ):
             return
         await self._jobs.record_result(job.job_id, result_id)
         match result:
+            case JobStarted() if job.status is JobStatus.RUNNING:
+                await self._jobs.refresh_start(job.job_id, result.started_at)
             case JobStarted():
                 await self._jobs.mark_running(job.job_id, result.started_at)
                 await self._meetings.save_processing_state(
@@ -433,13 +437,24 @@ def _job_type(result: ProcessingResult) -> JobType:
 def _accepted_statuses(result: ProcessingResult) -> frozenset[JobStatus]:
     match result:
         case JobStarted():
-            return frozenset({JobStatus.QUEUED})
+            # A redelivered job reports its start again, which restarts its running limit.
+            return frozenset({JobStatus.QUEUED, JobStatus.RUNNING})
         case TranscriptReady() | NotesReady():
             return frozenset({JobStatus.QUEUED, JobStatus.RUNNING})
         case TranscriptionFailed() | NotesFailed():
             # Until a result names its attempt, a failure counts only for the running one: a
             # redelivered or late failure must not requeue the job a second time.
             return frozenset({JobStatus.RUNNING})
+
+
+def _failed_before_the_current_start(job: Job, result: ProcessingResult) -> bool:
+    # Both times come from worker clocks; an earlier attempt that fails after the current one
+    # started still counts against it until results name their attempt.
+    match result:
+        case TranscriptionFailed() | NotesFailed():
+            return job.started_at is not None and result.finished_at < job.started_at
+        case _:
+            return False
 
 
 def _contract_transcript(version: TranscriptVersion) -> Transcript:
