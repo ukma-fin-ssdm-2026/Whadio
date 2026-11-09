@@ -6,7 +6,10 @@ vi.mock("./recovery-store.js", () => {
   return {
     recoveryStore: {
       put: vi.fn(async (recording) => recordings.set(recording.id, structuredClone(recording))),
-      remove: vi.fn(async (id) => recordings.delete(id)),
+      remove: vi.fn(async (id, authorize) => {
+        await authorize?.();
+        recordings.delete(id);
+      }),
       get: vi.fn(async (id) => recordings.get(id)),
       list: vi.fn(async () =>
         [...recordings.values()].map(({ id, startedAt, owner }) => ({ id, startedAt, owner })),
@@ -546,6 +549,97 @@ describe("a recording whose local save fails", () => {
       result: { recordings: [] },
       downloads: 0,
     });
+  });
+
+  test.for([
+    { before: "original", after: "other" },
+    { before: "other", after: "original" },
+  ])(
+    "refuses retry when the account changes from $before to $after during lookup",
+    async ({ before, after }) => {
+      // Arrange
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await failSaving();
+      const [recording] = await recoveryStore.list();
+      const saved = await recoveryStore.get(recording.id);
+      const session = await chrome.storage.session.get();
+      chrome.storage.session.get = async () => ({ ...session, userId: before });
+      const lookup = Promise.withResolvers();
+      const reading = Promise.withResolvers();
+      recoveryStore.get.mockImplementationOnce(() => {
+        reading.resolve();
+        return lookup.promise;
+      });
+      chrome.runtime.sendMessage.mockClear();
+
+      // Act
+      const retry = recover({ type: "recovery-retry", id: recording.id });
+      await reading.promise;
+      chrome.storage.session.get = async () => ({ ...session, userId: after });
+      lookup.resolve(saved);
+      await retry;
+
+      // Assert
+      expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+    },
+  );
+
+  test("keeps the copy when the account changes during Blob preparation", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await failSaving();
+    const [recording] = await recoveryStore.list();
+    const session = await chrome.storage.session.get();
+    const blob = Promise.withResolvers();
+    const preparing = Promise.withResolvers();
+    chrome.runtime.sendMessage.mockImplementationOnce(() => {
+      preparing.resolve();
+      return blob.promise;
+    });
+    chrome.downloads.download.mockClear();
+
+    // Act
+    const retry = recover({ type: "recovery-retry", id: recording.id });
+    await preparing.promise;
+    chrome.storage.session.get = async () => ({ ...session, userId: "other" });
+    blob.resolve({ url: "blob:retry" });
+    await retry;
+
+    // Assert
+    expect({
+      downloads: chrome.downloads.download.mock.calls.length,
+      retained: (await recoveryStore.list()).map(({ id }) => id),
+      lastMessage: chrome.runtime.sendMessage.mock.lastCall?.[0],
+    }).toEqual({
+      downloads: 0,
+      retained: [recording.id],
+      lastMessage: { target: "offscreen", type: "revoke", url: "blob:retry" },
+    });
+  });
+
+  test("refuses discard when the session expires before the delete can start", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await failSaving();
+    const [recording] = await recoveryStore.list();
+    const remove = recoveryStore.remove.getMockImplementation();
+    const opening = Promise.withResolvers();
+    const opened = Promise.withResolvers();
+    recoveryStore.remove.mockImplementationOnce(async (...args) => {
+      opening.resolve();
+      await opened.promise;
+      return remove(...args);
+    });
+
+    // Act
+    const discard = recover({ type: "recovery-discard", id: recording.id });
+    await opening.promise;
+    vi.setSystemTime(new Date("2026-11-04T10:00:00Z"));
+    opened.resolve();
+    await discard;
+
+    // Assert
+    expect((await recoveryStore.list()).map(({ id }) => id)).toEqual([recording.id]);
   });
 
   test("refuses recovery commands from a Meet content script", async () => {

@@ -4,6 +4,12 @@ function ownedBy(recording, owner) {
   );
 }
 
+async function requireOwner(recording, currentOwner) {
+  if (!ownedBy(recording, await currentOwner())) {
+    throw new Error("Sign in to the original account to recover this recording.");
+  }
+}
+
 export class RecordingRecovery {
   constructor(store, download, changed) {
     this.store = store;
@@ -13,7 +19,7 @@ export class RecordingRecovery {
     this.busy = new Set();
   }
 
-  async list(owner) {
+  async list(currentOwner) {
     let saved;
     try {
       saved = await this.store.list();
@@ -27,6 +33,7 @@ export class RecordingRecovery {
     for (const { id, startedAt, owner } of this.temporary.values()) {
       recordings.set(id, { id, startedAt, owner, temporary: true });
     }
+    const owner = await currentOwner?.();
     return [...recordings.values()]
       .filter((item) => owner === undefined || ownedBy(item, owner))
       .map(({ owner: _owner, ...item }) => ({ ...item, busy: this.busy.has(item.id) }));
@@ -41,45 +48,44 @@ export class RecordingRecovery {
         console.warn("Whadio could not persist a recording for recovery.");
       }
       if (currentOwner) {
-        await this.save(recording, await currentOwner());
+        await this.save(recording, currentOwner);
       }
     });
   }
 
-  async retry(id, owner) {
+  async retry(id, currentOwner) {
     await this.withLock(id, async () => {
       const recording = this.temporary.get(id) ?? (await this.store.get(id));
       if (!recording) {
         throw new Error("This recording is no longer available.");
       }
-      await this.save(recording, owner);
+      await this.save(recording, currentOwner);
     });
   }
 
-  async discard(id, owner) {
+  async discard(id, currentOwner) {
     await this.withLock(id, async () => {
       const recording = this.temporary.get(id) ?? (await this.store.get(id));
-      if (!ownedBy(recording, owner)) {
-        throw new Error("Sign in to the original account to discard this recording.");
-      }
-      await this.remove(id);
+      await this.remove(id, () => requireOwner(recording, currentOwner));
     });
   }
 
-  async save(recording, owner) {
-    if (!ownedBy(recording, owner)) {
-      throw new Error("Sign in to the original account to recover this recording.");
-    }
+  async save(recording, currentOwner) {
+    const authorize = () => requireOwner(recording, currentOwner);
+    await authorize();
     const source = this.temporary.has(recording.id)
       ? { slices: recording.slices }
       : { id: recording.id };
-    await this.download(recording.startedAt, source);
+    await this.download(recording.startedAt, source, authorize);
     await this.remove(recording.id);
   }
 
-  async remove(id) {
-    if (!this.temporary.delete(id)) {
-      await this.store.remove(id);
+  async remove(id, authorize) {
+    if (this.temporary.has(id)) {
+      await authorize?.();
+      this.temporary.delete(id);
+    } else {
+      await this.store.remove(id, authorize);
     }
   }
 

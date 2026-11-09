@@ -95,7 +95,7 @@ async function temporaryBlob(slices) {
   }
 }
 
-async function saveLocally(startedAt, source) {
+async function saveLocally(startedAt, source, authorize) {
   pending += 1;
   let url;
   try {
@@ -108,6 +108,7 @@ async function saveLocally(startedAt, source) {
     }
     url = prepared.url;
     const stamp = new Date(startedAt).toISOString().slice(0, 19).replaceAll(":", "-");
+    await authorize();
     const downloadId = await chrome.downloads.download({ url, filename: `whadio-${stamp}.webm` });
     await downloaded(downloadId);
   } finally {
@@ -353,23 +354,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!owner) {
       return { recordings: [], locked: (await recovery.list()).length > 0 };
     }
+    const currentOwner = async () => {
+      const current = await sessionOwner();
+      return current?.server === owner.server && current.userId === owner.userId ? current : null;
+    };
     if (message.type !== "recovery-list") {
       if (typeof message.id !== "string") {
         throw new Error("A recording is required.");
       }
       if (message.type === "recovery-retry") {
         try {
-          await recovery.retry(message.id, owner);
+          await recovery.retry(message.id, currentOwner);
         } finally {
           await closeOffscreenIfIdle().catch(() => {
             console.warn("Whadio could not close its idle recording document.");
           });
         }
       } else {
-        await recovery.discard(message.id, owner);
+        await recovery.discard(message.id, currentOwner);
       }
     }
-    return { recordings: await recovery.list(owner) };
+    return { recordings: await recovery.list(currentOwner) };
   };
   act().then(sendResponse, () =>
     sendResponse({

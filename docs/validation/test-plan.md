@@ -10,16 +10,18 @@ This plan states when the recording-to-notes path of Whadio counts as verified.
 
 **Scope.** In scope: sign-in, operator-issued registration links and their completion through the API, uploading a recording, the processing pipeline from the queued job to
 the stored transcript and notes, access to restricted meetings over every content path, the audit
-log, exports, job monitoring, and reading results in the web app. Not tested here: features with
-no API yet (self-service email registration and emailed password-reset requests in US-001 and
+log, exports, job monitoring, reading results in the web app, and local recovery of completed
+extension recordings. Not tested here: features with no API yet (self-service email registration
+and emailed password-reset requests in US-001 and
 US-020; notes regeneration, US-010; a workspace's own model provider, US-008; server load and model usage on the admin dashboard, US-019 Test-03); screens the web app
 does not have yet (registration, speaker renames, shares, the glossary), so those are tested through the API;
-the user-action limit of NFR-005 is not measured; the Chrome extension capture
-(US-003, NFR-004); recognition quality scores (WER needs a reference corpus we do not have); real
+the user-action limit of NFR-005 is not measured; live capture in Google Meet
+(US-003 Test-01 through Test-04, NFR-004); recognition quality scores (WER needs a reference corpus we do not have); real
 models or paid services in CI.
 
-**Exit criteria.** Every row marked CI passes in `uv run task test:cov` on `main`, with a link to
-the run; coverage stays at or above the strategy's 85% line and branch; no test fails or is flaky;
+**Exit criteria.** Every row marked CI passes in its suite on `main`, with a link to the run.
+Backend tests run in `uv run task test:cov` and stay at or above the strategy's 85% line and branch coverage.
+No test fails or is flaky;
 every row marked GPU machine has a recorded run in [Results](#results) at a stated commit; no
 defect labelled Blocking is open against a row.
 
@@ -90,6 +92,7 @@ speakers, preset sections, time). A pass in one never stands in for the other.
 | TC-GLO-01 | Meetings: workspace glossary | Integration | Positive | Terms are kept per workspace, a term differing only in case is refused, and the next transcription job hands the glossary to the recognizer. | Valeriia | US-012 (Test-01 to Test-03) | CI, exists |
 | TC-RET-01 | Retention: deleting a recording | Integration | Positive | Once retention deletes a recording, its transcript and notes stay readable. | Valeriia | US-011 (Test-02) | CI, exists |
 | TC-CAP-01 | Meetings: hosted capacity | Integration | Positive | A meeting queued past the hosted limit evicts the earliest meeting across the uploader's owned workspaces, audited and attributed to the uploader; a failed upload rolls the eviction back; an open capture does not count. | Valeriia | NFR-003 | CI, exists |
+| TC-CAP-02 | Chrome extension: local recovery of completed recordings | Unit, Component, Browser | Positive, Negative | After a failed local save, the original account on the original server can retry or confirm discard with an unexpired sign-in, including offline. Recovery copies survive a Chrome restart. Another account, another server, an expired sign-in, and a Meet content script are refused. A session change during preparation prevents the download or discard. A failed backup write is identified as temporary, and a retry error stays visible through a list refresh. The browser check uses synthetic audio to verify restart persistence, downloaded bytes and confirmed discard. | Valeriia | US-003 (Test-05), FR-010 | CI, `npm --prefix frontend run test:extension` (unit and component). Manual, `node tests/reliability/extension-recovery.mjs` (Chromium). |
 | TC-PIPE-03 | Whole stack with real models | System | Positive | A 10-minute Ukrainian recording with several speakers, uploaded in the web app, reaches `processed`; the transcript is in `uk` with at least two speakers (Speaker 1, Speaker 2…); the notes have the workspace's default preset sections and name the configured model; the list, transcript, notes and playback show in the web app. Once with Claude, once with Ollama. | Andrii | US-004 (Test-01), US-005 (Test-02), US-006 (Test-01, Test-02), US-013 (Test-02) | GPU machine, manual |
 | TC-ASR-01 | ASR worker: real models | Integration | Positive | The `models` tests pass: Parakeet and Whisper recognize their reference clips, and the diarizing slot tells two speakers apart. | Andrii | US-005 (Test-02) | GPU machine, `pytest -m models` |
 | TC-ASR-02 | ASR worker: glossary with Whisper | System | Positive | A glossary term Parakeet misspelled appears in its preferred form in a Whisper transcript of the same clip. | Andrii | US-012 (Test-02) | GPU machine, manual |
@@ -148,6 +151,7 @@ runs, and record each run in [Results](#results).
 ## AI Usage
 
 The #183 invitation SPA case was updated with OpenAI Codex.
+The TC-CAP-02 recovery case and its scope were drafted with OpenAI Codex for #287.
 
 Drafted with Claude Code (Claude Opus 5.5) from Zlata's initial draft (OpenAI Codex) and the GPU
 machine runs, and checked against the code at `69d178d`. The team reviews it before merging. Claude Code
