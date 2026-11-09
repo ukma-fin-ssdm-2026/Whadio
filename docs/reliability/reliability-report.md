@@ -567,3 +567,20 @@ them: the timeout bounds each attempt, and the retry wraps the attempts.
   `test_call_answered_5xx_every_time_gives_up_after_its_attempts` prove the number of attempts;
   `test_get_that_times_out_on_every_attempt_logs_one_warning_without_the_key` proves the reaction
   after the last one; all in `src/whadio/shared/reliability/test_storage_deadline.py`.
+
+### Bonus 3: reliability tests as a required check
+
+- **The job.** "Reliability tests" in [`ci.yml`](../../.github/workflows/ci.yml) runs
+  `uv run task test:reliability`: the lab's three test files in `src/whadio/processing/reliability/`
+  and `src/whadio/shared/reliability/`, 40 test items, against a PostgreSQL that the job starts and
+  migrates first. It selects the tests by path, so it needs none of the ML packages.
+- **The other tests.** The rest of the table above runs in the "Backend tests and coverage" job,
+  for Python, and the "Frontend" job, for the web app's and the extension's JavaScript.
+- **Required.** "CI passed" needs the job, and the
+  [`main-checks` ruleset](https://github.com/ukma-fin-ssdm-2026/Whadio/rules/23179590) requires
+  "Reliability tests" on `main`.
+- **A passing run.** [Run 42716558125](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/42716558125)
+  of [#346](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/346): its
+  ["Reliability tests" job](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/42716558125/job/129499506250)
+  passed all 40 items.
+- **The video.** Andrii Shalaiev explains it in his Lab 9 video.
