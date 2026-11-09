@@ -139,14 +139,18 @@ other:
 - **Frontend:** `tsc`, all the Vitest tests and the build.
 - **Backend tests and coverage:** `uv run task test:cov`, the whole test suite but the `models`
   tests against the Compose services, failing below 85% line and branch coverage.
+- **Reliability tests:** `uv run task test:reliability`, the tests in the `reliability/` folders
+  under `src/whadio/`, against a migrated PostgreSQL.
 - **Worker image:** `uv run task image` builds it and runs its entry point.
-- **CI passed** fails unless all four succeeded. This and the check of the pull request title and
-  every commit message against the commit format are the checks `main` requires.
+- **CI passed** fails unless all five succeeded. `main` requires it, "Reliability tests",
+  "SonarCloud Code Analysis" and the check of the pull request title and every commit message
+  against the commit format.
 
-`uv run task ci` runs those jobs on your machine, in parallel and to the end. It needs Docker, the
-services running and `WHADIO_TEST_DATABASE_URL` exported (`docs/testing/testing.md`); `uv run task
-check` needs none of them. A branch without a pull request gets no CI unless you start the workflow
-by hand, so open a draft pull request to try something.
+`uv run task ci` runs those jobs on your machine, in parallel and to the end, except the
+reliability tests, which `test:cov` already runs. It needs Docker, the services running and
+`WHADIO_TEST_DATABASE_URL` exported (`docs/testing/testing.md`); `uv run task check` needs none of
+them. A branch without a pull request gets no CI unless you start the workflow by hand, so open a
+draft pull request to try something.
 
 - Never bypass the checks: no `--no-verify`, no `SKIP=`. If a check is wrong, fix it in its own
   pull request.
