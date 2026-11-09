@@ -17,6 +17,7 @@ interface TranscriptPanelProps {
   onQuery: (query: string) => void;
   onRevision: (revisionId: string | null) => void;
   onShowCurrent: () => void;
+  onUnsavedChange: (unsaved: boolean) => void;
 }
 
 function emptyMessage(transcript: TranscriptRead | null, missing: boolean, failed: boolean) {
@@ -35,6 +36,7 @@ export function TranscriptPanel({
   onQuery,
   onRevision,
   onShowCurrent,
+  onUnsavedChange,
 }: TranscriptPanelProps) {
   const editable = transcript?.revision.is_current === true && !isInProgress(meeting.state);
   const [editedBase, setEditedBase] = useState<TranscriptRead | null>(null);
@@ -86,6 +88,7 @@ export function TranscriptPanel({
             segments={segments}
             onClose={() => setEditedBase(null)}
             onShowCurrent={onShowCurrent}
+            onUnsavedChange={onUnsavedChange}
           />
         ) : (
           <Stack sx={{ gap: 1.5 }}>

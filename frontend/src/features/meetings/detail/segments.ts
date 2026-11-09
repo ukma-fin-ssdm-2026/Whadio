@@ -2,6 +2,15 @@ import type { Schemas, TranscriptRead } from "@/shared/api/types";
 
 export const NO_MATCH = "No transcript matches your search.";
 
+const leading = (word: string) => [...word][0]?.toUpperCase() ?? "";
+
+export function speakerInitials(name: string): string {
+  const [first = "", ...rest] = name.trim().split(/\s+/);
+  const last = rest.at(-1);
+  if (last === undefined) return leading(first);
+  return leading(first) + (/^\d+$/.test(last) ? last : leading(last));
+}
+
 export type LabelledSegment = Schemas["SegmentRead"] & {
   index: number;
   speaker: string;

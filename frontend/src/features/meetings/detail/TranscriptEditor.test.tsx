@@ -60,14 +60,37 @@ async function startEditing(transcript = BASE) {
       onQuery={() => {}}
       onRevision={() => {}}
       onShowCurrent={() => {}}
+      onUnsavedChange={() => {}}
     />,
   );
   await view.user.click(screen.getByRole("button", { name: "Edit transcript" }));
   return view;
 }
 
+function refuseName(message: string) {
+  server.use(
+    http.post("/api/v1/meetings/{meeting_id}/transcript/revisions", ({ response }) =>
+      response(422).json({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Request contains invalid fields",
+          details: [{ field: "speakers.0.display_name", message }],
+          request_id: "request",
+        },
+      }),
+    ),
+  );
+}
+
 const segmentButton = (time: string) =>
   screen.getByRole("button", { name: new RegExp(`^Edit text at ${time}`) });
+
+const speakerField = (name: string) => screen.getByRole("textbox", { name });
+
+async function rename(user: UserEvent, from: string, to: string) {
+  await user.clear(speakerField(from));
+  if (to) await user.type(speakerField(from), to);
+}
 
 async function correct(user: UserEvent, time: string, text: string) {
   await user.click(segmentButton(time));
@@ -307,4 +330,108 @@ test("a failed save keeps the corrections for another try", async () => {
 
   // Assert
   expect(segmentButton("01:05")).toHaveTextContent("We ship Whadio on Friday");
+});
+
+test("a rename is saved by the speaker's id in the shown revision", async () => {
+  // Arrange
+  const edits = captureEdits();
+  const { user } = await startEditing();
+  await rename(user, "Speaker 1", "Olena Bondar");
+
+  // Act
+  await save(user);
+
+  // Assert
+  await waitFor(() =>
+    expect(edits).toEqual([
+      { base_revision_id: "revision", speakers: [{ id: "speaker", display_name: "Olena Bondar" }] },
+    ]),
+  );
+});
+
+test("a correction and a rename are saved together in one revision", async () => {
+  // Arrange
+  const edits = captureEdits();
+  const { user } = await startEditing();
+  await correct(user, "01:05", "We ship Whadio on Friday");
+  await rename(user, "Speaker 1", "Olena Bondar");
+
+  // Act
+  await save(user);
+
+  // Assert
+  await waitFor(() =>
+    expect(edits).toEqual([
+      {
+        base_revision_id: "revision",
+        segments: [{ id: "one", text: "We ship Whadio on Friday" }],
+        speakers: [{ id: "speaker", display_name: "Olena Bondar" }],
+      },
+    ]),
+  );
+});
+
+test("a renamed speaker labels every one of their segments", async () => {
+  // Arrange
+  const { user } = await startEditing();
+
+  // Act
+  await rename(user, "Speaker 1", "Olena Bondar");
+
+  // Assert
+  expect(screen.getAllByText("Olena Bondar")).toHaveLength(2);
+});
+
+test("a speaker's name says how many segments it applies to", async () => {
+  // Act
+  await startEditing();
+
+  // Assert
+  expect(speakerField("Speaker 1")).toHaveAccessibleDescription("Applies to 2 segments");
+});
+
+test("an emptied speaker name says to enter one", async () => {
+  // Arrange
+  const { user } = await startEditing();
+  await rename(user, "Speaker 1", "");
+
+  // Act
+  await save(user);
+
+  // Assert
+  expect(await screen.findByText("Enter a name")).toBeInTheDocument();
+});
+
+test("an emptied speaker name sends nothing", async () => {
+  // Arrange
+  const edits = captureEdits();
+  const { user } = await startEditing();
+  await rename(user, "Speaker 1", "");
+
+  // Act
+  await save(user);
+  await screen.findByText("Enter a name");
+
+  // Assert
+  expect(edits).toEqual([]);
+});
+
+test("a name the server refuses is explained on the field of that speaker", async () => {
+  // Arrange
+  refuseName("Name contains no visible character");
+  const { user } = await startEditing({
+    ...BASE,
+    speakers: [...BASE.speakers, { id: "other", display_name: "Speaker 2", is_unnamed: true }],
+  });
+  await rename(user, "Speaker 2", "Taras Melnyk");
+
+  // Act
+  await save(user);
+
+  // Assert
+  await waitFor(() =>
+    expect(speakerField("Speaker 2")).toHaveAccessibleDescription(
+      "Name contains no visible character",
+    ),
+  );
 });
