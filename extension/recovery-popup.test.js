@@ -43,6 +43,37 @@ test("an old account's delayed response cannot repopulate recovery controls afte
   expect(document.querySelectorAll("#recovery button")).toHaveLength(0);
 });
 
+test.for([
+  { label: "Retry download", reply: { recordings: [recording] } },
+  { label: "Discard", reply: { recordings: [recording] } },
+  { label: "Retry download", reply: { error: "old account failure" } },
+  { label: "Discard", reply: { error: "old account failure" } },
+])("ignores a delayed $label reply after sign-out", async ({ label, reply }) => {
+  // Arrange
+  await showRecovery();
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  const { promise, resolve } = Promise.withResolvers();
+  chrome.runtime.sendMessage
+    .mockReturnValueOnce(promise)
+    .mockResolvedValue({ recordings: [], locked: true });
+
+  // Act
+  await click(label);
+  chrome.storage.onChanged.addListener.mock.calls[0][0]({}, "session");
+  await vi.waitFor(() => expect(document.getElementById("recovery-error").hidden).toBe(false));
+  resolve(reply);
+  await new Promise((done) => setTimeout(done, 0));
+
+  // Assert
+  expect({
+    controls: document.querySelectorAll("#recovery button").length,
+    message: document.getElementById("recovery-error").textContent,
+  }).toEqual({
+    controls: 0,
+    message: "Sign in to the original account and server to recover your saved recordings.",
+  });
+});
+
 beforeEach(() => {
   document.body.innerHTML = popupHtml;
   globalThis.chrome = {

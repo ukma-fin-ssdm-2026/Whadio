@@ -3,6 +3,7 @@ export function showRecovery() {
   const list = document.getElementById("recovery-list");
   const error = document.getElementById("recovery-error");
   let revision = 0;
+  let sessionRevision = 0;
 
   async function request(type, id) {
     const reply = await chrome.runtime.sendMessage({ type, id });
@@ -53,14 +54,18 @@ export function showRecovery() {
             for (const control of row.querySelectorAll("button")) {
               control.disabled = true;
             }
+            const current = revision;
+            const currentSession = sessionRevision;
             try {
-              const current = revision;
               error.hidden = true;
               const reply = await request(type, id);
               if (current === revision) {
                 render(reply);
               }
             } catch {
+              if (currentSession !== sessionRevision) {
+                return;
+              }
               showError();
               for (const control of row.querySelectorAll("button")) {
                 control.disabled = false;
@@ -96,6 +101,9 @@ export function showRecovery() {
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "session") {
+      sessionRevision += 1;
+    }
     if ((area === "local" && "recoveryChangedAt" in changes) || area === "session") {
       list.replaceChildren();
       void refresh();
