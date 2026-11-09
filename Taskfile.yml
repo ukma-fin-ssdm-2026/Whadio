@@ -95,6 +95,16 @@ tasks:
       # `--cov` takes an optional source, so it goes last or it swallows a forwarded test path.
       - uv run --frozen pytest -m "not models" {{.CLI_ARGS}} --cov
 
+  test:reliability:
+    desc: Run the reliability tests, the `reliability/` folders under src/whadio, as CI does
+    preconditions:
+      - sh: test -n "$WHADIO_TEST_DATABASE_URL"
+        msg: >-
+          Set WHADIO_TEST_DATABASE_URL to the test database (start it with `task infra:up`); the
+          stalled-job tests need it. See docs/testing/testing.md
+    cmds:
+      - uv run --frozen pytest -v src/whadio/*/reliability {{.CLI_ARGS}}
+
   mutation:
     desc: Mutation-test the notes prompt with mutmut and list the mutants the tests let survive
     cmds:
