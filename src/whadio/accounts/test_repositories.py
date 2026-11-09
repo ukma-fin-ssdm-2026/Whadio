@@ -238,6 +238,27 @@ def test_session_cleanup_deletes_sessions_expired_by_now_and_keeps_later_ones(
 
 
 @pytest.mark.slow
+def test_session_cleanup_returns_how_many_sessions_it_deleted(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> int:
+        for kind, offset in (
+            (SessionKind.BROWSER, 0),
+            (SessionKind.EXTENSION, -1),
+            (SessionKind.BROWSER, 1),
+        ):
+            await add_session_expiring_at(
+                session, kind, SESSION_CLEANUP_AT + timedelta(microseconds=offset)
+            )
+        # Act
+        return await SessionRepository(session).delete_expired(SESSION_CLEANUP_AT)
+
+    # Assert
+    assert async_database.run(scenario) == 2
+
+
+@pytest.mark.slow
 def test_repeated_session_cleanup_deletes_nothing_more(async_database: AsyncDatabase) -> None:
     # Arrange
     async def scenario(session: AsyncSession) -> int:

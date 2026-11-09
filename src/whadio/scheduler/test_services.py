@@ -1,8 +1,10 @@
 import asyncio
+import logging
 from collections.abc import Collection
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+import pytest
 from sqlalchemy.exc import OperationalError
 
 from ..notifications.services import DrainResult
@@ -54,9 +56,12 @@ REGISTRATION_STEPS = ("registrations", "password resets", "sessions")
 
 
 class RegistrationJobs:
-    def __init__(self, calls: list[str], *, failing: Collection[str] = ()) -> None:
+    def __init__(
+        self, calls: list[str], *, failing: Collection[str] = (), removed: int = 2
+    ) -> None:
         self.calls: list[str] = calls
         self.failing: Collection[str] = failing
+        self.removed: int = removed
         self.expired_at: dict[str, datetime] = {}
 
     def _remove(self, step: str, now: datetime) -> int:
@@ -64,7 +69,7 @@ class RegistrationJobs:
         self.expired_at[step] = now
         if step in self.failing:
             raise OperationalError("database unavailable", None, RuntimeError())
-        return 2
+        return self.removed
 
     async def remove_expired(self, now: datetime) -> int:
         return self._remove("registrations", now)
@@ -102,6 +107,19 @@ def test_tick_deletes_expired_sessions_using_the_scheduler_clock() -> None:
     asyncio.run(scheduler.tick())
     # Assert
     assert registrations.expired_at.get("sessions") == now
+
+
+def test_session_cleanup_logs_how_many_sessions_it_deleted(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Arrange
+    caplog.set_level(logging.INFO, logger="whadio.scheduler.services")
+    periodic = PeriodicJobs(registrations=RegistrationJobs([], removed=3))
+    scheduler = RetentionScheduler(RetentionJobs(), 60, periodic=periodic)
+    # Act
+    asyncio.run(scheduler.tick())
+    # Assert
+    assert "Session cleanup: 3 expired sessions deleted" in caplog.messages
 
 
 def ticked_with_failing_registrations(failing: Collection[str]) -> tuple[int, list[str]]:
