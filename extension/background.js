@@ -1,22 +1,11 @@
 import { api, sessionOwner, signedIn } from "./api.js";
+import { downloadFile } from "./downloads.js";
 import { RecordingRecovery } from "./recovery.js";
 import { recoveryStore } from "./recovery-store.js";
 
 // MediaRecorder hands over one slice a second; ten of them make one uploaded chunk.
 const SLICES_PER_CHUNK = 10;
 const RETRIES = 5;
-
-function downloaded(downloadId) {
-  return new Promise((resolve) => {
-    function listener(delta) {
-      if (delta.id === downloadId && delta.state && delta.state.current !== "in_progress") {
-        chrome.downloads.onChanged.removeListener(listener);
-        resolve();
-      }
-    }
-    chrome.downloads.onChanged.addListener(listener);
-  });
-}
 
 // The offscreen document records the calls; it is closed once nothing is recording, starting or saving.
 async function offscreen() {
@@ -56,8 +45,7 @@ async function saveLocally(startedAt, slices) {
       throw new Error("The recording file could not be prepared.");
     }
     const stamp = new Date(startedAt).toISOString().slice(0, 19).replaceAll(":", "-");
-    const downloadId = await chrome.downloads.download({ url, filename: `whadio-${stamp}.webm` });
-    await downloaded(downloadId);
+    await downloadFile({ url, filename: `whadio-${stamp}.webm` });
   } finally {
     if (url) {
       await chrome.runtime.sendMessage({ target: "offscreen", type: "revoke", url }).catch(() => {

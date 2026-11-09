@@ -11,12 +11,13 @@ Each fix below names who made it.
 | F1 | Job publish to RabbitMQ waits without a limit while holding a row lock | B, E | High | **Fixed** |
 | F2 | Extension requests to the server have no deadline | B, E | High | **Fixed**; not yet checked with a real recording |
 | F3 | A failed upload is given up without a log or a word to the user | D, A | Medium | Open |
-| F4 | A recording that could not be saved vanishes in an unawaited listener | A, D | High | **Fixed** for rejected local saves; completed fallback audio is retained for retry/discard |
+| F4 | A recording that could not be saved vanishes in an unawaited listener | A, D | High | **Fixed** |
 | F5 | Object storage calls can block a request for over half an hour | B, E | High | **Fixed** |
 | F6 | The SPA's API client has no deadline | B | Low | **Fixed** |
 | F7 | Signing out ignores whether the server ended the session | D | Low | Open |
 | F8 | Asking which chunks the server holds fails silently | D | Low | Open |
 | F9 | A published job whose message or result is lost is never finished | B, D | Medium | **Fixed** |
+| F10 | An interrupted local download is treated as a successful save | A, D | High | **Fixed** |
 
 ## Fixes
 
@@ -76,8 +77,8 @@ protected. Audio still being recorded or waiting for finalization is not checkpo
 disk, unavailable IndexedDB, storage eviction, clearing extension storage or uninstalling the
 extension can still defeat recovery. If a backup write fails, the current worker retains a
 temporary in-memory copy and the popup explicitly warns that it cannot survive a restart.
-There is no automatic expiry or background download loop. An interrupted download still follows
-the old completion-state check; its separate finding and fix belong in the stacked follow-up.
+There is no automatic expiry or background download loop. Interrupted-download state handling
+is the separate F10 fix below, stacked on F4's recovery path.
 
 **Tests.** `extension/background.test.js` injects rejected downloads and Blob requests, a
 closed tab, and a worker restart, and checks recovery commands cannot be invoked by a Meet
@@ -88,6 +89,43 @@ error text and temporary-copy warning. The real-Chromium check is
 `node tests/reliability/extension-recovery.mjs`: it reopens a persistent extension profile,
 downloads synthetic audio through the actual popup, and verifies discard and successful removal
 survive another browser restart. This is separate from the still-pending real Meet recording run.
+
+### F10. An interrupted local download is treated as a successful save
+
+Implemented separately from F4 in `fix(#287): retain recovery copies after interrupted downloads`.
+
+**Before.** `downloaded` in `extension/background.js` resolved whenever a download left
+`in_progress`, including when it became `interrupted`. It registered its listener only after
+the creation call returned, so a fast terminal event could also be missed. F4's durable backup
+did not correct this false-success signal: recovery would remove the copy believing it was saved.
+
+**After.** `extension/downloads.js`, `downloadFile`, installs its listener before starting the
+download and remembers terminal states that arrive before the ID is returned. It reconciles
+Chrome's current download history and accepts only `complete`:
+
+```js
+observe(download.state);
+if ((await ended) !== "complete") {
+  throw new Error("The local download was interrupted. Retry it from Whadio.");
+}
+```
+
+Only the chosen download can settle the operation. Progress and unrelated downloads cannot
+report success. The listener is removed in `finally`, including after download/search API
+failures. A missing history entry fails explicitly instead of leaving an unresolved wait.
+
+**Failure and recovery.** Fail-safe: cancellation or interruption raises into F4's existing
+failure handler, which retains the completed recording, reports the save failure and offers
+Retry download or confirmed Discard to the original account. Only a later download confirmed
+`complete` removes its backup. Normal cancellation is not automatically retried. The user may
+fix disk/browser restrictions before retrying. F4's persistence and offline-session limits apply.
+
+**Tests.** `extension/downloads.test.js` injects interruption, completion before the ID returns,
+already-terminal history, unrelated/progress events, missing history, and both rejected Chrome
+API calls; it also checks listener cleanup. `extension/background.test.js` interrupts a recovery
+path through a Chrome API double, confirms all 15 audio slices remain, then completes a retry
+and checks the copy is removed. The same standalone Chromium restart check still verifies
+the successful save path with the actual download API and synthetic audio.
 
 ### F2. Extension requests to the server have no deadline
 
@@ -592,7 +630,7 @@ the running limits of the two job types are swapped.
 
 ## AI Usage
 
-F4's implementation, failure-injection tests, browser check and documentation were prepared
+F4, F10's implementation, failure-injection tests, browser check and documentation were prepared
 with OpenAI Codex (GPT-6.1), reviewed by Valeriia Missirova.
 
 The F2 and F6 fixes, their tests and these sections were drafted with Claude Code
