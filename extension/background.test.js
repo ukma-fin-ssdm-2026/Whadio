@@ -231,6 +231,100 @@ describe("recording registration", () => {
   });
 });
 
+describe("the offscreen document during concurrent retries", () => {
+  beforeEach(async () => {
+    const owner = { server: SERVER, userId: "original" };
+    for (const id of ["first", "second"]) {
+      await recoveryStore.put({ id, startedAt: STARTED_AT.getTime(), owner, slices: ["YWI="] });
+    }
+  });
+
+  test("rechecks idleness when a retry starts during the cleanup lookup", async () => {
+    // Arrange
+    const { promise: checking, resolve: startCheck } = Promise.withResolvers();
+    const { promise: lookup, resolve: finishCheck } = Promise.withResolvers();
+    const { promise: secondBlob, resolve: finishBlob } = Promise.withResolvers();
+    const { promise: preparing, resolve: startBlob } = Promise.withResolvers();
+    chrome.offscreen.hasDocument
+      .mockResolvedValue(true)
+      .mockResolvedValueOnce(true)
+      .mockImplementationOnce(() => {
+        startCheck();
+        return lookup;
+      });
+    chrome.runtime.sendMessage.mockImplementation(async (message) => {
+      if (message.type === "blob" && message.id === "second") {
+        startBlob();
+        return secondBlob;
+      }
+      return { url: "blob:call" };
+    });
+
+    // Act
+    const first = recover({ type: "recovery-retry", id: "first" });
+    await checking;
+    const second = recover({ type: "recovery-retry", id: "second" });
+    await vi.advanceTimersByTimeAsync(0);
+    finishCheck(true);
+    await preparing;
+    const closedDuringRetry = chrome.offscreen.closeDocument.mock.calls.length;
+    finishBlob({ url: "blob:second" });
+    await Promise.all([first, second]);
+
+    // Assert
+    expect({
+      closedDuringRetry,
+      closes: chrome.offscreen.closeDocument.mock.calls.length,
+    }).toEqual({ closedDuringRetry: 0, closes: 1 });
+  });
+
+  test("a retry waits for a close already in progress and opens a fresh document", async () => {
+    // Arrange
+    let exists = true;
+    const { promise: closing, resolve: startClose } = Promise.withResolvers();
+    const { promise: closed, resolve: finishClose } = Promise.withResolvers();
+    chrome.offscreen.hasDocument.mockImplementation(async () => exists);
+    chrome.offscreen.closeDocument.mockImplementationOnce(async () => {
+      startClose();
+      await closed;
+      exists = false;
+    });
+    chrome.offscreen.createDocument.mockImplementation(async () => {
+      exists = true;
+    });
+    const blobDocuments = [];
+    chrome.runtime.sendMessage.mockImplementation(async (message) => {
+      if (message.type === "blob") {
+        blobDocuments.push({ id: message.id, exists });
+      }
+      return { url: "blob:call" };
+    });
+
+    // Act
+    const first = recover({ type: "recovery-retry", id: "first" });
+    await closing;
+    const second = recover({ type: "recovery-retry", id: "second" });
+    await vi.advanceTimersByTimeAsync(0);
+    const blobsBeforeClose = blobDocuments.length;
+    finishClose();
+    await Promise.all([first, second]);
+
+    // Assert
+    expect({
+      blobsBeforeClose,
+      blobDocuments,
+      opens: chrome.offscreen.createDocument.mock.calls.length,
+    }).toEqual({
+      blobsBeforeClose: 1,
+      blobDocuments: [
+        { id: "first", exists: true },
+        { id: "second", exists: true },
+      ],
+      opens: 1,
+    });
+  });
+});
+
 describe("a recording whose local save fails", () => {
   async function failSaving() {
     fakeServer(failingPuts(Number.POSITIVE_INFINITY));

@@ -39,8 +39,9 @@ A rejected download or offscreen Blob request escaped the event handler. The onl
 could disappear, no recovery action was offered, and idle-document cleanup was skipped.
 
 **After.** The listener starts `finishRecording` with an explicit rejection handler. Its
-`finally` always attempts idle cleanup, while a pending counter keeps another finalization or
-save from having its offscreen document closed. The fallback in `Upload.finish` now does:
+`finally` always attempts idle cleanup. Starts and saves reserve the offscreen document before
+use. Opening and closing run in order, and cleanup rechecks idleness after looking up the
+document so a new reservation cannot be missed. The fallback in `Upload.finish` now does:
 
 ```js
 this.retained = true;
@@ -82,8 +83,8 @@ There is no automatic expiry or background download loop. An interrupted downloa
 the old completion-state check; its separate finding and fix belong in the stacked follow-up.
 
 **Tests.** `extension/background.test.js` injects rejected downloads and Blob requests, a
-closed tab, and a worker restart, and checks recovery commands cannot be invoked by a Meet
-content script. `extension/recovery.test.js` covers backup-before-download ordering, repeated
+closed tab, and a worker restart. It checks recovery commands cannot be invoked by a Meet
+content script and exercises retries that start during the offscreen lookup or an ongoing close. `extension/recovery.test.js` covers backup-before-download ordering, repeated
 failures, independent recordings, concurrent retries, discard refusal during a save, storage
 failure and failed removal. `extension/recovery-popup.test.js` checks the controls, confirmation,
 error text and temporary-copy warning. The real-Chromium check is
@@ -596,7 +597,8 @@ the running limits of the two job types are swapped.
 
 F4's implementation, failure-injection tests, browser check and documentation were prepared
 with OpenAI Codex (GPT-6.1), reviewed by Valeriia Missirova. The follow-up fixes and
-regression tests for recording registration, recovery locking, and large downloads used OpenAI Codex.
+regression tests for recording registration, recovery locking, large downloads, and offscreen
+cleanup used OpenAI Codex.
 
 The F2 and F6 fixes, their tests and these sections were drafted with Claude Code
 (Claude Opus 5.5) and reviewed by Zlata Tsepkalo.
