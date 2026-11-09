@@ -365,28 +365,57 @@ chrome.runtime.onConnect.addListener(async (port) => {
     return;
   }
   const { tabId, startedAt } = started;
-  const owner = await sessionOwner();
-  if (!owner) {
-    return;
-  }
-  const upload = new Upload(startedAt, !port.sender?.tab, owner);
-  uploads.set(tabId, upload);
-  // Opened at once rather than with the first chunk, so the meeting's time is when recording began.
-  upload.queue = upload.queue.then(() => upload.send());
-  port.onMessage.addListener((message) => upload.add(message.audio));
-  port.onDisconnect.addListener(async () => {
+  let disconnected = false;
+  let upload;
+  port.onMessage.addListener(({ audio }) => {
+    if (typeof audio === "string") {
+      upload?.add(audio);
+    }
+  });
+  port.onDisconnect.addListener(() => {
+    disconnected = true;
+    if (!upload) {
+      return;
+    }
     if (uploads.get(tabId) === upload) {
       uploads.delete(tabId);
-      // The tab may already be closed, so telling it and clearing its badge may fail.
       chrome.tabs.sendMessage(tabId, { type: "stopped", startedAt }).catch(() => {});
-      chrome.action.setBadgeText({ tabId, text: "" }).catch(() => {});
+      chrome.action.setBadgeText({ tabId, text: null }).catch(() => {});
     }
     void finishRecording(tabId, upload).catch(() => {
       console.warn("Whadio could not finish recording recovery. Open the extension to check it.");
     });
   });
 
-  await chrome.action.setBadgeText({ tabId, text: "REC" });
+  const owner = await sessionOwner().catch(() => null);
+  if (disconnected) {
+    return;
+  }
+  const error = !owner
+    ? "Sign in to Whadio before recording."
+    : uploads.has(tabId)
+      ? "Whadio is already recording this tab."
+      : null;
+  try {
+    port.postMessage(
+      error
+        ? { type: "recording-rejected", error }
+        : {
+            type: "recording-ready",
+            startedAt,
+          },
+    );
+  } catch {
+    return;
+  }
+  if (error) {
+    return;
+  }
+  upload = new Upload(startedAt, !port.sender?.tab, owner);
+  uploads.set(tabId, upload);
+  // Opened at once so the capture time is when recording began.
+  upload.queue = upload.queue.then(() => upload.send());
+  await chrome.action.setBadgeText({ tabId, text: "REC" }).catch(() => {});
 });
 
 // Installs signed in before the token moved to session storage still hold it where content scripts can read it.
@@ -450,7 +479,7 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
   try {
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ["audio.js", "recorder.js"],
+      files: ["recording-port.js", "audio.js", "recorder.js"],
     });
     const status = await chrome.tabs.sendMessage(tab.id, { type: "status" });
     if (!(await signedIn())) {

@@ -132,7 +132,7 @@ if (!tab?.url || !MEET_CALL.test(tab.url)) {
 } else {
   await chrome.scripting.executeScript({
     target: { tabId: tab.id },
-    files: ["audio.js", "recorder.js"],
+    files: ["recording-port.js", "audio.js", "recorder.js"],
   });
   await chrome.tabs.sendMessage(tab.id, { type: "hide-card" });
   const { startedAt } = await chrome.runtime.sendMessage({ type: "recording", tabId: tab.id });
