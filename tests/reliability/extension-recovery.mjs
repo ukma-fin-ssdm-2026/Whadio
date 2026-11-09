@@ -75,6 +75,26 @@ try {
   await page.getByRole("button", { name: "Discard", exact: true }).click();
   await page.waitForFunction(() => document.getElementById("recovery").hidden);
 
+  await page.evaluate(async () => {
+    const { recoveryStore } = await import("./recovery-store.js");
+    const owner = { server: "https://whadio.example", userId: "original" };
+    const slice = btoa("a".repeat(768 * 1024));
+    await recoveryStore.put({
+      id: "large-recovery-check",
+      owner,
+      startedAt: 1_793_876_520_000,
+      slices: Array(64).fill(slice),
+    });
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "Retry download" }).click();
+  await page.waitForFunction(() => document.getElementById("recovery").hidden);
+  const [largeDownload] = await page.evaluate(() =>
+    chrome.downloads.search({ limit: 1, orderBy: ["-startTime"] }),
+  );
+  assert.equal(largeDownload.state, "complete");
+  assert.deepEqual(await readFile(largeDownload.filename), Buffer.alloc(48 * 1024 * 1024, "a"));
+
   await running.context.close();
   running = await launch();
   const final = await running.context.newPage();
@@ -85,7 +105,7 @@ try {
   });
   assert.deepEqual(remaining, []);
   assert.deepEqual(errors, []);
-  console.log("PASS: real extension IndexedDB survives Chromium restart; popup retry downloads the original audio; discard is confirmed and both removals survive restart.");
+  console.log("PASS: real extension IndexedDB survives Chromium restart; popup retry downloads small and 48 MiB copies byte for byte; discard is confirmed and both removals survive restart.");
 } finally {
   await running.context.close();
 }

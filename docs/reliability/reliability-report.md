@@ -54,6 +54,8 @@ transaction must complete before downloading. `extension/recovery.js` keeps fail
 holds a per-recording lock across the backup write and the initial download, and uses the same
 lock for retry and discard. A successful download removes its recovery entry;
 a confirmed Discard deletes only the chosen entry. Several recordings remain independent.
+The offscreen document builds the download Blob from IndexedDB by recording ID. Temporary copies
+reach the document in bounded port messages. This keeps both paths within Chromium's message limit.
 `saveLocally` releases a created Blob URL even when its download request rejects. A cleanup
 failure produces a fixed warning, not an unhandled rejection or a raw exception in the logs.
 
@@ -86,8 +88,8 @@ failures, independent recordings, concurrent retries, discard refusal during a s
 failure and failed removal. `extension/recovery-popup.test.js` checks the controls, confirmation,
 error text and temporary-copy warning. The real-Chromium check is
 `node tests/reliability/extension-recovery.mjs`: it reopens a persistent extension profile,
-downloads synthetic audio through the actual popup, and verifies discard and successful removal
-survive another browser restart. This is separate from the still-pending real Meet recording run.
+downloads small and 48 MiB synthetic recordings byte for byte through the popup, and verifies
+discard and successful removal survive another browser restart. This is separate from the still-pending real Meet recording run.
 
 ### F2. Extension requests to the server have no deadline
 
@@ -593,7 +595,8 @@ the running limits of the two job types are swapped.
 ## AI Usage
 
 F4's implementation, failure-injection tests, browser check and documentation were prepared
-with OpenAI Codex (GPT-6.1), reviewed by Valeriia Missirova.
+with OpenAI Codex (GPT-6.1), reviewed by Valeriia Missirova. The follow-up fixes and
+regression tests for recording registration, recovery locking, and large downloads used OpenAI Codex.
 
 The F2 and F6 fixes, their tests and these sections were drafted with Claude Code
 (Claude Opus 5.5) and reviewed by Zlata Tsepkalo.
