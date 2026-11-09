@@ -1,4 +1,6 @@
-import { api, signedIn } from "./api.js";
+import { api, sessionOwner, signedIn } from "./api.js";
+import { RecordingRecovery } from "./recovery.js";
+import { recoveryStore } from "./recovery-store.js";
 
 // MediaRecorder hands over one slice a second; ten of them make one uploaded chunk.
 const SLICES_PER_CHUNK = 10;
@@ -42,18 +44,26 @@ async function saveLocally(startedAt, slices) {
     return;
   }
   pending += 1;
+  let url;
   try {
     await offscreen();
-    const { url } = await chrome.runtime.sendMessage({
+    ({ url } = await chrome.runtime.sendMessage({
       target: "offscreen",
       type: "blob",
       chunks: slices,
-    });
+    }));
+    if (typeof url !== "string" || !url.startsWith("blob:")) {
+      throw new Error("The recording file could not be prepared.");
+    }
     const stamp = new Date(startedAt).toISOString().slice(0, 19).replaceAll(":", "-");
     const downloadId = await chrome.downloads.download({ url, filename: `whadio-${stamp}.webm` });
     await downloaded(downloadId);
-    await chrome.runtime.sendMessage({ target: "offscreen", type: "revoke", url });
   } finally {
+    if (url) {
+      await chrome.runtime.sendMessage({ target: "offscreen", type: "revoke", url }).catch(() => {
+        console.warn("Whadio could not release a recording download URL.");
+      });
+    }
     pending -= 1;
   }
 }
@@ -122,7 +132,9 @@ function shouldGiveUp(failure, attempt) {
 // One recording: opens a capture, uploads its chunks in order as they fill, resumes from what the
 // server already holds after a failure, and completes it once the tab stops sending audio.
 class Upload {
-  constructor(startedAt, offscreen) {
+  constructor(startedAt, offscreen, owner) {
+    this.id = crypto.randomUUID();
+    this.owner = owner;
     this.startedAt = startedAt;
     this.offscreen = offscreen;
     this.slices = [];
@@ -222,12 +234,99 @@ class Upload {
         // Saved below instead, so the call is not lost.
       }
     }
-    await saveLocally(this.startedAt, this.slices);
+    if (this.slices.length > 0) {
+      await recovery.retain(this.recoverable());
+      this.retained = true;
+      await recovery.retry(this.id, await sessionOwner());
+    }
+  }
+
+  recoverable() {
+    return { id: this.id, startedAt: this.startedAt, slices: this.slices, owner: this.owner };
   }
 }
 
 // The recording under way in each tab, which the tab's speaker names join.
 const uploads = new Map();
+
+async function refreshRecovery() {
+  try {
+    const recordings = await recovery.list();
+    await chrome.action.setBadgeText({ text: recordings.length > 0 ? "!" : "" });
+    await chrome.storage.local.set({ recoveryChangedAt: Date.now() });
+  } catch {
+    console.warn("Whadio could not update recording recovery status.");
+    await chrome.action.setBadgeText({ text: "!" }).catch(() => {});
+  }
+}
+
+const recovery = new RecordingRecovery(recoveryStore, saveLocally, refreshRecovery);
+
+async function finishRecording(tabId, upload) {
+  pending += 1;
+  try {
+    await upload.finish();
+  } catch {
+    console.warn("Whadio could not save a recording. Open the extension to retry or discard it.");
+    if (upload.slices.length > 0 && !upload.retained) {
+      await recovery.retain(upload.recoverable());
+    }
+    await chrome.tabs
+      .sendMessage(tabId, {
+        type: "show-error",
+        error:
+          "Your recording could not be saved. Open Whadio in the toolbar to retry or discard it.",
+      })
+      .catch(() => {});
+  } finally {
+    pending -= 1;
+    await closeOffscreenIfIdle().catch(() => {
+      console.warn("Whadio could not close its idle recording document.");
+    });
+  }
+}
+
+void refreshRecovery();
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!["recovery-list", "recovery-retry", "recovery-discard"].includes(message.type)) {
+    return false;
+  }
+  // A Meet content script must not list, download or discard the browser profile's local audio.
+  if (sender.url !== chrome.runtime.getURL("popup.html")) {
+    sendResponse({ error: "Open the Whadio popup to recover recordings." });
+    return false;
+  }
+  const act = async () => {
+    const owner = await sessionOwner();
+    if (!owner) {
+      return { recordings: [], locked: (await recovery.list()).length > 0 };
+    }
+    if (message.type !== "recovery-list") {
+      if (typeof message.id !== "string") {
+        throw new Error("A recording is required.");
+      }
+      if (message.type === "recovery-retry") {
+        try {
+          await recovery.retry(message.id, owner);
+        } finally {
+          await closeOffscreenIfIdle().catch(() => {
+            console.warn("Whadio could not close its idle recording document.");
+          });
+        }
+      } else {
+        await recovery.discard(message.id, owner);
+      }
+    }
+    return { recordings: await recovery.list(owner) };
+  };
+  act().then(sendResponse, () =>
+    sendResponse({
+      error: "The recording could not be recovered. Try again; it has not been discarded.",
+    }),
+  );
+  return true;
+});
 
 // A card recording connects from its tab as "recording"; one from the offscreen document names its tab.
 function recordedTab(port) {
@@ -254,18 +353,23 @@ chrome.runtime.onConnect.addListener(async (port) => {
   if (tabId === null) {
     return;
   }
-  const upload = new Upload(Date.now(), !port.sender?.tab);
+  const owner = await sessionOwner();
+  if (!owner) {
+    return;
+  }
+  const upload = new Upload(Date.now(), !port.sender?.tab, owner);
   uploads.set(tabId, upload);
   // Opened at once rather than with the first chunk, so the meeting's time is when recording began.
   upload.queue = upload.queue.then(() => upload.send());
   port.onMessage.addListener((message) => upload.add(message.audio));
-  port.onDisconnect.addListener(async () => {
+  port.onDisconnect.addListener(() => {
     uploads.delete(tabId);
     // The tab may already be closed, so telling it and clearing its badge may fail.
     chrome.tabs.sendMessage(tabId, { type: "stopped" }).catch(() => {});
-    chrome.action.setBadgeText({ tabId, text: "" }).catch(() => {});
-    await upload.finish();
-    await closeOffscreenIfIdle();
+    chrome.action.setBadgeText({ tabId, text: null }).catch(() => {});
+    void finishRecording(tabId, upload).catch(() => {
+      console.warn("Whadio could not finish recording recovery. Open the extension to check it.");
+    });
   });
 
   await chrome.action.setBadgeText({ tabId, text: "REC" });

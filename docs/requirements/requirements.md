@@ -30,7 +30,7 @@ Recorded with the reason, so that the boundary is a decision rather than an omis
 | Native mobile and desktop applications | Android and iOS do not permit an application to capture another application's audio, so a phone application could record the room but not the call. Replaced by one responsive web interface. |
 | Publishing the extension to the Chrome Web Store | Review turnaround does not fit the semester. |
 | Platforms other than Google Meet | Their recordings can be uploaded as files instead. Direct support only if time remains. |
-| Recovering a recording interrupted by a dropped connection or a closed tab | The high-level design describes finalising a partial recording, but it is not built, so recording covers the happy path only. |
+| Recovering a recording interrupted before completion by a dropped connection or a closed tab | Server-side finalising of a partial recording is not built. This is distinct from retrying a completed local fallback recording under FR-010. |
 | Real-time transcription | Processing starts after the meeting ends. |
 | Languages other than Ukrainian and English; language-switching detection as its own feature | The glossary handles mixed speech without a separate detector. |
 | Recognising the same speakers across meetings (voice profiles) | Requires biometric voice data the system deliberately does not hold. |
@@ -114,7 +114,7 @@ restriction, never by where a meeting is filed.
 ### Capture
 
 - FR-009: On a Google Meet call the extension offers to record and reminds the user to obtain the participants' consent. Recording does not start until the user confirms that consent was obtained, and the confirmation is stored with the meeting.
-- FR-010: The extension captures the Meet tab's audio together with the user's microphone into a single recording, without joining the call as a participant. While recording it reports that recording is active and how long it has run; on stop the captured audio is complete and playable.
+- FR-010: The extension captures the Meet tab's audio together with the user's microphone into a single recording, without joining the call as a participant. While recording it reports that recording is active and how long it has run; on stop the captured audio is complete and playable. Completed recordings that need the local-download fallback are retained across browser restarts if saving fails, with Retry download and confirmed Discard in the popup. Only the original account on the same server, with an unexpired extension sign-in, may list, retry or discard its recovery copies; that sign-in may be used offline until expiry. Live recordings are not checkpointed, and a failed local backup write must be reported as temporary recovery that cannot survive a restart.
 - FR-011: Recording is offered only where the browser supports tab audio capture. Where it does not, the reason is stated and file upload is offered instead.
 - FR-012: A finished recording is delivered to a chosen workspace and folder as a meeting queued for processing, through the same ingest path as an uploaded file. Where no destination was chosen, the meeting is created in the member's personal workspace's default folder.
 - FR-013: A Member can upload an existing audio recording to a workspace. A file that is not a supported audio recording is rejected with an error and creates no meeting.
@@ -221,6 +221,9 @@ restriction, never by where a meeting is filed.
 * NFR-017 (Installability): On a clean machine that satisfies the stated resource requirements and has Docker installed, a first-time operator can bring up the development deployment and open the web UI within 30 minutes by following the installation steps, with no manual source-code edits.
 
 ## AI Usage
+
+The completed-fallback recovery clause in FR-010 and its scope clarification were prepared with
+OpenAI Codex (GPT-6.1), following the author's decisions on persistence and original-account access.
 
 This document was prepared and revised with the assistance of Claude Code (Claude Opus 5 and Claude
 Opus 5.5). The requirements derive from the mini technical specification agreed in Lab 1 and from

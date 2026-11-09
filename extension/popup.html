@@ -8,6 +8,13 @@
   <body>
     <h1>Whadio</h1>
 
+    <section id="recovery" hidden aria-labelledby="recovery-title">
+      <h2 id="recovery-title">Recordings to save</h2>
+      <p>Sign in to the original account and server to retry or discard saved recordings, even after restarting Chrome.</p>
+      <ul id="recovery-list"></ul>
+      <p id="recovery-error" class="error" role="alert" hidden></p>
+    </section>
+
     <form id="sign-in" hidden>
       <p>Sign in to your Whadio server so recordings go to your workspace.</p>
       <label class="field">Server <input id="server" type="url" required value="http://localhost:3000" /></label>

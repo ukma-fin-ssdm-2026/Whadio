@@ -69,6 +69,25 @@ button.link {
   background: #d93025;
 }
 
-#error {
+#error,
+.error {
   color: #d93025;
+}
+
+#recovery h2 {
+  font-size: 15px;
+}
+
+#recovery-list {
+  list-style: none;
+  padding: 0;
+}
+
+#recovery-list li {
+  border-bottom: 1px solid #dadce0;
+  padding-bottom: 12px;
+}
+
+#recovery-list button + button {
+  margin-top: 6px;
 }
