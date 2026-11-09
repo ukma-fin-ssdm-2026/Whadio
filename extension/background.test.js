@@ -59,6 +59,7 @@ function fakeChrome() {
     },
     downloads: {
       download: vi.fn(async () => 1),
+      search: vi.fn(async () => [{ id: 1, state: "complete" }]),
       onChanged: {
         ...downloadsChanged,
         addListener: (listener) => listener({ id: 1, state: { current: "complete" } }),
@@ -203,6 +204,32 @@ describe("a recording whose local save fails", () => {
 
     // Assert
     expect((await recoveryStore.get(recording.id)).slices).toHaveLength(15);
+  });
+
+  test("retains an interrupted local download until a later retry actually completes", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    fakeServer(failingPuts(Number.POSITIVE_INFINITY));
+    chrome.downloads.onChanged.addListener = (listener) =>
+      listener({ id: 1, state: { current: "interrupted" } });
+    chrome.downloads.search.mockResolvedValue([{ id: 1, state: "interrupted" }]);
+    const recording = await connect();
+    speak(recording, 15);
+
+    // Act
+    await hangUp(recording);
+    const [retained] = await recoveryStore.list();
+    const before = (await recoveryStore.get(retained.id)).slices;
+    chrome.downloads.search.mockResolvedValue([{ id: 1, state: "complete" }]);
+    chrome.downloads.onChanged.addListener = (listener) =>
+      listener({ id: 1, state: { current: "complete" } });
+    const after = await recover({ type: "recovery-retry", id: retained.id });
+
+    // Assert
+    expect({ slicesKept: before.length, after }).toEqual({
+      slicesKept: 15,
+      after: { recordings: [] },
+    });
   });
 
   test.for([
