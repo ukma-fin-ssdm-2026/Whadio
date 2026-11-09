@@ -5,7 +5,7 @@ scheduler) and the SPA's API client (`frontend/src/shared/api/`), as the issue s
 browser extension (`extension/`), which uploads every recording and so carries most of the risk of
 losing one.
 
-Nine findings, each with its category from the hunt's checklist: A error handling · B external
+Ten findings, each with its category from the hunt's checklist: A error handling · B external
 dependencies · C input validation · D silent failures · E performance and blocking.
 
 ## Stage 1: Findings
@@ -203,6 +203,27 @@ cover a message that is gone.
 the uploader is never notified. Processing refuses to queue the meeting's transcription again while
 the job is unfinished, so nothing retries it (NFR-014).
 
+### F10. An interrupted local download is treated as a successful save (A, D)
+
+Found while fixing F4. In `extension/background.js`, the original `downloaded` helper resolved
+on any terminal state:
+
+```js
+if (delta.id === downloadId && delta.state && delta.state.current !== "in_progress") {
+  chrome.downloads.onChanged.removeListener(listener);
+  resolve();
+}
+```
+
+**Why it is dangerous.** Chrome reports both `complete` and `interrupted`; interruption is not
+successful persistence. A cancellation, disk error or browser policy can interrupt a download
+after `chrome.downloads.download()` successfully returns its ID. The helper also registered too
+late to observe a very fast terminal event, potentially waiting forever.
+
+**Potential impact.** The extension releases the Blob and, after F4, removes its durable recovery
+copy despite the missing/incomplete file. If uploading also failed, the recording can be lost.
+This is separate from F4: no promise has to reject for F10 to occur.
+
 ### Reviewed and kept
 
 These look like the checklist's anti-patterns but are deliberate boundaries:
@@ -241,6 +262,7 @@ column describes what a user or another system sees once the chain completes.
 | F7 | `.catch(() => {})` around session revocation | The server-side session is still active | The extension session stays usable for up to 24 h after sign-out | **Low** |
 | F8 | `.catch(() => null)` without a log | The retry proceeds without knowing what the server holds | No user-visible failure, as the duplicates are absorbed; a support engineer cannot tell from the logs whether the status request failed | **Low** |
 | F9 | No lease or timeout on a published or running job | A `queued` row with `published_at` set, or a `running` row, whose message or result is gone | The meeting stays queued or processing for ever, with no notice, and its transcription cannot be queued again | **Medium** |
+| F10 | Every terminal download state is accepted as success; observation starts after creation | An interrupted save is marked successful, or an early terminal event is missed | The last local copy is discarded without a complete file, or recovery stays stuck | **High** |
 
 F5 is High because a few stalled calls fill the database pool and the executor that Argon2 sign-in
 hashing shares, and a single one stalls the scheduler's sequential tick.
@@ -259,6 +281,8 @@ answer or no answer (§3.1). The fixes, before and after, are in
 | F5 | No answer: a call that waits half an hour holds a transaction and an executor thread, and stops the scheduler | **Fail-fast** in the API: an upload or a chunk that storage does not serve answers `503` within one storage operation's budget of about 16 s; a capture completion whose read fails also runs a cleanup delete, about 31.5 s at worst, so the extension's 25 s deadline fires first and the call is saved locally. **Fail-safe** in cleanup: a delete that fails keeps its row for the next pass | Timeout per connection and read → bounded retry with full jitter, for reads and deletes only → no circuit breaker: the API builds a storage client for each request, so a breaker would forget every failure, and one storage operation already ends within about 16 s → `503` (existing) / next scheduler pass (existing) | Andrii, `fix(#287): give object storage calls a timeout and turn off hidden retries` |
 | F6 | No answer for reads: a page loads forever. A wrong answer for writes: giving up on an upload that still lands invites a duplicate | **Fail-fast** for reads: the read ends with an error that says it timed out, and the page shows it instead of loading forever. Writes keep no client deadline | Timeout on reads → retry by React Query (existing) → clear error message | Zlata, `fix(#287): give the web app's reads a deadline` |
 | F9 | No answer: a meeting that waits for ever is worse than one that fails with a notice and can be uploaded again | **Fail-safe** while attempts remain: the job is published again. **Fail-fast** at the cap: the meeting is failed | Timeout per job (unstarted, or running per type) → bounded retry: the job goes back to the publisher, 5 attempts → no circuit breaker: the scheduler only looks at the database, and a republished job waits in the queue instead of calling anything → degradation: a failed meeting with a notice, which the member can upload again | Andrii, `fix(#294): return published jobs that no worker started to the queue` |
+
+| F10 | A wrong answer: reporting an interrupted download as saved discards the last copy of the recording | **Fail-safe.** Only `complete` confirms a save; an interrupted download leaves the recording available for Retry download or Discard through F4's recovery flow | Observe before starting → reconcile download history → validate the terminal state → retained fallback and manual retry (F4) | Valeriia, `fix(#287): retain recovery copies after interrupted downloads` |
 
 ## Stage 4: The finding to present
 
@@ -279,4 +303,4 @@ answer or no answer (§3.1). The fixes, before and after, are in
 The findings and this report were drafted with Claude Code (Claude Opus 5.5) and
 reviewed by the team.
 
-F4's remediation and tests were prepared with OpenAI Codex (GPT-6.1); reviewed by Valeriia.
+F4, F10s's remediation and tests were prepared with OpenAI Codex (GPT-6.1); reviewed by Valeriia.
