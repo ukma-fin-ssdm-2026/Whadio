@@ -353,16 +353,18 @@ chrome.runtime.onConnect.addListener(async (port) => {
   if (tabId === null) {
     return;
   }
-  const owner = await sessionOwner();
-  if (!owner) {
-    return;
-  }
-  const upload = new Upload(Date.now(), !port.sender?.tab, owner);
-  uploads.set(tabId, upload);
-  // Opened at once rather than with the first chunk, so the meeting's time is when recording began.
-  upload.queue = upload.queue.then(() => upload.send());
-  port.onMessage.addListener((message) => upload.add(message.audio));
+  let disconnected = false;
+  let upload;
+  port.onMessage.addListener(({ audio }) => {
+    if (typeof audio === "string") {
+      upload?.add(audio);
+    }
+  });
   port.onDisconnect.addListener(() => {
+    disconnected = true;
+    if (!upload) {
+      return;
+    }
     uploads.delete(tabId);
     // The tab may already be closed, so telling it and clearing its badge may fail.
     chrome.tabs.sendMessage(tabId, { type: "stopped" }).catch(() => {});
@@ -372,7 +374,36 @@ chrome.runtime.onConnect.addListener(async (port) => {
     });
   });
 
-  await chrome.action.setBadgeText({ tabId, text: "REC" });
+  const owner = await sessionOwner().catch(() => null);
+  if (disconnected) {
+    return;
+  }
+  const error = !owner
+    ? "Sign in to Whadio before recording."
+    : uploads.has(tabId)
+      ? "Whadio is already recording this tab."
+      : null;
+  const startedAt = Date.now();
+  try {
+    port.postMessage(
+      error
+        ? { type: "recording-rejected", error }
+        : {
+            type: "recording-ready",
+            startedAt,
+          },
+    );
+  } catch {
+    return;
+  }
+  if (error) {
+    return;
+  }
+  upload = new Upload(startedAt, !port.sender?.tab, owner);
+  uploads.set(tabId, upload);
+  // Opened at once so the capture time is when recording began.
+  upload.queue = upload.queue.then(() => upload.send());
+  await chrome.action.setBadgeText({ tabId, text: "REC" }).catch(() => {});
 });
 
 // Installs signed in before the token moved to session storage still hold it where content scripts can read it.
@@ -434,7 +465,10 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
     return;
   }
   try {
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["recorder.js"] });
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ["recording-port.js", "recorder.js"],
+    });
     const status = await chrome.tabs.sendMessage(tab.id, { type: "status" });
     if (!(await signedIn())) {
       await chrome.tabs.sendMessage(tab.id, { type: "ask-sign-in" });

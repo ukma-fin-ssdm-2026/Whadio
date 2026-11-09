@@ -128,7 +128,12 @@ function answerAfter(delay, signal, response) {
 }
 
 function port(tabId = 7) {
-  return { name: `recording:${tabId}`, onMessage: event(), onDisconnect: event() };
+  return {
+    name: `recording:${tabId}`,
+    onMessage: event(),
+    onDisconnect: event(),
+    postMessage: vi.fn(),
+  };
 }
 
 async function connect(tabId = 7) {
@@ -183,6 +188,48 @@ function recover(message, sender = { url: "chrome-extension://whadio/popup.html"
     }
   });
 }
+
+describe("recording registration", () => {
+  test("rejects a port when the session has expired", async () => {
+    // Arrange
+    chrome.storage.session.get = async () => ({ expiresAt: STARTED_AT.toISOString() });
+    const requests = fakeServer();
+
+    // Act
+    const recording = await connect();
+
+    // Assert
+    expect({
+      replies: recording.postMessage.mock.calls,
+      requests,
+    }).toEqual({
+      replies: [[{ type: "recording-rejected", error: "Sign in to Whadio before recording." }]],
+      requests: [],
+    });
+  });
+
+  test("ignores a port that disconnects while the session is being read", async () => {
+    // Arrange
+    const session = await chrome.storage.session.get();
+    const { promise, resolve } = Promise.withResolvers();
+    chrome.storage.session.get = () => promise;
+    const requests = fakeServer();
+    const recording = port();
+
+    // Act
+    const connecting = chrome.runtime.onConnect.listeners[0](recording);
+    await hangUp(recording);
+    resolve(session);
+    await connecting;
+
+    // Assert
+    expect({
+      replies: recording.postMessage.mock.calls,
+      recordingBadge: chrome.action.setBadgeText.mock.calls.some(([badge]) => badge.text === "REC"),
+      requests,
+    }).toEqual({ replies: [], recordingBadge: false, requests: [] });
+  });
+});
 
 describe("a recording whose local save fails", () => {
   async function failSaving() {

@@ -4,7 +4,11 @@ let root;
 
 function event() {
   const listeners = [];
-  return { listeners, addListener: (listener) => listeners.push(listener) };
+  return {
+    listeners,
+    addListener: (listener) => listeners.push(listener),
+    removeListener: (listener) => listeners.splice(listeners.indexOf(listener), 1),
+  };
 }
 
 function fakeChrome({ signedIn = true, unreachable = false } = {}) {
@@ -31,6 +35,7 @@ function fakeChrome({ signedIn = true, unreachable = false } = {}) {
 
 async function load(options) {
   globalThis.chrome = fakeChrome(options);
+  await import("./recording-port.js");
   await import("./recorder.js");
 }
 
@@ -96,7 +101,66 @@ beforeEach(() => {
 afterEach(() => {
   vi.clearAllTimers();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+test("a rejected recording port releases the picked tab and microphone without starting", async () => {
+  // Arrange
+  await load();
+  const tabTrack = { stop: vi.fn() };
+  const microphoneTrack = { stop: vi.fn() };
+  const tab = {
+    getVideoTracks: () => [],
+    getAudioTracks: () => [tabTrack],
+    getTracks: () => [tabTrack],
+  };
+  const close = vi.fn(async () => {});
+  const createSource = () => ({ connect() {} });
+  vi.stubGlobal("navigator", {
+    mediaDevices: {
+      getDisplayMedia: async () => tab,
+      getUserMedia: async () => ({ getTracks: () => [microphoneTrack] }),
+    },
+  });
+  vi.stubGlobal(
+    "AudioContext",
+    class {
+      createMediaStreamDestination = () => ({});
+      createMediaStreamSource = createSource;
+      close = close;
+    },
+  );
+  const createRecorder = vi.fn();
+  vi.stubGlobal("MediaRecorder", createRecorder);
+  const port = { onMessage: event(), onDisconnect: event(), disconnect: vi.fn() };
+  chrome.runtime.connect.mockReturnValue(port);
+
+  // Act
+  root.querySelector("button.primary").disabled = false;
+  root.querySelector("button.primary").click();
+  await vi.waitFor(() => expect(port.onMessage.listeners).toHaveLength(1));
+  const startedBeforeReply = createRecorder.mock.calls.length;
+  port.onMessage.listeners[0]({
+    type: "recording-rejected",
+    error: "Sign in to Whadio before recording.",
+  });
+  await vi.waitFor(() => expect(cardError()).toBe("Sign in to Whadio before recording."));
+
+  // Assert
+  expect({
+    startedBeforeReply,
+    totalStarts: createRecorder.mock.calls.length,
+    tabStopped: tabTrack.stop.mock.calls.length,
+    microphoneStopped: microphoneTrack.stop.mock.calls.length,
+    audioClosed: close.mock.calls.length,
+  }).toEqual({
+    startedBeforeReply: 0,
+    totalStarts: 0,
+    tabStopped: 1,
+    microphoneStopped: 1,
+    audioClosed: 1,
+  });
 });
 
 describe("the recorder's answers to the extension", () => {

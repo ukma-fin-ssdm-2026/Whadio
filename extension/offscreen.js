@@ -44,12 +44,28 @@ async function record(tabId, streamId) {
 
   // The background uploads the audio as it arrives and completes the recording when this port disconnects.
   const port = chrome.runtime.connect({ name: `recording:${tabId}` });
+  let startedAt;
+  try {
+    startedAt = await globalThis.whadioRecordingReady(port);
+  } catch (failure) {
+    for (const stream of [tab, microphone]) {
+      for (const track of stream.getTracks()) {
+        track.stop();
+      }
+    }
+    await context.close();
+    throw failure;
+  }
   let sent = Promise.resolve();
+  let disconnected = false;
   const recorder = new MediaRecorder(mix.stream, { mimeType: "audio/webm;codecs=opus" });
   recorder.addEventListener("dataavailable", (event) => {
-    sent = sent.then(async () =>
-      port.postMessage({ audio: base64(await event.data.arrayBuffer()) }),
-    );
+    sent = sent.then(async () => {
+      const audio = base64(await event.data.arrayBuffer());
+      if (!disconnected) {
+        port.postMessage({ audio });
+      }
+    });
   });
   recorder.addEventListener(
     "stop",
@@ -73,13 +89,14 @@ async function record(tabId, streamId) {
   });
   // A restarted service worker has lost this recording's upload, so nothing could stop it or take its audio.
   port.onDisconnect.addListener(() => {
+    disconnected = true;
     if (recorder.state !== "inactive") {
       recorder.stop();
     }
   });
   recorder.start(1000);
   recordings.set(tabId, recorder);
-  return { startedAt: Date.now() };
+  return { startedAt };
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

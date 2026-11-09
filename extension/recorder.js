@@ -97,12 +97,28 @@ if (!globalThis.whadioRecorder) {
     // uploads it as it arrives and completes the recording when this port disconnects, whether the recording
     // stopped or the page went away.
     const port = chrome.runtime.connect({ name: "recording" });
+    let startedAt;
+    try {
+      startedAt = await globalThis.whadioRecordingReady(port);
+    } catch (failure) {
+      for (const stream of [tab, microphone]) {
+        for (const track of stream.getTracks()) {
+          track.stop();
+        }
+      }
+      await context.close();
+      throw failure;
+    }
     let sent = Promise.resolve();
+    let disconnected = false;
     const recorder = new MediaRecorder(mix.stream, { mimeType: "audio/webm;codecs=opus" });
     recorder.addEventListener("dataavailable", (event) => {
-      sent = sent.then(async () =>
-        port.postMessage({ audio: base64(await event.data.arrayBuffer()) }),
-      );
+      sent = sent.then(async () => {
+        const audio = base64(await event.data.arrayBuffer());
+        if (!disconnected) {
+          port.postMessage({ audio });
+        }
+      });
     });
     recorder.addEventListener("stop", () => sent.then(() => port.disconnect()), { once: true });
     recorder.start(1000);
@@ -116,7 +132,13 @@ if (!globalThis.whadioRecorder) {
       }
       void context.close();
     };
-    began(Date.now(), finish);
+    began(startedAt, finish);
+    port.onDisconnect.addListener(() => {
+      disconnected = true;
+      if (session?.finish === finish) {
+        stop();
+      }
+    });
     tab.getAudioTracks()[0].addEventListener("ended", () => {
       if (session?.finish === finish) {
         stop();
