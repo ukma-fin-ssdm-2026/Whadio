@@ -333,3 +333,21 @@ body.page .card {
   margin: 0;
   color: var(--text);
 }
+
+#recovery h2 {
+  font-size: 15px;
+}
+
+#recovery-list {
+  list-style: none;
+  padding: 0;
+}
+
+#recovery-list li {
+  border-bottom: 1px solid #dadce0;
+  padding-bottom: 12px;
+}
+
+#recovery-list button + button {
+  margin-top: 6px;
+}

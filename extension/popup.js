@@ -1,4 +1,7 @@
 import { api, insecureServer, originPattern, signedIn, signIn, signOut } from "./api.js";
+import { showRecovery } from "./recovery-popup.js";
+
+void showRecovery();
 
 const MEET_CALL = /^https:\/\/meet\.google\.com\/(?:meet\/)?[a-z]{3}-[a-z]{4}-[a-z]{3}(?:[/?#]|$)/;
 
