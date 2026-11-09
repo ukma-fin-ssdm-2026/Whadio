@@ -18,25 +18,39 @@ function downloaded(downloadId) {
   });
 }
 
-// The offscreen document records the calls; it is closed once nothing is recording, starting or saving.
-async function offscreen() {
-  if (!(await chrome.offscreen.hasDocument())) {
-    await chrome.offscreen.createDocument({
-      url: "offscreen.html",
-      reasons: ["USER_MEDIA", "BLOBS"],
-      justification:
-        "Records the Meet call and turns a recording the server did not take into a file to download.",
-    });
-  }
+// A caller reserves the document before asking for it, and waits for any in-flight close.
+let pending = 0;
+let offscreenTransition = Promise.resolve();
+
+function updateOffscreen(action) {
+  const transition = offscreenTransition.then(action);
+  offscreenTransition = transition.catch(() => {});
+  return transition;
 }
 
-// Recordings being started or saved, which keep the offscreen document open while no upload is under way.
-let pending = 0;
+function offscreen() {
+  return updateOffscreen(async () => {
+    if (!(await chrome.offscreen.hasDocument())) {
+      await chrome.offscreen.createDocument({
+        url: "offscreen.html",
+        reasons: ["USER_MEDIA", "BLOBS"],
+        justification:
+          "Records the Meet call and turns a recording the server did not take into a file to download.",
+      });
+    }
+  });
+}
 
-async function closeOffscreenIfIdle() {
-  if (pending === 0 && uploads.size === 0 && (await chrome.offscreen.hasDocument())) {
-    await chrome.offscreen.closeDocument();
-  }
+function offscreenIdle() {
+  return pending === 0 && uploads.size === 0;
+}
+
+function closeOffscreenIfIdle() {
+  return updateOffscreen(async () => {
+    if (offscreenIdle() && (await chrome.offscreen.hasDocument()) && offscreenIdle()) {
+      await chrome.offscreen.closeDocument();
+    }
+  });
 }
 
 // Keep each port message well below Chromium's serialized message limit. Base64 can be split on four-character boundaries.
