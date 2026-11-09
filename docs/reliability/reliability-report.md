@@ -43,16 +43,16 @@ could disappear, no recovery action was offered, and idle-document cleanup was s
 save from having its offscreen document closed. The fallback in `Upload.finish` now does:
 
 ```js
-await recovery.retain(this.recoverable());
 this.retained = true;
-await recovery.retry(this.id);
+await recovery.retain(this.recoverable(), sessionOwner);
 ```
 
 `extension/recovery-store.js` commits the audio slices, recording UUID/start time and original
 server/user ID in
 the extension origin's IndexedDB before the first download attempt. A strict-durability write
 transaction must complete before downloading. `extension/recovery.js` keeps failed saves and
-serializes retry/discard for each recording. A successful download removes its recovery entry;
+holds a per-recording lock across the backup write and the initial download, and uses the same
+lock for retry and discard. A successful download removes its recovery entry;
 a confirmed Discard deletes only the chosen entry. Several recordings remain independent.
 `saveLocally` releases a created Blob URL even when its download request rejects. A cleanup
 failure produces a fixed warning, not an unhandled rejection or a raw exception in the logs.

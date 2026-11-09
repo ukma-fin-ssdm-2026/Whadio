@@ -33,7 +33,52 @@ test("a failed retry retains the saved copy for the next attempt", async () => {
   expect(await recovery.list()).toEqual([{ id: "one", startedAt: 1, busy: false }]);
 });
 
-test("retaining a recording commits its backup before a download can start", async () => {
+test("a pending backup blocks discard and starts downloading only after commit", async () => {
+  // Arrange
+  const { recovery, store, download } = setup();
+  const { promise: commit, resolve: allowCommit } = Promise.withResolvers();
+  const { promise: saving, reject: failSave } = Promise.withResolvers();
+  const put = store.put.getMockImplementation();
+  store.put.mockImplementation(async (value) => {
+    await commit;
+    await put(value);
+  });
+  download.mockReturnValueOnce(saving);
+  const pending = recovery.retain(recording, async () => owner).catch(() => {});
+
+  // Act
+  const hidden = await recovery.list(owner);
+  const earlyDiscard = await recovery
+    .discard(recording.id, owner)
+    .catch((failure) => failure.message);
+  const downloadsBeforeCommit = download.mock.calls.length;
+  allowCommit();
+  await vi.waitFor(() => expect(download).toHaveBeenCalledOnce());
+  const discardDuringSave = await recovery
+    .discard(recording.id, owner)
+    .catch((failure) => failure.message);
+  failSave(new Error("Disk unavailable"));
+  await pending;
+  await recovery.discard(recording.id, owner);
+  const restarted = new RecordingRecovery(store, download, async () => {});
+
+  // Assert
+  expect({
+    hidden,
+    earlyDiscard,
+    downloadsBeforeCommit,
+    discardDuringSave,
+    afterRestart: await restarted.list(owner),
+  }).toEqual({
+    hidden: [],
+    earlyDiscard: "This recording is already being saved.",
+    downloadsBeforeCommit: 0,
+    discardDuringSave: "This recording is already being saved.",
+    afterRestart: [],
+  });
+});
+
+test("retaining a recording waits for its backup write", async () => {
   // Arrange
   const { recovery, store } = setup();
   let commit;
@@ -105,7 +150,7 @@ test("concurrent retries cannot download the same recording twice or discard it 
 
   // Act
   await expect(recovery.retry(recording.id, owner)).rejects.toThrow("already being saved");
-  await expect(recovery.discard(recording.id, owner)).rejects.toThrow("Wait for the download");
+  await expect(recovery.discard(recording.id, owner)).rejects.toThrow("already being saved");
   finish();
   await first;
 
