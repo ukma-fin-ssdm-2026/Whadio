@@ -4,6 +4,14 @@ All notable changes to Whadio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-11-09
+
+### Added
+
+- Rename speakers in the web app ([#313](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/313))
+- Add a workspace members page ([#331](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/331))
+- Change roles and remove members in the web app ([#333](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/333))
+
 ## [0.11.0] - 2026-11-09
 
 ### Added
