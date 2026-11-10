@@ -4,6 +4,12 @@ All notable changes to Whadio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1] - 2026-11-10
+
+### Fixed
+
+- Delete expired sessions on every scheduler run ([#327](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/327))
+
 ## [0.12.0] - 2026-11-09
 
 ### Added

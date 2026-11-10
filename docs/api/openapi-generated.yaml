@@ -23,7 +23,7 @@ info:
     - **Visibility:** a resource the caller cannot see is `404`, never `403`, so its existence does
       not leak. `403` means the caller can see it but their role does not allow the action.
     - **Time:** ISO 8601 with an offset; returned in UTC.
-  version: 0.12.0
+  version: 0.12.1
 paths:
   /api/v1/invitations/{invitation_id}/preview:
     post:
