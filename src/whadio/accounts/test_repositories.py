@@ -11,9 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from conftest import AsyncDatabase
 
 from ..shared.database import DatabaseSettings
-from .enums import InvitationRole, InvitationStatus, WorkspaceRole
-from .models import Invitation, PendingRegistration, WorkspaceMembership
-from .repositories import InvitationRepository, MembershipRepository, RegistrationRepository
+from .enums import InvitationRole, InvitationStatus, SessionKind, WorkspaceRole
+from .models import Invitation, PendingRegistration, Session, WorkspaceMembership
+from .repositories import (
+    InvitationRepository,
+    MembershipRepository,
+    RegistrationRepository,
+    SessionRepository,
+)
 
 
 @dataclass(frozen=True)
@@ -192,6 +197,79 @@ def test_invitation_cleanup_removes_all_expired_statuses_and_preserves_valid_row
 
     # Assert
     assert async_database.run(scenario) == (8, 0, 4)
+
+
+SESSION_CLEANUP_AT = datetime(1991, 3, 4, 10, 15, tzinfo=UTC)
+
+
+async def add_session_expiring_at(
+    session: AsyncSession, kind: SessionKind, expires_at: datetime
+) -> UUID:
+    user = await AsyncDatabase.add_account(session, "OriginalPassword1")
+    sign_in = Session(
+        user_id=user.user_id,
+        kind=kind,
+        token_hash=uuid4().hex,
+        created_at=expires_at - timedelta(days=1),
+        expires_at=expires_at,
+    )
+    session.add(sign_in)
+    await session.flush()
+    return sign_in.session_id
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("kind", list(SessionKind))
+@pytest.mark.parametrize(("offset", "kept"), [(-1, False), (0, False), (1, True)])
+def test_session_cleanup_deletes_sessions_expired_by_now_and_keeps_later_ones(
+    async_database: AsyncDatabase, kind: SessionKind, offset: int, *, kept: bool
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> bool:
+        session_id = await add_session_expiring_at(
+            session, kind, SESSION_CLEANUP_AT + timedelta(microseconds=offset)
+        )
+        # Act
+        await SessionRepository(session).delete_expired(SESSION_CLEANUP_AT)
+        return await session.get(Session, session_id, populate_existing=True) is not None
+
+    # Assert
+    assert async_database.run(scenario) is kept
+
+
+@pytest.mark.slow
+def test_session_cleanup_returns_how_many_sessions_it_deleted(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> int:
+        for kind, offset in (
+            (SessionKind.BROWSER, 0),
+            (SessionKind.EXTENSION, -1),
+            (SessionKind.BROWSER, 1),
+        ):
+            await add_session_expiring_at(
+                session, kind, SESSION_CLEANUP_AT + timedelta(microseconds=offset)
+            )
+        # Act
+        return await SessionRepository(session).delete_expired(SESSION_CLEANUP_AT)
+
+    # Assert
+    assert async_database.run(scenario) == 2
+
+
+@pytest.mark.slow
+def test_repeated_session_cleanup_deletes_nothing_more(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> int:
+        await add_session_expiring_at(session, SessionKind.BROWSER, SESSION_CLEANUP_AT)
+        repository = SessionRepository(session)
+        await repository.delete_expired(SESSION_CLEANUP_AT)
+        # Act
+        return await repository.delete_expired(SESSION_CLEANUP_AT)
+
+    # Assert
+    assert async_database.run(scenario) == 0
 
 
 @pytest.mark.slow

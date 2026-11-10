@@ -26,6 +26,7 @@ from .enums import InvitationRole, NotesTemplate, RegistrationMode, SessionKind,
 from .models import User
 from .passwords import IPasswordHasher, is_password_strong, password_rule_message
 from .repositories import (
+    IExpiredSessionRepository,
     IIdentityRepository,
     IInvitationRepository,
     IMcpKeyRepository,
@@ -500,6 +501,14 @@ class InvitationCleanupService:
 
     async def remove_expired(self, now: datetime) -> int:
         return await self._invitations.delete_expired(now)
+
+
+class SessionCleanupService:
+    def __init__(self, sessions: IExpiredSessionRepository) -> None:
+        self._sessions: IExpiredSessionRepository = sessions
+
+    async def remove_expired(self, now: datetime) -> int:
+        return await self._sessions.delete_expired(now)
 
 
 class RegistrationCleanupService:

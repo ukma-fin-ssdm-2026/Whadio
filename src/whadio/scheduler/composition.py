@@ -12,11 +12,13 @@ from ..accounts.repositories import (
     InvitationRepository,
     MembershipRepository,
     RegistrationRepository,
+    SessionRepository,
 )
 from ..accounts.reset_repository import PasswordResetRepository
 from ..accounts.services import (
     InvitationCleanupService,
     RegistrationCleanupService,
+    SessionCleanupService,
     WorkspaceMembershipService,
 )
 from ..meetings.models import Meeting
@@ -121,6 +123,10 @@ class RegistrationCleanupJobs:
             return await PasswordResetCleanupService(
                 PasswordResetRepository(session)
             ).remove_expired(now)
+
+    async def remove_expired_sessions(self, now: datetime) -> int:
+        async with self._database.transaction() as session:
+            return await SessionCleanupService(SessionRepository(session)).remove_expired(now)
 
 
 def notification_drainer(
