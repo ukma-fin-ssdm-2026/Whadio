@@ -176,6 +176,37 @@ jobs:
             htmlcov-ci/
           retention-days: 14
 
+  reliability:
+    name: Reliability tests
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+
+      # No extras: selecting by path leaves out the ASR tests, which import the ML packages.
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Start PostgreSQL and migrate the test database
+        env:
+          WHADIO_DB_HOST: 127.0.0.1
+        run: |
+          cp .env.example .env
+          docker compose up --detach --wait postgres
+          uv run --frozen task db:upgrade
+
+      - name: Run the reliability tests
+        env:
+          WHADIO_DB_HOST: 127.0.0.1
+        run: |
+          WHADIO_TEST_DATABASE_URL="$(uv run --frozen python -I -c 'from whadio.shared.database import DatabaseSettings; print(DatabaseSettings().application_url().render_as_string(False))')"
+          export WHADIO_TEST_DATABASE_URL
+          uv run --frozen task test:reliability
+
   image:
     name: Worker image
     runs-on: [self-hosted, linux]
@@ -195,7 +226,7 @@ jobs:
 
   ci-passed:
     name: CI passed
-    needs: [static, frontend, backend, image]
+    needs: [static, frontend, backend, reliability, image]
     # This is the required check: GitHub counts a skipped job as passed, so it must never skip.
     if: always()
     runs-on: [self-hosted, linux]
