@@ -1,16 +1,32 @@
+import { zodResolver } from "@hookform/resolvers/zod";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
-import { Alert, Button, ButtonBase, Chip, Stack, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, ButtonBase, Chip, Stack, TextField, Typography } from "@mui/material";
 import { memo, useEffect, useRef, useState } from "react";
-import { type Control, useController, useForm, useWatch } from "react-hook-form";
-import type { TranscriptRead } from "@/shared/api/types";
+import {
+  type Control,
+  type UseFormSetError,
+  useController,
+  useForm,
+  useFormState,
+  useWatch,
+} from "react-hook-form";
+import type { ApiError } from "@/shared/api/errors";
+import type { RevisionInput, TranscriptRead } from "@/shared/api/types";
 import { formatTimestamp } from "@/shared/lib/format";
 import { countOf } from "@/shared/lib/plural";
+import { FormTextField } from "@/shared/ui/FormTextField";
 import { useNotify } from "@/shared/ui/NotifyProvider";
 import { useEditTranscript } from "../api/meetings";
 import type { Meeting } from "../model";
 import { SegmentRow } from "./SegmentRow";
 import { type LabelledSegment, NO_MATCH } from "./segments";
-import { countChanges, draftOf, revisionInput, type TranscriptDraft } from "./transcript-draft";
+import {
+  countChanges,
+  draftOf,
+  revisionInput,
+  type TranscriptDraft,
+  transcriptDraft,
+} from "./transcript-draft";
 
 interface SegmentFieldProps {
   control: Control<TranscriptDraft>;
@@ -51,6 +67,7 @@ function SegmentField({ control, index, label, onDone }: SegmentFieldProps) {
 interface EditableSegmentProps {
   control: Control<TranscriptDraft>;
   segment: LabelledSegment;
+  speaker: string;
   active: boolean;
   onActive: (index: number | null) => void;
 }
@@ -58,6 +75,7 @@ interface EditableSegmentProps {
 const EditableSegment = memo(function EditableSegment({
   control,
   segment,
+  speaker,
   active,
   onActive,
 }: EditableSegmentProps) {
@@ -76,7 +94,7 @@ const EditableSegment = memo(function EditableSegment({
 
   return (
     <SegmentRow
-      speaker={segment.speaker}
+      speaker={speaker}
       startSeconds={segment.start_seconds}
       marker={text !== segment.text && <Chip label="Changed" size="small" variant="outlined" />}
     >
@@ -112,17 +130,64 @@ const EditableSegment = memo(function EditableSegment({
   );
 });
 
+interface SpeakerFieldsProps {
+  control: Control<TranscriptDraft>;
+  base: TranscriptRead;
+}
+
+function SpeakerFields({ control, base }: SpeakerFieldsProps) {
+  const segmentCounts = new Map<string | null, number>();
+  for (const { speaker_id } of base.segments) {
+    segmentCounts.set(speaker_id, (segmentCounts.get(speaker_id) ?? 0) + 1);
+  }
+
+  return (
+    <Stack sx={{ gap: 1.5, pb: 2, borderBottom: 1, borderBottomColor: "divider" }}>
+      <Typography variant="subtitle1" component="h3">
+        Speakers
+      </Typography>
+      <Box
+        sx={{
+          display: "grid",
+          gap: 1.5,
+          gridTemplateColumns: { sm: "repeat(auto-fill, minmax(15rem, 1fr))" },
+        }}
+      >
+        {base.speakers.map(({ id, display_name }, index) => (
+          <FormTextField
+            key={id}
+            control={control}
+            name={`speakers.${index}.name`}
+            label={display_name}
+            size="small"
+            autoComplete="off"
+            helperText={`Applies to ${countOf(segmentCounts.get(id) ?? 0, "segment")}`}
+          />
+        ))}
+      </Box>
+    </Stack>
+  );
+}
+
 interface EditBarProps {
   control: Control<TranscriptDraft>;
   base: TranscriptRead;
   pending: boolean;
-  error: string | undefined;
   onCancel: () => void;
+  onUnsavedChange: (unsaved: boolean) => void;
 }
 
-function EditBar({ control, base, pending, error, onCancel }: EditBarProps) {
-  const segments = useWatch({ control, name: "segments" });
-  const changes = countChanges(revisionInput(base, { segments }));
+function EditBar({ control, base, pending, onCancel, onUnsavedChange }: EditBarProps) {
+  const [speakers, segments] = useWatch({ control, name: ["speakers", "segments"] });
+  const { errors } = useFormState({ control });
+  const changes = countChanges(revisionInput(base, { speakers, segments }));
+  const error = errors.root?.server?.message;
+  const unsaved = changes > 0;
+
+  useEffect(() => {
+    onUnsavedChange(unsaved);
+    return () => onUnsavedChange(false);
+  }, [unsaved, onUnsavedChange]);
 
   return (
     <Stack
@@ -161,12 +226,34 @@ function EditBar({ control, base, pending, error, onCancel }: EditBarProps) {
 const notSaved = (changes: number) =>
   `Your ${countOf(changes, "change")} ${changes === 1 ? "was" : "were"} not saved.`;
 
+// The server names a speaker by its place in the request, which lists only the renamed ones.
+const SENT_SPEAKER_NAME = /^speakers\.(\d+)\.display_name$/;
+
+function showServerError(
+  error: ApiError,
+  input: RevisionInput,
+  base: TranscriptRead,
+  setError: UseFormSetError<TranscriptDraft>,
+) {
+  let onField = false;
+  for (const { field, message } of error.details) {
+    const sent = SENT_SPEAKER_NAME.exec(field ?? "")?.[1];
+    const id = sent === undefined ? undefined : input.speakers?.[Number(sent)]?.id;
+    const index = base.speakers.findIndex((speaker) => speaker.id === id);
+    if (index < 0) continue;
+    setError(`speakers.${index}.name`, { type: "server", message });
+    onField = true;
+  }
+  if (!onField) setError("root.server", { type: "server", message: error.message });
+}
+
 interface TranscriptEditorProps {
   meeting: Pick<Meeting, "id" | "state">;
   base: TranscriptRead;
   segments: LabelledSegment[];
   onClose: () => void;
   onShowCurrent: () => void;
+  onUnsavedChange: (unsaved: boolean) => void;
 }
 
 export function TranscriptEditor({
@@ -175,11 +262,21 @@ export function TranscriptEditor({
   segments,
   onClose,
   onShowCurrent,
+  onUnsavedChange,
 }: TranscriptEditorProps) {
   const notify = useNotify();
   const edit = useEditTranscript(meeting);
   const [active, setActive] = useState<number | null>(null);
-  const { control, handleSubmit } = useForm({ defaultValues: draftOf(base) });
+  const { control, handleSubmit, setError } = useForm({
+    resolver: zodResolver(transcriptDraft),
+    defaultValues: draftOf(base),
+  });
+  const names = useWatch({ control, name: "speakers" });
+  const speakerIndex = new Map(base.speakers.map(({ id }, index) => [id, index]));
+  const speakerOf = ({ speaker_id, speaker }: LabelledSegment) => {
+    const index = speaker_id === null ? undefined : speakerIndex.get(speaker_id);
+    return (index === undefined ? "" : names[index]?.name.trim()) || speaker;
+  };
 
   const submit = handleSubmit((draft) => {
     const input = revisionInput(base, draft);
@@ -191,7 +288,10 @@ export function TranscriptEditor({
         onShowCurrent();
       },
       onError: (error) => {
-        if (error.code !== "STALE_REVISION") return;
+        if (error.code !== "STALE_REVISION") {
+          showServerError(error, input, base, setError);
+          return;
+        }
         notify(
           `Someone else edited this transcript, so it was reloaded. ${notSaved(countChanges(input))}`,
           "warning",
@@ -204,11 +304,13 @@ export function TranscriptEditor({
 
   return (
     <Stack component="form" noValidate onSubmit={submit} sx={{ gap: 1.5 }}>
+      {base.speakers.length > 0 && <SpeakerFields control={control} base={base} />}
       {segments.map((segment) => (
         <EditableSegment
           key={segment.id}
           control={control}
           segment={segment}
+          speaker={speakerOf(segment)}
           active={active === segment.index}
           onActive={setActive}
         />
@@ -218,8 +320,8 @@ export function TranscriptEditor({
         control={control}
         base={base}
         pending={edit.isPending}
-        error={edit.error?.message}
         onCancel={onClose}
+        onUnsavedChange={onUnsavedChange}
       />
     </Stack>
   );

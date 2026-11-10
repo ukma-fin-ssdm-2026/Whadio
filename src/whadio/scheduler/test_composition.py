@@ -12,8 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from conftest import AsyncDatabase
 
 from ..accounts.contracts import UserProfile
-from ..accounts.enums import InvitationRole, WorkspaceRole
-from ..accounts.models import Invitation, PasswordReset, PendingRegistration, WorkspaceMembership
+from ..accounts.enums import InvitationRole, SessionKind, WorkspaceRole
+from ..accounts.models import (
+    Invitation,
+    PasswordReset,
+    PendingRegistration,
+    Session,
+    WorkspaceMembership,
+)
 from ..accounts.repositories import InvitationIssue, InvitationRepository, RegistrationRepository
 from ..accounts.reset_repository import PasswordResetRepository
 from ..meetings.models import Meeting
@@ -190,6 +196,38 @@ def test_scheduler_registration_job_deletes_expired_password_reset_links(
 
     # Assert
     assert async_database.run(scenario)
+
+
+@pytest.mark.slow
+def test_scheduler_session_job_deletes_an_expired_session_in_its_own_transaction(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    now = datetime(1992, 6, 8, 14, tzinfo=UTC)
+
+    async def scenario(session: AsyncSession) -> tuple[bool, bool]:
+        user = await AsyncDatabase.add_account(session, "OriginalPassword1")
+        expired, live = (
+            Session(
+                user_id=user.user_id,
+                kind=SessionKind.EXTENSION,
+                token_hash=uuid4().hex,
+                created_at=now - timedelta(hours=24),
+                expires_at=now + lifetime_left,
+            )
+            for lifetime_left in (timedelta(0), timedelta(hours=1))
+        )
+        session.add_all((expired, live))
+        await session.flush()
+        # Act
+        await RegistrationCleanupJobs(SavepointTransactions(session)).remove_expired_sessions(now)
+        return (
+            await session.get(Session, expired.session_id, populate_existing=True) is None,
+            await session.get(Session, live.session_id, populate_existing=True) is not None,
+        )
+
+    # Assert
+    assert async_database.run(scenario) == (True, True)
 
 
 @pytest.mark.slow

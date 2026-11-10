@@ -32,6 +32,17 @@ export function workspaceRead(
   };
 }
 
+export function memberRead(changes: Partial<Schemas["MemberRead"]> = {}): Schemas["MemberRead"] {
+  return {
+    user_id: "member",
+    name: "Demo Member",
+    email: "member@example.test",
+    role: "member",
+    joined_at: CREATED_AT,
+    ...changes,
+  };
+}
+
 export function meetingSummary(
   changes: Partial<Schemas["MeetingSummary"]> = {},
 ): Schemas["MeetingSummary"] {

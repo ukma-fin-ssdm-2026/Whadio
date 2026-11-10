@@ -24,6 +24,7 @@ interface MeetingDetailProps {
   onTab: (tab: MeetingTab) => void;
   onTranscriptQuery: (query: string) => void;
   onRevision: (revisionId: string | null) => void;
+  onUnsavedChange: (unsaved: boolean) => void;
   renderExport: (content: MeetingContent) => ReactNode;
   actions?: ReactNode;
 }
@@ -36,6 +37,7 @@ export function MeetingDetail({
   onTab,
   onTranscriptQuery,
   onRevision,
+  onUnsavedChange,
   renderExport,
   actions,
 }: MeetingDetailProps) {
@@ -134,6 +136,7 @@ export function MeetingDetail({
               onShowCurrent={() => {
                 if (revisionId) onRevision(null);
               }}
+              onUnsavedChange={onUnsavedChange}
             />
           </Box>
         )}

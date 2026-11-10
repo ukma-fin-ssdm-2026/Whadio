@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { WorkspaceSettingsPage } from "@/app/pages/WorkspaceSettingsPage";
+import { WorkspaceSettings } from "@/features/workspaces/components/WorkspaceSettings";
 
 export const Route = createFileRoute("/_authed/workspaces/$workspaceId/settings")({
   component: WorkspaceSettingsRoute,
@@ -7,5 +7,5 @@ export const Route = createFileRoute("/_authed/workspaces/$workspaceId/settings"
 
 function WorkspaceSettingsRoute() {
   const { workspaceId } = Route.useParams();
-  return <WorkspaceSettingsPage workspaceId={workspaceId} />;
+  return <WorkspaceSettings workspaceId={workspaceId} />;
 }

@@ -1,7 +1,10 @@
 import asyncio
+import logging
+from collections.abc import Collection
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+import pytest
 from sqlalchemy.exc import OperationalError
 
 from ..notifications.services import DrainResult
@@ -49,25 +52,33 @@ class NotificationJobs:
         return 0
 
 
+REGISTRATION_STEPS = ("registrations", "password resets", "sessions")
+
+
 class RegistrationJobs:
-    def __init__(self, calls: list[str], *, fail: bool = False) -> None:
+    def __init__(
+        self, calls: list[str], *, failing: Collection[str] = (), removed: int = 2
+    ) -> None:
         self.calls: list[str] = calls
-        self.fail: bool = fail
-        self.expired_at: datetime | None = None
+        self.failing: Collection[str] = failing
+        self.removed: int = removed
+        self.expired_at: dict[str, datetime] = {}
+
+    def _remove(self, step: str, now: datetime) -> int:
+        self.calls.append(step)
+        self.expired_at[step] = now
+        if step in self.failing:
+            raise OperationalError("database unavailable", None, RuntimeError())
+        return self.removed
 
     async def remove_expired(self, now: datetime) -> int:
-        self.calls.append("registrations")
-        self.expired_at = now
-        if self.fail:
-            raise OperationalError("database unavailable", None, RuntimeError())
-        return 2
+        return self._remove("registrations", now)
 
     async def remove_expired_password_resets(self, now: datetime) -> int:
-        self.calls.append("password resets")
-        self.expired_at = now
-        if self.fail:
-            raise OperationalError("database unavailable", None, RuntimeError())
-        return 2
+        return self._remove("password resets", now)
+
+    async def remove_expired_sessions(self, now: datetime) -> int:
+        return self._remove("sessions", now)
 
 
 def test_tick_cleans_registrations_using_the_scheduler_clock() -> None:
@@ -79,30 +90,60 @@ def test_tick_cleans_registrations_using_the_scheduler_clock() -> None:
     # Act
     asyncio.run(scheduler.tick())
     # Assert
-    assert (registrations.expired_at, jobs.calls) == (
+    assert (registrations.expired_at.get("registrations"), jobs.calls) == (
         now,
-        ["registrations", "password resets", "cleanup", "retention"],
+        [*REGISTRATION_STEPS, "cleanup", "retention"],
     )
+
+
+def test_tick_deletes_expired_sessions_using_the_scheduler_clock() -> None:
+    # Arrange
+    now = datetime(2026, 11, 7, tzinfo=UTC)
+    registrations = RegistrationJobs([])
+    scheduler = RetentionScheduler(
+        RetentionJobs(), 60, lambda: now, PeriodicJobs(registrations=registrations)
+    )
+    # Act
+    asyncio.run(scheduler.tick())
+    # Assert
+    assert registrations.expired_at.get("sessions") == now
+
+
+def test_session_cleanup_logs_how_many_sessions_it_deleted(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Arrange
+    caplog.set_level(logging.INFO, logger="whadio.scheduler.services")
+    periodic = PeriodicJobs(registrations=RegistrationJobs([], removed=3))
+    scheduler = RetentionScheduler(RetentionJobs(), 60, periodic=periodic)
+    # Act
+    asyncio.run(scheduler.tick())
+    # Assert
+    assert "Session cleanup: 3 expired sessions deleted" in caplog.messages
+
+
+def ticked_with_failing_registrations(failing: Collection[str]) -> tuple[int, list[str]]:
+    """The tick's failure count and the jobs it ran, notification delivery included."""
+    jobs = RetentionJobs()
+    periodic = PeriodicJobs(
+        notifications=NotificationJobs(jobs.calls),
+        registrations=RegistrationJobs(jobs.calls, failing=failing),
+    )
+    return asyncio.run(RetentionScheduler(jobs, 60, periodic=periodic).tick()), jobs.calls
 
 
 def test_registration_cleanup_failure_does_not_stop_other_scheduler_jobs() -> None:
-    # Arrange
-    jobs = RetentionJobs()
-    scheduler = RetentionScheduler(
-        jobs,
-        60,
-        periodic=PeriodicJobs(
-            notifications=NotificationJobs(jobs.calls),
-            registrations=RegistrationJobs(jobs.calls, fail=True),
-        ),
-    )
     # Act
-    failures = asyncio.run(scheduler.tick())
+    ticked = ticked_with_failing_registrations(REGISTRATION_STEPS)
     # Assert
-    assert (failures, jobs.calls) == (
-        3,
-        ["registrations", "password resets", "cleanup", "retention", "drain", "remove sent"],
-    )
+    assert ticked == (4, [*REGISTRATION_STEPS, "cleanup", "retention", "drain", "remove sent"])
+
+
+def test_session_cleanup_failure_is_counted_and_the_other_jobs_still_run() -> None:
+    # Act
+    ticked = ticked_with_failing_registrations({"sessions"})
+    # Assert
+    assert ticked == (2, [*REGISTRATION_STEPS, "cleanup", "retention", "drain", "remove sent"])
 
 
 def test_tick_delivers_notifications_after_retention() -> None:

@@ -28,6 +28,7 @@ function renderPanel(changes: Partial<ComponentProps<typeof TranscriptPanel>> = 
       onQuery={() => {}}
       onRevision={() => {}}
       onShowCurrent={() => {}}
+      onUnsavedChange={() => {}}
       {...changes}
     />,
   );
