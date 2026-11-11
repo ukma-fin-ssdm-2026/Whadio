@@ -1,9 +1,11 @@
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
 from httpx import AsyncClient, Response
-from sqlalchemy import func, select, text
+from sqlalchemy import Select, delete, event, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import ORMExecuteState
 
 from conftest import AsyncDatabase
 
@@ -11,6 +13,7 @@ from ...accounts.enums import WorkspaceRole
 from ...accounts.models import Workspace, WorkspaceMembership
 from ...meetings.models import Folder, RecordingDeletion
 from ...shared.notes_llm import AnthropicLlm, NotesLlm, OllamaLlm
+from ..capture.schemas import DestinationRead
 from ..core.errors import ErrorResponse
 from ..core.schemas import Page
 from .schemas import Provider, WorkspaceRead, WorkspaceSummary
@@ -309,3 +312,148 @@ def test_workspaces_need_a_session(async_database: AsyncDatabase) -> None:
     status = async_database.run(scenario)
     # Assert
     assert status == 401
+
+
+@pytest.mark.parametrize("endpoint", ["/workspaces", "/captures/destinations"])
+@pytest.mark.parametrize("change", ["create", "leave", "delete", "join"])
+def test_workspace_pages_survive_membership_changes(
+    async_database: AsyncDatabase, endpoint: str, change: str
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[bool, bool, str | None]:
+        async with AsyncDatabase.api_client(session) as client:
+            user_id = await signed_in(client, session)
+            workspaces = [await created(client, name) for name in ("A", "B", "C")]
+            for workspace in workspaces:
+                stored = await session.get(Workspace, workspace.id)
+                assert stored is not None
+                stored.created_at = datetime(2026, 1, 1, tzinfo=UTC)
+            await session.flush()
+            ordered = sorted(workspaces, key=lambda item: item.id)
+            if change == "leave":
+                membership = await session.scalar(
+                    select(WorkspaceMembership).where(
+                        WorkspaceMembership.workspace_id == ordered[0].id,
+                        WorkspaceMembership.user_id == user_id,
+                    )
+                )
+                assert membership is not None
+                membership.role = WorkspaceRole.MEMBER
+                await session.flush()
+                other = await AsyncDatabase.add_account(session, PASSWORD)
+                session.add(
+                    WorkspaceMembership(
+                        workspace_id=ordered[0].id, user_id=other.user_id, role=WorkspaceRole.OWNER
+                    )
+                )
+            first = await client.get(f"/api/v1{endpoint}", params={"limit": 1})
+            cursor = (
+                Page[WorkspaceSummary | DestinationRead]
+                .model_validate_json(first.content)
+                .pagination.next_cursor
+            )
+            assert cursor is not None
+            # Act
+            if change == "create":
+                await created(client, "New")
+            elif change == "leave":
+                await session.execute(
+                    delete(WorkspaceMembership).where(
+                        WorkspaceMembership.workspace_id == ordered[0].id,
+                        WorkspaceMembership.user_id == user_id,
+                    )
+                )
+            elif change == "delete":
+                await client.delete(f"/api/v1/workspaces/{ordered[0].id}")
+            else:
+                _, folder_id = await AsyncDatabase.add_workspace(session)
+                folder = await session.get(Folder, folder_id)
+                assert folder is not None
+                joined = await session.get(Workspace, folder.workspace_id)
+                assert joined is not None
+                joined.name, joined.created_at = "Joined", datetime(2025, 1, 1, tzinfo=UTC)
+                session.add(
+                    WorkspaceMembership(
+                        workspace_id=joined.workspace_id, user_id=user_id, role=WorkspaceRole.MEMBER
+                    )
+                )
+            await session.flush()
+            await session.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
+            response = await client.get(
+                f"/api/v1{endpoint}", params={"limit": 100, "cursor": cursor}
+            )
+            page = Page[WorkspaceSummary | DestinationRead].model_validate_json(response.content)
+            names = [item.name for item in page.items if item.name in ("A", "B", "C", "Joined")]
+            return (
+                names == [item.name for item in ordered[1:]]
+                and (change != "create" or any(item.name == "New" for item in page.items)),
+                page.pagination.has_more,
+                page.pagination.next_cursor,
+            )
+
+    result = async_database.run(scenario)
+    # Assert
+    assert result == (True, False, None)
+
+
+@pytest.mark.parametrize("endpoint", ["/workspaces", "/captures/destinations"])
+@pytest.mark.parametrize("source", ["malformed", "other-list", "other-user"])
+def test_workspace_pages_refuse_invalid_cursors(
+    async_database: AsyncDatabase, endpoint: str, source: str
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, str]:
+        async with AsyncDatabase.api_client(session) as client:
+            await signed_in(client, session)
+            await created(client)
+            await created(client, "Second")
+            cursor = "not-a-cursor"
+            if source != "malformed":
+                origin = (
+                    ("/captures/destinations" if endpoint == "/workspaces" else "/workspaces")
+                    if source == "other-list"
+                    else endpoint
+                )
+                first = await client.get(f"/api/v1{origin}", params={"limit": 1})
+                cursor = (
+                    Page[WorkspaceSummary | DestinationRead]
+                    .model_validate_json(first.content)
+                    .pagination.next_cursor
+                )
+                assert cursor is not None
+                if source == "other-user":
+                    await signed_in(client, session)
+            # Act
+            response = await client.get(f"/api/v1{endpoint}", params={"cursor": cursor})
+            return response.status_code, error_code(response)
+
+    result = async_database.run(scenario)
+    # Assert
+    assert result == (422, "VALIDATION_ERROR")
+
+
+@pytest.mark.parametrize("endpoint", ["/workspaces", "/captures/destinations"])
+def test_workspace_page_queries_are_bounded(async_database: AsyncDatabase, endpoint: str) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> list[bool]:
+        async with AsyncDatabase.api_client(session) as client:
+            await signed_in(client, session)
+            await created(client)
+            bounded: list[bool] = []
+
+            def record_query(state: ORMExecuteState) -> None:
+                statement = state.statement
+                if isinstance(statement, Select):
+                    sql = str(statement.compile(compile_kwargs={"literal_binds": True}))
+                    if "FROM workspace JOIN workspace_membership" in sql:
+                        bounded.append(sql.rstrip().endswith("LIMIT 2"))
+
+            event.listen(session.sync_session, "do_orm_execute", record_query)
+            # Act
+            await client.get(f"/api/v1{endpoint}", params={"limit": 1})
+            event.remove(session.sync_session, "do_orm_execute", record_query)
+            return bounded
+
+    bounded = async_database.run(scenario)
+    # Assert
+    assert bounded == [True]

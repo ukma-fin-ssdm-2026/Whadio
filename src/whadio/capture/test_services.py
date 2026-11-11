@@ -16,6 +16,7 @@ from ..meetings.persistence import AssembledRecording
 from ..meetings.services import RecordingInput
 from ..processing.speakers import SpeakerEvent
 from ..shared.errors import Failure, UseCaseError
+from ..shared.pagination import ListWindow
 from ..shared.storage import ObjectStorageError
 from .enums import CaptureStatus
 from .models import CaptureChunk, CaptureSession
@@ -127,8 +128,10 @@ class FakeStorage:
 
 
 class FakeWorkspaces:
-    async def list_workspaces(self, user_id: UUID, /) -> list[MemberWorkspace]:
-        del user_id
+    async def list_workspaces(
+        self, user_id: UUID, page: ListWindow | None = None, /
+    ) -> list[MemberWorkspace]:
+        del user_id, page
         return [
             MemberWorkspace(
                 workspace_id,
@@ -144,8 +147,12 @@ class FakeWorkspaces:
 
 
 class FakeFolders:
+    def __init__(self) -> None:
+        self.read: list[UUID] = []
+
     async def folders(self, actor_id: UUID, workspace_id: UUID, /) -> list[Folder]:
         del actor_id
+        self.read.append(workspace_id)
         return [Folder(folder_id=uuid4(), workspace_id=workspace_id, name="General")]
 
 
@@ -193,6 +200,7 @@ class Fixture:
     storage: FakeStorage
     meetings: FakeMeetings
     queue: FakeQueue
+    folders: FakeFolders
 
 
 def fixture() -> Fixture:
@@ -202,19 +210,20 @@ def fixture() -> Fixture:
         FakeMeetings(),
         FakeQueue(),
     )
+    folders = FakeFolders()
     service = CaptureService(
         CaptureCollaborators(
             repository,
             storage,
             FakeWorkspaces(),
-            FakeFolders(),
+            folders,
             meetings,
             meetings,
             meetings,
             queue,
         )
     )
-    return Fixture(service, repository, storage, meetings, queue)
+    return Fixture(service, repository, storage, meetings, queue, folders)
 
 
 def started(setup: Fixture) -> CaptureView:
@@ -765,3 +774,12 @@ def test_meeting_that_was_not_captured_has_no_timeline() -> None:
 
     # Assert
     assert events == ()
+
+
+def test_destinations_do_not_load_folders_for_the_lookahead_workspace() -> None:
+    # Arrange
+    setup = fixture()
+    # Act
+    asyncio.run(setup.service.destinations(USER, ListWindow(2)))
+    # Assert
+    assert setup.folders.read == [TEAM]

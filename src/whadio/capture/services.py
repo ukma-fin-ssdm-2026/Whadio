@@ -16,6 +16,7 @@ from ..meetings.persistence import AssembledRecording
 from ..meetings.services import RecordingInput
 from ..processing.speakers import SpeakerEvent
 from ..shared.errors import Failure, UseCaseError
+from ..shared.pagination import ListWindow
 from ..shared.storage import ObjectStorageError
 from .enums import CaptureStatus
 from .models import CaptureSession
@@ -39,7 +40,9 @@ class IChunkStorage(Protocol):
 
 
 class IWorkspaces(Protocol):
-    async def list_workspaces(self, user_id: UUID, /) -> list[MemberWorkspace]: ...
+    async def list_workspaces(
+        self, user_id: UUID, page: ListWindow | None = None, /
+    ) -> list[MemberWorkspace]: ...
 
 
 class IFolders(Protocol):
@@ -146,10 +149,19 @@ class CaptureService:
         self._recordings: IRecordingAttachment = collaborators.recordings
         self._processing: ITranscriptionQueue = collaborators.processing
 
-    async def destinations(self, user_id: UUID) -> list[Destination]:
+    async def destinations(
+        self, user_id: UUID, page: ListWindow | None = None
+    ) -> list[Destination]:
+        workspaces = await self._workspaces.list_workspaces(user_id, page)
+        # The lookahead workspace only signals another page; its folders are never returned.
         return [
-            Destination(workspace, await self._folders.folders(user_id, workspace.workspace_id))
-            for workspace in await self._workspaces.list_workspaces(user_id)
+            Destination(
+                workspace,
+                await self._folders.folders(user_id, workspace.workspace_id)
+                if page is None or index < page.limit - 1
+                else [],
+            )
+            for index, workspace in enumerate(workspaces)
         ]
 
     async def start(

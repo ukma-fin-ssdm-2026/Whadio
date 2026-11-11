@@ -12,6 +12,7 @@ from ...capture.services import (
 )
 from ...processing.speakers import SpeakerEvent
 from ...shared.errors import Failure, UseCaseError
+from ...shared.pagination import ListCursor
 from ..accounts.auth import CaptureUser
 from ..composition import Captures
 from ..core.errors import (
@@ -23,7 +24,8 @@ from ..core.errors import (
     ErrorDetail,
     error_responses,
 )
-from ..core.schemas import Page, PageQuery, paginate
+from ..core.pagination import list_page, list_window
+from ..core.schemas import Page, PageQuery
 from .schemas import (
     CaptureComplete,
     CaptureCreate,
@@ -56,7 +58,8 @@ def _capture_read(view: CaptureView) -> CaptureRead:
 @router.get(
     "/captures/destinations",
     summary="Where a recording can go",
-    description="The caller's workspaces, oldest first, each with the folders a recording can "
+    description="The caller's workspaces, ordered by creation time then workspace ID ascending, "
+    "each with the folders a recording can "
     "be filed in. The folder is the notes context, so it is chosen before recording.",
     response_description="A page of workspaces with their folders",
     responses=error_responses({401: DOC_UNAUTHENTICATED, 422: DOC_INVALID}),
@@ -64,6 +67,12 @@ def _capture_read(view: CaptureView) -> CaptureRead:
 async def list_destinations(
     query: Annotated[PageQuery, Query()], user: CaptureUser, captures: Captures
 ) -> Page[DestinationRead]:
+    scope = f"capture-destinations:{user.id}:created"
+    destinations = await captures.destinations(
+        user.id, list_window(query, scope, chronological=True)
+    )
+    last = destinations[min(len(destinations), query.limit) - 1].workspace if destinations else None
+    cursor = None if last is None else ListCursor(last.created_at.isoformat(), last.workspace_id)
     found: list[DestinationRead] = [
         DestinationRead(
             workspace_id=item.workspace.workspace_id,
@@ -74,9 +83,9 @@ async def list_destinations(
                 for folder in item.folders
             ],
         )
-        for item in await captures.destinations(user.id)
+        for item in destinations
     ]
-    return paginate(found, query)
+    return list_page(found, query, scope, cursor)
 
 
 @router.post(

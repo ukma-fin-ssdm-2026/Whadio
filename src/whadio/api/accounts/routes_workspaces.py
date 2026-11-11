@@ -6,6 +6,7 @@ from fastapi import APIRouter, Query, Request, Response
 from ...accounts.enums import NotesTemplate
 from ...accounts.repositories import MemberWorkspace
 from ...shared.notes_llm import NotesLlm
+from ...shared.pagination import ListCursor
 from ..composition import ConfiguredNotesLlm, Workspaces
 from ..core.errors import (
     DOC_INVALID,
@@ -14,7 +15,8 @@ from ..core.errors import (
     ErrorCode,
     error_responses,
 )
-from ..core.schemas import Page, PageQuery, paginate
+from ..core.pagination import list_page, list_window
+from ..core.schemas import Page, PageQuery
 from .auth import BrowserUser
 from .schemas import (
     Preset,
@@ -50,7 +52,8 @@ def workspace_read(found: MemberWorkspace, llm: NotesLlm) -> WorkspaceRead:
 @router.get(
     "/workspaces",
     summary="List my workspaces",
-    description="Workspaces the caller belongs to, oldest first, the personal one included.",
+    description="Workspaces the caller belongs to, ordered by creation time then workspace ID "
+    "ascending, the personal one included.",
     response_description="A page of workspaces",
     responses=error_responses({401: DOC_UNAUTHENTICATED, 422: DOC_INVALID}),
 )
@@ -60,10 +63,11 @@ async def list_workspaces(
     workspaces: Workspaces,
     llm: ConfiguredNotesLlm,
 ) -> Page[WorkspaceSummary]:
-    found: list[WorkspaceSummary] = [
-        workspace_read(item, llm) for item in await workspaces.list_workspaces(user.id)
-    ]
-    return paginate(found, query)
+    scope = f"workspaces:{user.id}:created"
+    found = await workspaces.list_workspaces(user.id, list_window(query, scope, chronological=True))
+    last = found[min(len(found), query.limit) - 1] if found else None
+    cursor = None if last is None else ListCursor(last.created_at.isoformat(), last.workspace_id)
+    return list_page([workspace_read(item, llm) for item in found], query, scope, cursor)
 
 
 @router.post(

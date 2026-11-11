@@ -358,7 +358,7 @@ class MemberWorkspace:
 
 class IWorkspaceRepository(Protocol):
     async def of_member(
-        self, user_id: UUID, workspace_id: UUID | None, /
+        self, user_id: UUID, workspace_id: UUID | None, page: ListWindow | None = None, /
     ) -> list[MemberWorkspace]: ...
 
     async def add(
@@ -383,7 +383,9 @@ class WorkspaceRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session: AsyncSession = session
 
-    async def of_member(self, user_id: UUID, workspace_id: UUID | None) -> list[MemberWorkspace]:
+    async def of_member(
+        self, user_id: UUID, workspace_id: UUID | None, page: ListWindow | None = None
+    ) -> list[MemberWorkspace]:
         """The member's workspaces, oldest first, or only `workspace_id` when given."""
         others = aliased(WorkspaceMembership)
         member_count = (
@@ -399,6 +401,17 @@ class WorkspaceRepository:
         )
         if workspace_id is not None:
             statement = statement.where(Workspace.workspace_id == workspace_id)
+        if page is not None:
+            if page.after is not None:
+                created_at = datetime.fromisoformat(page.after.key)
+                statement = statement.where(
+                    (Workspace.created_at > created_at)
+                    | (
+                        (Workspace.created_at == created_at)
+                        & (Workspace.workspace_id > page.after.item_id)
+                    )
+                )
+            statement = statement.limit(page.limit)
         return [
             MemberWorkspace(
                 workspace_id=workspace.workspace_id,
