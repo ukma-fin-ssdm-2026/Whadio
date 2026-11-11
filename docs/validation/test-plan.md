@@ -10,12 +10,13 @@ This plan states when the recording-to-notes path of Whadio counts as verified.
 
 **Scope.** In scope: sign-in, operator-issued registration links and their completion through the API, uploading a recording, the processing pipeline from the queued job to
 the stored transcript and notes, access to restricted meetings over every content path, the audit
-log, exports, job monitoring, and reading results in the web app. Not tested here: features with
-no API yet (self-service email registration and emailed password-reset requests in US-001 and
+log, exports, job monitoring, reading results in the web app, and local recovery of completed
+extension recordings. Not tested here: features with no API yet (self-service email registration
+and emailed password-reset requests in US-001 and
 US-020; notes regeneration, US-010; a workspace's own model provider, US-008; server load and model usage on the admin dashboard, US-019 Test-03); screens the web app
 does not have yet (registration, shares, the glossary), so those are tested through the API;
-the user-action limit of NFR-005 is not measured; the Chrome extension capture
-(US-003, NFR-004); recognition quality scores (WER needs a reference corpus we do not have); real
+the user-action limit of NFR-005 is not measured; live capture in Google Meet
+(US-003 Test-01 through Test-04, NFR-004); recognition quality scores (WER needs a reference corpus we do not have); real
 models or paid services in CI.
 
 **Exit criteria.** Every row marked CI passes in `uv run task test:cov` on `main`, with a link to

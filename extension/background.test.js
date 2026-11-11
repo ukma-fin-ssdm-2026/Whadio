@@ -1,4 +1,22 @@
 import { TIMEOUT_MS } from "./api.js";
+import { recoveryStore } from "./recovery-store.js";
+
+vi.mock("./recovery-store.js", () => {
+  const recordings = new Map();
+  return {
+    recoveryStore: {
+      put: vi.fn(async (recording) => recordings.set(recording.id, structuredClone(recording))),
+      remove: vi.fn(async (id, authorize) => {
+        await authorize?.();
+        recordings.delete(id);
+      }),
+      get: vi.fn(async (id) => recordings.get(id)),
+      list: vi.fn(async () =>
+        [...recordings.values()].map(({ id, startedAt, owner }) => ({ id, startedAt, owner })),
+      ),
+    },
+  };
+});
 
 const SERVER = "https://whadio.example";
 const DESTINATION = { workspace_id: "w1", folder_id: "f1" };
@@ -13,24 +31,35 @@ function fakeChrome() {
   const downloadsChanged = event();
   return {
     runtime: {
+      getURL: (path) => `chrome-extension://whadio/${path}`,
       onConnect: event(),
       onInstalled: event(),
       onMessage: event(),
       sendMessage: vi.fn(async (message) => (message.type === "blob" ? { url: "blob:call" } : {})),
     },
     storage: {
+      onChanged: event(),
       session: {
-        get: async () => ({ server: SERVER, token: "t", expiresAt: "2026-11-04T10:00:00Z" }),
+        get: async () => ({
+          server: SERVER,
+          userId: "original",
+          token: "t",
+          expiresAt: "2026-11-04T10:00:00Z",
+        }),
         set: async () => {},
         remove: async () => {},
         onChanged: event(),
       },
       local: { get: async () => ({ destination: DESTINATION }), set: async () => {} },
     },
-    tabs: { sendMessage: async () => {} },
-    action: { setBadgeText: async () => {} },
+    tabs: { sendMessage: vi.fn(async () => {}) },
+    action: { setBadgeText: vi.fn(async () => {}) },
     commands: { onCommand: event() },
-    offscreen: { hasDocument: async () => false, createDocument: async () => {} },
+    offscreen: {
+      hasDocument: vi.fn(async () => false),
+      createDocument: vi.fn(async () => {}),
+      closeDocument: vi.fn(async () => {}),
+    },
     downloads: {
       download: vi.fn(async () => 1),
       onChanged: {
@@ -101,12 +130,17 @@ function answerAfter(delay, signal, response) {
   });
 }
 
-function port() {
-  return { name: "recording:7", onMessage: event(), onDisconnect: event() };
+function port(tabId = 7) {
+  return {
+    name: `recording:${tabId}`,
+    onMessage: event(),
+    onDisconnect: event(),
+    postMessage: vi.fn(),
+  };
 }
 
-async function connect() {
-  const recording = port();
+async function connect(tabId = 7) {
+  const recording = port(tabId);
   await chrome.runtime.onConnect.listeners[0](recording);
   return recording;
 }
@@ -118,7 +152,9 @@ function speak(recording, slices) {
 }
 
 function hear(at, speakers) {
-  chrome.runtime.onMessage.listeners[0]({ type: "speakers", at, speakers }, { tab: { id: 7 } });
+  for (const listener of chrome.runtime.onMessage.listeners) {
+    listener({ type: "speakers", at, speakers }, { tab: { id: 7 } });
+  }
 }
 
 async function hangUp(recording) {
@@ -134,12 +170,496 @@ function sent(requests, method) {
 beforeEach(async () => {
   vi.useFakeTimers({ now: STARTED_AT });
   vi.resetModules();
+  vi.restoreAllMocks();
+  for (const { id } of await recoveryStore.list()) {
+    await recoveryStore.remove(id);
+  }
+  vi.clearAllMocks();
   globalThis.chrome = fakeChrome();
   await import("./background.js");
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
+function recover(message, sender = { url: "chrome-extension://whadio/popup.html" }) {
+  return new Promise((resolve) => {
+    for (const listener of chrome.runtime.onMessage.listeners) {
+      listener(message, sender, resolve);
+    }
+  });
+}
+
+describe("recording registration", () => {
+  test("rejects a port when the session has expired", async () => {
+    // Arrange
+    chrome.storage.session.get = async () => ({ expiresAt: STARTED_AT.toISOString() });
+    const requests = fakeServer();
+
+    // Act
+    const recording = await connect();
+
+    // Assert
+    expect({
+      replies: recording.postMessage.mock.calls,
+      requests,
+    }).toEqual({
+      replies: [[{ type: "recording-rejected", error: "Sign in to Whadio before recording." }]],
+      requests: [],
+    });
+  });
+
+  test("ignores a port that disconnects while the session is being read", async () => {
+    // Arrange
+    const session = await chrome.storage.session.get();
+    const { promise, resolve } = Promise.withResolvers();
+    chrome.storage.session.get = () => promise;
+    const requests = fakeServer();
+    const recording = port();
+
+    // Act
+    const connecting = chrome.runtime.onConnect.listeners[0](recording);
+    await hangUp(recording);
+    resolve(session);
+    await connecting;
+
+    // Assert
+    expect({
+      replies: recording.postMessage.mock.calls,
+      recordingBadge: chrome.action.setBadgeText.mock.calls.some(([badge]) => badge.text === "REC"),
+      requests,
+    }).toEqual({ replies: [], recordingBadge: false, requests: [] });
+  });
+});
+
+describe("the offscreen document during concurrent retries", () => {
+  beforeEach(async () => {
+    const owner = { server: SERVER, userId: "original" };
+    for (const id of ["first", "second"]) {
+      await recoveryStore.put({ id, startedAt: STARTED_AT.getTime(), owner, slices: ["YWI="] });
+    }
+  });
+
+  test("rechecks idleness when a retry starts during the cleanup lookup", async () => {
+    // Arrange
+    const { promise: checking, resolve: startCheck } = Promise.withResolvers();
+    const { promise: lookup, resolve: finishCheck } = Promise.withResolvers();
+    const { promise: secondBlob, resolve: finishBlob } = Promise.withResolvers();
+    const { promise: preparing, resolve: startBlob } = Promise.withResolvers();
+    chrome.offscreen.hasDocument
+      .mockResolvedValue(true)
+      .mockResolvedValueOnce(true)
+      .mockImplementationOnce(() => {
+        startCheck();
+        return lookup;
+      });
+    chrome.runtime.sendMessage.mockImplementation(async (message) => {
+      if (message.type === "blob" && message.id === "second") {
+        startBlob();
+        return secondBlob;
+      }
+      return { url: "blob:call" };
+    });
+
+    // Act
+    const first = recover({ type: "recovery-retry", id: "first" });
+    await checking;
+    const second = recover({ type: "recovery-retry", id: "second" });
+    await vi.advanceTimersByTimeAsync(0);
+    finishCheck(true);
+    await preparing;
+    const closedDuringRetry = chrome.offscreen.closeDocument.mock.calls.length;
+    finishBlob({ url: "blob:second" });
+    await Promise.all([first, second]);
+
+    // Assert
+    expect({
+      closedDuringRetry,
+      closes: chrome.offscreen.closeDocument.mock.calls.length,
+    }).toEqual({ closedDuringRetry: 0, closes: 1 });
+  });
+
+  test("a retry waits for a close already in progress and opens a fresh document", async () => {
+    // Arrange
+    let exists = true;
+    const { promise: closing, resolve: startClose } = Promise.withResolvers();
+    const { promise: closed, resolve: finishClose } = Promise.withResolvers();
+    chrome.offscreen.hasDocument.mockImplementation(async () => exists);
+    chrome.offscreen.closeDocument.mockImplementationOnce(async () => {
+      startClose();
+      await closed;
+      exists = false;
+    });
+    chrome.offscreen.createDocument.mockImplementation(async () => {
+      exists = true;
+    });
+    const blobDocuments = [];
+    chrome.runtime.sendMessage.mockImplementation(async (message) => {
+      if (message.type === "blob") {
+        blobDocuments.push({ id: message.id, exists });
+      }
+      return { url: "blob:call" };
+    });
+
+    // Act
+    const first = recover({ type: "recovery-retry", id: "first" });
+    await closing;
+    const second = recover({ type: "recovery-retry", id: "second" });
+    await vi.advanceTimersByTimeAsync(0);
+    const blobsBeforeClose = blobDocuments.length;
+    finishClose();
+    await Promise.all([first, second]);
+
+    // Assert
+    expect({
+      blobsBeforeClose,
+      blobDocuments,
+      opens: chrome.offscreen.createDocument.mock.calls.length,
+    }).toEqual({
+      blobsBeforeClose: 1,
+      blobDocuments: [
+        { id: "first", exists: true },
+        { id: "second", exists: true },
+      ],
+      opens: 1,
+    });
+  });
+});
+
+describe("a recording whose local save fails", () => {
+  async function failSaving() {
+    fakeServer(failingPuts(Number.POSITIVE_INFINITY));
+    chrome.downloads.download.mockRejectedValue(new Error("private details"));
+    const recording = await connect();
+    speak(recording, 15);
+    await hangUp(recording);
+  }
+
+  test("waits for the recovery transaction to commit before attempting the fallback download", async () => {
+    // Arrange
+    fakeServer(failingPuts(Number.POSITIVE_INFINITY));
+    const { promise, resolve } = Promise.withResolvers();
+    const put = recoveryStore.put.getMockImplementation();
+    recoveryStore.put.mockImplementationOnce(async (recording) => {
+      await promise;
+      await put(recording);
+    });
+    const recording = await connect();
+    speak(recording, 15);
+
+    // Act
+    await hangUp(recording);
+    const beforeCommit = {
+      writes: recoveryStore.put.mock.calls.length,
+      downloads: chrome.downloads.download.mock.calls.length,
+    };
+    resolve();
+    await vi.runAllTimersAsync();
+
+    // Assert
+    expect({ beforeCommit, afterCommit: chrome.downloads.download.mock.calls.length }).toEqual({
+      beforeCommit: { writes: 1, downloads: 0 },
+      afterCommit: 1,
+    });
+  });
+
+  test("retains the full recording after a download fails without an unhandled rejection", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // Act
+    await failSaving();
+    const [recording] = await recoveryStore.list();
+
+    // Assert
+    expect((await recoveryStore.get(recording.id)).slices).toHaveLength(15);
+  });
+
+  test.for([
+    {},
+    { server: SERVER, userId: "other", token: "t", expiresAt: "2026-11-04T10:00:00Z" },
+    {
+      server: "https://other.example",
+      userId: "original",
+      token: "t",
+      expiresAt: "2026-11-04T10:00:00Z",
+    },
+    { server: SERVER, userId: "original", token: "t", expiresAt: STARTED_AT.toISOString() },
+  ])(
+    "refuses recovery commands for a signed-out, different or expired account: %j",
+    async (session) => {
+      // Arrange
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await failSaving();
+      const [recording] = await recoveryStore.list();
+      chrome.downloads.download.mockClear();
+      chrome.storage.session.get = async () => session;
+
+      // Act
+      const listed = await recover({ type: "recovery-list" });
+      await recover({ type: "recovery-retry", id: recording.id });
+      await recover({ type: "recovery-discard", id: recording.id });
+
+      // Assert
+      expect({
+        visible: listed.recordings,
+        downloads: chrome.downloads.download.mock.calls.length,
+        kept: (await recoveryStore.list()).length,
+      }).toEqual({ visible: [], downloads: 0, kept: 1 });
+    },
+  );
+
+  test("warns on the Meet card and the toolbar without logging raw failure details", async () => {
+    // Arrange
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // Act
+    await failSaving();
+
+    // Assert
+    expect({
+      badge: chrome.action.setBadgeText.mock.calls.some(([value]) => value.text === "!"),
+      card: chrome.tabs.sendMessage.mock.calls.some(([, value]) => value.type === "show-error"),
+      leaked: JSON.stringify(warning.mock.calls).includes("private details"),
+    }).toEqual({ badge: true, card: true, leaked: false });
+  });
+
+  test("still cleans up when both the local save and notification to a closed tab fail", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    chrome.offscreen.hasDocument.mockResolvedValue(true);
+    chrome.tabs.sendMessage.mockRejectedValue(new Error("Tab closed"));
+
+    // Act
+    await failSaving();
+
+    // Assert
+    expect(chrome.offscreen.closeDocument).toHaveBeenCalledOnce();
+  });
+
+  test("a failed save cannot close the offscreen document while another tab is recording", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    fakeServer(failingPuts(Number.POSITIVE_INFINITY));
+    chrome.offscreen.hasDocument.mockResolvedValue(true);
+    chrome.downloads.download.mockRejectedValue(new Error("Disk unavailable"));
+    const first = await connect(7);
+    await connect(8);
+    speak(first, 15);
+
+    // Act
+    await hangUp(first);
+
+    // Assert
+    expect(chrome.offscreen.closeDocument).not.toHaveBeenCalled();
+  });
+
+  test("retains the recording if the offscreen document cannot prepare a Blob", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    chrome.runtime.sendMessage.mockImplementation(async (message) => {
+      if (message.type === "blob") {
+        throw new Error("Offscreen document unavailable");
+      }
+      return {};
+    });
+
+    // Act
+    await failSaving();
+
+    // Assert
+    expect(await recoveryStore.list()).toHaveLength(1);
+  });
+
+  test("keeps the backup and refuses to download a malformed Blob reply", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    chrome.runtime.sendMessage.mockResolvedValue({ url: "https://whadio.example/invalid" });
+
+    // Act
+    await failSaving();
+
+    // Assert
+    expect({
+      copies: (await recoveryStore.list()).length,
+      downloads: chrome.downloads.download.mock.calls.length,
+    }).toEqual({ copies: 1, downloads: 0 });
+  });
+
+  test("revokes the Blob URL after a download fails while another tab keeps offscreen alive", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await connect(8);
+
+    // Act
+    await failSaving();
+
+    // Assert
+    expect({
+      revocations: chrome.runtime.sendMessage.mock.calls
+        .map(([message]) => message)
+        .filter((message) => message.type === "revoke"),
+      copies: (await recoveryStore.list()).length,
+      closes: chrome.offscreen.closeDocument.mock.calls.length,
+    }).toEqual({
+      revocations: [{ target: "offscreen", type: "revoke", url: "blob:call" }],
+      copies: 1,
+      closes: 0,
+    });
+  });
+
+  test("recovers after a worker restart, retries without server access and removes the local copy", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await failSaving();
+    vi.resetModules();
+    globalThis.chrome = fakeChrome();
+    globalThis.fetch = vi.fn(() => {
+      throw new Error("Server offline");
+    });
+    await import("./background.js");
+    const {
+      recordings: [recording],
+    } = await recover({ type: "recovery-list" });
+
+    // Act
+    const result = await recover({ type: "recovery-retry", id: recording.id });
+
+    // Assert
+    expect({ result, downloads: chrome.downloads.download.mock.calls.length }).toEqual({
+      result: { recordings: [] },
+      downloads: 1,
+    });
+  });
+
+  test("discards a retained recording without downloading it", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await failSaving();
+    const [recording] = await recoveryStore.list();
+    chrome.downloads.download.mockClear();
+
+    // Act
+    const result = await recover({ type: "recovery-discard", id: recording.id });
+
+    // Assert
+    expect({ result, downloads: chrome.downloads.download.mock.calls.length }).toEqual({
+      result: { recordings: [] },
+      downloads: 0,
+    });
+  });
+
+  test.for([
+    { before: "original", after: "other" },
+    { before: "other", after: "original" },
+  ])(
+    "refuses retry when the account changes from $before to $after during lookup",
+    async ({ before, after }) => {
+      // Arrange
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await failSaving();
+      const [recording] = await recoveryStore.list();
+      const saved = await recoveryStore.get(recording.id);
+      const session = await chrome.storage.session.get();
+      chrome.storage.session.get = async () => ({ ...session, userId: before });
+      const lookup = Promise.withResolvers();
+      const reading = Promise.withResolvers();
+      recoveryStore.get.mockImplementationOnce(() => {
+        reading.resolve();
+        return lookup.promise;
+      });
+      chrome.runtime.sendMessage.mockClear();
+
+      // Act
+      const retry = recover({ type: "recovery-retry", id: recording.id });
+      await reading.promise;
+      chrome.storage.session.get = async () => ({ ...session, userId: after });
+      lookup.resolve(saved);
+      await retry;
+
+      // Assert
+      expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+    },
+  );
+
+  test("keeps the copy when the account changes during Blob preparation", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await failSaving();
+    const [recording] = await recoveryStore.list();
+    const session = await chrome.storage.session.get();
+    const blob = Promise.withResolvers();
+    const preparing = Promise.withResolvers();
+    chrome.runtime.sendMessage.mockImplementationOnce(() => {
+      preparing.resolve();
+      return blob.promise;
+    });
+    chrome.downloads.download.mockClear();
+
+    // Act
+    const retry = recover({ type: "recovery-retry", id: recording.id });
+    await preparing.promise;
+    chrome.storage.session.get = async () => ({ ...session, userId: "other" });
+    blob.resolve({ url: "blob:retry" });
+    await retry;
+
+    // Assert
+    expect({
+      downloads: chrome.downloads.download.mock.calls.length,
+      retained: (await recoveryStore.list()).map(({ id }) => id),
+      lastMessage: chrome.runtime.sendMessage.mock.lastCall?.[0],
+    }).toEqual({
+      downloads: 0,
+      retained: [recording.id],
+      lastMessage: { target: "offscreen", type: "revoke", url: "blob:retry" },
+    });
+  });
+
+  test("refuses discard when the session expires before the delete can start", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await failSaving();
+    const [recording] = await recoveryStore.list();
+    const remove = recoveryStore.remove.getMockImplementation();
+    const opening = Promise.withResolvers();
+    const opened = Promise.withResolvers();
+    recoveryStore.remove.mockImplementationOnce(async (...args) => {
+      opening.resolve();
+      await opened.promise;
+      return remove(...args);
+    });
+
+    // Act
+    const discard = recover({ type: "recovery-discard", id: recording.id });
+    await opening.promise;
+    vi.setSystemTime(new Date("2026-11-04T10:00:00Z"));
+    opened.resolve();
+    await discard;
+
+    // Assert
+    expect((await recoveryStore.list()).map(({ id }) => id)).toEqual([recording.id]);
+  });
+
+  test("refuses recovery commands from a Meet content script", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await failSaving();
+    const [recording] = await recoveryStore.list();
+
+    // Act
+    await recover(
+      { type: "recovery-discard", id: recording.id },
+      {
+        url: "https://meet.google.com/abc-defg-hij",
+        tab: { id: 7 },
+      },
+    );
+
+    // Assert
+    expect(await recoveryStore.list()).toHaveLength(1);
+  });
 });
 
 describe("a recording's upload", () => {
@@ -359,9 +879,18 @@ describe("a recording's upload", () => {
     expect({
       completed: sent(requests, "POST").includes("/captures/c1/complete"),
       saved: chrome.downloads.download.mock.calls.map(([options]) => options.filename),
-      slices: chrome.runtime.sendMessage.mock.calls.find(([m]) => m.type === "blob")[0].chunks
-        .length,
-    }).toEqual({ completed: false, saved: ["whadio-2026-11-03T10-00-00.webm"], slices: 15 });
+      slices: recoveryStore.put.mock.calls[0][0].slices.length,
+      blobRequest: chrome.runtime.sendMessage.mock.calls.find(([m]) => m.type === "blob")[0],
+    }).toEqual({
+      completed: false,
+      saved: ["whadio-2026-11-03T10-00-00.webm"],
+      slices: 15,
+      blobRequest: {
+        target: "offscreen",
+        type: "blob",
+        id: recoveryStore.put.mock.calls[0][0].id,
+      },
+    });
   });
 
   test("leaves the capture open and saves nothing when the call ends before any audio", async () => {

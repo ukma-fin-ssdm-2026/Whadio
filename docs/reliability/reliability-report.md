@@ -11,7 +11,7 @@ Each fix below names who made it.
 | F1 | Job publish to RabbitMQ waits without a limit while holding a row lock | B, E | High | **Fixed** |
 | F2 | Extension requests to the server have no deadline | B, E | High | **Fixed**; not yet checked with a real recording |
 | F3 | A failed upload is given up without a log or a word to the user | D, A | Medium | Open |
-| F4 | A recording that could not be saved vanishes in an unawaited listener | A, D | High | Open |
+| F4 | A recording that could not be saved vanishes in an unawaited listener | A, D | High | **Fixed** for rejected local saves; completed fallback audio is retained for retry/discard |
 | F5 | Object storage calls can block a request for over half an hour | B, E | High | **Fixed** |
 | F6 | The SPA's API client has no deadline | B | Low | **Fixed** |
 | F7 | Signing out ignores whether the server ended the session | D | Low | Open |
@@ -19,6 +19,78 @@ Each fix below names who made it.
 | F9 | A published job whose message or result is lost is never finished | B, D | Medium | **Fixed** |
 
 ## Fixes
+
+### F4. A recording that could not be saved vanishes in an unawaited listener
+
+Implemented in `fix(#287): retain recordings when local saving fails`, with OpenAI Codex
+(GPT-6.1); teammate review is pending.
+
+**Before.** `extension/background.js`, the recording port's disconnect handler:
+
+```js
+port.onDisconnect.addListener(async () => {
+  uploads.delete(tabId);
+  await upload.finish();
+  await closeOffscreenIfIdle();
+});
+```
+
+A rejected download or offscreen Blob request escaped the event handler. The only audio copy
+could disappear, no recovery action was offered, and idle-document cleanup was skipped.
+
+**After.** The listener starts `finishRecording` with an explicit rejection handler. Its
+`finally` always attempts idle cleanup. Starts and saves reserve the offscreen document before
+use. Opening and closing run in order, and cleanup rechecks idleness after looking up the
+document so a new reservation cannot be missed. The fallback in `Upload.finish` now does:
+
+```js
+this.retained = true;
+await recovery.retain(this.recoverable(), sessionOwner);
+```
+
+`extension/recovery-store.js` commits the audio slices, recording UUID/start time and original
+server/user ID in
+the extension origin's IndexedDB before the first download attempt. A strict-durability write
+transaction must complete before downloading. `extension/recovery.js` keeps failed saves and
+holds a per-recording lock across the backup write and the initial download, and uses the same
+lock for retry and discard. A successful download removes its recovery entry;
+a confirmed Discard deletes only the chosen entry. Several recordings remain independent.
+The offscreen document builds the download Blob from IndexedDB by recording ID. Temporary copies
+reach the document in bounded port messages. This keeps both paths within Chromium's message limit.
+`saveLocally` releases a created Blob URL even when its download request rejects. A cleanup
+failure produces a fixed warning, not an unhandled rejection or a raw exception in the logs.
+
+**Failure and recovery.** This is fail-safe behavior: an unsuccessful local save leaves the
+completed recording available after restarting the worker or Chrome. The toolbar shows `!`;
+the Meet card shows a fixed error when the tab still exists. The popup lists dated recordings
+with **Retry download** and **Discard**, and remains usable when the original tab has closed
+or the server is offline. Discard asks for confirmation. There are no new notification permissions.
+Recovery requires the original account on the same server, with its unexpired sign-in in
+extension session storage. The stable user ID comes from the successful sign-in response, not
+from the Meet page or editable local storage. Signed-out/expired sessions see a sign-in hint;
+other accounts/servers see none of that account's recordings, and retry/discard also enforce
+ownership. After Chrome restarts, sign in again before recovering. Offline recovery is allowed
+until that sign-in expires; revocation cannot be detected offline until a server request
+returns `401`. Existing sessions without a user ID require signing in again after this update.
+Retry saves a local file; it does not repeat `/complete` or upload the recording to a server.
+
+**Limits.** Only completed recordings that reach the fallback and commit their backup are
+protected. Audio still being recorded or waiting for finalization is not checkpointed. A full
+disk, unavailable IndexedDB, storage eviction, clearing extension storage or uninstalling the
+extension can still defeat recovery. If a backup write fails, the current worker retains a
+temporary in-memory copy and the popup explicitly warns that it cannot survive a restart.
+There is no automatic expiry or background download loop. An interrupted download still follows
+the old completion-state check; its separate finding and fix belong in the stacked follow-up.
+
+**Tests.** `extension/background.test.js` injects rejected downloads and Blob requests, a
+closed tab, and a worker restart. It checks recovery commands cannot be invoked by a Meet
+content script and exercises retries that start during the offscreen lookup or an ongoing close. `extension/recovery.test.js` covers backup-before-download ordering, repeated
+failures, independent recordings, concurrent retries, discard refusal during a save, storage
+failure and failed removal. `extension/recovery-popup.test.js` checks the controls, confirmation,
+error text and temporary-copy warning. The real-Chromium check is
+`node tests/reliability/extension-recovery.mjs`: it reopens a persistent extension profile,
+downloads small and 48 MiB synthetic recordings byte for byte through the popup, and verifies
+discard and successful removal survive another browser restart. This is separate from the still-pending real Meet recording run.
 
 ### F2. Extension requests to the server have no deadline
 
@@ -460,7 +532,7 @@ the running limits of the two job types are swapped.
 
 ## Open issues
 
-- F3, F4, F7 and F8 are open; each keeps its chain in
+- F3, F7 and F8 are open; each keeps its chain in
   [`scavenger-hunt.md`](scavenger-hunt.md).
 - F1 is checked with a test double only, not with a RabbitMQ that really raises a memory or disk
   alarm.
@@ -496,9 +568,9 @@ the running limits of the two job types are swapped.
   server *and* a local copy on disk. Nothing is lost, but the user may upload the call twice.
   Answering `/complete` at once and assembling the recording in the background would remove the
   case, but that changes the API and belongs in its own issue.
-- The service worker's lifetime still bounds the extension: its upload state lives only in memory,
-  so a worker stopped for another reason (an event over 5 minutes, a browser update) loses the call.
-  This needs its own issue.
+- The service worker's lifetime still bounds an in-progress recording: its upload state lives
+  only in memory, so a worker stopped before completed fallback audio is committed can lose the
+  call. F4 protects already-committed completed fallback recordings, not live recordings.
 - F2's deadline makes a stuck upload end, but the user still learns of the failure only at hang-up;
   telling them during the call is F3.
 - After F9, the copies of a job that waited in the queue through a long outage are all delivered
@@ -522,6 +594,11 @@ the running limits of the two job types are swapped.
   started, so it is the count against the retry limit rather than of starts.
 
 ## AI Usage
+
+F4's implementation, failure-injection tests, browser check and documentation were prepared
+with OpenAI Codex (GPT-6.1), reviewed by Valeriia Missirova. The follow-up fixes and
+regression tests for recording registration, recovery locking, large downloads, and offscreen
+cleanup used OpenAI Codex.
 
 The F2 and F6 fixes, their tests and these sections were drafted with Claude Code
 (Claude Opus 5.5) and reviewed by Zlata Tsepkalo.

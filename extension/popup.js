@@ -1,4 +1,7 @@
 import { api, insecureServer, originPattern, signedIn, signIn, signOut } from "./api.js";
+import { showRecovery } from "./recovery-popup.js";
+
+void showRecovery();
 
 const MEET_CALL = /^https:\/\/meet\.google\.com\/(?:meet\/)?[a-z]{3}-[a-z]{4}-[a-z]{3}(?:[/?#]|$)/;
 
@@ -127,7 +130,10 @@ try {
 if (!tab?.url || !MEET_CALL.test(tab.url)) {
   show("not-meet");
 } else {
-  await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["recorder.js"] });
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ["recording-port.js", "recorder.js"],
+  });
   await chrome.tabs.sendMessage(tab.id, { type: "hide-card" });
   const { startedAt } = await chrome.runtime.sendMessage({ type: "recording", tabId: tab.id });
   if (startedAt) {

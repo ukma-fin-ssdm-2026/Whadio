@@ -262,7 +262,9 @@ Meet call with at least one other participant.
    recordings start at once.
 6. Stop from the popup. The meeting appears in the web app; it's transcribed and gets notes once
    the [workers](#running-the-workers) are running. If the upload fails, the extension saves the
-   recording as a `.webm` file in your downloads instead.
+   recording as a `.webm` download instead. If saving fails, the popup offers **Retry download**
+   or **Discard**. Recovery copies survive Chrome restarts; sign in to the original account and
+   server to access them. Temporary copies that cannot survive a restart are marked.
 
 ## Running the workers
 
