@@ -69,8 +69,8 @@ export function serveApi(signedIn: boolean): ApiTraffic {
     ),
     http.get(
       "/api/v1/workspaces",
-      member(() => ({
-        items: [
+      member(() =>
+        page([
           {
             id: "workspace",
             name: "Demo Workspace",
@@ -78,8 +78,8 @@ export function serveApi(signedIn: boolean): ApiTraffic {
             member_count: 1,
             notes_provider: "Whadio",
           },
-        ],
-      })),
+        ]),
+      ),
     ),
     http.get(
       "/api/v1/workspaces/workspace",

@@ -98,3 +98,26 @@ test("updating a workspace marks the list for a refetch", async () => {
     expect(queryClient.getQueryState(workspaceQueries.list().queryKey)?.isInvalidated).toBe(true),
   );
 });
+
+test("workspace list follows every cursor", async () => {
+  // Arrange
+  const cursors: (string | null)[] = [];
+  server.use(
+    http.get("/api/v1/workspaces", ({ request, response }) => {
+      const cursor = new URL(request.url).searchParams.get("cursor");
+      cursors.push(cursor);
+      return response(200).json({
+        ...page([workspaceSummary({ id: cursor ? "second" : "first" })]),
+        pagination: { limit: 100, has_more: !cursor, next_cursor: cursor ? null : "next+/=" },
+      });
+    }),
+  );
+  const client = createTestQueryClient();
+  // Act
+  const result = await client.fetchQuery(workspaceQueries.list());
+  // Assert
+  expect({ ids: result.items.map((item) => item.id), cursors }).toEqual({
+    ids: ["first", "second"],
+    cursors: [null, "next+/="],
+  });
+});

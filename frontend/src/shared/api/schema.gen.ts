@@ -345,7 +345,7 @@ export interface paths {
         };
         /**
          * List my workspaces
-         * @description Workspaces the caller belongs to, oldest first, the personal one included.
+         * @description Workspaces the caller belongs to, ordered by creation time then workspace ID ascending, the personal one included.
          */
         get: operations["list_workspaces_api_v1_workspaces_get"];
         put?: never;
@@ -885,7 +885,7 @@ export interface paths {
         };
         /**
          * Where a recording can go
-         * @description The caller's workspaces, oldest first, each with the folders a recording can be filed in. The folder is the notes context, so it is chosen before recording.
+         * @description The caller's workspaces, ordered by creation time then workspace ID ascending, each with the folders a recording can be filed in. The folder is the notes context, so it is chosen before recording.
          */
         get: operations["list_destinations_api_v1_captures_destinations_get"];
         put?: never;

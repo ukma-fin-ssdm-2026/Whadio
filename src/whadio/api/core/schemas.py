@@ -1,11 +1,9 @@
-from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Annotated, ClassVar
 
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints
 
 from ...shared.text import display_text
-from .errors import ApiError, ErrorCode, ErrorDetail
 
 
 class Input(BaseModel):
@@ -51,26 +49,3 @@ class PageInfo(Output):
 class Page[T](Output):
     items: list[T] = Field(description="Items of this page, in the documented order")
     pagination: PageInfo
-
-
-def paginate[T](items: Sequence[T], query: PageQuery) -> Page[T]:
-    # Stub cursor: the position of the next item. The design's cursor is an opaque sort key.
-    start = 0
-    if query.cursor is not None:
-        cursor = query.cursor
-        if not (cursor.isascii() and cursor.isdigit() and 0 < int(cursor) < len(items)):
-            raise ApiError(
-                422,
-                ErrorCode.VALIDATION_ERROR,
-                "Request contains invalid fields",
-                [ErrorDetail(field="cursor", message="is not a cursor of this list")],
-            )
-        start = int(cursor)
-    end = start + query.limit
-    has_more = end < len(items)
-    return Page[T](
-        items=list(items[start:end]),
-        pagination=PageInfo(
-            limit=query.limit, next_cursor=str(end) if has_more else None, has_more=has_more
-        ),
-    )
