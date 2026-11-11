@@ -8,8 +8,24 @@ export const workspaceQueries = {
   list: () =>
     queryOptions({
       queryKey: ["workspaces", "list"],
-      queryFn: ({ signal }) =>
-        unwrap(apiClient.GET("/api/v1/workspaces", { params: { query: { limit: 100 } }, signal })),
+      queryFn: async ({ signal }) => {
+        const fetchPage = (cursor?: string) =>
+          unwrap(
+            apiClient.GET("/api/v1/workspaces", {
+              params: { query: { limit: 100, cursor } },
+              signal,
+            }),
+          );
+        const result = await fetchPage();
+        let cursor = result.pagination.next_cursor;
+        while (cursor) {
+          const page = await fetchPage(cursor);
+          result.items.push(...page.items);
+          result.pagination = page.pagination;
+          cursor = page.pagination.next_cursor;
+        }
+        return result;
+      },
       select: (page) => page.items.map(mapWorkspace),
     }),
   detail: (workspaceId: string) =>

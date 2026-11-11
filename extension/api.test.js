@@ -1,4 +1,4 @@
-import { api, signIn, TIMEOUT_MS } from "./api.js";
+import { api, destinations, signIn, TIMEOUT_MS } from "./api.js";
 
 const SERVER = "https://whadio.example";
 
@@ -100,5 +100,29 @@ describe("a request whose answer stops partway", () => {
 
     // Assert
     expect(outcome).toHaveProperty("name", "TimeoutError");
+  });
+});
+
+test("destinations follow every encoded cursor", async () => {
+  // Arrange
+  const items = [{ workspace_id: "first" }, { workspace_id: "second" }];
+  globalThis.fetch = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({ items: [items[0]], pagination: { next_cursor: "next+/=" } }),
+    )
+    .mockResolvedValueOnce(Response.json({ items: [items[1]], pagination: { next_cursor: null } }));
+  // Act
+  const found = await destinations();
+  // Assert
+  expect({
+    found,
+    urls: fetch.mock.calls.map(([url]) => new URL(url).pathname + new URL(url).search),
+  }).toEqual({
+    found: items,
+    urls: [
+      "/api/v1/captures/destinations?limit=100",
+      "/api/v1/captures/destinations?limit=100&cursor=next%2B%2F%3D",
+    ],
   });
 });
