@@ -30,7 +30,7 @@ Recorded with the reason, so that the boundary is a decision rather than an omis
 | Native mobile and desktop applications | Android and iOS do not permit an application to capture another application's audio, so a phone application could record the room but not the call. Replaced by one responsive web interface. |
 | Publishing the extension to the Chrome Web Store | Review turnaround does not fit the semester. |
 | Platforms other than Google Meet | Their recordings can be uploaded as files instead. Direct support only if time remains. |
-| Recovering a recording interrupted by a dropped connection or a closed tab | The high-level design describes finalising a partial recording, but it is not built, so recording covers the happy path only. |
+| Recovering a recording interrupted by a dropped connection or a closed tab | Kept out of scope by team decision (#292): the server never finalises an interrupted capture into a partial recording. Its meeting stays in `recording`, and the member who recorded it or a Moderator deletes it from the meeting page (FR-036). When an upload fails, the extension saves the recording to the browser's downloads, and the member can upload that file instead. |
 | Real-time transcription | Processing starts after the meeting ends. |
 | Languages other than Ukrainian and English; language-switching detection as its own feature | The glossary handles mixed speech without a separate detector. |
 | Recognising the same speakers across meetings (voice profiles) | Requires biometric voice data the system deliberately does not hold. |
