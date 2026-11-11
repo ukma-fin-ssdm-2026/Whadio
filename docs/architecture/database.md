@@ -52,7 +52,6 @@ Remaining integrations belong to their module owners:
 
 - **Processing (Denys):** provider selection and regeneration limits.
 - **Accounts (Denys):** membership writes beyond joining a workspace.
-- **Capture (Denys):** finalising an idle capture as a partial recording.
 
 Retention deletion and recording cleanup continue independently of warning delivery.
 

@@ -39,7 +39,7 @@ The model covers the data required for these key project functions:
 | `SESSION` | `session_id` | A signed-in browser session or an extension token, held server-side so that it can be revoked. | `token_hash` is sensitive. Session rows reveal when an account signed in. |
 | `FOLDER` | `folder_id` | Organizes meetings inside a workspace. Folders do not define permissions. | Folder names may reveal topics or projects. |
 | `MEETING` | `meeting_id` | Meeting metadata, generated-name state, source type, recording completeness, meeting-level processing state, consent confirmation, recording location, retention state, and access mode. | `name`, `storage_path`, timestamps, duration, and consent-confirmation metadata can be sensitive; the recording path points to highly sensitive audio. |
-| `CAPTURE_SESSION` | `capture_session_id` | Browser recording session used by the extension for chunked upload, idle-timeout recovery, and partial recording assembly. | Links a user to a recording action and may reveal meeting timing. |
+| `CAPTURE_SESSION` | `capture_session_id` | Browser recording session used by the extension for chunked upload. | Links a user to a recording action and may reveal meeting timing. |
 | `CAPTURE_CHUNK` | `capture_chunk_id` | Acknowledged uploaded audio chunk with sequence number, object-storage key, and speaker events observed by the extension. | `storage_key` references audio chunks containing personal voice data and sensitive meeting content. `speaker_events` may contain participant names and active-speaker timing. |
 | `MEETING_ACCESS_GRANT` | `access_grant_id` | Explicit access list used when a meeting is restricted to selected workspace members. | Reveals who can access a specific meeting. |
 | `EXTERNAL_SHARE` | `share_id` | Read-only signed-in sharing outside the workspace, bound to the one account its creator approves, with revocation and optional speaker-name redaction. | `token_hash` is sensitive. `recipient_user_id` is personal data. Share metadata reveals external disclosure. |
@@ -96,10 +96,10 @@ The model covers the data required for these key project functions:
 - Every entity has a UUID primary key.
 - `MEETING.name_is_generated` is `true` when the meeting name was proposed by the system and the SPA should prompt the user to confirm or rename it; it becomes `false` after the user provides a name.
 - `MEETING.storage_path` and `MEETING.duration_seconds` are optional while an extension recording is still being captured and before chunks have been assembled.
-- `MEETING.recording_status = partial` means the capture ended without a complete stop event, for example after a lost connection or closed tab, but already acknowledged chunks were stored. Partial recordings must be shown as partial and must not be treated as complete meeting records.
+- `MEETING.recording_status = partial` means the capture ended without a complete stop event, for example after a lost connection or closed tab, but already acknowledged chunks were stored. Partial recordings must be shown as partial and must not be treated as complete meeting records. No code sets it: finalising an interrupted capture is out of scope (#292).
 - `MEETING.processing_state` is the meeting-level state shown in the SPA: `recording`, `queued`, `processing`, `processed`, or `failed`.
 - `MEETING.consent_confirmed_at` and `MEETING.consent_confirmed_by_user_id` are optional because extension recordings require consent confirmation, while uploaded recordings do not have the extension consent step.
-- `CAPTURE_SESSION.last_chunk_seq` and `CAPTURE_SESSION.last_chunk_at` are optional until the first chunk arrives; after that, they let the scheduler find captures that have been idle past the timeout.
+- `CAPTURE_SESSION.last_chunk_seq` and `CAPTURE_SESSION.last_chunk_at` are optional until the first chunk arrives; after that, they record how far an upload got.
 - `CAPTURE_CHUNK` must be unique by `(capture_session_id, seq)`, so chunk upload retries are idempotent.
 - A workspace must always have exactly one membership with `role = Owner`.
 - `WORKSPACE_MEMBERSHIP` must be unique by `(workspace_id, user_id)`, so one user has at most one role in a workspace.
