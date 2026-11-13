@@ -127,7 +127,10 @@ try {
 if (!tab?.url || !MEET_CALL.test(tab.url)) {
   show("not-meet");
 } else {
-  await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["recorder.js"] });
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ["audio.js", "recorder.js"],
+  });
   await chrome.tabs.sendMessage(tab.id, { type: "hide-card" });
   const { startedAt } = await chrome.runtime.sendMessage({ type: "recording", tabId: tab.id });
   if (startedAt) {

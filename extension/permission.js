@@ -6,7 +6,9 @@ try {
     track.stop();
   }
   status.textContent = "Microphone allowed. Close this tab and start recording again.";
-} catch {
+} catch (failure) {
   status.textContent =
-    "Whadio cannot record your voice without the microphone. Allow it from the address bar and reload this page.";
+    failure.name === "NotFoundError"
+      ? "Chrome found no microphone. Connect one and reload this page."
+      : "Whadio cannot record your voice without the microphone. Allow it from the address bar and reload this page.";
 }

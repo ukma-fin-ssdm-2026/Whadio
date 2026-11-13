@@ -59,6 +59,9 @@ async function saveLocally(startedAt, slices) {
 }
 
 async function record(tabId, streamId) {
+  if (uploads.has(tabId)) {
+    return { error: "Whadio is already recording this call." };
+  }
   pending += 1;
   let failed = true;
   try {
@@ -229,13 +232,15 @@ class Upload {
 // The recording under way in each tab, which the tab's speaker names join.
 const uploads = new Map();
 
-// A card recording connects from its tab as "recording"; one from the offscreen document names its tab.
-function recordedTab(port) {
+// A card recording connects from its tab as "recording:<startedAt>"; one from the offscreen document
+// names its tab too, as "recording:<tabId>:<startedAt>".
+function recording(port) {
   if (port.sender?.tab) {
-    return port.name === "recording" ? port.sender.tab.id : null;
+    const match = /^recording:(\d+)$/.exec(port.name);
+    return match ? { tabId: port.sender.tab.id, startedAt: Number(match[1]) } : null;
   }
-  const match = /^recording:(\d+)$/.exec(port.name);
-  return match ? Number(match[1]) : null;
+  const match = /^recording:(\d+):(\d+)$/.exec(port.name);
+  return match ? { tabId: Number(match[1]), startedAt: Number(match[2]) } : null;
 }
 
 chrome.runtime.onConnect.addListener(async (port) => {
@@ -250,20 +255,23 @@ chrome.runtime.onConnect.addListener(async (port) => {
     });
     return;
   }
-  const tabId = recordedTab(port);
-  if (tabId === null) {
+  const started = recording(port);
+  if (started === null) {
     return;
   }
-  const upload = new Upload(Date.now(), !port.sender?.tab);
+  const { tabId, startedAt } = started;
+  const upload = new Upload(startedAt, !port.sender?.tab);
   uploads.set(tabId, upload);
   // Opened at once rather than with the first chunk, so the meeting's time is when recording began.
   upload.queue = upload.queue.then(() => upload.send());
   port.onMessage.addListener((message) => upload.add(message.audio));
   port.onDisconnect.addListener(async () => {
-    uploads.delete(tabId);
-    // The tab may already be closed, so telling it and clearing its badge may fail.
-    chrome.tabs.sendMessage(tabId, { type: "stopped" }).catch(() => {});
-    chrome.action.setBadgeText({ tabId, text: "" }).catch(() => {});
+    if (uploads.get(tabId) === upload) {
+      uploads.delete(tabId);
+      // The tab may already be closed, so telling it and clearing its badge may fail.
+      chrome.tabs.sendMessage(tabId, { type: "stopped", startedAt }).catch(() => {});
+      chrome.action.setBadgeText({ tabId, text: "" }).catch(() => {});
+    }
     await upload.finish();
     await closeOffscreenIfIdle();
   });
@@ -330,7 +338,10 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
     return;
   }
   try {
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["recorder.js"] });
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ["audio.js", "recorder.js"],
+    });
     const status = await chrome.tabs.sendMessage(tab.id, { type: "status" });
     if (!(await signedIn())) {
       await chrome.tabs.sendMessage(tab.id, { type: "ask-sign-in" });

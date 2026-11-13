@@ -31,6 +31,7 @@ function fakeChrome({ signedIn = true, unreachable = false } = {}) {
 
 async function load(options) {
   globalThis.chrome = fakeChrome(options);
+  await import("./audio.js");
   await import("./recorder.js");
 }
 
@@ -244,17 +245,57 @@ describe("the recorder's answers to the extension", () => {
     expect(speakersSent()).toEqual([["Zoe", "anna", "Émile", "Олена"]]);
   });
 
-  test("ends a recording that stopped elsewhere without asking to stop it", async () => {
+  test("sends the speakers once a second has passed even when its timer runs late", async () => {
+    // Arrange
+    await load();
+    speaking("Zoe");
+    send({ type: "started", startedAt: 0 });
+    vi.spyOn(performance, "now").mockReturnValue(performance.now() + 1000);
+
+    // Act
+    await vi.advanceTimersByTimeAsync(250);
+
+    // Assert
+    expect(speakersSent()).toEqual([["Zoe"]]);
+  });
+
+  test("ends the recording reported as stopped, so a later stop finds none", async () => {
     // Arrange
     await load();
     send({ type: "started", startedAt: 0 });
 
     // Act
-    send({ type: "stopped" });
+    send({ type: "stopped", startedAt: 0 });
     send({ type: "stop" });
 
     // Assert
-    expect(sentTypes()).toEqual([]);
+    expect(sentTypes()).toEqual(["stop-recording"]);
+  });
+
+  test("keeps its recording when an older one is reported as stopped", async () => {
+    // Arrange
+    await load();
+    speaking("Zoe");
+    send({ type: "started", startedAt: 5 });
+
+    // Act
+    send({ type: "stopped", startedAt: 0 });
+    await vi.advanceTimersByTimeAsync(1000);
+
+    // Assert
+    expect(speakersSent()).toEqual([["Zoe"]]);
+  });
+
+  test("keeps the running recording when another one is reported as started", async () => {
+    // Arrange
+    await load();
+    send({ type: "started", startedAt: 0 });
+
+    // Act
+    send({ type: "started", startedAt: 5 });
+
+    // Assert
+    expect(chrome.runtime.connect.mock.calls).toEqual([[{ name: "page" }]]);
   });
 
   test("asks the background to stop the recording and answers when told to stop", async () => {

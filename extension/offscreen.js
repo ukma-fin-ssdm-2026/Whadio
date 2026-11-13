@@ -3,13 +3,30 @@
 // without end. This document is not captured, so the call plays from here. The recorders are keyed by tab.
 const recordings = new Map();
 
-function base64(buffer) {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+async function microphoneRefused(failure) {
+  if (failure.name === "NotFoundError") {
+    return { error: "Whadio found no microphone. Connect one, then start again." };
   }
-  return btoa(binary);
+  if (failure.name !== "NotAllowedError") {
+    throw failure;
+  }
+  const { state } = await navigator.permissions.query({ name: "microphone" });
+  if (state === "prompt") {
+    // This document cannot ask for the microphone; the background opens a page that can.
+    return {
+      error: "Allow Whadio to use your microphone in the tab that opened, then start again.",
+      microphone: true,
+    };
+  }
+  if (state === "denied") {
+    return {
+      error:
+        "Whadio is blocked from your microphone. Allow it for Whadio in Chrome's site settings, then start again.",
+    };
+  }
+  return {
+    error: "Your system keeps Chrome from using the microphone. Allow it there, then start again.",
+  };
 }
 
 async function record(tabId, streamId) {
@@ -25,61 +42,25 @@ async function record(tabId, streamId) {
     for (const track of tab.getTracks()) {
       track.stop();
     }
-    if (failure.name !== "NotAllowedError") {
-      throw failure;
-    }
-    // This document cannot ask for the microphone; the background opens a page that can.
-    return {
-      error: "Allow Whadio to use your microphone in the tab that opened, then start again.",
-      microphone: true,
-    };
+    return await microphoneRefused(failure);
   }
 
-  const context = new AudioContext();
-  const mix = context.createMediaStreamDestination();
-  const call = context.createMediaStreamSource(tab);
-  call.connect(context.destination);
-  call.connect(mix);
-  context.createMediaStreamSource(microphone).connect(mix);
-
-  // The background uploads the audio as it arrives and completes the recording when this port disconnects.
-  const port = chrome.runtime.connect({ name: `recording:${tabId}` });
-  let sent = Promise.resolve();
-  const recorder = new MediaRecorder(mix.stream, { mimeType: "audio/webm;codecs=opus" });
-  recorder.addEventListener("dataavailable", (event) => {
-    sent = sent.then(async () =>
-      port.postMessage({ audio: base64(await event.data.arrayBuffer()) }),
-    );
-  });
-  recorder.addEventListener(
-    "stop",
-    () => {
-      recordings.delete(tabId);
-      for (const stream of [tab, microphone]) {
-        for (const track of stream.getTracks()) {
-          track.stop();
-        }
-      }
-      void context.close();
-      void sent.then(() => port.disconnect());
-    },
-    { once: true },
+  const startedAt = Date.now();
+  const recorder = globalThis.whadioAudio.record(
+    tab,
+    microphone,
+    `recording:${tabId}:${startedAt}`,
+    true,
   );
+  recorder.addEventListener("stop", () => recordings.delete(tabId), { once: true });
   // The capture ends by itself only when the tab closes; a reload or a navigation is stopped by the background.
   tab.getAudioTracks()[0].addEventListener("ended", () => {
     if (recorder.state !== "inactive") {
       recorder.stop();
     }
   });
-  // A restarted service worker has lost this recording's upload, so nothing could stop it or take its audio.
-  port.onDisconnect.addListener(() => {
-    if (recorder.state !== "inactive") {
-      recorder.stop();
-    }
-  });
-  recorder.start(1000);
   recordings.set(tabId, recorder);
-  return { startedAt: Date.now() };
+  return { startedAt };
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
