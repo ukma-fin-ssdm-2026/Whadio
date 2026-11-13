@@ -39,7 +39,13 @@ function serveShares(shares: Schemas["ShareRead"][] = []) {
 }
 
 function renderDialog() {
-  return renderWithProviders(<ShareDialog meetingId="meeting" onClose={() => {}} />);
+  return renderWithProviders(
+    <ShareDialog
+      meetingId="meeting"
+      requestsHref={(shareId) => `/shares/${shareId}/access-requests`}
+      onClose={() => {}}
+    />,
+  );
 }
 
 test("each share shows whether it waits, is approved or was revoked", async () => {
@@ -59,10 +65,24 @@ test("each share shows whether it waits, is approved or was revoked", async () =
       .getAllByRole("listitem")
       .map((item) => item.textContent),
   ).toEqual([
-    "Waiting for someone to open the linkSpeaker names shownRevoke",
+    "Waiting for someone to open the linkSpeaker names shownRequestsRevoke",
     "Shared with an approved recipientSpeaker names shownRevoke",
     "RevokedSpeaker names shown",
   ]);
+});
+
+test("a waiting share links to its access requests", async () => {
+  // Arrange
+  serveShares([share({ id: "waiting" })]);
+
+  // Act
+  renderDialog();
+
+  // Assert
+  expect(await screen.findByRole("link", { name: "Requests" })).toHaveAttribute(
+    "href",
+    "/shares/waiting/access-requests",
+  );
 });
 
 test("a share hides speaker names when asked to", async () => {

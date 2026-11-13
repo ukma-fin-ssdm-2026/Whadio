@@ -22,6 +22,7 @@ import { type Share, shareQueries, useCreateShare, useRevokeShare } from "../api
 
 interface ShareDialogProps {
   meetingId: string;
+  requestsHref: (shareId: string) => string;
   onClose: () => void;
 }
 
@@ -31,7 +32,7 @@ function shareState(share: Share) {
   return "Waiting for someone to open the link";
 }
 
-export function ShareDialog({ meetingId, onClose }: ShareDialogProps) {
+export function ShareDialog({ meetingId, requestsHref, onClose }: ShareDialogProps) {
   const notify = useNotify();
   const shares = useQuery(shareQueries.list(meetingId));
   const createShare = useCreateShare(meetingId);
@@ -82,14 +83,21 @@ export function ShareDialog({ meetingId, onClose }: ShareDialogProps) {
                   disableGutters
                   secondaryAction={
                     !share.revoked_at && (
-                      <Button
-                        color="error"
-                        size="small"
-                        disabled={pending}
-                        onClick={() => revoke(share.id)}
-                      >
-                        Revoke
-                      </Button>
+                      <Stack direction="row" sx={{ gap: 1 }}>
+                        {!share.recipient_user_id && (
+                          <Button size="small" href={requestsHref(share.id)}>
+                            Requests
+                          </Button>
+                        )}
+                        <Button
+                          color="error"
+                          size="small"
+                          disabled={pending}
+                          onClick={() => revoke(share.id)}
+                        >
+                          Revoke
+                        </Button>
+                      </Stack>
                     )
                   }
                 >

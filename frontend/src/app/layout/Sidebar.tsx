@@ -1,3 +1,4 @@
+import FolderSharedOutlinedIcon from "@mui/icons-material/FolderSharedOutlined";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import MonitorHeartOutlinedIcon from "@mui/icons-material/MonitorHeartOutlined";
 import NotesOutlinedIcon from "@mui/icons-material/NotesOutlined";
@@ -61,6 +62,9 @@ export function Sidebar({ user, workspaces, signOutAction, onNavigate }: Sidebar
         </ListItemLink>
         <ListItemLink to="/meetings" activeOptions={THIS_PATH_ONLY} {...navLink}>
           <NavLabel label="Meetings" icon={<NotesOutlinedIcon />} />
+        </ListItemLink>
+        <ListItemLink to="/shared" {...navLink}>
+          <NavLabel label="Shared with me" icon={<FolderSharedOutlinedIcon />} />
         </ListItemLink>
         <ListItemLink to="/settings/assistant" {...navLink}>
           <NavLabel label="AI assistant" icon={<SmartToyOutlinedIcon />} />
