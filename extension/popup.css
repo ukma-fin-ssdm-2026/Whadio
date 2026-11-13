@@ -1,74 +1,321 @@
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("fonts/inter.woff2") format("woff2-variations");
+}
+
+:root {
+  color-scheme: light dark;
+  --primary: #0f766e;
+  --primary-dark: #115e59;
+  --primary-contrast: #ffffff;
+  --tint: #dcefeb;
+  --tint-contrast: #115e59;
+  --text: #202522;
+  --text-secondary: #64706a;
+  --divider: #dde2dc;
+  --background: #f6f4ef;
+  --paper: #ffffff;
+  --error: #8a332b;
+  --outline: rgb(0 0 0 / 23%);
+  --disabled: rgb(0 0 0 / 26%);
+  --disabled-background: rgb(0 0 0 / 12%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --primary: #4fbfae;
+    --primary-dark: #3aa596;
+    --primary-contrast: #0b1d1a;
+    --tint: #183a35;
+    --tint-contrast: #9fe1d6;
+    --text: #e4e9e6;
+    --text-secondary: #a2ada7;
+    --divider: #2f3733;
+    --background: #111513;
+    --paper: #181d1b;
+    --error: #f19b91;
+    --outline: rgb(255 255 255 / 23%);
+    --disabled: rgb(255 255 255 / 30%);
+    --disabled-background: rgb(255 255 255 / 12%);
+  }
+}
+
 body {
-  width: 280px;
+  width: 340px;
   margin: 0;
-  padding: 12px 16px 16px;
+  padding: 12px;
+  background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--primary) 7%, transparent),
+      transparent 20rem
+    )
+    var(--background);
+  color: var(--text);
   font:
-    14px / 1.4 system-ui,
+    14px / 1.45 "Inter Variable",
+    ui-sans-serif,
+    system-ui,
     sans-serif;
 }
 
+.card {
+  padding: 20px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.brand {
+  margin: 0 0 12px;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
 h1 {
-  margin: 0 0 8px;
+  margin: 0 0 4px;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+p {
+  margin: 0 0 16px;
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.field {
+  position: relative;
+  display: block;
+  margin: 0 0 16px;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  box-sizing: border-box;
+  height: 56px;
+  padding: 16px 14px;
+  border: 1px solid var(--outline);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
   font-size: 16px;
 }
 
-label {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  margin: 8px 0 12px;
+.field select {
+  padding: 0 10px;
+}
+
+.field option {
+  background: var(--paper);
+}
+
+.field input:hover,
+.field select:hover {
+  border-color: var(--text);
+}
+
+.field input:focus,
+.field select:focus {
+  border-color: var(--primary);
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.field span {
+  position: absolute;
+  top: 16px;
+  left: 10px;
+  padding: 0 4px;
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 24px;
+  pointer-events: none;
+  transition:
+    top 150ms,
+    font-size 150ms;
+}
+
+.field select + span,
+.field input:not(:placeholder-shown) + span,
+.field input:focus + span {
+  top: -9px;
+  background: var(--paper);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.field input:focus + span,
+.field select:focus + span {
+  color: var(--primary);
 }
 
 button {
   width: 100%;
-  padding: 8px;
+  min-height: 40px;
+  padding: 8px 22px;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary);
+  box-shadow:
+    0 3px 1px -2px rgb(0 0 0 / 20%),
+    0 2px 2px 0 rgb(0 0 0 / 14%),
+    0 1px 5px 0 rgb(0 0 0 / 12%);
+  color: var(--primary-contrast);
   font: inherit;
+  font-weight: 500;
   cursor: pointer;
 }
 
+button:hover {
+  background: var(--primary-dark);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 button:disabled {
+  background: var(--disabled-background);
+  box-shadow: none;
+  color: var(--disabled);
   cursor: default;
 }
 
-label.field {
-  flex-direction: column;
-  gap: 4px;
-  margin: 0 0 8px;
+button.link {
+  flex: none;
+  width: auto;
+  min-height: 0;
+  margin-left: auto;
+  padding: 4px 8px;
+  background: none;
+  box-shadow: none;
+  color: var(--primary);
 }
 
-label.field input,
-label.field select {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 6px;
-  font: inherit;
+button.link:hover {
+  background: var(--tint);
+}
+
+#account {
+  margin: 0 0 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--divider);
+}
+
+#account .field {
+  margin: 0;
 }
 
 .account {
   display: flex;
   gap: 6px;
-  align-items: baseline;
+  align-items: center;
+  font-size: 14px;
 }
 
-button.link {
-  width: auto;
-  margin-left: auto;
-  padding: 0;
-  border: none;
-  background: none;
-  color: #1a73e8;
+#name {
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#not-meet p {
+  margin: 0;
+}
+
+.notice {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--tint);
+  color: var(--tint-contrast);
+  font-size: 14px;
+}
+
+.check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 0 0 16px;
+}
+
+.check input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--primary);
+}
+
+.live {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  font-weight: 500;
 }
 
 .live::before {
   content: "";
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 6px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  background: #d93025;
+  background: var(--error);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+#elapsed {
+  font-size: 24px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live::before {
+    animation: none;
+  }
 }
 
 #error {
-  color: #d93025;
+  margin: 16px 0 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--error) 12%, var(--paper));
+  color: var(--error);
+  font-size: 14px;
+}
+
+body.page {
+  width: auto;
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 64px 16px;
+}
+
+body.page .card {
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+#status {
+  margin: 0;
+  color: var(--text);
 }
