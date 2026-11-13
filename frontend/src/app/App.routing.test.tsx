@@ -464,6 +464,7 @@ test("a created workspace appears and opens with an empty meeting list", async (
   server.use(
     http.post("/api/v1/workspaces", () => HttpResponse.json(created, { status: 201 })),
     http.get("/api/v1/workspaces/research/meetings", () => HttpResponse.json(page([]))),
+    http.get("/api/v1/workspaces/research/folders", () => HttpResponse.json(page([]))),
   );
   const { user } = open("/");
   await user.click(await screen.findByRole("button", { name: "Create workspace" }));
