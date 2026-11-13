@@ -1,6 +1,7 @@
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import DriveFileMoveOutlinedIcon from "@mui/icons-material/DriveFileMoveOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import { IconButton, Menu, MenuItem, Tooltip } from "@mui/material";
 import { useState } from "react";
@@ -10,6 +11,7 @@ import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
 import { useNotify } from "@/shared/ui/NotifyProvider";
 import { useDeleteMeeting } from "../api/meetings";
 import type { Meeting } from "../model";
+import { AccessDialog, type WorkspaceMembers } from "./AccessDialog";
 import { MoveMeetingDialog } from "./MoveMeetingDialog";
 import { RenameMeetingDialog } from "./RenameMeetingDialog";
 
@@ -20,12 +22,20 @@ interface MeetingActionsProps {
   role: Schemas["Role"];
   userId: string;
   folders: Folder[];
-  onDeleted: () => void;
+  members: WorkspaceMembers;
+  onLeave: () => void;
 }
 
-type OpenDialog = "rename" | "move" | "delete" | null;
+type OpenDialog = "rename" | "move" | "access" | "delete" | null;
 
-export function MeetingActions({ meeting, role, userId, folders, onDeleted }: MeetingActionsProps) {
+export function MeetingActions({
+  meeting,
+  role,
+  userId,
+  folders,
+  members,
+  onLeave,
+}: MeetingActionsProps) {
   const notify = useNotify();
   const deleteMeeting = useDeleteMeeting(meeting.id, meeting.workspaceId);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
@@ -43,7 +53,7 @@ export function MeetingActions({ meeting, role, userId, folders, onDeleted }: Me
       await deleteMeeting.mutateAsync();
       close();
       notify("Meeting deleted.");
-      onDeleted();
+      onLeave();
     } catch (error) {
       close();
       notify(error instanceof Error ? error.message : "The meeting could not be deleted.", "error");
@@ -67,6 +77,11 @@ export function MeetingActions({ meeting, role, userId, folders, onDeleted }: Me
         <MenuItem onClick={() => open("move")}>
           <DriveFileMoveOutlinedIcon fontSize="small" sx={{ mr: 1 }} /> Move
         </MenuItem>
+        {canManage(role) && (
+          <MenuItem onClick={() => open("access")}>
+            <LockOutlinedIcon fontSize="small" sx={{ mr: 1 }} /> Access
+          </MenuItem>
+        )}
         {canDelete && (
           <MenuItem onClick={() => open("delete")}>
             <DeleteOutlineIcon fontSize="small" sx={{ mr: 1 }} /> Delete
@@ -77,6 +92,15 @@ export function MeetingActions({ meeting, role, userId, folders, onDeleted }: Me
       {dialog === "rename" && <RenameMeetingDialog meeting={meeting} onClose={close} />}
       {dialog === "move" && (
         <MoveMeetingDialog meeting={meeting} folders={folders} onClose={close} />
+      )}
+      {dialog === "access" && (
+        <AccessDialog
+          meeting={meeting}
+          userId={userId}
+          members={members}
+          onClose={close}
+          onLostAccess={onLeave}
+        />
       )}
 
       <ConfirmDialog
