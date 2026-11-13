@@ -1,6 +1,6 @@
 import { CircularProgress } from "@mui/material";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { sessionQueries } from "@/features/accounts/api/session";
 import { ExportMenu } from "@/features/export/components/ExportMenu";
@@ -33,6 +33,7 @@ export function MeetingPage({
   onUnsavedChange,
 }: MeetingPageProps) {
   const navigate = useNavigate();
+  const router = useRouter();
   const opened = useQuery(meetingQueries.detail(meetingId));
   const { data: workspaces } = useQuery(workspaceQueries.list());
   const { data: user } = useQuery(sessionQueries.me());
@@ -90,6 +91,12 @@ export function MeetingPage({
                     params: { workspaceId: meeting.workspaceId },
                     replace: true,
                   })
+                }
+                requestsHref={(shareId) =>
+                  router.buildLocation({
+                    to: "/shares/$shareId/access-requests",
+                    params: { shareId },
+                  }).href
                 }
               />
             )

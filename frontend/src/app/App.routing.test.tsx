@@ -376,25 +376,49 @@ test("a failed workspace list keeps the address", async () => {
   expect(currentPath()).toBe(MEETING_LINK);
 });
 
+describe("share links", () => {
+  const SHARE_LINK = "/shares/11111111-1111-4111-8111-111111111111#token=shared-secret";
+
+  test("a signed-out recipient is asked to sign in", async () => {
+    // Act
+    open(SHARE_LINK, false);
+
+    // Assert
+    expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
+  });
+
+  test("a share link shows no token", async () => {
+    // Act
+    open(SHARE_LINK, false);
+    await screen.findByRole("heading", { name: "A meeting was shared with you" });
+
+    // Assert
+    expect(document.body).not.toHaveTextContent("shared-secret");
+  });
+
+  test("the emailed requests link opens the requests page when signed in", async () => {
+    // Arrange
+    server.use(http.get("/api/v1/shares/share/access-requests", () => HttpResponse.json(page([]))));
+
+    // Act
+    open("/shares/share/access-requests");
+
+    // Assert
+    expect(await screen.findByRole("heading", { name: "Access requests" })).toBeInTheDocument();
+  });
+
+  test("the emailed requests link asks a signed-out creator to sign in", async () => {
+    // Act
+    open("/shares/share/access-requests", false);
+
+    // Assert
+    await waitFor(() =>
+      expect(currentPath()).toBe("/sign-in?redirect=%2Fshares%2Fshare%2Faccess-requests"),
+    );
+  });
+});
+
 describe("the not-found page", () => {
-  const EMAILED_LINKS = ["/shares/share/access-requests"];
-
-  test.for(EMAILED_LINKS)("answers %s when signed out", async (path) => {
-    // Act
-    open(path, false);
-
-    // Assert
-    expect(await screen.findByRole("heading", { name: "Page not found" })).toBeInTheDocument();
-  });
-
-  test.for(EMAILED_LINKS)("answers %s when signed in", async (path) => {
-    // Act
-    open(path);
-
-    // Assert
-    expect(await screen.findByRole("heading", { name: "Page not found" })).toBeInTheDocument();
-  });
-
   test("shows no token from the link", async () => {
     // Act
     open("/invitations/invitation#token=emailed-secret", false);

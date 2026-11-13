@@ -31,6 +31,7 @@ function renderActions(
       folders={FOLDERS}
       members={{ data: MEMBERS, error: null }}
       onLeave={onDeleted}
+      requestsHref={(shareId) => `/shares/${shareId}/access-requests`}
     />,
   );
 }
