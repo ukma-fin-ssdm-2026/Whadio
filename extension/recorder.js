@@ -207,19 +207,35 @@ if (!globalThis.whadioRecorder) {
     root.append(
       element("style", {
         textContent: `
-          .card { position: fixed; top: 16px; right: 16px; z-index: 2147483647; width: 300px; padding: 16px;
-            border-radius: 12px; background: #fff; color: #202124; box-shadow: 0 4px 16px rgb(0 0 0 / 30%);
-            font: 14px/1.4 system-ui, sans-serif; }
-          h2 { margin: 0 0 8px; font-size: 16px; }
-          p { margin: 0 0 8px; }
-          label { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0 12px; }
+          .card { --primary: #0f766e; --primary-dark: #115e59; --primary-contrast: #fff; --tint: #dcefeb;
+            --text: #202522; --text-secondary: #64706a; --divider: #dde2dc; --paper: #fff; --error: #8a332b;
+            --disabled: rgb(0 0 0 / 26%); --disabled-background: rgb(0 0 0 / 12%);
+            position: fixed; top: 16px; right: 16px; z-index: 2147483647; width: 320px; padding: 20px;
+            border: 1px solid var(--divider); border-radius: 8px; background: var(--paper); color: var(--text);
+            box-shadow: 0 8px 24px rgb(0 0 0 / 24%); color-scheme: light dark;
+            font: 14px/1.45 "Inter Variable", ui-sans-serif, system-ui, sans-serif; }
+          @media (prefers-color-scheme: dark) {
+            .card { --primary: #4fbfae; --primary-dark: #3aa596; --primary-contrast: #0b1d1a; --tint: #183a35;
+              --text: #e4e9e6; --text-secondary: #a2ada7; --divider: #2f3733; --paper: #181d1b; --error: #f19b91;
+              --disabled: rgb(255 255 255 / 30%); --disabled-background: rgb(255 255 255 / 12%); }
+          }
+          h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; line-height: 1.4; }
+          p { margin: 0 0 16px; color: var(--text-secondary); }
+          label { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 16px; }
+          input { flex: none; width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--primary); }
           .actions { display: flex; gap: 8px; }
-          button { flex: 1; padding: 8px; border: 1px solid #dadce0; border-radius: 6px; background: #fff;
-            font: inherit; cursor: pointer; }
-          button.primary { border-color: #1a73e8; background: #1a73e8; color: #fff; }
-          button:disabled { opacity: 0.5; cursor: default; }
-          .hint { margin: 8px 0 0; color: #5f6368; font-size: 12px; }
-          .error { margin: 8px 0 0; color: #d93025; }
+          button { flex: 1; min-height: 40px; padding: 8px 12px; border: 1px solid var(--divider); border-radius: 8px;
+            background: none; color: var(--primary); font: inherit; font-weight: 500; cursor: pointer; }
+          button:hover { background: var(--tint); }
+          button.primary { border-color: var(--primary); background: var(--primary); color: var(--primary-contrast);
+            box-shadow: 0 3px 1px -2px rgb(0 0 0 / 20%), 0 2px 2px 0 rgb(0 0 0 / 14%), 0 1px 5px 0 rgb(0 0 0 / 12%); }
+          button.primary:hover { border-color: var(--primary-dark); background: var(--primary-dark); }
+          button:disabled, button.primary:disabled { border-color: transparent; background: var(--disabled-background);
+            box-shadow: none; color: var(--disabled); cursor: default; }
+          button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+          .hint { margin: 12px 0 0; font-size: 12px; }
+          .error { margin: 16px 0 0; padding: 8px 12px; border-radius: 8px; color: var(--error);
+            background: color-mix(in srgb, var(--error) 12%, var(--paper)); }
         `,
       }),
       element("div", { className: "card" }, [signInPanel, recordPanel, error]),
