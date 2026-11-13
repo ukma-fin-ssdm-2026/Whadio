@@ -1,47 +1,165 @@
+/* Copied from frontend/src/app/theme/palette.ts: the extension has no build step to import it. */
+:root {
+  color-scheme: light dark;
+  --primary: #0f766e;
+  --primary-dark: #115e59;
+  --primary-contrast: #ffffff;
+  --tint: #dcefeb;
+  --tint-contrast: #115e59;
+  --text: #202522;
+  --text-secondary: #64706a;
+  --divider: #dde2dc;
+  --background: #f6f4ef;
+  --paper: #ffffff;
+  --subtle: #f5f8f6;
+  --success: #317451;
+  --warning: #9a6218;
+  --error: #8a332b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --primary: #4fbfae;
+    --primary-dark: #3aa596;
+    --primary-contrast: #0b1d1a;
+    --tint: #183a35;
+    --tint-contrast: #9fe1d6;
+    --text: #e4e9e6;
+    --text-secondary: #a2ada7;
+    --divider: #2f3733;
+    --background: #111513;
+    --paper: #181d1b;
+    --subtle: #1f2522;
+    --success: #6bbf8e;
+    --warning: #e0a75a;
+    --error: #f19b91;
+  }
+}
+
 body {
-  width: 280px;
+  width: 320px;
   margin: 0;
-  padding: 12px 16px 16px;
+  padding: 16px;
+  background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--primary) 7%, transparent),
+      transparent 20rem
+    )
+    var(--background);
+  color: var(--text);
   font:
-    14px / 1.4 system-ui,
+    14px / 1.45 ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
     sans-serif;
 }
 
 h1 {
-  margin: 0 0 8px;
-  font-size: 16px;
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+p {
+  margin: 0 0 12px;
+  color: var(--text-secondary);
+}
+
+form,
+section {
+  margin-bottom: 12px;
+  padding: 16px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--paper);
 }
 
 label {
   display: flex;
   gap: 8px;
   align-items: flex-start;
-  margin: 8px 0 12px;
+  margin: 0 0 16px;
 }
 
-button {
-  width: 100%;
-  padding: 8px;
-  font: inherit;
-  cursor: pointer;
-}
-
-button:disabled {
-  cursor: default;
+input[type="checkbox"] {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--primary);
 }
 
 label.field {
   flex-direction: column;
   gap: 4px;
-  margin: 0 0 8px;
+  margin: 0 0 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
 }
 
 label.field input,
 label.field select {
   width: 100%;
   box-sizing: border-box;
-  padding: 6px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--divider);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--text);
   font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+label.field input:hover,
+label.field select:hover {
+  border-color: var(--text-secondary);
+}
+
+label.field input:focus,
+label.field select:focus {
+  border-color: var(--primary);
+  outline: 1px solid var(--primary);
+}
+
+button {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  background: var(--primary);
+  color: var(--primary-contrast);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--primary-dark);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  background: var(--divider);
+  color: var(--text-secondary);
+  cursor: default;
+}
+
+#account {
+  padding: 12px 16px;
+}
+
+#account label.field {
+  margin: 0;
 }
 
 .account {
@@ -50,25 +168,108 @@ label.field select {
   align-items: baseline;
 }
 
+#name {
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 button.link {
+  flex: none;
   width: auto;
+  min-height: 0;
   margin-left: auto;
   padding: 0;
-  border: none;
   background: none;
-  color: #1a73e8;
+  color: var(--primary);
+}
+
+button.link:hover {
+  background: none;
+  text-decoration: underline;
+}
+
+#not-meet p {
+  margin: 0;
+}
+
+#idle > p {
+  padding: 8px 12px;
+  border-radius: 4px;
+  background: var(--tint);
+  color: var(--tint-contrast);
+}
+
+#idle label {
+  color: var(--text);
+}
+
+#recording {
+  text-align: center;
+}
+
+.live {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  font-weight: 500;
 }
 
 .live::before {
   content: "";
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 6px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  background: #d93025;
+  background: var(--error);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+#elapsed {
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live::before {
+    animation: none;
+  }
 }
 
 #error {
-  color: #d93025;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--error);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--error);
+}
+
+/* --- The microphone permission page, opened as a tab --- */
+
+body.page {
+  width: auto;
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 64px 16px;
+}
+
+body.page main {
+  max-width: 440px;
+  margin: 0 auto;
+}
+
+#status {
+  margin: 0;
+  color: var(--text);
 }
