@@ -274,6 +274,14 @@ async function openAccess(onLeave = () => {}) {
   return rendered;
 }
 
+test("a member is offered sharing the meeting", async () => {
+  // Act
+  await openActions("member");
+
+  // Assert
+  expect(screen.getByRole("menuitem", { name: /Share/ })).toBeInTheDocument();
+});
+
 test("a member is not offered the meeting's access", async () => {
   // Act
   await openActions("member");
