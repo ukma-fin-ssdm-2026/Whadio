@@ -95,6 +95,15 @@ if (!globalThis.whadioRecorder) {
       }
       throw failure;
     }
+    // A recording from the popup or the shortcut may have begun while the microphone was opening.
+    if (session) {
+      for (const stream of [tab, microphone]) {
+        for (const track of stream.getTracks()) {
+          track.stop();
+        }
+      }
+      throw new Error("Whadio is already recording this call.");
+    }
 
     // The audio goes to the background as it is recorded, so closing the tab cannot lose it; the port
     // disconnects whether the recording stopped or the page went away.
@@ -111,6 +120,11 @@ if (!globalThis.whadioRecorder) {
       }
     };
     began(startedAt, finish);
+    recorder.addEventListener("stop", () => {
+      if (session?.finish === finish) {
+        end();
+      }
+    });
     tab.getAudioTracks()[0].addEventListener("ended", () => {
       if (session?.finish === finish) {
         stop();
@@ -134,13 +148,18 @@ if (!globalThis.whadioRecorder) {
     return stream;
   }
 
-  function stop() {
-    const { finish, listening } = session;
+  function end() {
+    const { listening } = session;
     session = null;
     clearInterval(listening.interval);
     // Recorded once already, so the card stays away for the rest of this call.
     dismissed = true;
-    listening.flush();
+    return listening;
+  }
+
+  function stop() {
+    const { finish } = session;
+    end().flush();
     finish();
   }
 
@@ -352,13 +371,20 @@ if (!globalThis.whadioRecorder) {
     // The offscreen document records; the background reports when it started and when it ended.
     [
       "started",
-      (message) => {
-        if (
-          began(message.startedAt, () => chrome.runtime.sendMessage({ type: "stop-recording" }))
-        ) {
-          // Held for as long as this page lives: its disconnect on a reload or a navigation ends the recording.
-          chrome.runtime.connect({ name: "page" });
+      (message, sendResponse) => {
+        const finish = () => chrome.runtime.sendMessage({ type: "stop-recording" });
+        if (!began(message.startedAt, finish)) {
+          sendResponse({ taken: false });
+          return;
         }
+        // Held for as long as this page lives: its disconnect on a reload or a navigation ends the recording.
+        // A restarted service worker drops it, and the recording with it, so nothing is left to stop.
+        chrome.runtime.connect({ name: "page" }).onDisconnect.addListener(() => {
+          if (session?.finish === finish) {
+            end();
+          }
+        });
+        sendResponse({ taken: true });
       },
     ],
     ["flush-speakers", () => session?.listening.flush()],

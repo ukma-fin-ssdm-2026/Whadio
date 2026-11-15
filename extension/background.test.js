@@ -471,6 +471,51 @@ describe("the recordings in a tab", () => {
     });
   });
 
+  test("tells the tab which card recording stopped", async () => {
+    // Arrange
+    fakeServer();
+    chrome.tabs.sendMessage = vi.fn(async () => {});
+    const recording = {
+      ...port(0),
+      name: `recording:${STARTED_AT.getTime() + 1234}`,
+      sender: { tab: { id: 7 } },
+    };
+    await chrome.runtime.onConnect.listeners[0](recording);
+
+    // Act
+    await hangUp(recording);
+
+    // Assert
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(7, {
+      type: "stopped",
+      startedAt: STARTED_AT.getTime() + 1234,
+    });
+  });
+
+  test("stops the offscreen recording when the tab does not take it", async () => {
+    // Arrange
+    chrome.runtime.sendMessage = vi.fn(async (message) =>
+      message.type === "record" ? { startedAt: STARTED_AT.getTime() } : {},
+    );
+    chrome.tabs.sendMessage = vi.fn(async () => ({ taken: false }));
+    const sendResponse = vi.fn();
+
+    // Act
+    chrome.runtime.onMessage.listeners[0](
+      { type: "record", tabId: 7, streamId: "s" },
+      {},
+      sendResponse,
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Assert
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      target: "offscreen",
+      type: "stop",
+      tabId: 7,
+    });
+  });
+
   test("refuses to start a second recording in a tab that is recording", async () => {
     // Arrange
     fakeServer();

@@ -77,9 +77,15 @@ async function record(tabId, streamId) {
     }
     if (!reply.error) {
       try {
-        await chrome.tabs.sendMessage(tabId, { type: "started", startedAt: reply.startedAt });
+        const answer = await chrome.tabs.sendMessage(tabId, {
+          type: "started",
+          startedAt: reply.startedAt,
+        });
+        if (!answer?.taken) {
+          throw new Error("Whadio is already recording this call.");
+        }
       } catch (failure) {
-        // The page went away while the streams opened; nothing there could stop this recording.
+        // The page went away or already records another call; nothing there could stop this recording.
         await chrome.runtime.sendMessage({ target: "offscreen", type: "stop", tabId });
         throw failure;
       }
