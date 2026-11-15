@@ -21,16 +21,15 @@ if (!globalThis.whadioRecorder) {
   // Each tile's level bars move while that participant talks and rest on the quiet class otherwise; the
   // names heard each second go to the background whenever they differ from the second before.
   function listen() {
-    const began = performance.now();
+    const recordingBegan = performance.now();
     const heard = new Set();
     let previous = "";
-    let secondBegan = began;
-    let ticks = 0;
+    let secondBegan = recordingBegan;
     const flush = () => {
       const speakers = [...heard].sort(byCodeUnits);
       heard.clear();
       // The names belong to when the second began in the audio.
-      const at = (secondBegan - began) / 1000;
+      const at = (secondBegan - recordingBegan) / 1000;
       secondBegan = performance.now();
       if (speakers.join("\n") !== previous) {
         previous = speakers.join("\n");
@@ -62,8 +61,7 @@ if (!globalThis.whadioRecorder) {
           heard.add(name);
         }
       }
-      ticks += 1;
-      if (ticks % 4 === 0) {
+      if (performance.now() - secondBegan >= 1000) {
         flush();
       }
     }, 250);
@@ -71,12 +69,22 @@ if (!globalThis.whadioRecorder) {
   }
 
   function began(startedAt, finish) {
+    if (session) {
+      return false;
+    }
     session = { startedAt, finish, listening: listen() };
     banner.host.remove();
+    return true;
   }
 
   // The card's picker leaves the tab audible, so unlike a tab capture its audio needs no playing back here.
   async function start(tab) {
+    if (session) {
+      for (const track of tab.getTracks()) {
+        track.stop();
+      }
+      throw new Error("Whadio is already recording this call.");
+    }
     let microphone;
     try {
       // With gain control on, this stream and Meet's would both move the system microphone volume.
@@ -87,50 +95,41 @@ if (!globalThis.whadioRecorder) {
       }
       throw failure;
     }
-
-    const context = new AudioContext();
-    const mix = context.createMediaStreamDestination();
-    context.createMediaStreamSource(tab).connect(mix);
-    context.createMediaStreamSource(microphone).connect(mix);
-
-    // The audio goes to the background as it is recorded, so closing the tab cannot lose it; the background
-    // uploads it as it arrives and completes the recording when this port disconnects, whether the recording
-    // stopped or the page went away.
-    const port = chrome.runtime.connect({ name: "recording" });
-    let sent = Promise.resolve();
-    const recorder = new MediaRecorder(mix.stream, { mimeType: "audio/webm;codecs=opus" });
-    recorder.addEventListener("dataavailable", (event) => {
-      sent = sent.then(async () =>
-        port.postMessage({ audio: base64(await event.data.arrayBuffer()) }),
-      );
-    });
-    recorder.addEventListener("stop", () => sent.then(() => port.disconnect()), { once: true });
-    recorder.start(1000);
-
-    const finish = () => {
-      recorder.stop();
+    // A recording from the popup or the shortcut may have begun while the microphone was opening.
+    if (session) {
       for (const stream of [tab, microphone]) {
         for (const track of stream.getTracks()) {
           track.stop();
         }
       }
-      void context.close();
+      throw new Error("Whadio is already recording this call.");
+    }
+
+    // The audio goes to the background as it is recorded, so closing the tab cannot lose it; the port
+    // disconnects whether the recording stopped or the page went away.
+    const startedAt = Date.now();
+    const recorder = globalThis.whadioAudio.record(
+      tab,
+      microphone,
+      `recording:${startedAt}`,
+      false,
+    );
+    const finish = () => {
+      if (recorder.state !== "inactive") {
+        recorder.stop();
+      }
     };
-    began(Date.now(), finish);
+    began(startedAt, finish);
+    recorder.addEventListener("stop", () => {
+      if (session?.finish === finish) {
+        end();
+      }
+    });
     tab.getAudioTracks()[0].addEventListener("ended", () => {
       if (session?.finish === finish) {
         stop();
       }
     });
-  }
-
-  function base64(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let binary = "";
-    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-    }
-    return btoa(binary);
   }
 
   async function captureWithPicker() {
@@ -149,17 +148,19 @@ if (!globalThis.whadioRecorder) {
     return stream;
   }
 
-  // A recording that already ended elsewhere, such as in the offscreen document, needs no finishing.
-  function stop(ended = false) {
-    const { finish, listening } = session;
+  function end() {
+    const { listening } = session;
     session = null;
     clearInterval(listening.interval);
     // Recorded once already, so the card stays away for the rest of this call.
     dismissed = true;
-    if (!ended) {
-      listening.flush();
-      finish();
-    }
+    return listening;
+  }
+
+  function stop() {
+    const { finish } = session;
+    end().flush();
+    finish();
   }
 
   // --- Banner offering to record, or to sign in first ---
@@ -370,18 +371,28 @@ if (!globalThis.whadioRecorder) {
     // The offscreen document records; the background reports when it started and when it ended.
     [
       "started",
-      (message) => {
-        began(message.startedAt, () => chrome.runtime.sendMessage({ type: "stop-recording" }));
+      (message, sendResponse) => {
+        const finish = () => chrome.runtime.sendMessage({ type: "stop-recording" });
+        if (!began(message.startedAt, finish)) {
+          sendResponse({ taken: false });
+          return;
+        }
         // Held for as long as this page lives: its disconnect on a reload or a navigation ends the recording.
-        chrome.runtime.connect({ name: "page" });
+        // A restarted service worker drops it, and the recording with it, so nothing is left to stop.
+        chrome.runtime.connect({ name: "page" }).onDisconnect.addListener(() => {
+          if (session?.finish === finish) {
+            end();
+          }
+        });
+        sendResponse({ taken: true });
       },
     ],
     ["flush-speakers", () => session?.listening.flush()],
     [
       "stopped",
-      () => {
-        if (session) {
-          stop(true);
+      (message) => {
+        if (session?.startedAt === message.startedAt) {
+          stop();
         }
       },
     ],
