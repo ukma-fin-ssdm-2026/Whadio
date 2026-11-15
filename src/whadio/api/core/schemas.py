@@ -41,7 +41,13 @@ class PageInfo(Output):
     limit: int = Field(description="Page size that was applied", examples=[20])
     next_cursor: str | None = Field(
         description="Pass as `cursor` to get the next page; null on the last page",
-        examples=["20"],
+        examples=[
+            (
+                "eyJzY29wZSI6IndvcmtzcGFjZXM6MDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAx"
+                "OmpvaW5lZCIsImtleSI6IjIwMjYtMTEtMTVUMTI6MDA6MDArMDA6MDAiLCJpdGVtX2lkIjoiMDAw"
+                "MDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAyIn0"
+            )
+        ],
     )
     has_more: bool = Field(description="Whether another page follows", examples=[False])
 

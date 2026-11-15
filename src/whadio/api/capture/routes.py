@@ -58,21 +58,21 @@ def _capture_read(view: CaptureView) -> CaptureRead:
 @router.get(
     "/captures/destinations",
     summary="Where a recording can go",
-    description="The caller's workspaces, ordered by creation time then workspace ID ascending, "
-    "each with the folders a recording can "
-    "be filed in. The folder is the notes context, so it is chosen before recording.",
+    description="The caller's workspaces, ordered by the caller's join time then workspace ID, "
+    "both ascending. Each includes the folders a recording can be filed in. The folder is the "
+    "notes context, so it is chosen before recording.",
     response_description="A page of workspaces with their folders",
     responses=error_responses({401: DOC_UNAUTHENTICATED, 422: DOC_INVALID}),
 )
 async def list_destinations(
     query: Annotated[PageQuery, Query()], user: CaptureUser, captures: Captures
 ) -> Page[DestinationRead]:
-    scope = f"capture-destinations:{user.id}:created"
+    scope = f"capture-destinations:{user.id}:joined"
     destinations = await captures.destinations(
         user.id, list_window(query, scope, chronological=True)
     )
     last = destinations[min(len(destinations), query.limit) - 1].workspace if destinations else None
-    cursor = None if last is None else ListCursor(last.created_at.isoformat(), last.workspace_id)
+    cursor = None if last is None else ListCursor(last.joined_at.isoformat(), last.workspace_id)
     found: list[DestinationRead] = [
         DestinationRead(
             workspace_id=item.workspace.workspace_id,

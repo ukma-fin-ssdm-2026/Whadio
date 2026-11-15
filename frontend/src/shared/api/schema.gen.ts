@@ -345,7 +345,7 @@ export interface paths {
         };
         /**
          * List my workspaces
-         * @description Workspaces the caller belongs to, ordered by creation time then workspace ID ascending, the personal one included.
+         * @description Workspaces the caller belongs to, ordered by the caller's join time then workspace ID, both ascending. Includes the personal workspace.
          */
         get: operations["list_workspaces_api_v1_workspaces_get"];
         put?: never;
@@ -885,7 +885,7 @@ export interface paths {
         };
         /**
          * Where a recording can go
-         * @description The caller's workspaces, ordered by creation time then workspace ID ascending, each with the folders a recording can be filed in. The folder is the notes context, so it is chosen before recording.
+         * @description The caller's workspaces, ordered by the caller's join time then workspace ID, both ascending. Each includes the folders a recording can be filed in. The folder is the notes context, so it is chosen before recording.
          */
         get: operations["list_destinations_api_v1_captures_destinations_get"];
         put?: never;
@@ -1939,7 +1939,7 @@ export interface components {
             /**
              * Next Cursor
              * @description Pass as `cursor` to get the next page; null on the last page
-             * @example 20
+             * @example eyJzY29wZSI6IndvcmtzcGFjZXM6MDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxOmpvaW5lZCIsImtleSI6IjIwMjYtMTEtMTVUMTI6MDA6MDArMDA6MDAiLCJpdGVtX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAyIn0
              */
             next_cursor: string | null;
             /**

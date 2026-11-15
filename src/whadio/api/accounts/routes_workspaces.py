@@ -52,8 +52,8 @@ def workspace_read(found: MemberWorkspace, llm: NotesLlm) -> WorkspaceRead:
 @router.get(
     "/workspaces",
     summary="List my workspaces",
-    description="Workspaces the caller belongs to, ordered by creation time then workspace ID "
-    "ascending, the personal one included.",
+    description="Workspaces the caller belongs to, ordered by the caller's join time then "
+    "workspace ID, both ascending. Includes the personal workspace.",
     response_description="A page of workspaces",
     responses=error_responses({401: DOC_UNAUTHENTICATED, 422: DOC_INVALID}),
 )
@@ -63,10 +63,10 @@ async def list_workspaces(
     workspaces: Workspaces,
     llm: ConfiguredNotesLlm,
 ) -> Page[WorkspaceSummary]:
-    scope = f"workspaces:{user.id}:created"
+    scope = f"workspaces:{user.id}:joined"
     found = await workspaces.list_workspaces(user.id, list_window(query, scope, chronological=True))
     last = found[min(len(found), query.limit) - 1] if found else None
-    cursor = None if last is None else ListCursor(last.created_at.isoformat(), last.workspace_id)
+    cursor = None if last is None else ListCursor(last.joined_at.isoformat(), last.workspace_id)
     return list_page([workspace_read(item, llm) for item in found], query, scope, cursor)
 
 

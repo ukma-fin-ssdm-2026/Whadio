@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import Final
 from uuid import UUID
 
@@ -16,22 +17,37 @@ _LONGEST_KEY: Final = 400
 
 
 @pytest.mark.parametrize(
-    "scope", [_SCOPE, "workspaces:1:created", "capture-destinations:1:created"]
+    ("scope", "chronological"),
+    [
+        (_SCOPE, False),
+        (f"workspaces:{UUID(int=1)}:joined", True),
+        (f"capture-destinations:{UUID(int=1)}:joined", True),
+    ],
 )
 @given(
-    key=st.text(max_size=_LONGEST_KEY),
+    data=st.data(),
     item_id=st.uuids(),
     limit=st.integers(min_value=1, max_value=100),
 )
 def test_next_cursor_decodes_to_the_last_item_of_the_page(
-    scope: str, key: str, item_id: UUID, limit: int
+    scope: str, data: st.DataObject, item_id: UUID, limit: int, *, chronological: bool
 ) -> None:
     # Arrange
+    keys = (
+        st.datetimes(timezones=st.just(UTC)).map(datetime.isoformat)
+        if chronological
+        else st.text(max_size=_LONGEST_KEY)
+    )
+    key = data.draw(keys)
     last = ListCursor(key, item_id)
     page = list_page(list(range(limit + 1)), PageQuery(limit=limit), scope, last)
 
     # Act
-    window = list_window(PageQuery(limit=limit, cursor=page.pagination.next_cursor), scope)
+    window = list_window(
+        PageQuery(limit=limit, cursor=page.pagination.next_cursor),
+        scope,
+        chronological=chronological,
+    )
 
     # Assert
     assert window.after == last

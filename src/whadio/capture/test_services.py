@@ -140,7 +140,8 @@ class FakeWorkspaces:
                 WorkspaceRole.OWNER,
                 1,
                 NotesTemplate.SUMMARY,
-                NOW,
+                created_at=NOW,
+                joined_at=NOW,
             )
             for workspace_id, name in ((TEAM, "Team"), (PERSONAL, "Personal"))
         ]

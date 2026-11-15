@@ -102,13 +102,20 @@ test("updating a workspace marks the list for a refetch", async () => {
 test("workspace list follows every cursor", async () => {
   // Arrange
   const cursors: (string | null)[] = [];
+  const pages = new Map([
+    [null, { id: "first", next: "next+/=" }],
+    ["next+/=", { id: "second", next: "last" }],
+    ["last", { id: "third", next: null }],
+  ]);
   server.use(
     http.get("/api/v1/workspaces", ({ request, response }) => {
       const cursor = new URL(request.url).searchParams.get("cursor");
       cursors.push(cursor);
+      const current = pages.get(cursor);
+      if (!current) throw new Error(`Unexpected workspace cursor: ${cursor}`);
       return response(200).json({
-        ...page([workspaceSummary({ id: cursor ? "second" : "first" })]),
-        pagination: { limit: 100, has_more: !cursor, next_cursor: cursor ? null : "next+/=" },
+        ...page([workspaceSummary({ id: current.id })]),
+        pagination: { limit: 100, has_more: current.next !== null, next_cursor: current.next },
       });
     }),
   );
@@ -116,8 +123,13 @@ test("workspace list follows every cursor", async () => {
   // Act
   const result = await client.fetchQuery(workspaceQueries.list());
   // Assert
-  expect({ ids: result.items.map((item) => item.id), cursors }).toEqual({
-    ids: ["first", "second"],
-    cursors: [null, "next+/="],
+  expect({
+    ids: result.items.map((item) => item.id),
+    cursors,
+    pagination: result.pagination,
+  }).toEqual({
+    ids: ["first", "second", "third"],
+    cursors: [null, "next+/=", "last"],
+    pagination: { limit: 100, has_more: false, next_cursor: null },
   });
 });
