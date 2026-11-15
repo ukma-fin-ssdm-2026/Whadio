@@ -75,3 +75,31 @@ describe("a recording that fails while it is set up", () => {
     });
   });
 });
+
+describe("a recording that ends normally", () => {
+  test("stops the tab and microphone tracks when the recorder stops", () => {
+    // Arrange
+    const listeners = {};
+    vi.stubGlobal("AudioContext", FakeAudioContext);
+    vi.stubGlobal(
+      "MediaRecorder",
+      class {
+        addEventListener(type, listener) {
+          listeners[type] = listener;
+        }
+        start() {}
+      },
+    );
+    const tab = stream();
+    const microphone = stream();
+    globalThis.whadioAudio.record(tab, microphone, "recording:7:0", true);
+
+    // Act
+    listeners.stop();
+
+    // Assert
+    expect([tab.track.stop.mock.calls.length, microphone.track.stop.mock.calls.length]).toEqual([
+      1, 1,
+    ]);
+  });
+});

@@ -34,11 +34,36 @@ afterEach(() => {
 
 describe("a microphone the offscreen document cannot open", () => {
   test.for([
-    ["NotAllowedError", "prompt", true],
-    ["NotAllowedError", "denied", false],
-    ["NotAllowedError", "granted", false],
-    ["NotFoundError", "prompt", false],
-  ])("%s with the permission %s asks for the microphone page: %s", async ([name, state, page]) => {
+    [
+      "NotAllowedError",
+      "prompt",
+      {
+        error: "Allow Whadio to use your microphone in the tab that opened, then start again.",
+        microphone: true,
+      },
+    ],
+    [
+      "NotAllowedError",
+      "denied",
+      {
+        error:
+          "Whadio is blocked from your microphone. Allow it for Whadio in Chrome's site settings, then start again.",
+      },
+    ],
+    [
+      "NotAllowedError",
+      "granted",
+      {
+        error:
+          "Your system keeps Chrome from using the microphone. Allow it there, then start again.",
+      },
+    ],
+    [
+      "NotFoundError",
+      "prompt",
+      { error: "Whadio found no microphone. Connect one, then start again." },
+    ],
+  ])("%s with the permission %s answers with its message", async ([name, state, answer]) => {
     // Arrange
     const refusal = startRefused(name, state);
 
@@ -46,6 +71,6 @@ describe("a microphone the offscreen document cannot open", () => {
     const reply = await refusal;
 
     // Assert
-    expect(reply.microphone === true).toBe(page);
+    expect(reply).toEqual(answer);
   });
 });
