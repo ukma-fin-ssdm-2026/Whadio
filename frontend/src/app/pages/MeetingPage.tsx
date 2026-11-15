@@ -1,7 +1,7 @@
 import { CircularProgress } from "@mui/material";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { sessionQueries } from "@/features/accounts/api/session";
 import { ExportMenu } from "@/features/export/components/ExportMenu";
 import { folderQueries } from "@/features/meetings/api/folders";
@@ -44,8 +44,12 @@ export function MeetingPage({
   const workspace = workspaces?.find((item) => item.id === meeting?.workspaceId);
   const members = useInfiniteQuery({
     ...memberQueries.list(meeting?.workspaceId ?? ""),
-    enabled: Boolean(meeting && workspace && canManage(workspace.role)),
+    enabled: Boolean(meeting && workspace && !workspace.personal && canManage(workspace.role)),
   });
+  const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = members;
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
 
   const [transcriptQuery, setTranscriptQuery] = useState("");
   const link = `${meetingId}/${revisionId}`;
@@ -82,8 +86,9 @@ export function MeetingPage({
                 meeting={meeting}
                 role={workspace.role}
                 userId={user.id}
+                personal={workspace.personal}
                 folders={folders.data ?? []}
-                members={members}
+                members={{ data: hasNextPage ? undefined : members.data, error: members.error }}
                 onLeave={() =>
                   navigate({
                     to: "/workspaces/$workspaceId",

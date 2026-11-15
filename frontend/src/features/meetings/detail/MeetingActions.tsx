@@ -23,6 +23,7 @@ interface MeetingActionsProps {
   meeting: Meeting;
   role: Schemas["Role"];
   userId: string;
+  personal: boolean;
   folders: Folder[];
   members: WorkspaceMembers;
   onLeave: () => void;
@@ -34,6 +35,7 @@ export function MeetingActions({
   meeting,
   role,
   userId,
+  personal,
   folders,
   members,
   onLeave,
@@ -82,7 +84,7 @@ export function MeetingActions({
         <MenuItem onClick={() => open("share")}>
           <ShareOutlinedIcon fontSize="small" sx={{ mr: 1 }} /> Share
         </MenuItem>
-        {canManage(role) && (
+        {canManage(role) && !personal && (
           <MenuItem onClick={() => open("access")}>
             <LockOutlinedIcon fontSize="small" sx={{ mr: 1 }} /> Access
           </MenuItem>
