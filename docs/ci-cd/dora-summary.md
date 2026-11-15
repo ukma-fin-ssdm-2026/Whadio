@@ -61,9 +61,9 @@ The four DORA metrics for Whadio over three weeks, 20.10–09.11.2026, computed 
 - **Stability:** the 14.5% fail rate overstates our defects. One of the 16 red runs was a defect of
   the change; 14 came from outside (GitHub billing, new advisories in locked packages) and one was
   a flaky test.
-- **Together:** the high frequency hides the cost of a red `main`. Nobody owned it, so it stayed red
-  for days, 5.5 at worst. Since the audit stopped failing runs (01.11) and
-  `CI passed` became a required check (02.11), `main` has had no red run in 8 days.
+- **Together:** the high frequency hides the cost of a red `main`. Merges went on while it was red,
+  and it stayed red for days, 5.5 at worst. Since the audit stopped failing runs (01.11) and `CI
+  passed` became a required check (02.11), `main` has had no red run in 8 days.
 
 ## Red Runs on `main`
 
@@ -72,10 +72,10 @@ A blameless review of each episode of consecutive red runs; the numbers are the 
 
 | Episode | Runs | What failed | Why the PR checks missed it | Check to add |
 | --- | --- | --- | --- | --- |
-| 20.10–25.10, **5.5 d** (7.3 d from 18.10) | 1–7, 10–12 | GitHub billing stopped the hosted runners; after the move to the course runners (#117), `uv audit` failed on advisories in locked packages. Fixed by #148. | Not a defect of the change: every PR failed the same way, and `main` required no check | Done: the audit warns and `CI passed` is required. Add a daily audit that opens an issue |
-| 30.10, **9.1 h** | 34 | The generated API types were stale: #193 was merged after #199 had added their check. Fixed by #200. | The PR's checks ran on an outdated base | Require branches to be up to date before merging |
+| 20.10–25.10, **5.5 d** (7.3 d from 18.10) | 1–7, 10–12 | GitHub billing stopped the hosted runners; after the move to the course runners (#117), `uv audit` failed on advisories in locked packages. Fixed by #148. | Not a defect of the change: every PR failed the same way, and `main` required no check | Done: the audit warns and `CI passed` is required |
+| 30.10, **9.1 h** | 34 | The generated API types were stale: #193 was merged after #199 had added their check. Fixed by #200. | The PR's checks ran on an outdated base | None: requiring up-to-date branches would rerun every open PR's CI after each merge |
 | 30.10–31.10, **20.4 h** | 40–43 | A new `joserfc` advisory failed the audit. Fixed by #223. | Not a defect of the change: the advisory failed every run | As in the first episode |
-| 01.11, **24 min** | 60 | A SPA test that timed the transcript poll failed; the next run passed with no frontend change. #241 replaced the timing with a wait. | It depends on timing and passed in the PR | A manual workflow that repeats the tests to find flaky ones |
+| 01.11, **24 min** | 60 | A SPA test that timed the transcript poll failed; the next run passed with no frontend change. #241 replaced the timing with a wait. | It depends on timing and passed in the PR | CI retries a failed test once and flags it |
 
 ## Root Causes
 
@@ -90,10 +90,10 @@ A blameless review of each episode of consecutive red runs; the numbers are the 
 
 **Organisational**
 
-- Nobody owned a red `main`, and pull requests were merged on red until 02.11.
-- Merges bunch before deadlines: 35% of the runs fell in the four days before the midterm.
-- A pull request gets its first review after 5.8 h (median), and half of the time it is open comes
-  after that review.
+- Pull requests were merged while `main` was red, until 02.11.
+- Merges bunch before deadlines: 35% of the runs fell in the four days before the midterm. We
+  accept this, since we work around other courses.
+- A pull request waits 5.8 h (median) for its first review, half of the time it is open.
 - Pull requests were merged without first taking in the latest `main`.
 
 ## Improvement Backlog
@@ -101,14 +101,13 @@ A blameless review of each episode of consecutive red runs; the numbers are the 
 | Metric | Problem | Root cause | Action | Owner |
 | :--- | :--- | :--- | :--- | :--- |
 | Deployment frequency | Every figure is an approximation; 18 of 94 deployments are release commits | The application is not deployed anywhere yet, so a green run stands in for a deployment | Deploy the application to its public server from every green `main` run, and measure the four metrics from those deployments | `@Hukyl` |
-| Deployment frequency | Days without merges, then 35% of the runs in four days | Work is merged on deadline eve | Merge a finished slice every day | `@t-zlata` |
-| Change lead time | 38% of it before merge | Half of a PR's open time comes after its first review | A reviewer of the day who answers new and updated pull requests within half a working day | `@SquidBow` |
-| Change lead time | Waits of up to 5.7 h on 01.11 | Six jobs per run on four shared runners | Skip CI for documentation-only pushes to save runner time | `@Hukyl` |
-| Lead time, recovery time | 60% of all lead time waiting for a green `main`; recovery median 14.2 h, up to 5.5 d | Nobody owned a red `main` | A weekly `main` owner who fixes or reverts a red run within an hour | `@v-missirova` |
-| Recovery time | Red runs noticed late | GitHub notifies only whoever triggered the run | Post red `main` runs to the team chat | `@SquidBow` |
-| Change fail rate | 10 of 16 red runs from the audit | A new advisory failed every run | Done: the audit warns (01.11). Add a daily audit that opens an issue | `@Hukyl` |
-| Change fail rate | Stale API types on `main` | Checks ran on an outdated base | Require up-to-date branches in the `main` ruleset | `@Hukyl` |
-| Change fail rate | A flaky test | It depended on timing | Done: fixed in #241. Add a manual flaky-test workflow | `@t-zlata` |
+| Deployment frequency | Approved pull requests wait to be merged: 10 of 112 waited over 12 h | The author has to come back to merge | Allow auto-merge, so an approved pull request merges as soon as its checks pass | `@v-missirova` |
+| Change lead time | A pull request waits 5.8 h (median) for its first review, half of the time it is open | Reviews happen when someone remembers | A daily message in the team chat listing the pull requests that wait for review | `@SquidBow` |
+| Change lead time | Waits of up to 5.7 h on 01.11 | Six jobs per run on four runners shared by the course | Skip CI for documentation-only pushes | `@t-zlata` |
+| Lead time, recovery time | 60% of all lead time is waiting for a green `main`; recovery median 14.2 h | Merges went on while `main` was red | Done: `CI passed` must pass before a merge (02.11). `main` has had no red run since 01.11 | `@Hukyl` |
+| Recovery time | A red `main` waited for whoever looked next | Nothing tells the team that `main` is red | Post to the team chat when a run on `main` turns red | `@v-missirova` |
+| Change fail rate | 10 of 16 red runs came from the audit | A new advisory failed every run, whatever the change | Done: the audit warns instead of failing (01.11) | `@Hukyl` |
+| Change fail rate | A flaky test turned `main` red | It moved fake timers by a fixed step, and a slow answer fell behind | Done: fixed in #241. CI retries a failed test once and flags the tests that passed only on retry | `@t-zlata` |
 
 ## Dashboard
 
@@ -137,10 +136,11 @@ xychart-beta
 ```
 
 **Key finding.** CI is not what slows us down: the queue and the run are 1% of the lead time. A
-red `main` that nobody owned is: waiting for it to go green is 60% of all lead time, and 14 of the
-16 red runs came from outside our code.
+red `main` is: waiting for it to go green is 60% of all lead time, and 14 of the 16 red runs came
+from outside our code.
 
-**Action for next week.** A weekly `main` owner who fixes or reverts a red run within an hour.
+**Action for next week.** A daily message in the team chat listing the pull requests that wait for
+review.
 
 ## AI Usage
 
