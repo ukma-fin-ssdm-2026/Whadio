@@ -52,7 +52,7 @@ stored and queued for transcription and notes, which the workers run; without a 
 object storage it refuses with `503 INTEGRATION_UNAVAILABLE`. Notes regeneration is outside the
 MVP and always refuses with `503 INTEGRATION_UNAVAILABLE`. A capture from the extension stores
 its chunks in object storage and, once completed, is queued through the same path as an upload;
-an interrupted capture is not finalised yet. A share access request, a recording deletion
+an interrupted capture is never finalised (out of scope, #292). A share access request, a recording deletion
 warning and a meeting evicted at the hosted cap each reserve an email notice in the same
 transaction; the scheduler sends it when an SMTP relay is configured. MCP reads require stored
 personal keys.
@@ -911,9 +911,9 @@ All capture operations accept the extension's bearer token as well as the browse
   - Assembles chunks `0..last_seq` and queues the meeting, through the same path as an upload
     (FR-012).
   - Repeating it with the same `last_seq` returns the same result.
-  - If the extension never completes, the server finalises the chunks it has as a `partial`
-    recording after a timeout. Not built yet: recovering an interrupted capture is outside the
-    MVP.
+  - If the extension never completes, the capture stays open and its meeting stays in
+    `recording` until a member deletes it (FR-036). Finalising an interrupted capture is out of
+    scope (#292).
 - **Errors:**
   - `404 NOT_FOUND`: no such capture, or another account opened it.
   - `409 MISSING_CHUNKS`: some numbers below `last_seq` never arrived; `details` lists them.
