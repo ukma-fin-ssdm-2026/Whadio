@@ -6,7 +6,7 @@ const recording = { id: "one", startedAt: 1 };
 
 test("a signed-out popup shows a sign-in hint and no recovery controls", async () => {
   // Arrange
-  chrome.runtime.sendMessage.mockResolvedValue({ recordings: [], locked: true });
+  chrome.runtime.sendMessage.mockResolvedValue({ recordings: [], hasLockedRecordings: true });
 
   // Act
   await showRecovery();
@@ -14,10 +14,10 @@ test("a signed-out popup shows a sign-in hint and no recovery controls", async (
   // Assert
   expect({
     buttons: document.querySelectorAll("#recovery button").length,
-    hint: document.getElementById("recovery-error").textContent,
+    hint: document.getElementById("recovery-locked").textContent,
   }).toEqual({
     buttons: 0,
-    hint: "Sign in to the original account and server to recover your saved recordings.",
+    hint: "Some saved recordings require signing in to their original account and server.",
   });
 });
 
@@ -31,7 +31,7 @@ test("an old account's delayed response cannot repopulate recovery controls afte
       }),
   );
   const initial = showRecovery();
-  chrome.runtime.sendMessage.mockResolvedValue({ recordings: [], locked: true });
+  chrome.runtime.sendMessage.mockResolvedValue({ recordings: [], hasLockedRecordings: true });
 
   // Act
   chrome.storage.onChanged.addListener.mock.calls[0][0]({}, "session");
@@ -55,22 +55,24 @@ test.for([
   const { promise, resolve } = Promise.withResolvers();
   chrome.runtime.sendMessage
     .mockReturnValueOnce(promise)
-    .mockResolvedValue({ recordings: [], locked: true });
+    .mockResolvedValue({ recordings: [], hasLockedRecordings: true });
 
   // Act
   await click(label);
   chrome.storage.onChanged.addListener.mock.calls[0][0]({}, "session");
-  await vi.waitFor(() => expect(document.getElementById("recovery-error").hidden).toBe(false));
+  await vi.waitFor(() => expect(document.getElementById("recovery-locked").hidden).toBe(false));
   resolve(reply);
   await new Promise((done) => setTimeout(done, 0));
 
   // Assert
   expect({
     controls: document.querySelectorAll("#recovery button").length,
-    message: document.getElementById("recovery-error").textContent,
+    message: document.getElementById("recovery-locked").textContent,
+    actionError: !document.getElementById("recovery-error").hidden,
   }).toEqual({
     controls: 0,
-    message: "Sign in to the original account and server to recover your saved recordings.",
+    message: "Some saved recordings require signing in to their original account and server.",
+    actionError: false,
   });
 });
 
@@ -107,7 +109,48 @@ test("shows the signed-in account's local recovery without needing a Meet tab", 
   expect({
     hidden: section.hidden,
     actions: [...section.querySelectorAll("button")].map((button) => button.textContent),
-  }).toEqual({ hidden: false, actions: ["Retry download", "Discard"] });
+    noticeHidden: document.getElementById("recovery-locked").hidden,
+  }).toEqual({ hidden: false, actions: ["Retry download", "Discard"], noticeHidden: true });
+});
+
+test("a mixed list shows the notice alongside the owner's controls and retry errors", async () => {
+  // Arrange
+  chrome.runtime.sendMessage.mockResolvedValue({
+    recordings: [recording],
+    hasLockedRecordings: true,
+  });
+  await showRecovery();
+  chrome.runtime.sendMessage.mockResolvedValue({ error: "Disk unavailable" });
+
+  // Act
+  await click("Retry download");
+
+  // Assert
+  expect({
+    controls: document.querySelectorAll("#recovery button").length,
+    notice: !document.getElementById("recovery-locked").hidden,
+    actionError: !document.getElementById("recovery-error").hidden,
+  }).toEqual({ controls: 2, notice: true, actionError: true });
+});
+
+test("a successful refresh clears a previous list error", async () => {
+  // Arrange
+  vi.useFakeTimers();
+  chrome.runtime.sendMessage.mockRejectedValueOnce(new Error("List unavailable"));
+  await showRecovery();
+  const section = document.getElementById("recovery");
+  const beforeRefresh = section.hidden;
+  chrome.runtime.sendMessage.mockResolvedValue({ recordings: [], hasLockedRecordings: false });
+
+  // Act
+  chrome.storage.onChanged.addListener.mock.calls[0][0]({ recoveryChangedAt: {} }, "local");
+  await vi.advanceTimersByTimeAsync(0);
+
+  // Assert
+  expect({ beforeRefresh, afterRefresh: section.hidden }).toEqual({
+    beforeRefresh: false,
+    afterRefresh: true,
+  });
 });
 
 test("retry downloads the chosen recording and removes its recovery controls on success", async () => {
@@ -159,15 +202,20 @@ test("a failed retry stays visible for 2.5 seconds through a list refresh", asyn
   chrome.storage.onChanged.addListener.mock.calls[0][0]({ recoveryChangedAt: {} }, "local");
   action.resolve({ error: "Download failed" });
   await vi.advanceTimersByTimeAsync(0);
-  refresh.resolve({ recordings: [recording] });
+  refresh.resolve({ recordings: [], hasLockedRecordings: true });
   await vi.advanceTimersByTimeAsync(2499);
   const visibleDuringRefresh = !error.hidden;
   await vi.advanceTimersByTimeAsync(1);
 
   // Assert
-  expect({ visibleDuringRefresh, hiddenAfterTimeout: error.hidden }).toEqual({
+  expect({
+    visibleDuringRefresh,
+    hiddenAfterTimeout: error.hidden,
+    noticeStillVisible: !document.getElementById("recovery").hidden,
+  }).toEqual({
     visibleDuringRefresh: true,
     hiddenAfterTimeout: true,
+    noticeStillVisible: true,
   });
 });
 

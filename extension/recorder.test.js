@@ -183,10 +183,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("a rejected recording port releases the picked tab and microphone without starting", async () => {
-  // Arrange
-  await load();
-  const tabTrack = { stop: vi.fn() };
+function stubPickedCapture() {
+  const tabTrack = { stop: vi.fn(), addEventListener: vi.fn() };
   const microphoneTrack = { stop: vi.fn() };
   const tab = {
     getVideoTracks: () => [],
@@ -209,10 +207,17 @@ test("a rejected recording port releases the picked tab and microphone without s
       close = close;
     },
   );
-  const createRecorder = vi.fn();
-  vi.stubGlobal("MediaRecorder", createRecorder);
   const port = { onMessage: event(), onDisconnect: event(), disconnect: vi.fn() };
   chrome.runtime.connect.mockReturnValue(port);
+  return { tabTrack, microphoneTrack, close, port };
+}
+
+test("a rejected recording port releases the picked tab and microphone without starting", async () => {
+  // Arrange
+  await load();
+  const { tabTrack, microphoneTrack, close, port } = stubPickedCapture();
+  const createRecorder = vi.fn();
+  vi.stubGlobal("MediaRecorder", createRecorder);
 
   // Act
   root.querySelector("button.primary").disabled = false;
@@ -239,6 +244,40 @@ test("a rejected recording port releases the picked tab and microphone without s
     microphoneStopped: 1,
     audioClosed: 1,
   });
+});
+
+test("disconnecting the recording port stops the recorder and releases both audio tracks", async () => {
+  // Arrange
+  await load();
+  const { tabTrack, microphoneTrack, close, port } = stubPickedCapture();
+  const start = vi.fn();
+  const stop = vi.fn();
+  vi.stubGlobal(
+    "MediaRecorder",
+    class {
+      addEventListener = vi.fn();
+      start = start;
+      stop = stop;
+    },
+  );
+  root.querySelector("button.primary").disabled = false;
+  root.querySelector("button.primary").click();
+  await vi.waitFor(() => expect(port.onMessage.listeners).toHaveLength(1));
+  port.onMessage.listeners[0]({ type: "recording-ready", startedAt: 1 });
+  await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+
+  // Act
+  for (const listener of port.onDisconnect.listeners) {
+    listener();
+  }
+
+  // Assert
+  expect({
+    stopped: stop.mock.calls.length,
+    tabReleased: tabTrack.stop.mock.calls.length,
+    microphoneReleased: microphoneTrack.stop.mock.calls.length,
+    contextClosed: close.mock.calls.length,
+  }).toEqual({ stopped: 1, tabReleased: 1, microphoneReleased: 1, contextClosed: 1 });
 });
 
 describe("the recorder's answers to the extension", () => {

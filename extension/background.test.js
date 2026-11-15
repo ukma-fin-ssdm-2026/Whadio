@@ -29,6 +29,12 @@ function event() {
 
 function fakeChrome() {
   const downloadsChanged = event();
+  const session = {
+    server: SERVER,
+    userId: "original",
+    token: "t",
+    expiresAt: "2026-11-04T10:00:00Z",
+  };
   return {
     runtime: {
       getURL: (path) => `chrome-extension://whadio/${path}`,
@@ -40,14 +46,14 @@ function fakeChrome() {
     storage: {
       onChanged: event(),
       session: {
-        get: async () => ({
-          server: SERVER,
-          userId: "original",
-          token: "t",
-          expiresAt: "2026-11-04T10:00:00Z",
-        }),
-        set: async () => {},
-        remove: async () => {},
+        get: async (keys) =>
+          Object.fromEntries((keys ?? Object.keys(session)).map((key) => [key, session[key]])),
+        set: async (values) => Object.assign(session, values),
+        remove: async (keys) => {
+          for (const key of keys) {
+            delete session[key];
+          }
+        },
         onChanged: event(),
       },
       local: { get: async () => ({ destination: DESTINATION }), set: async () => {} },
@@ -188,6 +194,24 @@ function recover(message, sender = { url: "chrome-extension://whadio/popup.html"
 }
 
 describe("recording registration", () => {
+  test("rejects a second recording in the same tab", async () => {
+    // Arrange
+    const requests = fakeServer();
+    await connect();
+
+    // Act
+    const duplicate = await connect();
+    await vi.runAllTimersAsync();
+
+    // Assert
+    expect({ replies: duplicate.postMessage.mock.calls, captures: sent(requests, "POST") }).toEqual(
+      {
+        replies: [[{ type: "recording-rejected", error: "Whadio is already recording this tab." }]],
+        captures: ["/captures"],
+      },
+    );
+  });
+
   test("rejects a port when the session has expired", async () => {
     // Arrange
     chrome.storage.session.get = async () => ({ expiresAt: STARTED_AT.toISOString() });
@@ -372,6 +396,42 @@ describe("a recording whose local save fails", () => {
     expect((await recoveryStore.get(recording.id)).slices).toHaveLength(15);
   });
 
+  test("sends a large temporary recording in bounded Blob messages", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    fakeServer(failingPuts(1, () => new Response(null, { status: 401 })));
+    recoveryStore.put.mockRejectedValueOnce(new Error("Disk unavailable"));
+    const blobPort = { onMessage: event(), onDisconnect: event(), disconnect: vi.fn() };
+    blobPort.postMessage = vi.fn((message) => {
+      blobPort.onMessage.listeners[0](message.complete ? { url: "blob:temp" } : { accepted: true });
+    });
+    chrome.runtime.connect = vi.fn(() => blobPort);
+    const recording = await connect();
+    const slice = btoa("a".repeat(1024 * 1024));
+    recording.onMessage.listeners[0]({ audio: slice });
+
+    // Act
+    await hangUp(recording);
+    const chunks = blobPort.postMessage.mock.calls.flatMap(([{ chunk }]) =>
+      chunk === undefined ? [] : [chunk],
+    );
+
+    // Assert
+    expect({
+      sizes: chunks.map((chunk) => chunk.length),
+      complete: chunks.join("") === slice,
+      lastMessage: blobPort.postMessage.mock.lastCall?.[0],
+      downloads: chrome.downloads.download.mock.calls.length,
+      disconnected: blobPort.disconnect.mock.calls.length,
+    }).toEqual({
+      sizes: [1024 * 1024, slice.length - 1024 * 1024],
+      complete: true,
+      lastMessage: { complete: true },
+      downloads: 1,
+      disconnected: 1,
+    });
+  });
+
   test.for([
     {},
     { server: SERVER, userId: "other", token: "t", expiresAt: "2026-11-04T10:00:00Z" },
@@ -399,10 +459,14 @@ describe("a recording whose local save fails", () => {
 
       // Assert
       expect({
-        visible: listed.recordings,
+        listed,
         downloads: chrome.downloads.download.mock.calls.length,
         kept: (await recoveryStore.list()).length,
-      }).toEqual({ visible: [], downloads: 0, kept: 1 });
+      }).toEqual({
+        listed: { recordings: [], hasLockedRecordings: true },
+        downloads: 0,
+        kept: 1,
+      });
     },
   );
 
@@ -524,7 +588,7 @@ describe("a recording whose local save fails", () => {
 
     // Assert
     expect({ result, downloads: chrome.downloads.download.mock.calls.length }).toEqual({
-      result: { recordings: [] },
+      result: { recordings: [], hasLockedRecordings: false },
       downloads: 1,
     });
   });
@@ -541,8 +605,31 @@ describe("a recording whose local save fails", () => {
 
     // Assert
     expect({ result, downloads: chrome.downloads.download.mock.calls.length }).toEqual({
-      result: { recordings: [] },
+      result: { recordings: [], hasLockedRecordings: false },
       downloads: 0,
+    });
+  });
+
+  test("lists only the current owner's rows and reports other copies without metadata", async () => {
+    // Arrange
+    await recoveryStore.put({
+      id: "mine",
+      startedAt: 1,
+      owner: { server: SERVER, userId: "original" },
+    });
+    await recoveryStore.put({
+      id: "theirs",
+      startedAt: 2,
+      owner: { server: SERVER, userId: "other" },
+    });
+
+    // Act
+    const status = await recover({ type: "recovery-list" });
+
+    // Assert
+    expect(status).toEqual({
+      recordings: [{ id: "mine", startedAt: 1, busy: false }],
+      hasLockedRecordings: true,
     });
   });
 
@@ -658,6 +745,109 @@ describe("a recording whose local save fails", () => {
 });
 
 describe("a recording's upload", () => {
+  test.for([
+    { path: "/captures/c1/chunks/0", rejectsDownload: false },
+    { path: "/captures/c1/chunks/0", rejectsDownload: true },
+    { path: "/captures/c1/complete", rejectsDownload: false },
+    { path: "/captures/c1/complete", rejectsDownload: true },
+  ])(
+    "attempts the first local save after a 401 at $path (save fails: $rejectsDownload)",
+    async ({ path, rejectsDownload }) => {
+      // Arrange
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      fakeServer((request) =>
+        request.path === path ? new Response(null, { status: 401 }) : answer(request),
+      );
+      if (rejectsDownload) {
+        chrome.downloads.download.mockRejectedValue(new Error("Disk unavailable"));
+      }
+      const recording = await connect();
+      speak(recording, 11);
+
+      // Act
+      await hangUp(recording);
+      const retained = await recoveryStore.list();
+
+      // Assert
+      expect({
+        session: await chrome.storage.session.get(),
+        downloads: chrome.downloads.download.mock.calls.map(([options]) => options.filename),
+        retained: retained.map(({ owner }) => owner),
+        popup: await recover({ type: "recovery-list" }),
+      }).toEqual({
+        session: { server: SERVER },
+        downloads: ["whadio-2026-11-03T10-00-00.webm"],
+        retained: rejectsDownload ? [{ server: SERVER, userId: "original" }] : [],
+        popup: { recordings: [], hasLockedRecordings: rejectsDownload },
+      });
+    },
+  );
+
+  test("a late 401 preserves a different sign-in and locks the original recording", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const put = Promise.withResolvers();
+    const started = Promise.withResolvers();
+    fakeServer((request) => {
+      if (request.method === "PUT") {
+        started.resolve();
+        return put.promise;
+      }
+      return answer(request);
+    });
+    const recording = await connect();
+    speak(recording, 11);
+    await started.promise;
+    const nextSession = { userId: "other", token: "other-token" };
+
+    // Act
+    await chrome.storage.session.set(nextSession);
+    put.resolve(new Response(null, { status: 401 }));
+    await hangUp(recording);
+
+    // Assert
+    expect({
+      session: await chrome.storage.session.get(["userId", "token"]),
+      downloads: chrome.downloads.download.mock.calls.length,
+      retained: (await recoveryStore.list()).map(({ owner }) => owner),
+    }).toEqual({
+      session: nextSession,
+      downloads: 0,
+      retained: [{ server: SERVER, userId: "original" }],
+    });
+  });
+
+  test("a different sign-in during fallback Blob preparation keeps the recording private", async () => {
+    // Arrange
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    fakeServer(failingPuts(1, () => new Response(null, { status: 401 })));
+    const recording = await connect();
+    speak(recording, 11);
+    const blob = Promise.withResolvers();
+    chrome.runtime.sendMessage.mockReturnValueOnce(blob.promise);
+
+    // Act
+    await hangUp(recording);
+    await chrome.storage.session.set({
+      expiresAt: "2026-11-04T10:00:00Z",
+      userId: "other",
+      token: "other-token",
+    });
+    blob.resolve({ url: "blob:fallback" });
+    await vi.runAllTimersAsync();
+
+    // Assert
+    expect({
+      downloads: chrome.downloads.download.mock.calls.length,
+      retained: (await recoveryStore.list()).map(({ owner }) => owner),
+      lastMessage: chrome.runtime.sendMessage.mock.lastCall?.[0],
+    }).toEqual({
+      downloads: 0,
+      retained: [{ server: SERVER, userId: "original" }],
+      lastMessage: { target: "offscreen", type: "revoke", url: "blob:fallback" },
+    });
+  });
+
   test("opens a capture for the chosen destination before any audio arrives", async () => {
     // Arrange
     const requests = fakeServer();

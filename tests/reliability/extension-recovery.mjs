@@ -40,16 +40,26 @@ try {
   const page = await running.context.newPage();
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`chrome-extension://${running.id}/popup.html`);
-  await page.getByText("Sign in to the original account and server to recover your saved recordings.", { exact: true }).waitFor();
+  const recoveryNotice = page.getByText(
+    "Some saved recordings require signing in to their original account and server.",
+    { exact: true },
+  );
+  await recoveryNotice.waitFor();
   assert.equal(await page.getByRole("button", { name: "Retry download" }).count(), 0);
   await page.evaluate(async () => {
-    await chrome.storage.session.set({ server: "https://whadio.example", userId: "other", token: "synthetic", expiresAt: new Date(Date.now() + 3600000).toISOString() });
+    await chrome.storage.session.set({ server: "https://whadio.example", userId: "original", token: "synthetic", expiresAt: new Date(Date.now() + 3600000).toISOString() });
   });
-  await page.waitForFunction(() => document.getElementById("recovery").hidden);
+  await page.getByRole("button", { name: "Retry download" }).first().waitFor();
+  await page.evaluate(async () => {
+    await chrome.storage.session.set({ userId: "other" });
+  });
+  await recoveryNotice.waitFor();
+  assert.equal(await page.locator("#recovery button").count(), 0);
   await page.evaluate(async () => {
     await chrome.storage.session.set({ userId: "original" });
   });
-  await page.getByRole("heading", { name: "Recordings to save" }).waitFor();
+  await page.getByRole("button", { name: "Retry download" }).first().waitFor();
+  await recoveryNotice.waitFor({ state: "hidden" });
   const restored = await page.evaluate(async () => {
     const { recoveryStore } = await import("./recovery-store.js");
     return recoveryStore.get("restart-check");

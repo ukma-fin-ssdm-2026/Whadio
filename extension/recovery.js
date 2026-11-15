@@ -34,12 +34,13 @@ export class RecordingRecovery {
       recordings.set(id, { id, startedAt, owner, temporary: true });
     }
     const owner = await currentOwner?.();
-    return [...recordings.values()]
-      .filter((item) => owner === undefined || ownedBy(item, owner))
+    const visible = [...recordings.values()]
+      .filter((item) => ownedBy(item, owner))
       .map(({ owner: _owner, ...item }) => ({ ...item, busy: this.busy.has(item.id) }));
+    return { recordings: visible, hasLockedRecordings: visible.length < recordings.size };
   }
 
-  async retain(recording, currentOwner) {
+  async retain(recording, authorizeInitialSave) {
     await this.withLock(recording.id, async () => {
       try {
         await this.store.put(recording);
@@ -47,8 +48,8 @@ export class RecordingRecovery {
         this.temporary.set(recording.id, recording);
         console.warn("Whadio could not persist a recording for recovery.");
       }
-      if (currentOwner) {
-        await this.save(recording, currentOwner);
+      if (authorizeInitialSave) {
+        await this.save(recording, authorizeInitialSave);
       }
     });
   }
@@ -59,7 +60,7 @@ export class RecordingRecovery {
       if (!recording) {
         throw new Error("This recording is no longer available.");
       }
-      await this.save(recording, currentOwner);
+      await this.save(recording, () => requireOwner(recording, currentOwner));
     });
   }
 
@@ -70,8 +71,7 @@ export class RecordingRecovery {
     });
   }
 
-  async save(recording, currentOwner) {
-    const authorize = () => requireOwner(recording, currentOwner);
+  async save(recording, authorize) {
     await authorize();
     const source = this.temporary.has(recording.id)
       ? { slices: recording.slices }

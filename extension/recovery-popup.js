@@ -3,6 +3,7 @@ const ACTION_ERROR_MS = 2500;
 export function showRecovery() {
   const section = document.getElementById("recovery");
   const list = document.getElementById("recovery-list");
+  const locked = document.getElementById("recovery-locked");
   const error = document.getElementById("recovery-error");
   let revision = 0;
   let sessionRevision = 0;
@@ -18,22 +19,25 @@ export function showRecovery() {
     return reply;
   }
 
+  function updateVisibility() {
+    section.hidden = list.childElementCount === 0 && locked.hidden && error.hidden;
+  }
+
   function clearError() {
     clearTimeout(errorTimer);
     errorTimer = undefined;
     error.hidden = true;
+    updateVisibility();
   }
 
-  function render({ recordings, locked }) {
-    if (locked) {
-      clearError();
-      error.textContent =
-        "Sign in to the original account and server to recover your saved recordings.";
-      error.hidden = false;
-    } else {
-      error.hidden = errorTimer === undefined;
+  function render({ recordings, hasLockedRecordings }) {
+    if (errorTimer === undefined) {
+      error.hidden = true;
     }
-    section.hidden = recordings.length === 0 && error.hidden;
+    locked.hidden = !hasLockedRecordings;
+    locked.textContent = hasLockedRecordings
+      ? "Some saved recordings require signing in to their original account and server."
+      : "";
     list.replaceChildren(
       ...recordings.map(({ id, startedAt, temporary, busy }) => {
         const row = document.createElement("li");
@@ -79,10 +83,7 @@ export function showRecovery() {
               }
               clearError();
               showError();
-              errorTimer = setTimeout(() => {
-                clearError();
-                section.hidden = list.childElementCount === 0;
-              }, ACTION_ERROR_MS);
+              errorTimer = setTimeout(clearError, ACTION_ERROR_MS);
               for (const control of row.querySelectorAll("button")) {
                 control.disabled = false;
               }
@@ -93,6 +94,7 @@ export function showRecovery() {
         return row;
       }),
     );
+    updateVisibility();
   }
 
   function showError() {
@@ -120,10 +122,12 @@ export function showRecovery() {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "session") {
       sessionRevision += 1;
+      locked.hidden = true;
       clearError();
     }
     if ((area === "local" && "recoveryChangedAt" in changes) || area === "session") {
       list.replaceChildren();
+      updateVisibility();
       void refresh();
     }
   });

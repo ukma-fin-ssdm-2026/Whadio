@@ -4,6 +4,10 @@ const owner = { server: "https://whadio.example", userId: "original" };
 const recording = { id: "one", startedAt: 1, slices: ["YWI="], owner };
 const currentOwner = async () => owner;
 
+async function visibleRecordings(recovery) {
+  return (await recovery.list(currentOwner)).recordings;
+}
+
 function setup() {
   const saved = new Map();
   const store = {
@@ -31,10 +35,15 @@ test("a failed retry retains the saved copy for the next attempt", async () => {
   download.mockRejectedValue(new Error("Disk unavailable"));
 
   // Act
-  await expect(recovery.retry(recording.id, currentOwner)).rejects.toThrow("Disk unavailable");
+  const error = await recovery
+    .retry(recording.id, currentOwner)
+    .catch((failure) => failure.message);
 
   // Assert
-  expect(await recovery.list()).toEqual([{ id: "one", startedAt: 1, busy: false }]);
+  expect({ error, remaining: await visibleRecordings(recovery) }).toEqual({
+    error: "Disk unavailable",
+    remaining: [{ id: "one", startedAt: 1, busy: false }],
+  });
 });
 
 test("a pending backup blocks discard and starts downloading only after commit", async () => {
@@ -48,10 +57,10 @@ test("a pending backup blocks discard and starts downloading only after commit",
     await put(value);
   });
   download.mockReturnValueOnce(saving);
-  const pending = recovery.retain(recording, currentOwner).catch(() => {});
+  const pending = recovery.retain(recording, async () => {}).catch(() => {});
 
   // Act
-  const hidden = await recovery.list(currentOwner);
+  const hidden = await visibleRecordings(recovery);
   const earlyDiscard = await recovery
     .discard(recording.id, currentOwner)
     .catch((failure) => failure.message);
@@ -72,7 +81,7 @@ test("a pending backup blocks discard and starts downloading only after commit",
     earlyDiscard,
     downloadsBeforeCommit,
     discardDuringSave,
-    afterRestart: await restarted.list(currentOwner),
+    afterRestart: await visibleRecordings(restarted),
   }).toEqual({
     hidden: [],
     earlyDiscard: "This recording is already being saved.",
@@ -114,11 +123,15 @@ test("a restart exposes only metadata and can recover the complete stored record
   const restarted = new RecordingRecovery(store, download, changed);
 
   // Act
-  const listed = await restarted.list();
+  const listed = await visibleRecordings(restarted);
   await restarted.retry(recording.id, currentOwner);
 
   // Assert
-  expect({ listed, audio: download.mock.calls, remaining: await restarted.list() }).toEqual({
+  expect({
+    listed,
+    audio: download.mock.calls,
+    remaining: await visibleRecordings(restarted),
+  }).toEqual({
     listed: [{ id: "one", startedAt: 1, busy: false }],
     audio: [[1, { id: "one" }, expect.any(Function)]],
     remaining: [],
@@ -135,7 +148,7 @@ test("saving one recording leaves the other pending recording available", async 
   await recovery.retry("one", currentOwner);
 
   // Assert
-  expect(await recovery.list()).toEqual([{ id: "two", startedAt: 1, busy: false }]);
+  expect(await visibleRecordings(recovery)).toEqual([{ id: "two", startedAt: 1, busy: false }]);
 });
 
 test("concurrent retries cannot download the same recording twice or discard it while saving", async () => {
@@ -153,13 +166,21 @@ test("concurrent retries cannot download the same recording twice or discard it 
   await Promise.resolve();
 
   // Act
-  await expect(recovery.retry(recording.id, currentOwner)).rejects.toThrow("already being saved");
-  await expect(recovery.discard(recording.id, currentOwner)).rejects.toThrow("already being saved");
+  const retry = await recovery
+    .retry(recording.id, currentOwner)
+    .catch((failure) => failure.message);
+  const discard = await recovery
+    .discard(recording.id, currentOwner)
+    .catch((failure) => failure.message);
   finish();
   await first;
 
   // Assert
-  expect(download).toHaveBeenCalledOnce();
+  expect({ retry, discard, downloads: download.mock.calls.length }).toEqual({
+    retry: "This recording is already being saved.",
+    discard: "This recording is already being saved.",
+    downloads: 1,
+  });
 });
 
 test("a storage failure exposes an explicitly temporary copy instead of losing it silently", async () => {
@@ -173,7 +194,7 @@ test("a storage failure exposes an explicitly temporary copy instead of losing i
   await recovery.retain(recording);
 
   // Assert
-  expect(await recovery.list()).toEqual([
+  expect(await visibleRecordings(recovery)).toEqual([
     { id: "one", startedAt: 1, temporary: true, busy: false },
   ]);
 });
@@ -185,12 +206,15 @@ test("a failed deletion keeps the backup available rather than claiming it was d
   store.remove.mockRejectedValue(new Error("Database unavailable"));
 
   // Act
-  await expect(recovery.discard(recording.id, currentOwner)).rejects.toThrow(
-    "Database unavailable",
-  );
+  const error = await recovery
+    .discard(recording.id, currentOwner)
+    .catch((failure) => failure.message);
 
   // Assert
-  expect(await recovery.list()).toHaveLength(1);
+  expect({ error, remaining: await visibleRecordings(recovery) }).toEqual({
+    error: "Database unavailable",
+    remaining: [{ id: "one", startedAt: 1, busy: false }],
+  });
 });
 
 test.for([null, { ...owner, userId: "other" }, { ...owner, server: "https://other.example" }])(
@@ -203,16 +227,24 @@ test.for([null, { ...owner, userId: "other" }, { ...owner, server: "https://othe
 
     // Act
     const listed = await recovery.list(otherOwner);
-    await expect(recovery.retry(recording.id, otherOwner)).rejects.toThrow("original account");
-    await expect(recovery.discard(recording.id, otherOwner)).rejects.toThrow("original account");
+    const retry = await recovery
+      .retry(recording.id, otherOwner)
+      .catch((failure) => failure.message);
+    const discard = await recovery
+      .discard(recording.id, otherOwner)
+      .catch((failure) => failure.message);
 
     // Assert
     expect({
       listed,
+      retry,
+      discard,
       downloads: download.mock.calls.length,
-      retained: await recovery.list(currentOwner),
+      retained: await visibleRecordings(recovery),
     }).toEqual({
-      listed: [],
+      listed: { recordings: [], hasLockedRecordings: true },
+      retry: "Sign in to the original account to recover this recording.",
+      discard: "Sign in to the original account to recover this recording.",
       downloads: 0,
       retained: [{ id: "one", startedAt: 1, busy: false }],
     });

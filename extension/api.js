@@ -55,7 +55,11 @@ export async function api(method, path, body) {
   return withDeadline(async (signal) => {
     const response = await fetch(`${server}/api/v1${path}`, { ...init, signal });
     if (response.status === 401) {
-      await chrome.storage.session.remove(["token", "expiresAt", "name", "userId"]);
+      // The request may have been sent before the user switched accounts or signed in again.
+      const current = await chrome.storage.session.get(["server", "token"]);
+      if (current.server === server && current.token === token) {
+        await chrome.storage.session.remove(["token", "expiresAt", "name", "userId"]);
+      }
     }
     if (!response.ok) {
       throw await failure(response);

@@ -298,12 +298,20 @@ class Upload {
     }
     if (this.slices.length > 0) {
       this.retained = true;
-      await recovery.retain(this.recoverable(), sessionOwner);
+      await recovery.retain(this.recoverable(), () => this.authorizeFallback());
     }
   }
 
   recoverable() {
     return { id: this.id, startedAt: this.startedAt, slices: this.slices, owner: this.owner };
+  }
+
+  async authorizeFallback() {
+    // This is the first save of an in-flight recording, so its original sign-in can have ended.
+    const owner = await sessionOwner();
+    if (owner && (owner.server !== this.owner.server || owner.userId !== this.owner.userId)) {
+      throw new Error("Sign in to the original account to recover this recording.");
+    }
   }
 }
 
@@ -312,8 +320,8 @@ const uploads = new Map();
 
 async function refreshRecovery() {
   try {
-    const recordings = await recovery.list();
-    await chrome.action.setBadgeText({ text: recordings.length > 0 ? "!" : "" });
+    const { hasLockedRecordings } = await recovery.list();
+    await chrome.action.setBadgeText({ text: hasLockedRecordings ? "!" : "" });
     await chrome.storage.local.set({ recoveryChangedAt: Date.now() });
   } catch {
     console.warn("Whadio could not update recording recovery status.");
@@ -360,12 +368,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   const act = async () => {
     const owner = await sessionOwner();
-    if (!owner) {
-      return { recordings: [], locked: (await recovery.list()).length > 0 };
-    }
     const currentOwner = async () => {
       const current = await sessionOwner();
-      return current?.server === owner.server && current.userId === owner.userId ? current : null;
+      return owner && current?.server === owner.server && current.userId === owner.userId
+        ? current
+        : null;
     };
     if (message.type !== "recovery-list") {
       if (typeof message.id !== "string") {
@@ -383,7 +390,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         await recovery.discard(message.id, currentOwner);
       }
     }
-    return { recordings: await recovery.list(currentOwner) };
+    return recovery.list(currentOwner);
   };
   act().then(sendResponse, () =>
     sendResponse({

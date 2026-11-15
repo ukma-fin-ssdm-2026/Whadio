@@ -22,8 +22,8 @@ Each fix below names who made it.
 
 ### F4. A recording that could not be saved vanishes in an unawaited listener
 
-Implemented in `fix(#287): retain recordings when local saving fails`, with OpenAI Codex
-(GPT-6.1); teammate review is pending.
+Fixed by Valeriia Missirova in `fix(#287): retain recordings when local saving fails`, with OpenAI
+Codex (GPT-6.1).
 
 **Before.** `extension/background.js`, the recording port's disconnect handler:
 
@@ -45,13 +45,13 @@ document so a new reservation cannot be missed. The fallback in `Upload.finish` 
 
 ```js
 this.retained = true;
-await recovery.retain(this.recoverable(), sessionOwner);
+await recovery.retain(this.recoverable(), () => this.authorizeFallback());
 ```
 
 `extension/recovery-store.js` commits the audio slices, recording UUID/start time and original
-server/user ID in
-the extension origin's IndexedDB before the first download attempt. A strict-durability write
-transaction must complete before downloading. `extension/recovery.js` keeps failed saves and
+server/user ID in the extension origin's IndexedDB before the first download attempt. The backup
+uses a strict-durability write transaction. If it fails, the download can use a temporary copy.
+`extension/recovery.js` keeps failed saves and
 holds a per-recording lock across the backup write and the initial download, and uses the same
 lock for retry and discard. A successful download removes its recovery entry;
 a confirmed Discard deletes only the chosen entry. Several recordings remain independent.
@@ -64,12 +64,13 @@ failure produces a fixed warning, not an unhandled rejection or a raw exception 
 completed recording available after restarting the worker or Chrome. The toolbar shows `!`;
 the Meet card shows a fixed error when the tab still exists. The popup lists dated recordings
 with **Retry download** and **Discard**, and remains usable when the original tab has closed
-or the server is offline. Discard asks for confirmation. There are no new notification permissions.
-Recovery requires the original account on the same server, with its unexpired sign-in in
+or the server is offline. Discard asks for confirmation. The worker can attempt the first download
+after sign-out or a `401`. If a different account or server has an unexpired sign-in, it retains
+the copy for the original owner. Popup recovery requires the original account on the same server, with its unexpired sign-in in
 extension session storage. The stable user ID comes from the successful sign-in response, not
-from the Meet page or editable local storage. Signed-out/expired sessions see a sign-in hint;
-other accounts/servers see none of that account's recordings, and retry/discard also enforce
-ownership. After Chrome restarts, sign in again before recovering. Offline recovery is allowed
+from the Meet page or editable local storage. A generic notice explains the badge when the popup
+cannot show some or all recordings. The notice exposes no other account's recording details.
+After Chrome restarts, sign in again before recovering. Offline recovery is allowed
 until that sign-in expires; revocation cannot be detected offline until a server request
 returns `401`. Existing sessions without a user ID require signing in again after this update.
 Retry saves a local file; it does not repeat `/complete` or upload the recording to a server.
@@ -79,12 +80,15 @@ protected. Audio still being recorded or waiting for finalization is not checkpo
 disk, unavailable IndexedDB, storage eviction, clearing extension storage or uninstalling the
 extension can still defeat recovery. If a backup write fails, the current worker retains a
 temporary in-memory copy and the popup explicitly warns that it cannot survive a restart.
+If the original account or server is permanently unavailable, removing Whadio from Chrome clears
+all locally stored recovery copies in the profile.
 There is no automatic expiry or background download loop. An interrupted download still follows
 the old completion-state check; its separate finding and fix belong in the stacked follow-up.
 
-**Tests.** `extension/background.test.js` injects rejected downloads and Blob requests, a
-closed tab, and a worker restart. It checks recovery commands cannot be invoked by a Meet
-content script and exercises retries that start during the offscreen lookup or an ongoing close. `extension/recovery.test.js` covers backup-before-download ordering, repeated
+**Tests.** `extension/background.test.js` injects upload `401` responses, rejected downloads and
+Blob requests, a closed tab and a worker restart. It checks ownership, the popup command guard and
+retries that start during the offscreen lookup or an ongoing close. `extension/offscreen.test.js`
+checks the worker-only Blob messages and port. `extension/recovery.test.js` covers backup-before-download ordering, repeated
 failures, independent recordings, concurrent retries, discard refusal during a save, storage
 failure and failed removal. `extension/recovery-popup.test.js` checks the controls, confirmation,
 error text and temporary-copy warning. The real-Chromium check is
