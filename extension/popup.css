@@ -231,6 +231,10 @@ button.link:hover {
   white-space: nowrap;
 }
 
+#sign-in:not([hidden]) ~ #not-meet {
+  display: none;
+}
+
 #not-meet p {
   margin: 0;
 }
