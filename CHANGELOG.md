@@ -4,6 +4,17 @@ All notable changes to Whadio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-11-15
+
+### Added
+
+- Style the extension like the web app ([#365](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/365))
+
+### Fixed
+
+- Delete expired sessions on every scheduler run ([#327](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/327))
+- Harden extension recordings against setup failures and races ([#364](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/364))
+
 ## [0.12.1] - 2026-11-10
 
 ### Fixed
