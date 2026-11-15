@@ -15,6 +15,7 @@
   unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
 }
 
+/* Copied from frontend/src/app/theme/palette.ts; recorder.js holds a second copy. */
 :root {
   color-scheme: light dark;
   --primary: #0f766e;
