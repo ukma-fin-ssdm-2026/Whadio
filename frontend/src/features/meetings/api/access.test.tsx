@@ -5,6 +5,7 @@ import { errorBody, meetingSummary, page } from "@/shared/testing/fixtures";
 import { createTestQueryClient, TestProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
 import { accessQueries, useSetMeetingAccess } from "./access";
+import { foldersKey } from "./keys";
 import { meetingQueries } from "./meetings";
 
 const RESTRICTED = { access_mode: "restricted" as const, member_ids: ["moderator"] };
@@ -12,6 +13,7 @@ const RESTRICTED = { access_mode: "restricted" as const, member_ids: ["moderator
 function seedCaches() {
   const queryClient = createTestQueryClient();
   queryClient.setQueryData(meetingQueries.latest("workspace").queryKey, page([meetingSummary()]));
+  queryClient.setQueryData(foldersKey("workspace"), page([]));
   queryClient.setQueryData(accessQueries.detail("meeting").queryKey, {
     access_mode: "workspace",
     member_ids: [],
@@ -58,6 +60,14 @@ test("changing access marks its workspace's meetings for a refetch", async () =>
   expect(
     queryClient.getQueryState(meetingQueries.latest("workspace").queryKey)?.isInvalidated,
   ).toBe(true);
+});
+
+test("changing access marks its workspace's folders for a refetch", async () => {
+  // Act
+  const queryClient = await restrictMeeting();
+
+  // Assert
+  expect(queryClient.getQueryState(foldersKey("workspace"))?.isInvalidated).toBe(true);
 });
 
 test("a refused access change keeps the old setting", async () => {

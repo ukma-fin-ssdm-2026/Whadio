@@ -5,6 +5,7 @@ import { errorBody, meetingRead, memberRead } from "@/shared/testing/fixtures";
 import { renderWithProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
 import { mapMeeting } from "../model";
+import type { WorkspaceMembers } from "./AccessDialog";
 import { MeetingActions } from "./MeetingActions";
 
 const FOLDERS: Schemas["FolderRead"][] = [
@@ -14,13 +15,20 @@ const FOLDERS: Schemas["FolderRead"][] = [
 
 const MEMBERS = [
   memberRead(),
-  memberRead({ user_id: "moderator", name: "Mila Moderator", role: "moderator" }),
+  memberRead({
+    user_id: "moderator",
+    name: "Mila Moderator",
+    email: "moderator@example.test",
+    role: "moderator",
+  }),
 ];
 
 function renderActions(
   role: Schemas["Role"] = "member",
   createdByUserId = "member",
   onDeleted = () => {},
+  personal = false,
+  members: WorkspaceMembers = { data: MEMBERS, error: null },
 ) {
   const meeting = mapMeeting(meetingRead({ created_by_user_id: createdByUserId }));
   return renderWithProviders(
@@ -28,8 +36,9 @@ function renderActions(
       meeting={meeting}
       role={role}
       userId="member"
+      personal={personal}
       folders={FOLDERS}
-      members={{ data: MEMBERS, error: null }}
+      members={members}
       onLeave={onDeleted}
     />,
   );
@@ -39,8 +48,10 @@ async function openActions(
   role: Schemas["Role"] = "member",
   createdByUserId = "member",
   onDeleted = () => {},
+  personal = false,
+  members: WorkspaceMembers = { data: MEMBERS, error: null },
 ) {
-  const rendered = renderActions(role, createdByUserId, onDeleted);
+  const rendered = renderActions(role, createdByUserId, onDeleted, personal, members);
   await rendered.user.click(screen.getByRole("button", { name: "Meeting actions" }));
   return rendered;
 }
@@ -259,9 +270,9 @@ function serveAccess(
   server.use(
     http.get("/api/v1/meetings/{meeting_id}/access", ({ response }) => response(200).json(current)),
     http.put("/api/v1/meetings/{meeting_id}/access", async ({ request, response }) => {
-      const body = (await request.json()) as Schemas["AccessRead"];
+      const body = await request.json();
       bodies.push(body);
-      return response(200).json(body);
+      return response(200).json({ ...body, member_ids: body.member_ids ?? [] });
     }),
   );
   return bodies;
@@ -277,6 +288,14 @@ async function openAccess(onLeave = () => {}) {
 test("a member is not offered the meeting's access", async () => {
   // Act
   await openActions("member");
+
+  // Assert
+  expect(screen.queryByRole("menuitem", { name: /Access/ })).not.toBeInTheDocument();
+});
+
+test("a personal workspace's meeting is not offered access", async () => {
+  // Act
+  await openActions("owner", "member", () => {}, true);
 
   // Assert
   expect(screen.queryByRole("menuitem", { name: /Access/ })).not.toBeInTheDocument();
@@ -316,7 +335,7 @@ test("a restricted meeting opens with its members selected", async () => {
   // Assert
   expect(
     (await screen.findAllByRole("checkbox")).map((box) => (box as HTMLInputElement).checked),
-  ).toEqual([false, true]);
+  ).toEqual([true, false]);
 });
 
 test("restricting to nobody cannot be saved", async () => {
@@ -357,6 +376,154 @@ test("saving without yourself leaves the meeting", async () => {
 
   // Assert
   await waitFor(() => expect(onLeave).toHaveBeenCalledOnce());
+});
+
+test("saving with yourself selected stays on the meeting", async () => {
+  // Arrange
+  const bodies = serveAccess();
+  const onLeave = vi.fn();
+  const { user } = await openAccess(onLeave);
+  await user.click(screen.getByRole("checkbox", { name: /Mila Moderator/ }));
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Save" }));
+
+  // Assert
+  await waitFor(() => expect(bodies).toHaveLength(1));
+  expect(onLeave).not.toHaveBeenCalled();
+});
+
+test("opening the meeting to the workspace after leaving yourself out stays on the meeting", async () => {
+  // Arrange
+  const bodies = serveAccess();
+  const onLeave = vi.fn();
+  const { user } = await openAccess(onLeave);
+  await user.click(screen.getByRole("checkbox", { name: /Mila Moderator/ }));
+  await user.click(screen.getByRole("checkbox", { name: /Demo Member/ }));
+  await user.click(screen.getByRole("radio", { name: "Everyone in the workspace" }));
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Save" }));
+
+  // Assert
+  await waitFor(() => expect(bodies).toHaveLength(1));
+  expect(onLeave).not.toHaveBeenCalled();
+});
+
+const LATE = memberRead({ user_id: "late", name: "Late Larry", email: "larry@example.test" });
+const ALL_MEMBERS = { data: [...MEMBERS, LATE], error: null };
+
+async function openAccessWith(members: WorkspaceMembers) {
+  const rendered = await openActions("moderator", "member", () => {}, false, members);
+  await rendered.user.click(screen.getByRole("menuitem", { name: /Access/ }));
+  return rendered;
+}
+
+test("a member granted access beyond the first page of members shows as selected", async () => {
+  // Arrange
+  serveAccess({ access_mode: "restricted", member_ids: ["member", "late"] });
+
+  // Act
+  await openAccessWith(ALL_MEMBERS);
+
+  // Assert
+  expect(await screen.findByRole("checkbox", { name: /Late Larry/ })).toBeChecked();
+});
+
+test("a member granted access beyond the first page of members can be removed", async () => {
+  // Arrange
+  const bodies = serveAccess({ access_mode: "restricted", member_ids: ["member", "late"] });
+  const { user } = await openAccessWith(ALL_MEMBERS);
+  await user.click(await screen.findByRole("checkbox", { name: /Late Larry/ }));
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Save" }));
+
+  // Assert
+  await waitFor(() =>
+    expect(bodies).toEqual([{ access_mode: "restricted", member_ids: ["member"] }]),
+  );
+});
+
+test("a failed load of the members shows the server's message", async () => {
+  // Arrange
+  serveAccess();
+
+  // Act
+  await openAccessWith({ data: undefined, error: new Error("The members could not be loaded") });
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent("The members could not be loaded");
+});
+
+test("the members filter narrows the list by name, ignoring case", async () => {
+  // Arrange
+  serveAccess();
+  const { user } = await openAccess();
+
+  // Act
+  await user.type(screen.getByRole("textbox", { name: "Filter members" }), "MILA");
+
+  // Assert
+  expect(screen.getAllByRole("checkbox").map((box) => box.closest("label")?.textContent)).toEqual([
+    "Mila Moderatormoderator@example.test",
+  ]);
+});
+
+test("the members filter narrows the list by email", async () => {
+  // Arrange
+  serveAccess();
+  const { user } = await openAccess();
+
+  // Act
+  await user.type(screen.getByRole("textbox", { name: "Filter members" }), "member@example");
+
+  // Assert
+  expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+});
+
+test("selected members are listed first, in the order of the workspace", async () => {
+  // Arrange
+  serveAccess({ access_mode: "restricted", member_ids: ["late", "moderator"] });
+
+  // Act
+  await openAccessWith(ALL_MEMBERS);
+
+  // Assert
+  expect(
+    (await screen.findAllByRole("checkbox")).map((box) => box.closest("label")?.textContent),
+  ).toEqual([
+    "Mila Moderatormoderator@example.test",
+    "Late Larrylarry@example.test",
+    "Demo Membermember@example.test",
+  ]);
+});
+
+test("ticking a member does not move it in the list", async () => {
+  // Arrange
+  serveAccess();
+  const { user } = await openAccess();
+
+  // Act
+  await user.click(screen.getByRole("checkbox", { name: /Mila Moderator/ }));
+
+  // Assert
+  expect(screen.getAllByRole("checkbox").map((box) => box.closest("label")?.textContent)).toEqual([
+    "Demo Membermember@example.test",
+    "Mila Moderatormoderator@example.test",
+  ]);
+});
+
+test("the access dialog counts the selected members", async () => {
+  // Arrange
+  serveAccess();
+  const { user } = await openAccess();
+
+  // Act
+  await user.click(screen.getByRole("checkbox", { name: /Mila Moderator/ }));
+
+  // Assert
+  expect(screen.getByText("2 selected")).toBeVisible();
 });
 
 test("opening a meeting to the workspace sends no members", async () => {

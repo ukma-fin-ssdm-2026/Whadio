@@ -14,6 +14,8 @@ import {
   ListItemText,
   Radio,
   RadioGroup,
+  TextField,
+  Typography,
 } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -89,6 +91,16 @@ function AccessForm({
   const [selected, setSelected] = useState(
     () => new Set(initial.access_mode === "restricted" ? initial.member_ids : [userId]),
   );
+  const [orderedMembers] = useState(() => [
+    ...memberList.filter((member) => selected.has(member.user_id)),
+    ...memberList.filter((member) => !selected.has(member.user_id)),
+  ]);
+  const [filter, setFilter] = useState("");
+  const needle = filter.trim().toLowerCase();
+  const shownMembers = orderedMembers.filter(
+    (member) =>
+      member.name.toLowerCase().includes(needle) || member.email.toLowerCase().includes(needle),
+  );
   const restricted = mode === "restricted";
   const leavesSelfOut = restricted && !selected.has(userId);
 
@@ -132,30 +144,43 @@ function AccessForm({
           <FormControlLabel value="restricted" control={<Radio />} label="Only selected members" />
         </RadioGroup>
         {restricted && (
-          <List dense aria-label="Members">
-            {memberList.map((member) => (
-              <ListItem key={member.user_id} disablePadding>
-                <FormControlLabel
-                  sx={{ width: "100%", mr: 0 }}
-                  control={
-                    <Checkbox
-                      checked={selected.has(member.user_id)}
-                      onChange={() => toggle(member.user_id)}
-                    />
-                  }
-                  label={<ListItemText primary={member.name} secondary={member.email} />}
-                />
-              </ListItem>
-            ))}
-          </List>
-        )}
-        {restricted && selected.size === 0 && (
-          <FormHelperText error>Select at least one member.</FormHelperText>
-        )}
-        {leavesSelfOut && selected.size > 0 && (
-          <Alert severity="warning">
-            You are not selected, so you will lose access to this meeting.
-          </Alert>
+          <>
+            <Typography variant="body2" color="text.secondary">
+              {selected.size} selected
+            </Typography>
+            {selected.size === 0 && (
+              <FormHelperText error>Select at least one member.</FormHelperText>
+            )}
+            {leavesSelfOut && selected.size > 0 && (
+              <Alert severity="warning">
+                You are not selected, so you will lose access to this meeting.
+              </Alert>
+            )}
+            <TextField
+              label="Filter members"
+              size="small"
+              fullWidth
+              margin="dense"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+            />
+            <List dense aria-label="Members" sx={{ maxHeight: 280, overflow: "auto" }}>
+              {shownMembers.map((member) => (
+                <ListItem key={member.user_id} disablePadding>
+                  <FormControlLabel
+                    sx={{ width: "100%", mr: 0 }}
+                    control={
+                      <Checkbox
+                        checked={selected.has(member.user_id)}
+                        onChange={() => toggle(member.user_id)}
+                      />
+                    }
+                    label={<ListItemText primary={member.name} secondary={member.email} />}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          </>
         )}
       </DialogContent>
       <DialogActions>

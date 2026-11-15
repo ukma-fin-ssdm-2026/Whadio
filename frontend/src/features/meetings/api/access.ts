@@ -2,7 +2,7 @@ import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query
 import { apiClient } from "@/shared/api/client";
 import type { Schemas } from "@/shared/api/types";
 import { unwrap } from "@/shared/api/unwrap";
-import { detailKey, workspaceListsKey } from "./keys";
+import { detailKey, foldersKey, workspaceListsKey } from "./keys";
 
 export type MeetingAccess = Schemas["AccessRead"];
 
@@ -32,7 +32,10 @@ export function useSetMeetingAccess(meetingId: string, workspaceId: string) {
       ),
     onSuccess: async (access) => {
       queryClient.setQueryData(accessQueries.detail(meetingId).queryKey, access);
-      await queryClient.invalidateQueries({ queryKey: workspaceListsKey(workspaceId) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: workspaceListsKey(workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: foldersKey(workspaceId) }),
+      ]);
     },
   });
 }
