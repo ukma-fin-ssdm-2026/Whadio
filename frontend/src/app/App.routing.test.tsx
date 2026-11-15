@@ -1125,3 +1125,100 @@ test("a deleted meeting leaves no way back to it", async () => {
   // Assert
   expect(window.history.length).toBe(entries);
 });
+
+const LATE_MEMBER = memberRead({
+  user_id: "late",
+  name: "Late Larry",
+  email: "larry@example.test",
+});
+
+function serveMeetingAccess() {
+  server.use(
+    http.get("/api/v1/meetings/meeting/access", () =>
+      HttpResponse.json({ access_mode: "restricted", member_ids: ["member", "late"] }),
+    ),
+  );
+}
+
+async function openMeetingAccess(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("button", { name: "Meeting actions" }));
+  await user.click(screen.getByRole("menuitem", { name: /Access/ }));
+}
+
+test("the access dialog lists the members of every page", async () => {
+  // Arrange
+  const { user } = open(MEETING_LINK);
+  serveMeetingAccess();
+  server.use(
+    http.get("/api/v1/workspaces/workspace/members", ({ request }) =>
+      HttpResponse.json(
+        new URL(request.url).searchParams.get("cursor")
+          ? page([LATE_MEMBER])
+          : page([memberRead(), memberRead({ user_id: "other", name: "Olga Other" })], "next"),
+      ),
+    ),
+  );
+
+  // Act
+  await openMeetingAccess(user);
+
+  // Assert
+  expect(
+    (await screen.findAllByRole("checkbox")).map((box) => box.closest("label")?.textContent),
+  ).toEqual([
+    "Demo Membermember@example.test",
+    "Late Larrylarry@example.test",
+    "Olga Othermember@example.test",
+  ]);
+});
+
+test("the access dialog shows the error of a later page of members", async () => {
+  // Arrange
+  const { user } = open(MEETING_LINK);
+  serveMeetingAccess();
+  server.use(
+    http.get("/api/v1/workspaces/workspace/members", ({ request }) =>
+      new URL(request.url).searchParams.get("cursor")
+        ? HttpResponse.json(errorBody("NOT_FOUND", "The next members are gone"), { status: 404 })
+        : HttpResponse.json(page([memberRead()], "next")),
+    ),
+  );
+
+  // Act
+  await openMeetingAccess(user);
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent("The next members are gone");
+});
+
+function openPersonalMeetingActions() {
+  const rendered = open(MEETING_LINK);
+  server.use(
+    http.get("/api/v1/workspaces", () =>
+      HttpResponse.json(page([workspaceSummary({ is_personal: true })])),
+    ),
+  );
+  return rendered;
+}
+
+test("a personal workspace's meeting offers no access", async () => {
+  // Arrange
+  const { user } = openPersonalMeetingActions();
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "Meeting actions" }));
+
+  // Assert
+  expect(screen.queryByRole("menuitem", { name: /Access/ })).not.toBeInTheDocument();
+});
+
+test("a personal workspace's meeting page loads no members", async () => {
+  // Arrange
+  const { traffic } = openPersonalMeetingActions();
+
+  // Act
+  await screen.findByRole("button", { name: "Meeting actions" });
+
+  // Assert
+  expect(traffic.requests.filter((request) => request.includes("/members"))).toEqual([]);
+});
