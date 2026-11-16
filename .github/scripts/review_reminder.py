@@ -11,6 +11,7 @@ GITHUB_API = "https://api.github.com"
 TELEGRAM_API = "https://api.telegram.org"
 PAGE_SIZE = 100
 TIMEOUT_SECONDS = 30
+MESSAGE_LIMIT = 4096
 VERDICTS = {"APPROVED", "CHANGES_REQUESTED", "DISMISSED"}
 
 
@@ -46,15 +47,34 @@ def format_wait(delta: timedelta) -> str:
     return f"{days} d {hours} h" if days else f"{hours} h"
 
 
-def build_message(pulls: list[PullRequest], now: datetime) -> str:
-    lines = [f"<b>{len(pulls)} pull request(s) waiting for review</b>"]
-    lines.extend(
-        f'<a href="{html.escape(pull.url)}">#{pull.number}</a> '
-        f"{html.escape(pull.title, quote=False)} by {html.escape(pull.author, quote=False)}, "
-        f"waiting {format_wait(now - pull.waiting_since)}"
-        for pull in pulls
+def _line(pull: PullRequest, now: datetime) -> tuple[str, str]:
+    rest = f"{pull.title} by {pull.author}, waiting {format_wait(now - pull.waiting_since)}"
+    return (
+        f'<a href="{html.escape(pull.url)}">#{pull.number}</a> {html.escape(rest, quote=False)}',
+        f"#{pull.number} {rest}",
     )
-    return "\n".join(lines)
+
+
+def visible_length(lines: list[tuple[str, str]]) -> int:
+    """Telegram's length of the shown text, counted in UTF-16 code units."""
+    text = "\n".join(shown for _, shown in lines)
+    return len(text.encode("utf-16-le")) // 2
+
+
+def build_message(pulls: list[PullRequest], now: datetime) -> str:
+    """Lists the pull requests in order; those past Telegram's limit become an "and N more" line."""
+    header = f"{len(pulls)} pull request(s) waiting for review"
+    lines = [(f"<b>{header}</b>", header)]
+    for index, pull in enumerate(pulls):
+        hidden = len(pulls) - index - 1
+        more = f"and {hidden} more"
+        tail = [(more, more)] if hidden else []
+        if visible_length([*lines, _line(pull, now), *tail]) > MESSAGE_LIMIT:
+            more = f"and {hidden + 1} more"
+            lines.append((more, more))
+            break
+        lines.append(_line(pull, now))
+    return "\n".join(markup for markup, _ in lines)
 
 
 def _request(request: urllib.request.Request) -> object:

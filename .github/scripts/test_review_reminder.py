@@ -1,4 +1,9 @@
+import html
 import importlib.util
+import json
+import re
+import urllib.parse
+import urllib.request
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import ModuleType
@@ -205,6 +210,131 @@ def testlast_ready_event_restarts_the_wait() -> None:
 
     # Assert
     assert result == datetime(2026, 11, 12, 8, 0, tzinfo=UTC)
+
+
+def _shown(message: str) -> str:
+    return html.unescape(re.sub(r"<[^>]+>", "", message))
+
+
+def test_long_backlog_fits_telegrams_limit() -> None:
+    # Arrange
+    pulls = [_pull(number, "x" * 256, "some-author") for number in range(1, 16)]
+
+    # Act
+    message = reminder.build_message(pulls, NOW)
+
+    # Assert
+    assert len(_shown(message).encode("utf-16-le")) // 2 <= reminder.MESSAGE_LIMIT
+
+
+def test_pull_requests_past_the_limit_are_counted_in_the_last_line() -> None:
+    # Arrange
+    pulls = [_pull(number, "x" * 256, "some-author") for number in range(1, 16)]
+
+    # Act
+    lines = reminder.build_message(pulls, NOW).splitlines()
+
+    # Assert
+    assert lines[-1] == f"and {15 - (len(lines) - 2)} more"
+
+
+def test_short_backlog_lists_every_pull_request() -> None:
+    # Arrange
+    pulls = [_pull(number) for number in range(1, 16)]
+
+    # Act
+    lines = reminder.build_message(pulls, NOW).splitlines()
+
+    # Assert
+    assert len(lines) == 16
+
+
+def _item(
+    number: int, author: str = "denys", *, draft: bool = False, kind: str = "User"
+) -> dict[str, object]:
+    return {
+        "number": number,
+        "title": f"feat(#{number}): add",
+        "html_url": f"https://github.com/org/repo/pull/{number}",
+        "draft": draft,
+        "created_at": "2026-11-16T04:00:00Z",
+        "user": {"login": author, "type": kind},
+    }
+
+
+class FakeApis:
+    def __init__(
+        self, pulls: list[dict[str, object]], reviews: dict[int, list[dict[str, object]]]
+    ) -> None:
+        self.pulls = pulls
+        self.reviews = reviews
+        self.sent: list[dict[str, object]] = []
+
+    def __call__(self, request: urllib.request.Request) -> object:
+        url = urllib.parse.urlparse(request.full_url)
+        if url.hostname == "api.telegram.org":
+            assert isinstance(request.data, bytes)
+            self.sent.append(json.loads(request.data))
+            return {"ok": True}
+        match url.path.removeprefix("/repos/org/repo").split("/"):
+            case ["", "pulls"]:
+                return self.pulls
+            case ["", "issues", _, "events"]:
+                return []
+            case ["", "pulls", number, "reviews"]:
+                return self.reviews.get(int(number), [])
+            case _:
+                pytest.fail(f"Unexpected request to {request.full_url}")
+
+
+def _run(monkeypatch: pytest.MonkeyPatch, apis: FakeApis) -> None:
+    monkeypatch.setenv("GITHUB_REPOSITORY", "org/repo")
+    monkeypatch.setenv("GITHUB_TOKEN", "github-token")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "42")
+    monkeypatch.setattr(reminder, "_request", apis)
+    reminder.main()
+
+
+def test_reminder_lists_only_pull_requests_waiting_for_a_verdict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    apis = FakeApis(
+        pulls=[
+            _item(1),
+            _item(2, draft=True),
+            _item(3, "dependabot[bot]", kind="Bot"),
+            _item(4),
+            _item(5),
+        ],
+        reviews={
+            4: [{"state": "APPROVED", "user": {"login": "ana"}}],
+            5: [{"state": "COMMENTED", "user": {"login": "ana"}}],
+        },
+    )
+
+    # Act
+    _run(monkeypatch, apis)
+
+    # Assert
+    assert [
+        (message["chat_id"], re.findall(r">#(\d+)<", str(message["text"]))) for message in apis.sent
+    ] == [("42", ["1", "5"])]
+
+
+def test_reminder_sends_nothing_when_no_pull_request_waits(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    apis = FakeApis(
+        pulls=[_item(1, draft=True), _item(2)],
+        reviews={2: [{"state": "CHANGES_REQUESTED", "user": {"login": "ana"}}]},
+    )
+
+    # Act
+    _run(monkeypatch, apis)
+
+    # Assert
+    assert apis.sent == []
 
 
 def test_no_ready_event_means_the_pull_request_was_never_a_draft() -> None:
