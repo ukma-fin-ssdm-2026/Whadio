@@ -1,6 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import type { Schemas } from "@/shared/api/types";
+import { deferred } from "@/shared/testing/deferred";
 import { errorBody, page, workspaceRead } from "@/shared/testing/fixtures";
 import { renderWithProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
@@ -22,7 +23,7 @@ function serveWorkspace(changes: Partial<Schemas["WorkspaceRead"]> = {}) {
   return updates;
 }
 
-function renderSettings(onDeleted = vi.fn()) {
+function renderSettings(onDeleted: () => void = vi.fn()) {
   return {
     ...renderWithProviders(<WorkspaceSettings workspaceId="workspace" onDeleted={onDeleted} />),
     onDeleted,
@@ -253,8 +254,8 @@ test("a personal workspace is not offered deletion", async () => {
   expect(screen.queryByRole("button", { name: "Delete workspace" })).not.toBeInTheDocument();
 });
 
-async function openDeleteConfirmation() {
-  const rendered = renderSettings();
+async function openDeleteConfirmation(onDeleted: () => void = vi.fn()) {
+  const rendered = renderSettings(onDeleted);
   await rendered.user.click(await screen.findByRole("button", { name: "Delete workspace" }));
   return rendered;
 }
@@ -299,7 +300,41 @@ test("cancelling workspace deletion sends no request", async () => {
   await user.click(screen.getByRole("button", { name: "Cancel" }));
 
   // Assert
-  expect(requests).toEqual([]);
+  await waitFor(() =>
+    expect({ dialog: screen.queryByRole("dialog"), requests }).toEqual({
+      dialog: null,
+      requests: [],
+    }),
+  );
+});
+
+test("workspace deletion cannot be confirmed twice while pending", async () => {
+  // Arrange
+  serveWorkspace();
+  const started = deferred();
+  const finish = deferred();
+  const deleted = deferred();
+  let requests = 0;
+  server.use(
+    http.delete("/api/v1/workspaces/{workspace_id}", async ({ response }) => {
+      requests += 1;
+      started.resolve();
+      await finish.promise;
+      return response(204).empty();
+    }),
+  );
+  const { user } = await openDeleteConfirmation(() => deleted.resolve());
+  const confirm = screen.getByRole("button", { name: "Delete workspace" });
+
+  // Act
+  await user.click(confirm);
+  await started.promise;
+  confirm.click();
+  finish.resolve();
+  await deleted.promise;
+
+  // Assert
+  expect(requests).toBe(1);
 });
 
 test("successful workspace deletion leaves the settings page", async () => {

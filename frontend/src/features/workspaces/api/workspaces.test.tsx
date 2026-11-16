@@ -1,6 +1,7 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { expect, test } from "vitest";
+import { deferred } from "@/shared/testing/deferred";
 import { page, workspaceRead, workspaceSummary } from "@/shared/testing/fixtures";
 import { createTestQueryClient, TestProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
@@ -123,8 +124,8 @@ test("updating a workspace marks the list for a refetch", async () => {
 
 test("a stale list response cannot restore a deleted workspace", async () => {
   // Arrange
-  const started = Promise.withResolvers<void>();
-  const release = Promise.withResolvers<void>();
+  const started = deferred();
+  const release = deferred();
   const { result, queryClient } = renderDelete();
   server.use(
     http.get("/api/v1/workspaces", async ({ response }) => {
@@ -139,9 +140,7 @@ test("a stale list response cannot restore a deleted workspace", async () => {
   // Act
   await result.current.mutateAsync();
   queryClient.setQueryData(workspaceQueries.list().queryKey, (current) =>
-    current
-      ? { ...current, items: current.items.filter(({ id }) => id !== "workspace") }
-      : current,
+    current ? { ...current, items: current.items.filter(({ id }) => id !== "workspace") } : current,
   );
   release.resolve();
   await staleRequest.catch(() => undefined);

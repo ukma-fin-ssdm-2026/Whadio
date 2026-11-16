@@ -81,13 +81,7 @@ export function useDeleteWorkspace(workspaceId: string) {
           params: { path: { workspace_id: workspaceId } },
         }),
       ),
-    onSuccess: () => {
-      queryClient.setQueryData(workspaceQueries.list().queryKey, (current) =>
-        current
-          ? { ...current, items: current.items.filter(({ id }) => id !== workspaceId) }
-          : current,
-      );
-      queryClient.removeQueries({ queryKey: workspaceQueries.detail(workspaceId).queryKey });
-    },
+    onSuccess: () =>
+      queryClient.cancelQueries({ queryKey: workspaceQueries.list().queryKey, exact: true }),
   });
 }
