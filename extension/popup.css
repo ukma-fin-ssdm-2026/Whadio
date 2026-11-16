@@ -344,10 +344,52 @@ body.page .card {
 }
 
 #recovery-list li {
-  border-bottom: 1px solid #dadce0;
+  display: grid;
+  grid-template-columns: max-content max-content 1fr;
+  column-gap: 8px;
+  border-bottom: 1px solid var(--divider);
   padding-bottom: 12px;
 }
 
-#recovery-list button + button {
-  margin-top: 6px;
+#recovery-list p {
+  grid-column: 1 / -1;
+}
+
+#recovery-list button {
+  width: auto;
+  padding-inline: 12px;
+  background: none;
+  box-shadow: none;
+  color: var(--primary);
+}
+
+#recovery-list .recovery-retry {
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: var(--primary-contrast);
+}
+
+#recovery-list button:hover {
+  background: var(--tint);
+}
+
+#recovery-list .recovery-retry:hover {
+  border-color: var(--primary-dark);
+  background: var(--primary-dark);
+}
+
+#recovery-list button:disabled {
+  border-color: transparent;
+  background: var(--disabled-background);
+  color: var(--disabled);
+  cursor: default;
+}
+
+.error {
+  color: var(--error);
+}
+
+#recovery-locked {
+  color: var(--text-secondary);
+  font-size: 14px;
 }

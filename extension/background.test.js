@@ -136,14 +136,25 @@ function answerAfter(delay, signal, response) {
   });
 }
 
-function port(startedAt) {
-  return { name: `recording:7:${startedAt}`, onMessage: event(), onDisconnect: event(), postMessage: vi.fn() };
+function port(startedAt = STARTED_AT.getTime(), tabId = 7) {
+  return {
+    name: `recording:${tabId}:${startedAt}`,
+    onMessage: event(),
+    onDisconnect: event(),
+    postMessage: vi.fn(),
+  };
 }
 
-async function connect(startedAt = STARTED_AT.getTime()) {
-  const recording = port(startedAt);
+async function connect(startedAt = STARTED_AT.getTime(), tabId = 7) {
+  const recording = port(startedAt, tabId);
   await chrome.runtime.onConnect.listeners[0](recording);
   return recording;
+}
+
+function dispatch(message, sendResponse) {
+  for (const listener of chrome.runtime.onMessage.listeners) {
+    listener(message, {}, sendResponse);
+  }
 }
 
 function speak(recording, slices) {
@@ -504,8 +515,8 @@ describe("a recording whose local save fails", () => {
     fakeServer(failingPuts(Number.POSITIVE_INFINITY));
     chrome.offscreen.hasDocument.mockResolvedValue(true);
     chrome.downloads.download.mockRejectedValue(new Error("Disk unavailable"));
-    const first = await connect(7);
-    await connect(8);
+    const first = await connect(STARTED_AT.getTime(), 7);
+    await connect(STARTED_AT.getTime(), 8);
     speak(first, 15);
 
     // Act
@@ -550,7 +561,7 @@ describe("a recording whose local save fails", () => {
   test("revokes the Blob URL after a download fails while another tab keeps offscreen alive", async () => {
     // Arrange
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    await connect(8);
+    await connect(STARTED_AT.getTime(), 8);
 
     // Act
     await failSaving();
@@ -783,39 +794,44 @@ describe("a recording's upload", () => {
     },
   );
 
-  test("a late 401 preserves a different sign-in and locks the original recording", async () => {
-    // Arrange
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const put = Promise.withResolvers();
-    const started = Promise.withResolvers();
-    fakeServer((request) => {
-      if (request.method === "PUT") {
-        started.resolve();
-        return put.promise;
-      }
-      return answer(request);
-    });
-    const recording = await connect();
-    speak(recording, 11);
-    await started.promise;
-    const nextSession = { userId: "other", token: "other-token" };
+  test.for([
+    { server: SERVER, userId: "other", token: "other-token" },
+    { server: "https://other.example", userId: "original", token: "other-token" },
+  ])(
+    "a late 401 preserves a different sign-in and locks the original recording: %j",
+    async (nextSession) => {
+      // Arrange
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const put = Promise.withResolvers();
+      const started = Promise.withResolvers();
+      fakeServer((request) => {
+        if (request.method === "PUT") {
+          started.resolve();
+          return put.promise;
+        }
+        return answer(request);
+      });
+      const recording = await connect();
+      speak(recording, 11);
+      await started.promise;
 
-    // Act
-    await chrome.storage.session.set(nextSession);
-    put.resolve(new Response(null, { status: 401 }));
-    await hangUp(recording);
+      // Act
+      await chrome.storage.session.set(nextSession);
+      put.resolve(new Response(null, { status: 401 }));
+      await hangUp(recording);
 
-    // Assert
-    expect({
-      session: await chrome.storage.session.get(["userId", "token"]),
-      downloads: chrome.downloads.download.mock.calls.length,
-      retained: (await recoveryStore.list()).map(({ owner }) => owner),
-    }).toEqual({
-      session: nextSession,
-      downloads: 0,
-      retained: [{ server: SERVER, userId: "original" }],
-    });
-  });
+      // Assert
+      expect({
+        session: await chrome.storage.session.get(["server", "userId", "token"]),
+        downloads: chrome.downloads.download.mock.calls.length,
+        retained: (await recoveryStore.list()).map(({ owner }) => owner),
+      }).toEqual({
+        session: nextSession,
+        downloads: 0,
+        retained: [{ server: SERVER, userId: "original" }],
+      });
+    },
+  );
 
   test("a different sign-in during fallback Blob preparation keeps the recording private", async () => {
     // Arrange
@@ -1158,6 +1174,7 @@ describe("the recordings in a tab", () => {
     // Arrange
     fakeServer();
     const older = await connect();
+    await hangUp(older);
     await connect(STARTED_AT.getTime() + 5000);
 
     // Act
@@ -1165,7 +1182,7 @@ describe("the recordings in a tab", () => {
 
     // Assert
     const sendResponse = vi.fn();
-    chrome.runtime.onMessage.listeners[0]({ type: "recording", tabId: 7 }, {}, sendResponse);
+    dispatch({ type: "recording", tabId: 7 }, sendResponse);
     expect(sendResponse).toHaveBeenCalledWith({ startedAt: STARTED_AT.getTime() + 5000 });
   });
 
@@ -1215,11 +1232,7 @@ describe("the recordings in a tab", () => {
     const sendResponse = vi.fn();
 
     // Act
-    chrome.runtime.onMessage.listeners[0](
-      { type: "record", tabId: 7, streamId: "s" },
-      {},
-      sendResponse,
-    );
+    dispatch({ type: "record", tabId: 7, streamId: "s" }, sendResponse);
     await vi.advanceTimersByTimeAsync(0);
 
     // Assert
@@ -1237,11 +1250,7 @@ describe("the recordings in a tab", () => {
     const sendResponse = vi.fn();
 
     // Act
-    chrome.runtime.onMessage.listeners[0](
-      { type: "record", tabId: 7, streamId: "s" },
-      {},
-      sendResponse,
-    );
+    dispatch({ type: "record", tabId: 7, streamId: "s" }, sendResponse);
     await vi.advanceTimersByTimeAsync(0);
 
     // Assert

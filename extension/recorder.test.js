@@ -12,7 +12,13 @@ function event() {
 }
 
 function port() {
-  return { onDisconnect: event(), disconnect: vi.fn() };
+  const ready = event();
+  const add = ready.addListener;
+  ready.addListener = (listener) => {
+    add(listener);
+    queueMicrotask(() => listener({ type: "recording-ready", startedAt: Date.now() }));
+  };
+  return { onMessage: ready, onDisconnect: event(), disconnect: vi.fn() };
 }
 
 function fakeChrome({ signedIn = true, unreachable = false } = {}) {
@@ -180,7 +186,6 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  vi.unstubAllGlobals();
 });
 
 function stubPickedCapture() {
@@ -251,11 +256,19 @@ test("disconnecting the recording port stops the recorder and releases both audi
   await load();
   const { tabTrack, microphoneTrack, close, port } = stubPickedCapture();
   const start = vi.fn();
-  const stop = vi.fn();
+  const listeners = {};
+  const stop = vi.fn(() => {
+    for (const listener of listeners.stop) {
+      listener();
+    }
+  });
   vi.stubGlobal(
     "MediaRecorder",
     class {
-      addEventListener = vi.fn();
+      addEventListener = (type, listener) => {
+        listeners[type] ??= [];
+        listeners[type].push(listener);
+      };
       start = start;
       stop = stop;
     },
@@ -600,4 +613,23 @@ describe("the recorder's answers to the extension", () => {
     // Assert
     expect([sentTypes(), sendResponse.mock.calls, cardShown()]).toEqual([[], [], false]);
   });
+});
+
+test("a recording started while registration waits keeps its session", async () => {
+  // Arrange
+  await load();
+  const { port } = stubPickedCapture();
+  FakeRecorder.last = null;
+  vi.stubGlobal("MediaRecorder", FakeRecorder);
+  root.querySelector("button.primary").disabled = false;
+  root.querySelector("button.primary").click();
+  await vi.waitFor(() => expect(port.onMessage.listeners).toHaveLength(1));
+  send({ type: "started", startedAt: 2000 });
+
+  // Act
+  port.onMessage.listeners[0]({ type: "recording-ready", startedAt: 1 });
+  await vi.waitFor(() => expect(FakeRecorder.last?.state).toBe("inactive"));
+
+  // Assert
+  expect(send({ type: "started", startedAt: 3000 }).mock.calls).toEqual([[{ taken: false }]]);
 });

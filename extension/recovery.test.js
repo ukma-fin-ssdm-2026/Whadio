@@ -28,6 +28,21 @@ function setup() {
 
 afterEach(() => vi.restoreAllMocks());
 
+test("an owner who sees every saved recording has no locked recordings", async () => {
+  // Arrange
+  const { recovery } = setup();
+  await recovery.retain(recording);
+
+  // Act
+  const listed = await recovery.list(currentOwner);
+
+  // Assert
+  expect(listed).toEqual({
+    recordings: [{ id: "one", startedAt: 1, busy: false }],
+    hasLockedRecordings: false,
+  });
+});
+
 test("a failed retry retains the saved copy for the next attempt", async () => {
   // Arrange
   const { recovery, download } = setup();

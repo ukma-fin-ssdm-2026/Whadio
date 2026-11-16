@@ -57,6 +57,7 @@ export function showRecovery() {
         ]) {
           const button = document.createElement("button");
           button.type = "button";
+          button.className = type === "recovery-retry" ? "recovery-retry" : "recovery-discard";
           button.textContent = label;
           button.disabled = busy;
           button.addEventListener("click", async () => {

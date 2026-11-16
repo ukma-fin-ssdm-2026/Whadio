@@ -48,7 +48,7 @@ async function record(tabId, streamId) {
   }
 
   const startedAt = Date.now();
-  const recorder = globalThis.whadioAudio.record(
+  const recorder = await globalThis.whadioAudio.record(
     tab,
     microphone,
     `recording:${tabId}:${startedAt}`,

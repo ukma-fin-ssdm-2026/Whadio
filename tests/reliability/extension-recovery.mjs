@@ -69,6 +69,11 @@ try {
   await page.route("https://whadio.example/**", (route) => route.abort());
   await page.reload();
   await page.getByRole("button", { name: "Retry download" }).first().waitFor();
+  for (const colorScheme of ["light", "dark"]) {
+    await page.emulateMedia({ colorScheme });
+    await page.locator("body").screenshot({ path: resolve(evidence, `recovery-after-restart-${colorScheme}.png`) });
+  }
+  await page.emulateMedia({ colorScheme: "light" });
   await page.locator("body").screenshot({ path: resolve(evidence, "recovery-after-restart.png") });
 
   await page.getByRole("button", { name: "Retry download" }).first().click();
