@@ -387,7 +387,7 @@ class WorkspaceRepository:
     async def of_member(
         self, user_id: UUID, workspace_id: UUID | None, page: ListWindow | None = None
     ) -> list[MemberWorkspace]:
-        """The member's workspaces, by join time when paged and creation time otherwise."""
+        """The member's workspaces, by join time."""
         others = aliased(WorkspaceMembership)
         member_count = (
             select(func.count())
@@ -399,7 +399,6 @@ class WorkspaceRepository:
             .join(WorkspaceMembership, WorkspaceMembership.workspace_id == Workspace.workspace_id)
             .where(WorkspaceMembership.user_id == user_id)
         )
-        sort_time = Workspace.created_at if page is None else WorkspaceMembership.joined_at
         if workspace_id is not None:
             statement = statement.where(Workspace.workspace_id == workspace_id)
         if page is not None:
@@ -413,7 +412,7 @@ class WorkspaceRepository:
                     )
                 )
             statement = statement.limit(page.limit)
-        statement = statement.order_by(sort_time, Workspace.workspace_id)
+        statement = statement.order_by(WorkspaceMembership.joined_at, Workspace.workspace_id)
         return [
             MemberWorkspace(
                 workspace_id=workspace.workspace_id,
