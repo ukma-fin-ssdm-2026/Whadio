@@ -456,8 +456,8 @@ function serveNoteVersions(pages: NoteRead[][] | null = [[CURRENT_NOTES, EARLIER
   return requests;
 }
 
-async function openNoteVersions(changes: Partial<ComponentProps<typeof MeetingDetail>> = {}) {
-  const view = renderDetail(changes);
+async function openNoteVersions() {
+  const view = renderDetail();
   await view.user.click(await screen.findByRole("button", { name: "Notes versions" }));
   return view;
 }
