@@ -1,11 +1,9 @@
-from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Annotated, ClassVar
 
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints
 
 from ...shared.text import display_text
-from .errors import ApiError, ErrorCode, ErrorDetail
 
 
 class Input(BaseModel):
@@ -43,7 +41,13 @@ class PageInfo(Output):
     limit: int = Field(description="Page size that was applied", examples=[20])
     next_cursor: str | None = Field(
         description="Pass as `cursor` to get the next page; null on the last page",
-        examples=["20"],
+        examples=[
+            (
+                "eyJzY29wZSI6IndvcmtzcGFjZXM6MDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAx"
+                "OmpvaW5lZCIsImtleSI6IjIwMjYtMTEtMTVUMTI6MDA6MDArMDA6MDAiLCJpdGVtX2lkIjoiMDAw"
+                "MDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAyIn0"
+            )
+        ],
     )
     has_more: bool = Field(description="Whether another page follows", examples=[False])
 
@@ -51,26 +55,3 @@ class PageInfo(Output):
 class Page[T](Output):
     items: list[T] = Field(description="Items of this page, in the documented order")
     pagination: PageInfo
-
-
-def paginate[T](items: Sequence[T], query: PageQuery) -> Page[T]:
-    # Stub cursor: the position of the next item. The design's cursor is an opaque sort key.
-    start = 0
-    if query.cursor is not None:
-        cursor = query.cursor
-        if not (cursor.isascii() and cursor.isdigit() and 0 < int(cursor) < len(items)):
-            raise ApiError(
-                422,
-                ErrorCode.VALIDATION_ERROR,
-                "Request contains invalid fields",
-                [ErrorDetail(field="cursor", message="is not a cursor of this list")],
-            )
-        start = int(cursor)
-    end = start + query.limit
-    has_more = end < len(items)
-    return Page[T](
-        items=list(items[start:end]),
-        pagination=PageInfo(
-            limit=query.limit, next_cursor=str(end) if has_more else None, has_more=has_more
-        ),
-    )

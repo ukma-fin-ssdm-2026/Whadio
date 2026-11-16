@@ -113,3 +113,16 @@ export async function signOut() {
   await chrome.storage.session.remove(["token", "expiresAt", "name"]);
   await chrome.storage.local.remove("destination");
 }
+
+export async function destinations() {
+  const items = [];
+  let cursor;
+  do {
+    const query = new URLSearchParams({ limit: "100" });
+    if (cursor) query.set("cursor", cursor);
+    const page = await api("GET", `/captures/destinations?${query}`);
+    items.push(...page.items);
+    cursor = page.pagination.next_cursor;
+  } while (cursor);
+  return items;
+}

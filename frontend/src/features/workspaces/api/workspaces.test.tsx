@@ -121,12 +121,30 @@ test("updating a workspace marks the list for a refetch", async () => {
   );
 });
 
-test("deleting a workspace removes it from the cached list", async () => {
+test("a stale list response cannot restore a deleted workspace", async () => {
   // Arrange
+  const started = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
   const { result, queryClient } = renderDelete();
+  server.use(
+    http.get("/api/v1/workspaces", async ({ response }) => {
+      started.resolve();
+      await release.promise;
+      return response(200).json(page([workspaceSummary()]));
+    }),
+  );
+  const staleRequest = queryClient.fetchQuery(workspaceQueries.list());
+  await started.promise;
 
   // Act
   await result.current.mutateAsync();
+  queryClient.setQueryData(workspaceQueries.list().queryKey, (current) =>
+    current
+      ? { ...current, items: current.items.filter(({ id }) => id !== "workspace") }
+      : current,
+  );
+  release.resolve();
+  await staleRequest.catch(() => undefined);
 
   // Assert
   expect(queryClient.getQueryData(workspaceQueries.list().queryKey)).toEqual(
@@ -134,13 +152,37 @@ test("deleting a workspace removes it from the cached list", async () => {
   );
 });
 
-test("deleting a workspace removes its cached detail", async () => {
+test("workspace list follows every cursor", async () => {
   // Arrange
-  const { result, queryClient } = renderDelete();
-
+  const cursors: (string | null)[] = [];
+  const pages = new Map([
+    [null, { id: "first", next: "next+/=" }],
+    ["next+/=", { id: "second", next: "last" }],
+    ["last", { id: "third", next: null }],
+  ]);
+  server.use(
+    http.get("/api/v1/workspaces", ({ request, response }) => {
+      const cursor = new URL(request.url).searchParams.get("cursor");
+      cursors.push(cursor);
+      const current = pages.get(cursor);
+      if (!current) throw new Error(`Unexpected workspace cursor: ${cursor}`);
+      return response(200).json({
+        ...page([workspaceSummary({ id: current.id })]),
+        pagination: { limit: 100, has_more: current.next !== null, next_cursor: current.next },
+      });
+    }),
+  );
+  const client = createTestQueryClient();
   // Act
-  await result.current.mutateAsync();
-
+  const result = await client.fetchQuery(workspaceQueries.list());
   // Assert
-  expect(queryClient.getQueryData(workspaceQueries.detail("workspace").queryKey)).toBeUndefined();
+  expect({
+    ids: result.items.map((item) => item.id),
+    cursors,
+    pagination: result.pagination,
+  }).toEqual({
+    ids: ["first", "second", "third"],
+    cursors: [null, "next+/=", "last"],
+    pagination: { limit: 100, has_more: false, next_cursor: null },
+  });
 });

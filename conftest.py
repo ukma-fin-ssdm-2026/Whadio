@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import hashlib
 from collections.abc import AsyncGenerator, Awaitable, Callable, Generator, Mapping
 from contextlib import asynccontextmanager
@@ -23,6 +24,7 @@ from whadio.accounts.models import User, Workspace, WorkspaceMembership
 from whadio.accounts.passwords import Argon2PasswordHasher
 from whadio.api.app import create_app
 from whadio.api.composition import notes_llm, transaction
+from whadio.api.core.pagination import ListToken
 from whadio.meetings.enums import (
     AccessMode,
     MeetingSource,
@@ -84,6 +86,14 @@ def database_settings() -> DatabaseSettings:
 
 
 BUILT_IN_LLM: Final = OllamaLlm(provider="ollama", model="test-model")
+
+
+def replace_cursor_key(cursor: str, key: str) -> str:
+    token = ListToken.model_validate_json(
+        base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4))
+    )
+    token.key = key
+    return base64.urlsafe_b64encode(token.model_dump_json().encode()).decode().rstrip("=")
 
 
 class AsyncDatabase:

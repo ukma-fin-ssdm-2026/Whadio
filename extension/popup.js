@@ -1,4 +1,4 @@
-import { api, insecureServer, originPattern, signedIn, signIn, signOut } from "./api.js";
+import { destinations, insecureServer, originPattern, signedIn, signIn, signOut } from "./api.js";
 
 const MEET_CALL = /^https:\/\/meet\.google\.com\/(?:meet\/)?[a-z]{3}-[a-z]{4}-[a-z]{3}(?:[/?#]|$)/;
 
@@ -52,13 +52,13 @@ async function showAccount() {
   const { name } = await chrome.storage.session.get("name");
   const { destination: chosen } = await chrome.storage.local.get("destination");
   document.getElementById("name").textContent = name ?? "";
-  const page = await api("GET", "/captures/destinations?limit=100");
+  const workspaces = await destinations();
   // A folder chosen under another account, or since deleted, falls back to the personal default.
-  const known = page.items.some((workspace) =>
+  const known = workspaces.some((workspace) =>
     workspace.folders.some((folder) => folder.id === chosen?.folder_id),
   );
   destination.replaceChildren(
-    ...page.items.flatMap((workspace) =>
+    ...workspaces.flatMap((workspace) =>
       workspace.folders.map((folder) => {
         const value = JSON.stringify({
           workspace_id: workspace.workspace_id,
