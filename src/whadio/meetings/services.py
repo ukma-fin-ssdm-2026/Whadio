@@ -595,10 +595,10 @@ class MeetingService:
         await self._repository.save_initial(version)
         return version
 
-    async def processing_snapshot(self, actor_id: UUID, meeting_id: UUID) -> Meeting:
+    async def processing_snapshot(self, actor_id: UUID, meeting_id: UUID) -> PipelineMeeting:
         """Processing locks before deciding whether to reserve a job and enforce its limits."""
-        await self._authorize(actor_id, meeting_id, lock=True)
-        return await self._repository.get(meeting_id)
+        scope = await self._authorize(actor_id, meeting_id, lock=True)
+        return PipelineMeeting(await self._repository.get(meeting_id), scope.workspace_id)
 
     async def save_processing_state(self, meeting_id: UUID, update: ProcessingUpdate) -> None:
         """Persist Processing's decision without choosing transitions or enforcing job limits."""

@@ -1402,7 +1402,7 @@ async def _deliver(unit: Unit, body: bytes) -> None:
     async with unit.session.begin_nested():
         await handle_delivery(
             WorkerDelivery(body),
-            processing_service(unit.session, InMemoryObjectStorage()).handle,
+            processing_service(unit.session, InMemoryObjectStorage(), BUILT_IN_LLM, 3).handle,
             WorkerUsers(transcription="asr-worker", notes="notes-worker"),
         )
 
@@ -2042,7 +2042,9 @@ def test_upload_queues_a_transcription_job_to_publish(database_settings: Databas
                                 CaptureSpeakerTimeline(CaptureRepository(unit.session)),
                                 OutboxProcessingNotices(NotificationOutboxRepository(unit.session)),
                                 meeting_readers(unit),
-                            )
+                            ),
+                            notes_llm=BUILT_IN_LLM,
+                            regeneration_limit=3,
                         )
                     ),
                 )
