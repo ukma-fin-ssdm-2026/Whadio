@@ -651,11 +651,11 @@ class MeetingService:
             raise
 
     async def notes_context(self, meeting: Meeting, limit: int) -> list[ContextTranscript]:
-        """Processed meetings of the same folder; a restricted one never reaches another
+        """Transcribed meetings of the same folder; a restricted one never reaches another
         meeting's notes (FR-019)."""
         context: list[ContextTranscript] = []
         # One extra row makes up for the meeting itself.
-        for other in await self._repository.processed_in_folder(meeting.folder_id, limit + 1):
+        for other in await self._repository.transcribed_in_folder(meeting.folder_id, limit + 1):
             transcript = (
                 None
                 if other.meeting_id == meeting.meeting_id

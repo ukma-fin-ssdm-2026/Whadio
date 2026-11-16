@@ -143,7 +143,7 @@ class FakeMeetingRepository:
     async def notes(self, meeting_id: UUID, page: ListWindow | None = None) -> list[NoteVersion]:
         raise NotImplementedError(meeting_id, page)
 
-    async def processed_in_folder(self, folder_id: UUID, limit: int) -> list[Meeting]:
+    async def transcribed_in_folder(self, folder_id: UUID, limit: int) -> list[Meeting]:
         raise NotImplementedError(folder_id, limit)
 
     async def workspace_meetings(self, workspace_id: UUID) -> list[UUID]:

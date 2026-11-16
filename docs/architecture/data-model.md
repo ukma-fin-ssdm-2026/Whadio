@@ -128,6 +128,8 @@ The model covers the data required for these key project functions:
 - Before removing its last selected recipient, explicitly grant access to another remaining
   workspace member. Removal never automatically grants the Owner access or unrestricts the
   meeting. Remove the departing member's grants and membership in the same transaction.
+- The context set of a meeting's notes is drawn from the other meetings of its folder that have a
+  transcript, whatever their `processing_state`.
 - A restricted meeting must not be used as cross-meeting context for another meeting's notes.
 - External shares are read-only, require a signed-in recipient, can be revoked, and must store only `token_hash`, never a raw share token.
 - An external share grants access only to its `recipient_user_id`. While it is null, opening the link only creates a `SHARE_ACCESS_REQUEST`; approving a request sets `recipient_user_id` to the requester.
