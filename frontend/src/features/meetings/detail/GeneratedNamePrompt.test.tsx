@@ -114,6 +114,30 @@ test("renaming saves the new name", async () => {
   await waitFor(() => expect(names).toEqual(["Quarterly review"]));
 });
 
+test("a saved rename closes its dialog", async () => {
+  // Arrange
+  serveNaming();
+  const user = await openRename();
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Save" }));
+
+  // Assert
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+});
+
+test("cancelling a rename closes its dialog without a request", async () => {
+  // Arrange
+  const names = serveNaming();
+  const user = await openRename();
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+  // Assert
+  expect([screen.queryByRole("dialog"), names]).toEqual([null, []]);
+});
+
 test("a blank name is refused before it is sent", async () => {
   // Arrange
   const names = serveNaming();
