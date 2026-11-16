@@ -343,8 +343,8 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `GET /workspaces` · List my workspaces
 
-- **Status:** Implemented · **Caller:** any user · **Success:** `200`, a page of workspaces, oldest
-  first
+- **Status:** Implemented · **Caller:** any user · **Success:** `200`, a page of workspaces ordered
+  by the caller's join time, then workspace ID, both ascending
 - **Rules:** the personal workspace is included.
 - **Errors:** common only.
 
@@ -862,7 +862,7 @@ All capture operations accept the extension's bearer token as well as the browse
 #### `GET /captures/destinations` · Where a recording can go
 
 - **Status:** Implemented · **Caller:** any user · **Success:** `200`, a page of workspaces,
-  each with its folders
+  ordered by the caller's join time, then workspace ID, both ascending, each with its folders
 - **Rules:** the extension files a recording in a folder before it is processed, because the
   folder is the notes context (FR-012, FR-019).
 - **Errors:** common only.
@@ -1245,6 +1245,9 @@ three reasons:
 
 Cursors are opaque, and every list uses the same style. A cursor encodes the list it belongs to,
 the last item's sort key and its identifier, so a deleted item does not invalidate later pages.
+Workspace and capture-destination cursors are separate and bound to the caller. Both lists use the
+caller's membership join time. Workspaces created or joined between pages can appear on later
+pages, and workspaces the caller leaves drop out of the results.
 
 ### 6.7 Long-running work
 
