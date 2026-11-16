@@ -1,8 +1,8 @@
 # CI/CD Metrics: Raw Data
 
 Every run of the `CI/CD` workflow on `main` from 20.10 to 09.11.2026 (21 days), collected with
-`gh run list` and the Actions jobs API. Times are Kyiv time. The analysis is in
-[`dora-summary.md`](dora-summary.md).
+`gh run list` and the Actions jobs API; the exported data is in [`evidence/`](evidence/). Times are
+Kyiv time. The analysis is in [`dora-summary.md`](dora-summary.md).
 
 - **Commit** links to the run. **PR** is the pull request of the run's head commit; "also" lists
   the pull requests whose own runs were cancelled.
