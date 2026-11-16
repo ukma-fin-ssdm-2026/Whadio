@@ -239,11 +239,13 @@ class FakeMeetings:
 class FakeNotes:
     def __init__(self) -> None:
         self.saved: GeneratedNotes | None = None
+        self.requester_id: UUID | None = None
 
     async def save_generated_notes(
-        self, _meeting_id: UUID, notes: GeneratedNotes, _requester_id: UUID | None, _now: datetime
+        self, _meeting_id: UUID, notes: GeneratedNotes, requester_id: UUID | None, _now: datetime
     ) -> None:
         self.saved = notes
+        self.requester_id = requester_id
 
 
 class FakeWorkspaces:
@@ -344,6 +346,14 @@ def add_job(
         job_id, pipeline.meeting_id, job_type, status, attempts, sent_context=sent
     )
     pipeline.jobs.published.add(job_id)
+    return job_id
+
+
+def add_requested_notes_job(pipeline: Pipeline, requester: UUID) -> UUID:
+    job_id = add_job(pipeline, JobType.NOTES)
+    pipeline.jobs.jobs[job_id] = replace(
+        pipeline.jobs.jobs[job_id], template=NotesTemplate.INTERVIEW, requested_by=requester
+    )
     return job_id
 
 
@@ -677,6 +687,24 @@ def test_ready_transcript_queues_notes_with_the_workspace_preset() -> None:
     assert [request.preset for request in notes_requests(requests)] == [NotesPreset.DETAILED]
 
 
+def test_requested_notes_job_is_sent_with_its_template() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    pipeline.meetings.transcript = stored_version()
+    asyncio.run(
+        pipeline.jobs.add(
+            pipeline.meeting_id,
+            JobType.NOTES,
+            template=NotesTemplate.INTERVIEW,
+            requested_by=uuid4(),
+        )
+    )
+    # Act
+    requests = publish_all(pipeline)
+    # Assert
+    assert [request.preset for request in notes_requests(requests)] == [NotesPreset.INTERVIEW]
+
+
 def test_notes_request_leaves_a_generated_name_out() -> None:
     # Arrange
     pipeline = make_pipeline(meeting_row(generated=True))
@@ -761,6 +789,17 @@ def test_ready_notes_are_saved_with_the_provider() -> None:
         proposed_name="Sprint planning",
         context=(),
     )
+
+
+def test_ready_requested_notes_are_saved_for_the_requester() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    requester = uuid4()
+    job_id = add_requested_notes_job(pipeline, requester)
+    # Act
+    handle(pipeline, notes_ready(pipeline, job_id))
+    # Assert
+    assert pipeline.notes.requester_id == requester
 
 
 def test_ready_notes_keep_only_context_meetings_that_were_sent() -> None:
@@ -1359,6 +1398,32 @@ def test_uploader_who_can_no_longer_read_the_meeting_is_not_notified() -> None:
     job_id = add_job(pipeline, JobType.NOTES)
     # Act
     handle(pipeline, notes_ready(pipeline, job_id))
+    # Assert
+    assert pipeline.notices.sent == []
+
+
+def _notes_ready(pipeline: Pipeline, job_id: UUID) -> None:
+    handle(pipeline, notes_ready(pipeline, job_id))
+
+
+def _notes_fail_permanently(pipeline: Pipeline, job_id: UUID) -> None:
+    handle(pipeline, notes_failed(pipeline, job_id, NotesFailure.TRANSCRIPT_TOO_LONG))
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        pytest.param(_notes_ready, id="ready"),
+        pytest.param(_notes_fail_permanently, id="permanent-failure"),
+        pytest.param(_dead_letter, id="dead-lettered"),
+    ],
+)
+def test_requested_notes_job_notifies_nobody(event: JobEvent) -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_requested_notes_job(pipeline, uuid4())
+    # Act
+    event(pipeline, job_id)
     # Assert
     assert pipeline.notices.sent == []
 
