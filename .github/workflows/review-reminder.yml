@@ -2,8 +2,8 @@ name: Review reminder
 
 on:
   schedule:
-    # 07:00 UTC is 09:00 in Kyiv in winter and 10:00 in summer.
-    - cron: "0 7 * * 1-5"
+    # 04:30 UTC is 06:30 in Kyiv in winter and 07:30 in summer, off the hour GitHub delays most.
+    - cron: "30 4 * * 1-5"
   workflow_dispatch:
 
 permissions:
