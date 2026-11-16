@@ -84,13 +84,12 @@ async def connect_to_a_broker_that_never_answers() -> tuple[bool, int]:
     )
     connecting = asyncio.create_task(connect(settings, name="test"))
     done, _ = await asyncio.wait({connecting}, timeout=LONG_ENOUGH_TO_NOTICE_A_HANG)
+    left_running = len(asyncio.all_tasks() - before - {connecting})
     timed_out = connecting in done and isinstance(connecting.exception(), TimeoutError)
     connecting.cancel()
     await asyncio.gather(connecting, return_exceptions=True)
     server.close()
     server.close_clients()
-    await server.wait_closed()
-    left_running = len(asyncio.all_tasks() - before - {connecting})
     return timed_out, left_running
 
 
