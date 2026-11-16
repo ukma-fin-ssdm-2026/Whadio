@@ -7,5 +7,6 @@ export const Route = createFileRoute("/_authed/workspaces/$workspaceId/settings"
 
 function WorkspaceSettingsRoute() {
   const { workspaceId } = Route.useParams();
-  return <WorkspaceSettings workspaceId={workspaceId} />;
+  const navigate = Route.useNavigate();
+  return <WorkspaceSettings workspaceId={workspaceId} onDeleted={() => navigate({ to: "/" })} />;
 }

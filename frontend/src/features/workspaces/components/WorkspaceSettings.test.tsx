@@ -1,5 +1,5 @@
 import { screen, waitFor } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import type { Schemas } from "@/shared/api/types";
 import { errorBody, page, workspaceRead } from "@/shared/testing/fixtures";
 import { renderWithProviders } from "@/shared/testing/render";
@@ -22,8 +22,11 @@ function serveWorkspace(changes: Partial<Schemas["WorkspaceRead"]> = {}) {
   return updates;
 }
 
-function renderSettings() {
-  return renderWithProviders(<WorkspaceSettings workspaceId="workspace" />);
+function renderSettings(onDeleted = vi.fn()) {
+  return {
+    ...renderWithProviders(<WorkspaceSettings workspaceId="workspace" onDeleted={onDeleted} />),
+    onDeleted,
+  };
 }
 
 async function choosePreset(label: string) {
@@ -199,4 +202,160 @@ test("settings have no workspace access switch", async () => {
 
   // Assert
   expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+});
+
+test("an owner is offered workspace deletion", async () => {
+  // Arrange
+  serveWorkspace();
+
+  // Act
+  renderSettings();
+
+  // Assert
+  expect(await screen.findByRole("button", { name: "Delete workspace" })).toBeInTheDocument();
+});
+
+test.for(["moderator", "member"] as const)(
+  "a %s is not offered workspace deletion",
+  async (role) => {
+    // Arrange
+    serveWorkspace({ my_role: role });
+
+    // Act
+    renderSettings();
+    await screen.findByRole("heading", { name: "Workspace settings" });
+
+    // Assert
+    expect(screen.queryByRole("button", { name: "Delete workspace" })).not.toBeInTheDocument();
+  },
+);
+
+test("a personal workspace explains that it cannot be deleted", async () => {
+  // Arrange
+  serveWorkspace({ is_personal: true });
+
+  // Act
+  renderSettings();
+
+  // Assert
+  expect(await screen.findByText("A personal workspace cannot be deleted.")).toBeInTheDocument();
+});
+
+test("a personal workspace is not offered deletion", async () => {
+  // Arrange
+  serveWorkspace({ is_personal: true });
+
+  // Act
+  renderSettings();
+  await screen.findByText("A personal workspace cannot be deleted.");
+
+  // Assert
+  expect(screen.queryByRole("button", { name: "Delete workspace" })).not.toBeInTheDocument();
+});
+
+async function openDeleteConfirmation() {
+  const rendered = renderSettings();
+  await rendered.user.click(await screen.findByRole("button", { name: "Delete workspace" }));
+  return rendered;
+}
+
+test("deletion confirmation names the workspace", async () => {
+  // Arrange
+  serveWorkspace();
+
+  // Act
+  await openDeleteConfirmation();
+
+  // Assert
+  expect(screen.getByRole("dialog", { name: "Delete Alpha?" })).toBeInTheDocument();
+});
+
+test("deletion confirmation names everything that is removed", async () => {
+  // Arrange
+  serveWorkspace();
+
+  // Act
+  await openDeleteConfirmation();
+
+  // Assert
+  expect(screen.getByRole("dialog")).toHaveTextContent(
+    "Alpha and all of its folders, meetings, recordings, transcripts and notes will be permanently deleted.",
+  );
+});
+
+test("cancelling workspace deletion sends no request", async () => {
+  // Arrange
+  serveWorkspace();
+  const requests: string[] = [];
+  server.use(
+    http.delete("/api/v1/workspaces/{workspace_id}", ({ request, response }) => {
+      requests.push(request.method);
+      return response(204).empty();
+    }),
+  );
+  const { user } = await openDeleteConfirmation();
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+  // Assert
+  expect(requests).toEqual([]);
+});
+
+test("successful workspace deletion leaves the settings page", async () => {
+  // Arrange
+  serveWorkspace();
+  server.use(
+    http.delete("/api/v1/workspaces/{workspace_id}", ({ response }) => response(204).empty()),
+  );
+  const { user, onDeleted } = await openDeleteConfirmation();
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Delete workspace" }));
+
+  // Assert
+  await waitFor(() => expect(onDeleted).toHaveBeenCalledOnce());
+});
+
+test.each([
+  [403, "INSUFFICIENT_ROLE", "Owner only"],
+  [404, "NOT_FOUND", "No such workspace"],
+  [409, "PERSONAL_WORKSPACE", "A personal workspace cannot be deleted"],
+] as const)("a %i deletion refusal is shown", async (status, code, message) => {
+  // Arrange
+  serveWorkspace();
+  server.use(
+    http.delete("/api/v1/workspaces/{workspace_id}", ({ response }) =>
+      response(status).json(errorBody(code, message)),
+    ),
+  );
+  const { user } = await openDeleteConfirmation();
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Delete workspace" }));
+
+  // Assert
+  expect(await screen.findByText(message)).toBeInTheDocument();
+});
+
+test.each([
+  [403, "INSUFFICIENT_ROLE"],
+  [404, "NOT_FOUND"],
+  [409, "PERSONAL_WORKSPACE"],
+] as const)("a %i deletion refusal keeps the workspace", async (status, code) => {
+  // Arrange
+  serveWorkspace();
+  server.use(
+    http.delete("/api/v1/workspaces/{workspace_id}", ({ response }) =>
+      response(status).json(errorBody(code, "Deletion refused")),
+    ),
+  );
+  const { user, onDeleted } = await openDeleteConfirmation();
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Delete workspace" }));
+  await screen.findByText("Deletion refused");
+
+  // Assert
+  expect(onDeleted).not.toHaveBeenCalled();
 });

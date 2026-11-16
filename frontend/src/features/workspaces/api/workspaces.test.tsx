@@ -4,7 +4,12 @@ import { expect, test } from "vitest";
 import { page, workspaceRead, workspaceSummary } from "@/shared/testing/fixtures";
 import { createTestQueryClient, TestProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
-import { useCreateWorkspace, useUpdateWorkspace, workspaceQueries } from "./workspaces";
+import {
+  useCreateWorkspace,
+  useDeleteWorkspace,
+  useUpdateWorkspace,
+  workspaceQueries,
+} from "./workspaces";
 
 const CREATED = workspaceRead({ id: "created", name: "Created Workspace" });
 const UPDATED = workspaceRead({ default_preset: "interview" });
@@ -29,6 +34,23 @@ function serveUpdate() {
     }),
   );
   return bodies;
+}
+
+function renderDelete() {
+  const queryClient = createTestQueryClient();
+  queryClient.setQueryData(
+    workspaceQueries.list().queryKey,
+    page([workspaceSummary(), workspaceSummary({ id: "other", name: "Other" })]),
+  );
+  queryClient.setQueryData(workspaceQueries.detail("workspace").queryKey, workspaceRead());
+  server.use(
+    http.delete("/api/v1/workspaces/{workspace_id}", ({ response }) => response(204).empty()),
+  );
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <TestProviders queryClient={queryClient}>{children}</TestProviders>
+  );
+  const { result } = renderHook(() => useDeleteWorkspace("workspace"), { wrapper });
+  return { result, queryClient };
 }
 
 test("workspace keys share the workspaces domain", () => {
@@ -97,4 +119,28 @@ test("updating a workspace marks the list for a refetch", async () => {
   await waitFor(() =>
     expect(queryClient.getQueryState(workspaceQueries.list().queryKey)?.isInvalidated).toBe(true),
   );
+});
+
+test("deleting a workspace removes it from the cached list", async () => {
+  // Arrange
+  const { result, queryClient } = renderDelete();
+
+  // Act
+  await result.current.mutateAsync();
+
+  // Assert
+  expect(queryClient.getQueryData(workspaceQueries.list().queryKey)).toEqual(
+    page([workspaceSummary({ id: "other", name: "Other" })]),
+  );
+});
+
+test("deleting a workspace removes its cached detail", async () => {
+  // Arrange
+  const { result, queryClient } = renderDelete();
+
+  // Act
+  await result.current.mutateAsync();
+
+  // Assert
+  expect(queryClient.getQueryData(workspaceQueries.detail("workspace").queryKey)).toBeUndefined();
 });

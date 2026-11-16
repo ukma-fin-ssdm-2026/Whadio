@@ -554,6 +554,26 @@ describe("a workspace page", () => {
     // Assert
     expect(screen.queryByRole("heading", { name: "Invitations" })).not.toBeInTheDocument();
   });
+
+  test("deleting a workspace opens the workspace list", async () => {
+    // Arrange
+    window.history.replaceState(null, "", "/workspaces/workspace/settings");
+    serveApi(true);
+    server.use(
+      http.get("/api/v1/workspaces", () => HttpResponse.json(page([workspaceSummary()]))),
+      http.get("/api/v1/workspaces/workspace", () => HttpResponse.json(workspaceRead())),
+      http.delete("/api/v1/workspaces/workspace", () => new HttpResponse(null, { status: 204 })),
+    );
+    render(<App />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Delete workspace" }));
+
+    // Act
+    await user.click(screen.getByRole("button", { name: "Delete workspace" }));
+
+    // Assert
+    await waitFor(() => expect(currentPath()).toBe("/"));
+  });
 });
 
 describe("leaving a workspace", () => {
