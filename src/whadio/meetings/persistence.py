@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
@@ -8,11 +9,14 @@ from ..accounts.services import IWorkspaceCapacity
 from ..audit.contracts import ContentEvent, IContentAuditWriter, NotesPreset
 from ..audit.enums import AuditAction
 from ..shared.errors import Failure, UseCaseError
+from ..shared.text import display_text
 from .contracts import ContextReference, EvictionNotice, IEvictionNotifier
 from .enums import RecordingStatus
 from .models import Meeting, Note
 from .repositories import IMeetingRepository
 from .services import MeetingService, RecordingInput
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -144,7 +148,12 @@ class MeetingPersistence:
         )
         await self._repository.save_notes(note, notes.context)
         if meeting.name_is_generated:
-            meeting.name = notes.proposed_name
+            try:
+                meeting.name = display_text(notes.proposed_name)
+            except ValueError:
+                logger.warning(
+                    "Meeting %s keeps its name: the proposed one is not displayable", meeting_id
+                )
         await self._repository.save(meeting)
         if requester_id is not None:
             await self._audit.write(
