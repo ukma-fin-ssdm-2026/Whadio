@@ -24,6 +24,7 @@ const BEFORE_TRANSCRIPTION = ["recording", "queued"] as const;
 const FAILURE_REASON = "transcription_failed";
 const FAILURE_TEXT = "This recording could not be transcribed.";
 const GENERATED_NOTES = "Decisions from the weekly sync";
+const REGENERATED_NOTES = "Decisions from the weekly sync, in detail";
 const STALE_MS = 30_000;
 const RETRIES_MS = 4_000;
 const POLL_WAIT_MS = 3_000;
@@ -349,12 +350,14 @@ describe("a meeting that finishes while it is open", () => {
   async function watchMeeting(
     initial: Schemas["ProcessingState"] = "processing",
     transcribed = false,
+    notes: string | null = null,
   ) {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     startSession(CURRENT_LINK);
     const live = {
       state: initial,
       transcribed,
+      notes,
       polls: 0,
       content: [] as string[],
       failure: null as MeetingFailure | null,
@@ -375,7 +378,7 @@ describe("a meeting that finishes while it is open", () => {
       }),
       http.get("/api/v1/meetings/meeting/notes", () => {
         live.content.push("notes");
-        return HttpResponse.json(page([noteRead({ content: GENERATED_NOTES })]));
+        return HttpResponse.json(page(live.notes ? [noteRead({ content: live.notes })] : []));
       }),
       http.get("/api/v1/meetings/meeting/transcript", () => {
         live.content.push("transcript");
@@ -386,8 +389,20 @@ describe("a meeting that finishes while it is open", () => {
     );
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<App />);
-    await screen.findByText(/when processing finishes/);
+    await screen.findByRole("tabpanel");
     return { live, user };
+  }
+
+  const transcriptRequests = (live: { content: string[] }) =>
+    live.content.filter((request) => request === "transcript");
+
+  async function watchRegeneration() {
+    const watch = await watchMeeting("processed", true, GENERATED_NOTES);
+    await screen.findByText(GENERATED_NOTES);
+    watch.live.state = "processing";
+    await returnToTheWindow();
+    await screen.findByText(/^Regenerating notes/);
+    return watch;
   }
 
   async function watchTranscriptTab(transcribed = false) {
@@ -436,10 +451,10 @@ describe("a meeting that finishes while it is open", () => {
     const { live } = await watchMeeting();
 
     // Act
-    await pollUntil(() => live.content.length >= 3);
+    await pollUntil(() => transcriptRequests(live).length >= 3);
 
     // Assert
-    expect(live.content).toEqual(["transcript", "transcript", "transcript"]);
+    expect(transcriptRequests(live)).toHaveLength(3);
   });
 
   test("shows a transcript that arrives while processing without a reload", async () => {
@@ -479,7 +494,7 @@ describe("a meeting that finishes while it is open", () => {
     await nextPoll();
 
     // Assert
-    expect(live.content).toEqual(["transcript"]);
+    expect(transcriptRequests(live)).toHaveLength(1);
   });
 
   test("does not ask again for a loaded transcript once the meeting is processed", async () => {
@@ -509,6 +524,7 @@ describe("a meeting that finishes while it is open", () => {
   test("shows its notes without a reload", async () => {
     // Arrange
     const { live } = await watchMeeting();
+    live.notes = GENERATED_NOTES;
 
     // Act
     live.state = "processed";
@@ -516,6 +532,27 @@ describe("a meeting that finishes while it is open", () => {
 
     // Assert
     expect(await screen.findByText(GENERATED_NOTES)).toBeInTheDocument();
+  });
+
+  test("keeps its earlier notes on screen while they are regenerated", async () => {
+    // Act
+    await watchRegeneration();
+
+    // Assert
+    expect(screen.getByText(GENERATED_NOTES)).toBeInTheDocument();
+  });
+
+  test("shows regenerated notes without a reload", async () => {
+    // Arrange
+    const { live } = await watchRegeneration();
+    live.notes = REGENERATED_NOTES;
+
+    // Act
+    live.state = "processed";
+    await nextPoll();
+
+    // Assert
+    expect(await screen.findByText(REGENERATED_NOTES)).toBeInTheDocument();
   });
 
   test.for(["processed", "failed"] as const)(
@@ -546,20 +583,20 @@ describe("a meeting that finishes while it is open", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(FAILURE_TEXT);
   });
 
-  test("a failure ends the requests for the transcript and never asks for the notes", async () => {
+  test("a failure ends the requests for the transcript", async () => {
     // Arrange
     const { live } = await watchMeeting();
     live.state = "failed";
     await nextPoll();
     await screen.findByRole("alert");
-    const requests = live.content.length;
+    const requests = transcriptRequests(live).length;
 
     // Act
     await nextPoll();
     await nextPoll();
 
     // Assert
-    expect(live.content).toEqual(Array(requests).fill("transcript"));
+    expect(transcriptRequests(live)).toHaveLength(requests);
   });
 
   test.for(REFUSALS)("a poll refused with %i says why", async (refusal) => {

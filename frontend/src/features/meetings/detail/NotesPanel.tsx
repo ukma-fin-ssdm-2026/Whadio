@@ -1,4 +1,5 @@
 import { Box, Card, CircularProgress, Stack, Typography } from "@mui/material";
+import type { ReactNode } from "react";
 import type { NoteRead } from "@/shared/api/types";
 import { ErrorBanner } from "@/shared/ui/ErrorBanner";
 import { Markdown } from "@/shared/ui/Markdown";
@@ -11,32 +12,58 @@ interface NotesPanelProps {
   failed: boolean;
 }
 
+function Progress({ children }: { children: ReactNode }) {
+  return (
+    <Stack
+      direction="row"
+      sx={{
+        gap: 1.5,
+        alignItems: "center",
+        p: "1rem",
+        borderRadius: "0.5rem",
+        bgcolor: "background.subtle",
+      }}
+    >
+      <CircularProgress size={22} thickness={5} />
+      <Box>{children}</Box>
+    </Stack>
+  );
+}
+
 function NotesContent({ meeting, notes, loading }: Omit<NotesPanelProps, "failed">) {
-  if (isInProgress(meeting.state)) {
+  if (isInProgress(meeting.state) && !notes) {
     return (
-      <Stack
-        direction="row"
-        sx={{
-          gap: 1.5,
-          alignItems: "center",
-          p: "1rem",
-          borderRadius: "0.5rem",
-          bgcolor: "background.subtle",
-        }}
-      >
-        <CircularProgress size={22} thickness={5} />
-        <Box>
-          <Typography variant="subtitle1">{IN_PROGRESS_LABELS[meeting.state]}</Typography>
-          <Typography color="textSecondary">
-            Notes appear here when processing finishes. The transcript appears in its tab as soon as
-            it is ready.
+      <Progress>
+        <Typography variant="subtitle1">{IN_PROGRESS_LABELS[meeting.state]}</Typography>
+        <Typography color="textSecondary">
+          Notes appear here when processing finishes. The transcript appears in its tab as soon as
+          it is ready.
+        </Typography>
+      </Progress>
+    );
+  }
+  if (isInProgress(meeting.state) && notes) {
+    return (
+      <>
+        <Progress>
+          <Typography role="status" color="textSecondary">
+            Regenerating notes. The current notes stay until the new ones are ready.
           </Typography>
-        </Box>
-      </Stack>
+        </Progress>
+        <Markdown>{notes.content}</Markdown>
+      </>
     );
   }
   if (meeting.state === "failed") {
-    return <ErrorBanner>{describeFailure(meeting.failureReason)}</ErrorBanner>;
+    return (
+      <>
+        <ErrorBanner>
+          {describeFailure(meeting.failureReason)}
+          {notes && " The previous notes are still current."}
+        </ErrorBanner>
+        {notes && <Markdown>{notes.content}</Markdown>}
+      </>
+    );
   }
   if (loading) {
     return (
@@ -55,7 +82,9 @@ export function NotesPanel({ failed, ...props }: NotesPanelProps) {
   if (failed && !props.notes && props.meeting.state === "processed") return null;
   return (
     <Card sx={{ p: { xs: 2, md: 3 } }}>
-      <NotesContent {...props} />
+      <Stack sx={{ gap: 1.5 }}>
+        <NotesContent {...props} />
+      </Stack>
     </Card>
   );
 }

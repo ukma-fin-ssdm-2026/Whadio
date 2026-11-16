@@ -110,10 +110,10 @@ test("each transcript revision gets its own cache entry", () => {
 
 test.for([
   ["processed", true, true],
-  ["failed", true, false],
+  ["failed", true, true],
   ["recording", false, false],
   ["queued", false, false],
-  ["processing", true, false],
+  ["processing", true, true],
 ] as const)(
   "%s meeting enables its transcript: %s, its notes: %s",
   ([state, transcript, notes]) => {

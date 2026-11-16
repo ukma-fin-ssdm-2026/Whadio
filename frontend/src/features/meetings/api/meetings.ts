@@ -4,7 +4,7 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { apiClient } from "@/shared/api/client";
 import { ApiError } from "@/shared/api/errors";
 import type { MeetingUpdate, RevisionInput, Schemas } from "@/shared/api/types";
@@ -23,6 +23,11 @@ const RECORDING_LINK_LIFE_MS = 5 * 60_000;
 const RECORDING_LINK_FRESH_MS = 4 * 60_000;
 
 const transcriptsKey = (meetingId: string) => [...detailKey(meetingId), "transcript"] as const;
+const notesKey = (meetingId: string) => [...detailKey(meetingId), "notes"] as const;
+
+// Notes too: a regeneration keeps the previous ones current while `processing` and once `failed`.
+const hasTranscriptStage = (state: Meeting["state"]) =>
+  state === "processing" || state === "processed" || state === "failed";
 
 function fetchMeetingPage(
   workspaceId: string,
@@ -116,14 +121,13 @@ export const meetingQueries = {
     queryOptions({
       queryKey: [...transcriptsKey(id), { revisionId }],
       queryFn: ({ signal }) => fetchTranscript(id, meetingState, revisionId, signal),
-      // Not `processed`, unlike the notes: it is saved before them and outlives their failure.
-      enabled: meetingState !== "recording" && meetingState !== "queued",
+      enabled: hasTranscriptStage(meetingState),
       refetchInterval: ({ state }) =>
         state.data === TRANSCRIPT_PENDING ? POLL_INTERVAL_MS : false,
     }),
   notes: ({ id, state }: Pick<Meeting, "id" | "state">) =>
     queryOptions({
-      queryKey: [...detailKey(id), "notes"],
+      queryKey: notesKey(id),
       queryFn: ({ signal }) =>
         unwrap(
           apiClient.GET("/api/v1/meetings/{meeting_id}/notes", {
@@ -132,7 +136,7 @@ export const meetingQueries = {
           }),
         ),
       select: ({ items }) => items[0] ?? null,
-      enabled: state === "processed",
+      enabled: hasTranscriptStage(state),
     }),
   recording: ({ id, recordingAvailable }: Pick<Meeting, "id" | "recordingAvailable">) =>
     queryOptions({
@@ -164,6 +168,19 @@ export function useForgetRecordingLink({
     const { queryKey } = meetingQueries.recording({ id, recordingAvailable });
     queryClient.removeQueries({ queryKey });
   }, [queryClient, id, recordingAvailable]);
+}
+
+export function useRefreshNotesWhenSettled({ id, state }: Pick<Meeting, "id" | "state">) {
+  const queryClient = useQueryClient();
+  const settled = !isInProgress(state);
+  const seen = useRef({ id, settled });
+  useEffect(() => {
+    const before = seen.current;
+    seen.current = { id, settled };
+    if (before.id === id && !before.settled && settled) {
+      void queryClient.invalidateQueries({ queryKey: notesKey(id) });
+    }
+  }, [queryClient, id, settled]);
 }
 
 interface RecordingUpload {

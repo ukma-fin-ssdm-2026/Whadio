@@ -5,7 +5,12 @@ import type { NoteRead, TranscriptRead } from "@/shared/api/types";
 import { formatDate } from "@/shared/lib/format";
 import { ErrorBanner } from "@/shared/ui/ErrorBanner";
 import { PageHeader } from "@/shared/ui/PageHeader";
-import { meetingQueries, TRANSCRIPT_PENDING, useForgetRecordingLink } from "../api/meetings";
+import {
+  meetingQueries,
+  TRANSCRIPT_PENDING,
+  useForgetRecordingLink,
+  useRefreshNotesWhenSettled,
+} from "../api/meetings";
 import { isInProgress, type Meeting, type MeetingTab } from "../model";
 import { NotesPanel } from "./NotesPanel";
 import { RecordingPlayer } from "./RecordingPlayer";
@@ -56,6 +61,7 @@ export function MeetingDetail({
   }, [transcriptPending, meetingEnded, refetchTranscript]);
 
   useForgetRecordingLink(meeting);
+  useRefreshNotesWhenSettled(meeting);
 
   const contentError = notesResult.error ?? transcriptResult.error;
 
