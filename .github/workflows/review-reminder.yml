@@ -1,0 +1,38 @@
+name: Review reminder
+
+on:
+  schedule:
+    # 04:30 UTC is 06:30 in Kyiv in winter and 07:30 in summer, off the hour GitHub delays most.
+    - cron: "30 4 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: review-reminder
+  cancel-in-progress: false
+
+jobs:
+  remind:
+    name: Remind the team of pull requests waiting for review
+    # GitHub-hosted: the schedule must not depend on the course's shared self-hosted runners.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Post the list to Telegram
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 -I .github/scripts/review_reminder.py
