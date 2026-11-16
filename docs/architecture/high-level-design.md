@@ -226,6 +226,9 @@ How the architecture meets fault tolerance (NFR-015) and recoverability (NFR-014
 | SMTP relay down | Everything except email; existing accounts sign in as usual. | Registration, invitation and password-reset links cannot be delivered, so new registrations and resets in `verified` mode cannot complete; notifications are not delivered. The operator can still issue registration and reset links from the command line (FR-049). |
 | Main host down | Nothing. | Availability is deliberately not among the requirements: a single main host cannot guarantee it. |
 
+The notices above go to the uploader for the meeting's own processing. A regeneration a member
+asked for sends none, since its requester follows it on the meeting page (FR-024).
+
 ## 8. Deployment
 
 ![Deployment diagram](uml/deployment-diagram.svg)
