@@ -84,7 +84,7 @@ Source: [uml/component-diagram.puml](uml/component-diagram.puml)
 
 | Component | Responsibility | Requirements |
 |---|---|---|
-| Capture | Capture sessions, the workspaces and folders a recording can be delivered to, idempotent chunk storage, assembling the recording, validating uploaded files, finalising interrupted captures. | FR-009, FR-010, FR-012, FR-013 |
+| Capture | Capture sessions, the workspaces and folders a recording can be delivered to, idempotent chunk storage, assembling the recording, validating uploaded files. | FR-009, FR-010, FR-012, FR-013 |
 | MCP Server | The MCP interface: authenticates personal keys and exposes the key owner's meetings as tools. | FR-043, FR-044 |
 | Accounts & Workspaces | Registration in the instance's registration mode, invitation links and their cancellation, password reset, links issued by the operator, sign-in and sessions, workspaces, membership and roles, LLM provider configuration, MCP keys. Checks workspace-administration permissions against the member's role. | FR-001–FR-003, FR-005–FR-008, FR-021, FR-043, FR-047–FR-049, NFR-018 |
 | Access Policy | Decides who may read which meeting: workspace role, per-meeting restriction, share grants and redaction. A share grants reading only to the account its creator approved; opening its link otherwise records an access request for the creator. | FR-004, FR-037–FR-039, FR-044, NFR-007–NFR-009 |
@@ -136,7 +136,7 @@ The deployable processes, all but the off-the-shelf services built from the same
 | Unit | Runs | Host | Instances |
 |---|---|---|---|
 | `web` | All backend modules except Retention; consumes `processing.results` | Main host | 1, stateless; more can run behind nginx |
-| `scheduler` | Retention and recording deletion, deleting expired sessions and registration, invitation and password-reset links, returning processing jobs whose message or result was lost to the queue, and sending or removing notification outbox entries; finalising interrupted captures is designed, not built yet | Main host | Exactly 1 |
+| `scheduler` | Retention and recording deletion, deleting expired sessions and registration, invitation and password-reset links, returning processing jobs whose message or result was lost to the queue, and sending or removing notification outbox entries | Main host | Exactly 1 |
 | `notes-worker` | Notes pipeline | Main host (CPU only) | 1 or more, competing consumers |
 | `asr-worker` | Transcription pipeline | GPU host | 1 per GPU |
 | `llm-runtime` | The built-in language model, on Ollama | GPU host | 1 |
@@ -189,9 +189,10 @@ Source: [uml/sequence-meeting-pipeline.puml](uml/sequence-meeting-pipeline.puml)
    chunks together with the speaker events it reads from the Meet page. Each acknowledged chunk is
    stored at once.
 2. **Interrupted capture.** If the connection is lost or the tab is closed, the chunks already
-   acknowledged stay stored. Once the capture has been idle past a timeout, the scheduler assembles
-   what was received into a partial recording and queues it like any other. *Designed; not built
-   yet: today only an explicit completion request assembles and queues a recording.*
+   acknowledged stay stored, but only an explicit completion request assembles and queues a
+   recording. Finalising an interrupted capture is out of scope (#292,
+   `requirements.md`, "Out of scope"): its meeting stays in `recording` until a member deletes it
+   (FR-036).
 3. **Transcription.** The ASR worker takes the job, reports that it started, fetches the audio,
    and returns the transcript with numbered speakers. The backend names them from the speaker
    events the extension sent where the match is unambiguous, saves it, and the member can read it
@@ -219,7 +220,7 @@ How the architecture meets fault tolerance (NFR-015) and recoverability (NFR-014
 | A job fails repeatedly | Everything else. | Past the delivery limit, the meeting is failed with the cause and the member is notified (FR-014, FR-024). |
 | A job's message is lost (a purged queue, a recreated broker volume) | Everything else. | 2 days after the publish, the scheduler hands the job back to the publisher as one more attempt, and the meeting is processed from the new message; a job whose attempts are used up is failed as timed out, and the member is notified (FR-014, FR-024). |
 | A worker is lost with a job's result (a host that does not come back, a deleted results queue) | Everything else. | Once the job has run past its type's limit, 5 h for transcription and 1 h for notes, both above the workers' own timeouts, the scheduler hands it back to the publisher; its attempt was counted when it started. A job whose attempts are used up is failed as timed out, and the member is notified. A redelivered job reports its start again, which restarts its limit. |
-| The extension loses its connection | Acknowledged chunks stay stored. | The scheduler finalises a partial recording. *Designed; not built yet:* today the capture stays unfinalised. |
+| The extension loses its connection | Acknowledged chunks stay stored. | The extension retries, then saves the recording to the browser's downloads for a manual upload. The capture is never finalised (out of scope, #292); the member deletes its meeting (FR-036). |
 | Broker down | Reading, editing, sharing, export. | Meetings stay `queued`; `web` keeps retrying their unpublished jobs and publishes them once the broker is back. |
 | Object storage slow or down | Everything that does not move recordings: transcripts, notes, sharing, signing in. | Storage calls give up after a short timeout, and reads and deletes after a few spaced retries, so an upload, a capture chunk or the completion of a capture is refused with `503` instead of hanging; the extension retries its chunks and, if storage stays down, saves the call locally. A transcription job that cannot fetch its recording is retried, and recordings due for deletion are deleted on a later scheduler pass. |
 | SMTP relay down | Everything except email; existing accounts sign in as usual. | Registration, invitation and password-reset links cannot be delivered, so new registrations and resets in `verified` mode cannot complete; notifications are not delivered. The operator can still issue registration and reset links from the command line (FR-049). |

@@ -214,8 +214,10 @@ class WorkspaceService:
         self._content: IWorkspaceContent = content
         self._audit: IWorkspaceAuditWriter = audit
 
-    async def list_workspaces(self, user_id: UUID) -> list[MemberWorkspace]:
-        return await self._workspaces.of_member(user_id, None)
+    async def list_workspaces(
+        self, user_id: UUID, page: ListWindow | None = None
+    ) -> list[MemberWorkspace]:
+        return await self._workspaces.of_member(user_id, None, page)
 
     async def get(self, user_id: UUID, workspace_id: UUID) -> MemberWorkspace:
         found = await self._workspaces.of_member(user_id, workspace_id)

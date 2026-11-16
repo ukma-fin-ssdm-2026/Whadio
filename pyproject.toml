@@ -1,6 +1,6 @@
 [project]
 name = "whadio"
-version = "0.12.1"
+version = "0.14.0"
 description = "Whadio backend: meeting recording, transcription and notes"
 readme = "README.md"
 requires-python = ">=3.13,<3.15"
@@ -129,7 +129,7 @@ ignore = [
 "src/whadio/api/**/*.py" = ["PLR0913", "PLR0917"] # FastAPI injects every input as a parameter
 "src/whadio/cli.py" = ["PLC0415"]                 # each command imports its own runtime
 "src/whadio/workers/asr/slot.py" = ["PLC0415"]    # model libraries load only in the slot's child
-".github/scripts/*.py" = ["INP001", "S314"]      # standalone CI scripts reading our own pytest XML
+".github/scripts/*.py" = ["INP001", "S310", "S314"] # standalone CI scripts: S314 reads our own pytest XML, S310 calls fixed https APIs
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "typing.Any".msg = "Any is banned: type the value, or validate it at the boundary"
@@ -291,7 +291,7 @@ allowed_importers = ["whadio.cli"]
 [tool.pytest]
 minversion = "9.0"
 strict = true
-testpaths = ["src"]
+testpaths = ["src", ".github/scripts"]
 addopts = ["--import-mode=importlib"]
 markers = [
     "slow: needs models or running services, or takes over half a second; left out of the push hook",

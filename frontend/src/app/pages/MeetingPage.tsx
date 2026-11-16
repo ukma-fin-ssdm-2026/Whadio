@@ -42,14 +42,19 @@ export function MeetingPage({
     enabled: Boolean(meeting),
   });
   const workspace = workspaces?.find((item) => item.id === meeting?.workspaceId);
+  const [accessOpen, setAccessOpen] = useState(false);
   const members = useInfiniteQuery({
     ...memberQueries.list(meeting?.workspaceId ?? ""),
-    enabled: Boolean(meeting && workspace && !workspace.personal && canManage(workspace.role)),
+    enabled: Boolean(
+      accessOpen && meeting && workspace && !workspace.personal && canManage(workspace.role),
+    ),
   });
   const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = members;
   useEffect(() => {
-    if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage();
-  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
+    if (accessOpen && hasNextPage && !isFetchingNextPage && !isFetchNextPageError) {
+      void fetchNextPage();
+    }
+  }, [accessOpen, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
 
   const [transcriptQuery, setTranscriptQuery] = useState("");
   const link = `${meetingId}/${revisionId}`;
@@ -89,6 +94,7 @@ export function MeetingPage({
                 personal={workspace.personal}
                 folders={folders.data ?? []}
                 members={{ data: hasNextPage ? undefined : members.data, error: members.error }}
+                onAccessOpen={setAccessOpen}
                 onLeave={() =>
                   navigate({
                     to: "/workspaces/$workspaceId",

@@ -26,6 +26,7 @@ interface MeetingActionsProps {
   personal: boolean;
   folders: Folder[];
   members: WorkspaceMembers;
+  onAccessOpen: (open: boolean) => void;
   onLeave: () => void;
 }
 
@@ -38,6 +39,7 @@ export function MeetingActions({
   personal,
   folders,
   members,
+  onAccessOpen,
   onLeave,
 }: MeetingActionsProps) {
   const notify = useNotify();
@@ -49,8 +51,12 @@ export function MeetingActions({
   const open = (next: OpenDialog) => {
     setDialog(next);
     setAnchor(null);
+    if (next === "access") onAccessOpen(true);
   };
-  const close = () => setDialog(null);
+  const close = () => {
+    if (dialog === "access") onAccessOpen(false);
+    setDialog(null);
+  };
 
   const remove = async () => {
     try {

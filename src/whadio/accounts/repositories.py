@@ -354,11 +354,12 @@ class MemberWorkspace:
     member_count: int
     default_template: NotesTemplate
     created_at: datetime
+    joined_at: datetime
 
 
 class IWorkspaceRepository(Protocol):
     async def of_member(
-        self, user_id: UUID, workspace_id: UUID | None, /
+        self, user_id: UUID, workspace_id: UUID | None, page: ListWindow | None = None, /
     ) -> list[MemberWorkspace]: ...
 
     async def add(
@@ -383,8 +384,10 @@ class WorkspaceRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session: AsyncSession = session
 
-    async def of_member(self, user_id: UUID, workspace_id: UUID | None) -> list[MemberWorkspace]:
-        """The member's workspaces, oldest first, or only `workspace_id` when given."""
+    async def of_member(
+        self, user_id: UUID, workspace_id: UUID | None, page: ListWindow | None = None
+    ) -> list[MemberWorkspace]:
+        """The member's workspaces, by join time."""
         others = aliased(WorkspaceMembership)
         member_count = (
             select(func.count())
@@ -392,13 +395,24 @@ class WorkspaceRepository:
             .scalar_subquery()
         )
         statement = (
-            select(Workspace, WorkspaceMembership.role, member_count)
+            select(Workspace, WorkspaceMembership.role, member_count, WorkspaceMembership.joined_at)
             .join(WorkspaceMembership, WorkspaceMembership.workspace_id == Workspace.workspace_id)
             .where(WorkspaceMembership.user_id == user_id)
-            .order_by(Workspace.created_at, Workspace.workspace_id)
         )
         if workspace_id is not None:
             statement = statement.where(Workspace.workspace_id == workspace_id)
+        if page is not None:
+            if page.after is not None:
+                joined_at = datetime.fromisoformat(page.after.key)
+                statement = statement.where(
+                    (WorkspaceMembership.joined_at > joined_at)
+                    | (
+                        (WorkspaceMembership.joined_at == joined_at)
+                        & (Workspace.workspace_id > page.after.item_id)
+                    )
+                )
+            statement = statement.limit(page.limit)
+        statement = statement.order_by(WorkspaceMembership.joined_at, Workspace.workspace_id)
         return [
             MemberWorkspace(
                 workspace_id=workspace.workspace_id,
@@ -408,8 +422,9 @@ class WorkspaceRepository:
                 member_count=count,
                 default_template=workspace.default_template,
                 created_at=workspace.created_at,
+                joined_at=joined_at,
             )
-            for workspace, role, count in await self._session.execute(statement)
+            for workspace, role, count, joined_at in await self._session.execute(statement)
         ]
 
     async def add(

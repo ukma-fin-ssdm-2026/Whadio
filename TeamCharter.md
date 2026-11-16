@@ -37,6 +37,7 @@
     - `enhancement` — new feature or request.
     - `feedback` — instructor's feedback; not included in the tracker grading.
     - `bug` — something isn't working.
+    - `deferred` — agreed work that is not scheduled for the current milestone.
     - `disregarded` — this will not be worked on.
     - `duplicate` — this issue or pull request already exists.
     - `help wanted` — extra attention to the problem is needed.
