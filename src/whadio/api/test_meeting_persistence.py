@@ -23,7 +23,7 @@ from ..meetings.enums import (
 from ..meetings.models import Meeting, Note, Transcript
 from ..meetings.repositories import FolderRepository
 from ..meetings.retention import IRetentionMeetings, RetentionMeetings
-from ..meetings.services import FolderService, RecordingInput, TranscriptEdit
+from ..meetings.services import FolderService, MeetingChanges, RecordingInput, TranscriptEdit
 from ..retention.services import RetentionService, StorageUnavailableError
 from ..shared.database import DatabaseSettings
 from ..shared.errors import Failure, UseCaseError
@@ -264,7 +264,10 @@ def test_folder_restore_refuses_to_overwrite_a_later_move(
                 unit.owner, unit.workspace, "other", datetime.now(UTC)
             )
             await unit.meetings.update(
-                unit.owner, unit.meeting, datetime.now(UTC), folder_id=other.folder_id
+                unit.owner,
+                unit.meeting,
+                datetime.now(UTC),
+                MeetingChanges(folder_id=other.folder_id),
             )
             # Act
             with pytest.raises(UseCaseError) as error:

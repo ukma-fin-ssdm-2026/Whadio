@@ -33,7 +33,10 @@ export function MoveMeetingDialog({ meeting, folders, onClose }: MoveMeetingDial
   };
   const undo = async () => {
     try {
-      await updateMeeting.mutateAsync({ folder_id: meeting.folderId });
+      await updateMeeting.mutateAsync({
+        folder_id: meeting.folderId,
+        expected_folder_id: folderId,
+      });
       notify("Meeting move undone.");
     } catch (caught) {
       notify(
@@ -44,7 +47,7 @@ export function MoveMeetingDialog({ meeting, folders, onClose }: MoveMeetingDial
   };
   const move = () =>
     updateMeeting.mutate(
-      { folder_id: folderId },
+      { folder_id: folderId, expected_folder_id: meeting.folderId },
       {
         onSuccess: () => {
           notify("Meeting moved.", "success", { label: "Undo", onClick: undo });

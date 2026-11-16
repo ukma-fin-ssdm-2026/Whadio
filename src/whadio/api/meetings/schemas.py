@@ -4,7 +4,7 @@ from typing import Annotated, Self
 from uuid import UUID
 
 from fastapi import Path
-from pydantic import Field, model_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 
 from ..accounts.schemas import Preset, Provider
 from ..core.schemas import DisplayText, Input, Output, PageQuery, UtcDatetime
@@ -125,6 +125,19 @@ class MeetingUpdate(Input):
     folder_id: UUID | None = Field(
         default=None, description="Folder of the same workspace to move the meeting to"
     )
+    expected_folder_id: UUID | None = Field(
+        default=None,
+        description="Move only if the meeting is still in this folder",
+    )
+
+    @field_validator("expected_folder_id")
+    @classmethod
+    def _expected_folder_requires_move(
+        cls, value: UUID | None, info: ValidationInfo
+    ) -> UUID | None:
+        if value is not None and info.data.get("folder_id") is None:
+            raise ValueError("requires `folder_id`")
+        return value
 
     @model_validator(mode="after")
     def _not_empty(self) -> Self:

@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 import pytest
 
 from conftest import refused_fields
@@ -44,3 +46,12 @@ def test_padding_around_a_meeting_name_does_not_count_toward_its_length(
 
     # Assert
     assert found == refused
+
+
+def test_expected_folder_without_a_move_is_refused() -> None:
+    # Act
+    refused = refused_fields(
+        MeetingUpdate, {"name": "Review", "expected_folder_id": str(uuid4())}
+    )
+    # Assert
+    assert refused == {"expected_folder_id"}

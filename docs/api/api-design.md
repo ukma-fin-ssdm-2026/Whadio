@@ -642,10 +642,13 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - Renaming clears `name_is_generated`.
   - Moving keeps the recording, transcript and notes, and later notes use the new folder as
     context (FR-035). The target folder must belong to the same workspace.
+  - A client that knows the current folder sends it as `expected_folder_id`. The move and this
+    check share one transaction; if another member moved the meeting first, nothing is changed.
   - `recorded_at` cannot be changed (FR-033). Since unknown fields are refused, sending it is
     a `422`.
 - **Errors:**
   - `404 NOT_FOUND`: no such meeting, or the caller cannot read it.
+  - `409 MEETING_MOVE_CONFLICT`: the meeting is no longer in `expected_folder_id`.
 
 #### `DELETE /meetings/{meeting_id}` · Delete a meeting
 

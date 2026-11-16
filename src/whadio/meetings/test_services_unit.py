@@ -18,7 +18,7 @@ from ..shared.pagination import ListWindow
 from .contracts import ContextReference, MeetingFilter, NoteVersion, TranscriptVersion
 from .enums import MeetingSource
 from .models import Folder, GlossaryTerm, Meeting, Note, TranscriptRevision
-from .services import MeetingService, RecordingInput
+from .services import MeetingChanges, MeetingService, RecordingInput
 
 NOW = datetime(2026, 10, 13, 9, 0, tzinfo=UTC)
 NAMES_THE_API_ACCEPTS = pytest.mark.parametrize(
@@ -296,11 +296,67 @@ def test_update_without_any_change_is_refused() -> None:
     assert failure is Failure.VALIDATION_ERROR
 
 
+def test_move_from_the_expected_folder_succeeds() -> None:
+    # Arrange
+    unit = team()
+    planning = asyncio.run(unit.meetings.create_folder(unit.owner, unit.workspace, "Planning", NOW))
+    # Act
+    moved = asyncio.run(
+        unit.meetings.update(
+            unit.owner,
+            unit.meeting,
+            NOW,
+            MeetingChanges(folder_id=planning.folder_id, expected_folder_id=unit.default_folder),
+        )
+    )
+    # Assert
+    assert moved.folder_id == planning.folder_id
+
+
+def test_undo_refuses_to_overwrite_a_later_move() -> None:
+    # Arrange
+    unit = team()
+    planning = asyncio.run(unit.meetings.create_folder(unit.owner, unit.workspace, "Planning", NOW))
+    archive = asyncio.run(unit.meetings.create_folder(unit.owner, unit.workspace, "Archive", NOW))
+    asyncio.run(
+        unit.meetings.update(
+            unit.owner,
+            unit.meeting,
+            NOW,
+            MeetingChanges(folder_id=planning.folder_id, expected_folder_id=unit.default_folder),
+        )
+    )
+    asyncio.run(
+        unit.meetings.update(
+            unit.owner,
+            unit.meeting,
+            NOW,
+            MeetingChanges(folder_id=archive.folder_id, expected_folder_id=planning.folder_id),
+        )
+    )
+    # Act
+    failure = refusal(
+        unit.meetings.update(
+            unit.owner,
+            unit.meeting,
+            NOW,
+            MeetingChanges(folder_id=unit.default_folder, expected_folder_id=planning.folder_id),
+        )
+    )
+    # Assert
+    assert (failure, unit.repository.meeting_rows[unit.meeting].folder_id) == (
+        Failure.MEETING_MOVE_CONFLICT,
+        archive.folder_id,
+    )
+
+
 def test_renaming_a_meeting_is_audited() -> None:
     # Arrange
     unit = team()
     # Act
-    asyncio.run(unit.meetings.update(unit.owner, unit.meeting, NOW, name="Sprint review"))
+    asyncio.run(
+        unit.meetings.update(unit.owner, unit.meeting, NOW, MeetingChanges(name="Sprint review"))
+    )
     # Assert
     assert [event.action for event in unit.audit.events] == [AuditAction.MEETING_RENAMED]
 
@@ -310,7 +366,9 @@ def test_meeting_name_the_api_accepts_is_kept(name: str) -> None:
     # Arrange
     unit = team()
     # Act
-    meeting = asyncio.run(unit.meetings.update(unit.owner, unit.meeting, NOW, name=name))
+    meeting = asyncio.run(
+        unit.meetings.update(unit.owner, unit.meeting, NOW, MeetingChanges(name=name))
+    )
     # Assert
     assert meeting.name == name
 
@@ -320,7 +378,9 @@ def test_meeting_name_the_api_refuses_is_refused(name: str) -> None:
     # Arrange
     unit = team()
     # Act
-    failure = refusal(unit.meetings.update(unit.owner, unit.meeting, NOW, name=name))
+    failure = refusal(
+        unit.meetings.update(unit.owner, unit.meeting, NOW, MeetingChanges(name=name))
+    )
     # Assert
     assert failure is Failure.VALIDATION_ERROR
 
