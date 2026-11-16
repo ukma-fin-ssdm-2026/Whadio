@@ -4,6 +4,7 @@ import type { Schemas } from "@/shared/api/types";
 import { errorBody, meetingRead, memberRead } from "@/shared/testing/fixtures";
 import { renderWithProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
+import { foldersKey, workspaceListsKey } from "../api/keys";
 import { mapMeeting } from "../model";
 import type { WorkspaceMembers } from "./AccessDialog";
 import { MeetingActions } from "./MeetingActions";
@@ -85,12 +86,32 @@ async function rename(name: string) {
 }
 
 async function moveToPlanning() {
-  const { user } = await openActions();
+  const rendered = await openActions();
+  const { user } = rendered;
   await user.click(screen.getByRole("menuitem", { name: /Move/ }));
   await user.click(screen.getByRole("combobox", { name: "Folder" }));
   await user.click(screen.getByRole("option", { name: "Planning" }));
   await user.click(screen.getByRole("button", { name: "Move" }));
-  return user;
+  return rendered;
+}
+
+function serveMoves(refuseUndo = false) {
+  const bodies: unknown[] = [];
+  server.use(
+    http.patch("/api/v1/meetings/{meeting_id}", async ({ request, response }) => {
+      const body = await request.json();
+      bodies.push(body);
+      if (refuseUndo && bodies.length === 2) {
+        return response(422).json(
+          errorBody("VALIDATION_ERROR", "The previous folder no longer exists"),
+        );
+      }
+      const folderId =
+        typeof body === "object" && body && "folder_id" in body ? body.folder_id : "folder";
+      return response(200).json(meetingRead({ folder_id: String(folderId) }));
+    }),
+  );
+  return bodies;
 }
 
 test("a member can rename a meeting", async () => {
@@ -175,6 +196,63 @@ test("a member can move a meeting to a workspace folder", async () => {
 
   // Assert
   await waitFor(() => expect(bodies).toEqual([{ folder_id: "planning" }]));
+});
+
+test("Undo moves the meeting back to its previous folder", async () => {
+  // Arrange
+  const bodies = serveMoves();
+  const { user } = await moveToPlanning();
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "Undo" }));
+
+  // Assert
+  await waitFor(() => expect(bodies).toEqual([{ folder_id: "planning" }, { folder_id: "folder" }]));
+});
+
+test("Undo refreshes the meeting and folder lists", async () => {
+  // Arrange
+  serveMoves();
+  const { user, queryClient } = await moveToPlanning();
+  const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "Undo" }));
+
+  // Assert
+  await waitFor(() =>
+    expect(invalidate.mock.calls.map(([filters]) => filters?.queryKey)).toEqual([
+      workspaceListsKey("workspace"),
+      foldersKey("workspace"),
+    ]),
+  );
+});
+
+test("a refused Undo shows the error", async () => {
+  // Arrange
+  serveMoves(true);
+  const { user } = await moveToPlanning();
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "Undo" }));
+
+  // Assert
+  expect(await screen.findByText("The previous folder no longer exists")).toBeVisible();
+});
+
+test("a refused Undo keeps the meeting in its current folder", async () => {
+  // Arrange
+  serveMoves(true);
+  const { user, queryClient } = await moveToPlanning();
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "Undo" }));
+  await screen.findByText("The previous folder no longer exists");
+
+  // Assert
+  expect(queryClient.getQueryData(["meetings", "detail", "meeting"])).toMatchObject({
+    folder_id: "planning",
+  });
 });
 
 test("a failed move shows the server's message", async () => {

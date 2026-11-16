@@ -24,7 +24,7 @@
 | NFR-002 | NFR | A one-hour recording's transcript is ready within 15 min in 90% of runs | US-006, US-009 | — | Partial: TC-NFR-03 and TC-NFR-05, three runs each; the 20-recording benchmark is not run yet |
 | NFR-003 | NFR | Up to 1000 meetings across a user's workspaces on the hosted service; the earliest is evicted | US-003, US-004, US-013 | — | TC-CAP-01 |
 | NFR-004 | NFR | Extension capture neither joins nor disrupts the Meet call | US-003 | — | Out of scope (test plan) |
-| NFR-005 | NFR | Moves, folder deletions and regenerations can be undone in at most 3 user actions | US-010, US-012, US-014 | — | Out of scope (test plan) |
+| NFR-005 | NFR | Moves, folder deletions and regenerations can be undone in at most 3 user actions | US-010, US-012, US-014 | — | Partial: TC-FLD-02 covers meeting moves and folder deletions in one action; notes regeneration is not covered |
 | NFR-006 | NFR | Edited transcripts are marked, and the original is at most 2 user actions away | US-005, US-011 | — | TC-EDIT-02 for the web app; TC-EXP-01 for exports; shares not covered |
 | NFR-007 | NFR | Content endpoints return nothing to identities without access to the meeting | US-001, US-002, US-015 | — | TC-ACL-01, TC-ACL-02, TC-PROC-05 |
 | NFR-008 | NFR | A share is readable only by the approved account, with no export or re-share | US-016, US-017 | — | TC-SHR-01 |
@@ -64,3 +64,5 @@ The US-002 and NFR-010 member-management mappings (#184) were added with Claude 
 reviewed by the author.
 
 The US-005, US-011 and NFR-006 web-app mappings were written with Claude Code for #186.
+
+OpenAI Codex mapped the #299 move and folder-deletion Undo coverage to NFR-005.
