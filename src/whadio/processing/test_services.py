@@ -117,9 +117,24 @@ class FakeJobs:
         self.failure_reasons: dict[UUID, str | None] = {}
         self.restarted: dict[UUID, datetime] = {}
 
-    async def add(self, meeting_id: UUID, job_type: JobType) -> UUID:
+    async def add(
+        self,
+        meeting_id: UUID,
+        job_type: JobType,
+        *,
+        template: NotesTemplate | None = None,
+        requested_by: UUID | None = None,
+    ) -> UUID:
         job_id = uuid4()
-        self.jobs[job_id] = Job(job_id, meeting_id, job_type, JobStatus.QUEUED, 0)
+        self.jobs[job_id] = Job(
+            job_id,
+            meeting_id,
+            job_type,
+            JobStatus.QUEUED,
+            0,
+            template=template,
+            requested_by=requested_by,
+        )
         return job_id
 
     async def lock(self, job_id: UUID) -> Job | None:

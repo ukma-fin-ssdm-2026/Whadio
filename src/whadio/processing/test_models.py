@@ -1,8 +1,10 @@
 from uuid import UUID
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..accounts.enums import NotesTemplate
 from .enums import JobStatus, JobType
 from .models import ProcessingJob
 
@@ -21,3 +23,26 @@ def test_processing_retry_count_defaults_to_zero(
     database_session.flush()
     # Assert
     assert job.attempts == 0
+
+
+@pytest.mark.slow
+def test_transcription_job_cannot_carry_a_notes_request(
+    database_session: Session,
+    meeting_id: UUID,
+    owner_id: UUID,
+) -> None:
+    # Arrange
+    database_session.add(
+        ProcessingJob(
+            meeting_id=meeting_id,
+            job_type=JobType.TRANSCRIPTION,
+            status=JobStatus.QUEUED,
+            template=NotesTemplate.INTERVIEW,
+            requested_by_user_id=owner_id,
+        )
+    )
+    # Act
+    with pytest.raises(IntegrityError) as failure:
+        database_session.flush()
+    # Assert
+    assert "ck_processing_job_notes_request" in str(failure.value.orig)

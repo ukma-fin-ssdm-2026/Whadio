@@ -16,6 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, MappedColumn
 
+from ..accounts.enums import NotesTemplate
 from ..shared.database import Base, enum_type
 from .enums import JobStatus, JobType
 
@@ -51,9 +52,19 @@ class ProcessingJob(Base):
     applied_result_ids: Mapped[list[UUID]] = MappedColumn[list[UUID]](
         ARRAY(Uuid()), server_default=text("'{}'")
     )
+    template: Mapped[NotesTemplate | None] = MappedColumn[NotesTemplate | None](
+        enum_type(NotesTemplate, "template")
+    )
+    requested_by_user_id: Mapped[UUID | None] = MappedColumn[UUID | None](
+        ForeignKey("user.user_id", ondelete="RESTRICT")
+    )
 
     __table_args__: tuple[Constraint | Index, ...] = (
         CheckConstraint("attempts >= 0", name="attempts"),
+        CheckConstraint(
+            "job_type = 'notes' OR (template IS NULL AND requested_by_user_id IS NULL)",
+            name="notes_request",
+        ),
         Index("ix_processing_job_meeting_id", "meeting_id"),
         Index("ix_processing_job_status_created", "status", "created_at"),
         Index(

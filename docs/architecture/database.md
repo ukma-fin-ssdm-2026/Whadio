@@ -131,7 +131,13 @@ retried ones keep it null, and queued jobs lose their `started_at`.
 
 Revision `0010` adds `processing_job.applied_result_ids`, a `uuid[]` defaulting to empty: the
 message IDs of the worker results already applied to the job, so a resent copy changes nothing.
-The current head is `0010`.
+
+Revision `0011` adds `processing_job.template` and `processing_job.requested_by_user_id`, both
+nullable: the preset and the requester of a notes job a member asked for. A CHECK keeps both null
+on a transcription job, another limits `template` to the fixed presets, and the requester is a
+foreign key to `user` with `ON DELETE RESTRICT`, as `note.created_by_user_id` is. Downgrade
+refuses to discard jobs that hold either value.
+The current head is `0011`.
 
 Cleanup passes use UUID keyset windows and advance after each batch, including failed or locked
 items. Each pass attempts each selected item at most once; failed items remain durable for the
