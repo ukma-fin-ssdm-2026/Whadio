@@ -15,6 +15,12 @@ updates:
       runtime:
         dependency-type: production
         update-types: [minor, patch]
+    ignore:
+      # Dependabot reads PyPI, but pyproject.toml takes these from the PyTorch indexes, which lag
+      # it, and the three must stay one matched build set: bump them together by hand.
+      - dependency-name: torch
+      - dependency-name: torchaudio
+      - dependency-name: torchcodec
 
   - package-ecosystem: npm
     directory: /frontend
@@ -29,6 +35,10 @@ updates:
       frontend:
         patterns: ["*"]
         update-types: [minor, patch]
+    ignore:
+      # Its major follows the Node runtime in frontend/.nvmrc and moves with it by hand.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: pre-commit
     directory: /

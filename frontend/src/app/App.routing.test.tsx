@@ -1145,6 +1145,17 @@ async function openMeetingAccess(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("menuitem", { name: /Access/ }));
 }
 
+test("a meeting page loads no members until access is opened", async () => {
+  // Arrange
+  const { traffic } = open(MEETING_LINK);
+
+  // Act
+  await screen.findByRole("button", { name: "Meeting actions" });
+
+  // Assert
+  expect(traffic.requests.filter((request) => request.includes("/members"))).toEqual([]);
+});
+
 test("the access dialog lists the members of every page", async () => {
   // Arrange
   const { user } = open(MEETING_LINK);

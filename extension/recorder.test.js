@@ -7,11 +7,15 @@ function event() {
   return { listeners, addListener: (listener) => listeners.push(listener) };
 }
 
+function port() {
+  return { onDisconnect: event(), disconnect: vi.fn() };
+}
+
 function fakeChrome({ signedIn = true, unreachable = false } = {}) {
   return {
     runtime: {
       onMessage: event(),
-      connect: vi.fn(),
+      connect: vi.fn(() => port()),
       sendMessage: vi.fn(async (message) => {
         if (message.type !== "signed-in") {
           return undefined;
@@ -31,7 +35,80 @@ function fakeChrome({ signedIn = true, unreachable = false } = {}) {
 
 async function load(options) {
   globalThis.chrome = fakeChrome(options);
+  await import("./audio.js");
   await import("./recorder.js");
+}
+
+function audioStream() {
+  const track = { stop: vi.fn(), addEventListener: vi.fn() };
+  return {
+    track,
+    getTracks: () => [track],
+    getAudioTracks: () => [track],
+    getVideoTracks: () => [],
+  };
+}
+
+class FakeRecorder {
+  static last = null;
+  state = "inactive";
+  listeners = [];
+  constructor() {
+    FakeRecorder.last = this;
+  }
+  addEventListener(type, listener) {
+    this.listeners.push([type, listener]);
+  }
+  start() {
+    this.state = "recording";
+  }
+  stop() {
+    this.state = "inactive";
+    this.emit("stop");
+  }
+  emit(type) {
+    for (const [name, listener] of this.listeners) {
+      if (name === type) {
+        listener();
+      }
+    }
+  }
+}
+
+class FakeAudioContext {
+  createMediaStreamDestination() {
+    return { stream: {} };
+  }
+  createMediaStreamSource() {
+    return { connect() {} };
+  }
+  async close() {}
+}
+
+function fakeMedia() {
+  const tab = audioStream();
+  const microphone = audioStream();
+  let openMicrophone;
+  vi.stubGlobal("AudioContext", FakeAudioContext);
+  vi.stubGlobal("MediaRecorder", FakeRecorder);
+  vi.stubGlobal("navigator", {
+    mediaDevices: {
+      getDisplayMedia: async () => tab,
+      getUserMedia: () =>
+        new Promise((resolve) => {
+          openMicrophone = () => resolve(microphone);
+        }),
+    },
+  });
+  return { tab, microphone, openMicrophone: () => openMicrophone() };
+}
+
+async function pressStart() {
+  const consent = root.querySelector('input[type="checkbox"]');
+  consent.checked = true;
+  consent.dispatchEvent(new Event("change"));
+  root.querySelector("button.primary").click();
+  await vi.advanceTimersByTimeAsync(0);
 }
 
 function send(message) {
@@ -97,6 +174,7 @@ afterEach(() => {
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("the recorder's answers to the extension", () => {
@@ -244,17 +322,146 @@ describe("the recorder's answers to the extension", () => {
     expect(speakersSent()).toEqual([["Zoe", "anna", "Émile", "Олена"]]);
   });
 
-  test("ends a recording that stopped elsewhere without asking to stop it", async () => {
+  test("sends the speakers once a second has passed even when its timer runs late", async () => {
+    // Arrange
+    await load();
+    speaking("Zoe");
+    send({ type: "started", startedAt: 0 });
+    vi.spyOn(performance, "now").mockReturnValue(performance.now() + 1000);
+
+    // Act
+    await vi.advanceTimersByTimeAsync(250);
+
+    // Assert
+    expect(speakersSent()).toEqual([["Zoe"]]);
+  });
+
+  test("ends the recording reported as stopped, so its speakers are no longer sent", async () => {
+    // Arrange
+    await load();
+    speaking("Zoe");
+    send({ type: "started", startedAt: 5 });
+
+    // Act
+    send({ type: "stopped", startedAt: 5 });
+    await vi.advanceTimersByTimeAsync(1000);
+
+    // Assert
+    expect(speakersSent()).toEqual([]);
+  });
+
+  test("keeps its recording when an older one is reported as stopped", async () => {
+    // Arrange
+    await load();
+    speaking("Zoe");
+    send({ type: "started", startedAt: 5 });
+
+    // Act
+    send({ type: "stopped", startedAt: 0 });
+    await vi.advanceTimersByTimeAsync(1000);
+
+    // Assert
+    expect(speakersSent()).toEqual([["Zoe"]]);
+  });
+
+  test("answers that it took a recording reported as started", async () => {
+    // Arrange
+    await load();
+
+    // Act
+    const sendResponse = send({ type: "started", startedAt: 0 });
+
+    // Assert
+    expect(sendResponse).toHaveBeenCalledWith({ taken: true });
+  });
+
+  test("answers that it did not take a second recording reported as started", async () => {
     // Arrange
     await load();
     send({ type: "started", startedAt: 0 });
 
     // Act
-    send({ type: "stopped" });
-    send({ type: "stop" });
+    const sendResponse = send({ type: "started", startedAt: 5 });
 
     // Assert
-    expect(sentTypes()).toEqual([]);
+    expect(sendResponse).toHaveBeenCalledWith({ taken: false });
+  });
+
+  test("accepts a new recording once the page port of the last one disconnects", async () => {
+    // Arrange
+    await load();
+    send({ type: "started", startedAt: 0 });
+    chrome.runtime.connect.mock.results[0].value.onDisconnect.listeners[0]();
+
+    // Act
+    send({ type: "started", startedAt: 5 });
+
+    // Assert
+    expect(chrome.runtime.connect.mock.calls).toEqual([[{ name: "page" }], [{ name: "page" }]]);
+  });
+
+  test("accepts a new recording once the recorder of the card stops on its own", async () => {
+    // Arrange
+    await load();
+    const media = fakeMedia();
+    await pressStart();
+    media.openMicrophone();
+    await vi.advanceTimersByTimeAsync(0);
+    FakeRecorder.last.stop();
+
+    // Act
+    send({ type: "started", startedAt: 5 });
+
+    // Assert
+    expect(chrome.runtime.connect.mock.calls.at(-1)).toEqual([{ name: "page" }]);
+  });
+
+  test("refuses the card's recording when another one began while the microphone opened", async () => {
+    // Arrange
+    await load();
+    const media = fakeMedia();
+    await pressStart();
+    send({ type: "started", startedAt: 5 });
+
+    // Act
+    media.openMicrophone();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Assert
+    expect([cardError(), chrome.runtime.connect.mock.calls]).toEqual([
+      "Whadio is already recording this call.",
+      [[{ name: "page" }]],
+    ]);
+  });
+
+  test("stops the tab and microphone tracks of a card recording that was refused", async () => {
+    // Arrange
+    await load();
+    const media = fakeMedia();
+    await pressStart();
+    send({ type: "started", startedAt: 5 });
+
+    // Act
+    media.openMicrophone();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Assert
+    expect([
+      media.tab.track.stop.mock.calls.length,
+      media.microphone.track.stop.mock.calls.length,
+    ]).toEqual([1, 1]);
+  });
+
+  test("keeps the running recording when another one is reported as started", async () => {
+    // Arrange
+    await load();
+    send({ type: "started", startedAt: 0 });
+
+    // Act
+    send({ type: "started", startedAt: 5 });
+
+    // Assert
+    expect(chrome.runtime.connect.mock.calls).toEqual([[{ name: "page" }]]);
   });
 
   test("asks the background to stop the recording and answers when told to stop", async () => {

@@ -39,6 +39,7 @@ function renderActions(
       personal={personal}
       folders={FOLDERS}
       members={members}
+      onAccessOpen={() => {}}
       onLeave={onDeleted}
       requestsHref={(shareId) => `/shares/${shareId}/access-requests`}
     />,

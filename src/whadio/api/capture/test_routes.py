@@ -1,18 +1,19 @@
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import BinaryIO, ClassVar, override
 from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from pydantic import Field, HttpUrl, SecretStr
+from pydantic import Field, HttpUrl, JsonValue, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy import select
+from sqlalchemy import Select, delete, event, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import ORMExecuteState
 
-from conftest import AsyncDatabase
+from conftest import AsyncDatabase, replace_cursor_key
 
 from ...accounts.enums import NotesTemplate, WorkspaceRole
 from ...accounts.models import Workspace, WorkspaceMembership
@@ -413,3 +414,142 @@ def test_destinations_include_the_personal_workspace(async_database: AsyncDataba
     found = run(async_database, scenario)
     # Assert
     assert found == [("Personal", True)]
+
+
+async def _sign_in_for_destinations(client: AsyncClient, session: AsyncSession) -> UUID:
+    user = await AsyncDatabase.add_account(session, PASSWORD)
+    response = await client.post(
+        "/api/v1/sessions", json={"email": user.email, "password": PASSWORD}
+    )
+    assert response.status_code == 201
+    return user.user_id
+
+
+async def _destination_workspace(session: AsyncSession, created_at: datetime) -> Workspace:
+    _, folder_id = await AsyncDatabase.add_workspace(session)
+    workspace = await session.scalar(
+        select(Workspace).join(Folder).where(Folder.folder_id == folder_id)
+    )
+    assert workspace is not None
+    workspace.created_at = created_at
+    return workspace
+
+
+def test_destination_pages_survive_membership_changes(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[list[UUID], list[UUID], bool, str | None]:
+        async with AsyncDatabase.api_client(session) as client:
+            user_id = await _sign_in_for_destinations(client, session)
+            joined_at = datetime.now(UTC) - timedelta(days=2)
+            created_at = joined_at - timedelta(days=1)
+            workspaces = [await _destination_workspace(session, created_at) for _ in range(4)]
+            seen, anchor, remaining, left = sorted(
+                workspace.workspace_id for workspace in workspaces
+            )
+            earlier = await _destination_workspace(session, joined_at - timedelta(days=2))
+            session.add_all(
+                WorkspaceMembership(
+                    workspace_id=workspace.workspace_id,
+                    user_id=user_id,
+                    role=WorkspaceRole.MEMBER,
+                    joined_at=joined_at,
+                )
+                for workspace in workspaces
+            )
+            await session.flush()
+            first = await client.get("/api/v1/captures/destinations", params={"limit": 2})
+            first_page = Page[DestinationRead].model_validate_json(first.content)
+            cursor = first_page.pagination.next_cursor
+            assert cursor is not None
+            # Act
+            deleted = await session.execute(
+                delete(Workspace)
+                .where(Workspace.workspace_id == anchor)
+                .returning(Workspace.workspace_id)
+            )
+            assert deleted.scalar_one() == anchor
+            await session.execute(
+                delete(WorkspaceMembership).where(
+                    WorkspaceMembership.workspace_id == left, WorkspaceMembership.user_id == user_id
+                )
+            )
+            session.add(
+                WorkspaceMembership(
+                    workspace_id=earlier.workspace_id,
+                    user_id=user_id,
+                    role=WorkspaceRole.MEMBER,
+                    joined_at=joined_at + timedelta(days=1),
+                )
+            )
+            created = await client.post("/api/v1/workspaces", json={"name": "New"})
+            assert created.status_code == 201
+            created_id = UUID(created.headers["Location"].rsplit("/", 1)[-1])
+            await session.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
+            response = await client.get("/api/v1/captures/destinations", params={"cursor": cursor})
+            page = Page[DestinationRead].model_validate_json(response.content)
+            return (
+                [item.workspace_id for item in first_page.items + page.items],
+                [seen, anchor, remaining, earlier.workspace_id, created_id],
+                page.pagination.has_more,
+                page.pagination.next_cursor,
+            )
+
+    ids, expected, has_more, next_cursor = async_database.run(scenario)
+    # Assert
+    assert (ids, has_more, next_cursor) == (expected, False, None)
+
+
+@pytest.mark.parametrize("source", ["malformed", "other-list", "other-user", "invalid-key"])
+def test_destination_pages_refuse_invalid_cursors(
+    async_database: AsyncDatabase, source: str
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, str]:
+        async with AsyncDatabase.api_client(session) as client:
+            await _sign_in_for_destinations(client, session)
+            cursor = "not-a-cursor"
+            if source != "malformed":
+                await client.post("/api/v1/workspaces", json={"name": "First"})
+                await client.post("/api/v1/workspaces", json={"name": "Second"})
+                origin = "/workspaces" if source == "other-list" else "/captures/destinations"
+                first = await client.get(f"/api/v1{origin}", params={"limit": 1})
+                cursor = Page[JsonValue].model_validate_json(first.content).pagination.next_cursor
+                assert cursor is not None
+                if source == "other-user":
+                    await _sign_in_for_destinations(client, session)
+                elif source == "invalid-key":
+                    cursor = replace_cursor_key(cursor, "not-a-time")
+            # Act
+            response = await client.get("/api/v1/captures/destinations", params={"cursor": cursor})
+            error = ErrorResponse.model_validate_json(response.content).error
+            return response.status_code, error.code
+
+    result = async_database.run(scenario)
+    # Assert
+    assert result == (422, "VALIDATION_ERROR")
+
+
+def test_destination_page_workspace_query_is_bounded(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> list[bool]:
+        async with AsyncDatabase.api_client(session) as client:
+            await _sign_in_for_destinations(client, session)
+            await client.post("/api/v1/workspaces", json={"name": "First"})
+            bounded: list[bool] = []
+
+            def record_query(state: ORMExecuteState) -> None:
+                statement = state.statement
+                if isinstance(statement, Select):
+                    sql = str(statement.compile(compile_kwargs={"literal_binds": True}))
+                    if "FROM workspace JOIN workspace_membership" in sql:
+                        bounded.append(sql.rstrip().endswith("LIMIT 2"))
+
+            event.listen(session.sync_session, "do_orm_execute", record_query)
+            # Act
+            await client.get("/api/v1/captures/destinations", params={"limit": 1})
+            event.remove(session.sync_session, "do_orm_execute", record_query)
+            return bounded
+
+    bounded = async_database.run(scenario)
+    # Assert
+    assert bounded == [True]

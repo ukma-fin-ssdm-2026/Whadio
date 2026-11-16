@@ -298,12 +298,16 @@ def test_created_workspace_gets_a_default_folder(async_database: AsyncDatabase) 
     assert content.default_folders == [workspace_id]
 
 
-def test_workspaces_are_listed_oldest_first(async_database: AsyncDatabase) -> None:
+def test_workspaces_are_listed_by_join_time(async_database: AsyncDatabase) -> None:
     # Arrange
     async def scenario(session: AsyncSession) -> list[str]:
         user = await AsyncDatabase.add_account(session, PASSWORD)
         service = workspaces(session)
-        await service.create(user.user_id, "Second", NotesTemplate.SUMMARY, NOW)
+        second = await service.create(user.user_id, "Second", NotesTemplate.SUMMARY, NOW)
+        workspace = await session.get(Workspace, second.workspace_id)
+        assert workspace is not None
+        workspace.created_at = NOW - timedelta(2)
+        await session.flush()
         await service.create(user.user_id, "First", NotesTemplate.SUMMARY, NOW - timedelta(1))
         return [found.name for found in await service.list_workspaces(user.user_id)]
 
