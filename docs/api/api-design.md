@@ -617,8 +617,8 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - `folder_id` must be a folder of this workspace; without it, the default folder is used.
   - Supported formats are WAV, MP3, AAC, FLAC, Ogg, WebM and MP4/M4A. The server checks a file
     by decoding its first audio frame with FFmpeg, never by its name or declared type.
-  - Without `name`, the meeting is named after its date and time until it is renamed
-    (FR-033).
+  - Without `name`, the meeting is named after its date and time until its notes propose a
+    displayable name or a member renames it (FR-033).
 - **Errors:**
   - `400 MALFORMED_REQUEST`: an invalid or repeated `Content-Length` header.
   - `404 NOT_FOUND`: no such workspace, or the caller is not a member.
@@ -1221,7 +1221,8 @@ Pydantic validates all input before a handler runs:
   form values arrive as text, so only they are parsed into numbers and booleans.
 - **Names must be displayable:** workspace and meeting names are trimmed, need at least one
   visible character and refuse control characters such as line breaks. A name made only of
-  spaces or zero-width characters is a `422`. Passwords are never trimmed.
+  spaces or zero-width characters is a `422`. A name the notes propose follows the same rule:
+  one that breaks it is not applied, and the notes are still saved. Passwords are never trimmed.
 - **Uploads are checked by decoding:** FFmpeg (through PyAV) must open the file as a supported
   format and decode its first audio frame. A text file renamed to `.mp3`, or a valid header
   followed by junk, is a `415`; a real recording sent as `application/octet-stream` is
