@@ -9,3 +9,5 @@ export type MeetingPage = Schemas["Page_MeetingSummary_"];
 export type TranscriptRead = Schemas["TranscriptRead"];
 export type RevisionInput = Schemas["RevisionInput"];
 export type NoteRead = Schemas["NoteRead"];
+export type Preset = Schemas["Preset"];
+export type NotesRegeneration = Schemas["NotesRegeneration"];

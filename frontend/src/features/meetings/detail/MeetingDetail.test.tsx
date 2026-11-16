@@ -77,6 +77,7 @@ function detail(changes: Partial<ComponentProps<typeof MeetingDetail>> = {}) {
     onTranscriptQuery: () => {},
     onRevision: () => {},
     onUnsavedChange: () => {},
+    renderPresetField: () => null,
     ...changes,
   };
   return (
@@ -429,6 +430,75 @@ test("a meeting that starts regenerating does not ask for its notes again", asyn
 
   // Assert
   expect(queryClient.isFetching({ queryKey: meetingQueries.notes(processing()).queryKey })).toBe(0);
+});
+
+const regenerateButton = () => screen.queryByRole("button", { name: "Regenerate notes" });
+
+async function renderSettledDetail(changes: Partial<ComponentProps<typeof MeetingDetail>>) {
+  const view = renderDetail(changes);
+  await waitUntilIdle(view.queryClient);
+  return view;
+}
+
+test.for([
+  { name: "a processed meeting with a transcript", ended: meeting(), notes: [noteRead()] },
+  { name: "a meeting whose first notes failed", ended: failed(), notes: [] },
+])("$name is offered regeneration", async ({ ended, notes }) => {
+  // Arrange
+  serveContent(notes);
+
+  // Act
+  renderDetail({ meeting: ended });
+
+  // Assert
+  expect(await screen.findByRole("button", { name: "Regenerate notes" })).toBeInTheDocument();
+});
+
+test("a meeting that could not be transcribed is not offered regeneration", async () => {
+  // Arrange
+  refuseTranscript();
+
+  // Act
+  await renderSettledDetail({
+    meeting: meeting({ processing_state: "failed", failure_reason: "transcription_failed" }),
+  });
+
+  // Assert
+  expect(regenerateButton()).not.toBeInTheDocument();
+});
+
+test.for(["recording", "queued", "processing"] as const)(
+  "a %s meeting is not offered regeneration",
+  async (state) => {
+    // Arrange
+    serveContent();
+
+    // Act
+    await renderSettledDetail({ meeting: meeting({ processing_state: state }) });
+
+    // Assert
+    expect(regenerateButton()).not.toBeInTheDocument();
+  },
+);
+
+test("a refusal as already running stays on screen once the meeting shows its run", async () => {
+  // Arrange
+  serveContent();
+  server.use(
+    http.post("/api/v1/meetings/{meeting_id}/notes", ({ response }) =>
+      response(409).json(errorBody("NOTES_IN_PROGRESS", "Notes are already being written")),
+    ),
+  );
+  const { user, rerender } = renderDetail();
+  await user.click(await screen.findByRole("button", { name: "Regenerate notes" }));
+  await user.click(screen.getByRole("button", { name: "Regenerate" }));
+  await screen.findByRole("alert");
+
+  // Act
+  rerender(detail({ meeting: processing() }));
+
+  // Assert
+  expect(screen.getByRole("alert")).toHaveTextContent("Notes are already being written");
 });
 
 const CURRENT_NOTES = noteRead();

@@ -7,7 +7,13 @@ import {
 import { useEffect, useRef } from "react";
 import { apiClient } from "@/shared/api/client";
 import { ApiError } from "@/shared/api/errors";
-import type { MeetingUpdate, RevisionInput, Schemas } from "@/shared/api/types";
+import type {
+  MeetingUpdate,
+  NotesRegeneration,
+  Preset,
+  RevisionInput,
+  Schemas,
+} from "@/shared/api/types";
 import { expectNoContent, unwrap } from "@/shared/api/unwrap";
 import { isInProgress, type Meeting, mapMeeting } from "../model";
 import { detailKey, foldersKey, workspaceListsKey } from "./keys";
@@ -244,6 +250,36 @@ export function useEditTranscript(meeting: Pick<Meeting, "id" | "state">) {
     onError: (error) => {
       if (error.code !== "STALE_REVISION") return;
       return queryClient.invalidateQueries({ queryKey: transcriptsKey(meeting.id) });
+    },
+  });
+}
+
+export function useRegenerateNotes({ id, workspaceId }: Pick<Meeting, "id" | "workspaceId">) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (preset: Preset | null) => {
+      const body: NotesRegeneration = preset === null ? {} : { preset };
+      return unwrap(
+        apiClient.POST("/api/v1/meetings/{meeting_id}/notes", {
+          params: { path: { meeting_id: id } },
+          body,
+        }),
+      );
+    },
+    onSuccess: () => {
+      // The 202 means `processing`: polling starts now, and the settle hook sees a run that
+      // ends before the next poll.
+      queryClient.setQueryData(
+        meetingQueries.detail(id).queryKey,
+        (meeting): Schemas["MeetingRead"] | undefined =>
+          meeting && { ...meeting, processing_state: "processing", failure_reason: null },
+      );
+      return queryClient.invalidateQueries({ queryKey: workspaceListsKey(workspaceId) });
+    },
+    onError: (error) => {
+      if (error.code !== "NOTES_IN_PROGRESS" && error.code !== "NOT_TRANSCRIBED") return;
+      // Exact: refetching the recording link under it would restart playback.
+      return queryClient.invalidateQueries({ queryKey: detailKey(id), exact: true });
     },
   });
 }
