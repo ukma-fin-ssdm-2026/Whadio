@@ -129,7 +129,7 @@ All notable changes to Whadio are recorded here. The format follows
 
 ### Refactoring
 
-- Dispatch the recorder's messages from a table ([#285](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/285))
+- Dispatch the recorder's messages from a table (Replace Conditional with Polymorphism, Extract Function) ([#285](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/285))
 
 ## [0.2.0] - 2026-11-03
 
@@ -141,7 +141,7 @@ All notable changes to Whadio are recorded here. The format follows
 
 ### Refactoring
 
-- Extract capture assembly from the event loop ([#279](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/279))
+- Extract capture assembly from the event loop (Extract Function) ([#279](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/279))
 
 ## [0.1.1] - 2026-11-03
 
