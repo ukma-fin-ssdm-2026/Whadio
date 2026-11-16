@@ -17,6 +17,7 @@ export const POLL_INTERVAL_MS = 10_000;
 export const TRANSCRIPT_PENDING = "pending" as const;
 const FIRST_PAGE = "";
 const CURRENT_NOTE_ONLY = { limit: 1 };
+const NOTE_VERSIONS_PER_PAGE = 20;
 
 // The server signs a playback link for 5 minutes (meetings/recordings.py).
 const RECORDING_LINK_LIFE_MS = 5 * 60_000;
@@ -47,6 +48,19 @@ function fetchMeetingPage(
           name: name || null,
         },
       },
+      signal,
+    }),
+  );
+}
+
+function fetchNotes(
+  meetingId: string,
+  query: { limit: number; cursor?: string | null },
+  signal: AbortSignal,
+) {
+  return unwrap(
+    apiClient.GET("/api/v1/meetings/{meeting_id}/notes", {
+      params: { path: { meeting_id: meetingId }, query },
       signal,
     }),
   );
@@ -128,15 +142,21 @@ export const meetingQueries = {
   notes: ({ id, state }: Pick<Meeting, "id" | "state">) =>
     queryOptions({
       queryKey: notesKey(id),
-      queryFn: ({ signal }) =>
-        unwrap(
-          apiClient.GET("/api/v1/meetings/{meeting_id}/notes", {
-            params: { path: { meeting_id: id }, query: CURRENT_NOTE_ONLY },
-            signal,
-          }),
-        ),
-      select: ({ items }) => items[0] ?? null,
+      queryFn: ({ signal }) => fetchNotes(id, CURRENT_NOTE_ONLY, signal),
+      select: ({ items, pagination }) => ({
+        current: items[0] ?? null,
+        hasEarlier: pagination.has_more,
+      }),
       enabled: hasTranscriptStage(state),
+    }),
+  noteVersions: (meetingId: string) =>
+    infiniteQueryOptions({
+      queryKey: [...notesKey(meetingId), "versions"],
+      queryFn: ({ pageParam, signal }) =>
+        fetchNotes(meetingId, { limit: NOTE_VERSIONS_PER_PAGE, cursor: pageParam || null }, signal),
+      initialPageParam: FIRST_PAGE,
+      getNextPageParam: ({ pagination }) => (pagination.has_more ? pagination.next_cursor : null),
+      select: ({ pages }) => pages.flatMap((page) => page.items),
     }),
   recording: ({ id, recordingAvailable }: Pick<Meeting, "id" | "recordingAvailable">) =>
     queryOptions({

@@ -431,6 +431,157 @@ test("a meeting that starts regenerating does not ask for its notes again", asyn
   expect(queryClient.isFetching({ queryKey: meetingQueries.notes(processing()).queryKey })).toBe(0);
 });
 
+const CURRENT_NOTES = noteRead();
+const EARLIER_NOTES = noteRead({
+  id: "earlier",
+  preset: "detailed",
+  content: "Notes of the first run",
+  is_current: false,
+});
+const OLDEST_NOTES = noteRead({ id: "oldest", preset: "interview", is_current: false });
+
+function serveNoteVersions(pages: NoteRead[][] | null = [[CURRENT_NOTES, EARLIER_NOTES]]) {
+  const requests = serveContent();
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}/notes", ({ request, response }) => {
+      const query = new URL(request.url).searchParams;
+      if (query.get("limit") === "1") return response(200).json(page([CURRENT_NOTES], "more"));
+      requests.push("versions");
+      if (!pages) return response(404).json(errorBody("NOT_FOUND", "Meeting not found"));
+      const index = Number(query.get("cursor") ?? "0");
+      const next = index + 1 < pages.length ? String(index + 1) : null;
+      return response(200).json(page(pages[index] ?? [], next));
+    }),
+  );
+  return requests;
+}
+
+async function openNoteVersions(changes: Partial<ComponentProps<typeof MeetingDetail>> = {}) {
+  const view = renderDetail(changes);
+  await view.user.click(await screen.findByRole("button", { name: "Notes versions" }));
+  return view;
+}
+
+async function loadSecondVersionsPage() {
+  serveNoteVersions([[CURRENT_NOTES, EARLIER_NOTES], [OLDEST_NOTES]]);
+  const view = await openNoteVersions();
+  await view.user.click(await screen.findByRole("menuitem", { name: "Load more versions" }));
+  await screen.findByRole("menuitem", { name: /^Interview · / });
+  return view;
+}
+
+async function showEarlierNotes() {
+  serveNoteVersions();
+  const view = await openNoteVersions();
+  await view.user.click(await screen.findByRole("menuitem", { name: /^Detailed · / }));
+  return view;
+}
+
+test("a meeting with a single version of notes offers no version list", async () => {
+  // Arrange
+  serveContent();
+
+  // Act
+  renderDetail();
+  await screen.findByText("Saved notes");
+
+  // Assert
+  expect(screen.queryByRole("button", { name: "Notes versions" })).not.toBeInTheDocument();
+});
+
+test.for(["processed", "processing", "failed"] as const)(
+  "a %s meeting with earlier notes offers the version list",
+  async (state) => {
+    // Arrange
+    serveNoteVersions();
+
+    // Act
+    renderDetail({ meeting: meeting({ processing_state: state }) });
+
+    // Assert
+    expect(await screen.findByRole("button", { name: "Notes versions" })).toBeInTheDocument();
+  },
+);
+
+test("the notes versions are not asked for before their list is opened", async () => {
+  // Arrange
+  const requests = serveNoteVersions();
+
+  // Act
+  renderDetail();
+  await screen.findByRole("button", { name: "Notes versions" });
+
+  // Assert
+  expect(requests).not.toContain("versions");
+});
+
+test("opening the version list shows the versions of its first page", async () => {
+  // Arrange
+  serveNoteVersions();
+
+  // Act
+  await openNoteVersions();
+  await screen.findByRole("menuitem", { name: /^Detailed · / });
+
+  // Assert
+  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+    expect.stringMatching(/^Summary · .+ \(current\)$/),
+    expect.stringMatching(/^Detailed · /),
+  ]);
+});
+
+test("the version list loads the next page on request", async () => {
+  // Act
+  await loadSecondVersionsPage();
+
+  // Assert
+  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+    expect.stringMatching(/^Summary · /),
+    expect.stringMatching(/^Detailed · /),
+    expect.stringMatching(/^Interview · /),
+  ]);
+});
+
+test("the version list offers no more once the last page is loaded", async () => {
+  // Act
+  await loadSecondVersionsPage();
+
+  // Assert
+  expect(screen.queryByRole("menuitem", { name: "Load more versions" })).not.toBeInTheDocument();
+});
+
+test("a failed version list shows the server's message", async () => {
+  // Arrange
+  serveNoteVersions(null);
+
+  // Act
+  await openNoteVersions();
+
+  // Assert
+  expect(await within(screen.getByRole("menu")).findByRole("alert")).toHaveTextContent(
+    "Meeting not found",
+  );
+});
+
+test("choosing an earlier version shows its notes", async () => {
+  // Act
+  await showEarlierNotes();
+
+  // Assert
+  expect(await screen.findByText("Notes of the first run")).toBeInTheDocument();
+});
+
+test("an earlier version is one action away from the current notes", async () => {
+  // Arrange
+  const { user } = await showEarlierNotes();
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "View current notes" }));
+
+  // Assert
+  expect(await screen.findByText("Saved notes")).toBeInTheDocument();
+});
+
 test("a revision is requested by its identifier", async () => {
   // Arrange
   const requests = serveContent();

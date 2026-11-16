@@ -1,15 +1,25 @@
-import { Box, Card, CircularProgress, Stack, Typography } from "@mui/material";
-import type { ReactNode } from "react";
+import { Alert, Box, Button, Card, CircularProgress, Stack, Typography } from "@mui/material";
+import { type ReactNode, useState } from "react";
 import type { NoteRead } from "@/shared/api/types";
+import { formatDate, titleCase } from "@/shared/lib/format";
 import { ErrorBanner } from "@/shared/ui/ErrorBanner";
 import { Markdown } from "@/shared/ui/Markdown";
 import { describeFailure, IN_PROGRESS_LABELS, isInProgress, type Meeting } from "../model";
+import { NoteVersionsMenu } from "./NoteVersionsMenu";
 
 interface NotesPanelProps {
   meeting: Meeting;
   notes: NoteRead | null;
+  hasEarlierNotes: boolean;
   loading: boolean;
   failed: boolean;
+}
+
+interface NotesContentProps {
+  meeting: Meeting;
+  notes: NoteRead | null;
+  shown: NoteRead | null;
+  loading: boolean;
 }
 
 function Progress({ children }: { children: ReactNode }) {
@@ -30,8 +40,8 @@ function Progress({ children }: { children: ReactNode }) {
   );
 }
 
-function NotesContent({ meeting, notes, loading }: Omit<NotesPanelProps, "failed">) {
-  if (isInProgress(meeting.state) && !notes) {
+function NotesContent({ meeting, notes, shown, loading }: NotesContentProps) {
+  if (isInProgress(meeting.state) && !shown) {
     return (
       <Progress>
         <Typography variant="subtitle1">{IN_PROGRESS_LABELS[meeting.state]}</Typography>
@@ -42,7 +52,7 @@ function NotesContent({ meeting, notes, loading }: Omit<NotesPanelProps, "failed
       </Progress>
     );
   }
-  if (isInProgress(meeting.state) && notes) {
+  if (isInProgress(meeting.state) && shown) {
     return (
       <>
         <Progress>
@@ -50,7 +60,7 @@ function NotesContent({ meeting, notes, loading }: Omit<NotesPanelProps, "failed
             Regenerating notes. The current notes stay until the new ones are ready.
           </Typography>
         </Progress>
-        <Markdown>{notes.content}</Markdown>
+        <Markdown>{shown.content}</Markdown>
       </>
     );
   }
@@ -61,7 +71,7 @@ function NotesContent({ meeting, notes, loading }: Omit<NotesPanelProps, "failed
           {describeFailure(meeting.failureReason)}
           {notes && " The previous notes are still current."}
         </ErrorBanner>
-        {notes && <Markdown>{notes.content}</Markdown>}
+        {shown && <Markdown>{shown.content}</Markdown>}
       </>
     );
   }
@@ -72,18 +82,53 @@ function NotesContent({ meeting, notes, loading }: Omit<NotesPanelProps, "failed
       </Box>
     );
   }
-  if (!notes) {
+  if (!shown) {
     return <Typography color="textSecondary">No generated notes are available yet.</Typography>;
   }
-  return <Markdown>{notes.content}</Markdown>;
+  return <Markdown>{shown.content}</Markdown>;
 }
 
-export function NotesPanel({ failed, ...props }: NotesPanelProps) {
-  if (failed && !props.notes && props.meeting.state === "processed") return null;
+export function NotesPanel({ meeting, notes, hasEarlierNotes, loading, failed }: NotesPanelProps) {
+  const [shownVersion, setShownVersion] = useState<NoteRead | null>(null);
+  if (failed && !notes && meeting.state === "processed") return null;
+  const shown = shownVersion ?? notes;
   return (
     <Card sx={{ p: { xs: 2, md: 3 } }}>
       <Stack sx={{ gap: 1.5 }}>
-        <NotesContent {...props} />
+        <Stack
+          direction="row"
+          sx={{ justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 1 }}
+        >
+          <Box>
+            <Typography variant="h2">{shownVersion ? "Earlier notes" : "Notes"}</Typography>
+            {shown && (
+              <Typography color="textSecondary">
+                {titleCase(shown.preset)} preset · {formatDate(shown.created_at)}
+              </Typography>
+            )}
+          </Box>
+          {(hasEarlierNotes || shownVersion) && (
+            <NoteVersionsMenu
+              meetingId={meeting.id}
+              shownId={shown?.id ?? null}
+              onShow={setShownVersion}
+            />
+          )}
+        </Stack>
+        {shownVersion && (
+          <Alert
+            severity="info"
+            role="status"
+            action={
+              <Button color="inherit" size="small" onClick={() => setShownVersion(null)}>
+                View current notes
+              </Button>
+            }
+          >
+            Newer notes have replaced these.
+          </Alert>
+        )}
+        <NotesContent meeting={meeting} notes={notes} shown={shown} loading={loading} />
       </Stack>
     </Card>
   );
