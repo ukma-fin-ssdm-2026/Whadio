@@ -1,3 +1,5 @@
+import { setImmediate } from "node:timers/promises";
+
 import { downloadFile } from "./downloads.js";
 
 let listeners;
@@ -33,7 +35,7 @@ test("accepts only completion of the chosen download, ignoring unrelated downloa
   // Act
   emit(99, "complete");
   emit(10, "in_progress");
-  await Promise.resolve();
+  await setImmediate();
   const premature = settled;
   emit(10, "complete");
   await saving;
@@ -53,10 +55,13 @@ test("an interrupted download rejects instead of reporting a successful save", a
 
   // Act
   emit(10, "interrupted");
+  const error = await saving.catch((failure) => failure.message);
 
   // Assert
-  await expect(saving).rejects.toThrow("interrupted");
-  expect(listeners.size).toBe(0);
+  expect({ error, listeners: listeners.size }).toEqual({
+    error: "The local download was interrupted. Retry it from Whadio.",
+    listeners: 0,
+  });
 });
 
 test.for(["complete", "interrupted"])(
@@ -64,6 +69,7 @@ test.for(["complete", "interrupted"])(
   async (state) => {
     // Arrange
     chrome.downloads.download.mockImplementation(async () => {
+      chrome.downloads.search.mockResolvedValue([{ id: 10, state }]);
       emit(10, state);
       return 10;
     });
@@ -109,10 +115,10 @@ test.for(["download", "search"])(
     chrome.downloads[method].mockRejectedValue(new Error("Unavailable"));
 
     // Act
-    await expect(downloadFile({})).rejects.toThrow("Unavailable");
+    const error = await downloadFile({}).catch((failure) => failure.message);
 
     // Assert
-    expect(listeners.size).toBe(0);
+    expect({ error, listeners: listeners.size }).toEqual({ error: "Unavailable", listeners: 0 });
   },
 );
 
@@ -121,8 +127,36 @@ test("a download missing from history fails rather than waiting forever", async 
   chrome.downloads.search.mockResolvedValue([]);
 
   // Act
-  await expect(downloadFile({})).rejects.toThrow("no longer available");
+  const error = await downloadFile({}).catch((failure) => failure.message);
 
   // Assert
-  expect(listeners.size).toBe(0);
+  expect({ error, listeners: listeners.size }).toEqual({
+    error: "The local download is no longer available.",
+    listeners: 0,
+  });
 });
+
+test.for(["complete", "interrupted"])(
+  "keeps a %s event received while the history lookup is pending",
+  async (state) => {
+    // Arrange
+    const history = Promise.withResolvers();
+    chrome.downloads.search.mockReturnValue(history.promise);
+    const saving = downloadFile({}).then(
+      () => "saved",
+      () => "failed",
+    );
+    await setImmediate();
+
+    // Act
+    emit(10, state);
+    history.resolve([{ id: 10, state: "in_progress" }]);
+    const result = await saving;
+
+    // Assert
+    expect({ result, listeners: listeners.size }).toEqual({
+      result: state === "complete" ? "saved" : "failed",
+      listeners: 0,
+    });
+  },
+);

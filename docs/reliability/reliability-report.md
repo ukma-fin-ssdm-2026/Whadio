@@ -99,7 +99,8 @@ discard and successful removal survive another browser restart. This is separate
 
 ### F10. An interrupted local download is treated as a successful save
 
-Implemented separately from F4 in `fix(#287): retain recovery copies after interrupted downloads`.
+Fixed by Valeriia Missirova in `fix(#287): retain recovery copies after interrupted downloads`,
+implemented separately from F4.
 
 **Before.** `downloaded` in `extension/background.js` resolved whenever a download left
 `in_progress`, including when it became `interrupted`. It registered its listener only after
@@ -107,8 +108,8 @@ the creation call returned, so a fast terminal event could also be missed. F4's 
 did not correct this false-success signal: recovery would remove the copy believing it was saved.
 
 **After.** `extension/downloads.js`, `downloadFile`, installs its listener before starting the
-download and remembers terminal states that arrive before the ID is returned. It reconciles
-Chrome's current download history and accepts only `complete`:
+download. Once its ID is returned, it checks Chrome's current download history to recover
+terminal events that arrived before the ID, and accepts only `complete`:
 
 ```js
 observe(download.state);

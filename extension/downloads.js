@@ -1,6 +1,5 @@
 export async function downloadFile(options) {
   let downloadId;
-  const earlyStates = new Map();
   let finish;
   const ended = new Promise((resolve) => {
     finish = resolve;
@@ -11,11 +10,7 @@ export async function downloadFile(options) {
     }
   }
   function changed(delta) {
-    if (downloadId === undefined) {
-      if (delta.state) {
-        earlyStates.set(delta.id, delta.state.current);
-      }
-    } else if (delta.id === downloadId) {
+    if (delta.id === downloadId) {
       observe(delta.state?.current);
     }
   }
@@ -23,8 +18,6 @@ export async function downloadFile(options) {
   chrome.downloads.onChanged.addListener(changed);
   try {
     downloadId = await chrome.downloads.download(options);
-    observe(earlyStates.get(downloadId));
-    earlyStates.clear();
     const [download] = await chrome.downloads.search({ id: downloadId });
     if (!download) {
       throw new Error("The local download is no longer available.");
