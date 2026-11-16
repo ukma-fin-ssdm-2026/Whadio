@@ -1,130 +1,114 @@
+import importlib.util
 import io
 import json
-import runpy
 import urllib.error
 import urllib.request
 from email.message import Message
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 import yaml
 
 REPOSITORY_URL = "https://github.com/org/repo"
 COMMIT = "ae00e35938fadd6b14db07482758ecd008f2fde7"
-RUN_ID = "40963978557"
+RUN_ID = 40963978557
+
+
+def _load() -> ModuleType:
+    path = Path(__file__).with_name("main_ci_alert.py")
+    spec = importlib.util.spec_from_file_location("main_ci_alert", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+alert = _load()
+
+
+def _write_event(path: Path, **fields: object) -> None:
+    workflow_run = {
+        "id": RUN_ID,
+        "run_attempt": 1,
+        "head_sha": COMMIT,
+        "conclusion": "failure",
+        "head_branch": "main",
+        "head_repository": {"full_name": "org/repo"},
+        "event": "push",
+    }
+    path.write_text(json.dumps({"workflow_run": workflow_run | fields}), encoding="utf-8")
 
 
 @pytest.fixture
-def release_workflow() -> object:
-    release = Path(__file__).parents[1] / "workflows" / "release.yml"
-    return yaml.safe_load(release.read_text(encoding="utf-8"))
-
-
-@pytest.fixture
-def alert_job(release_workflow: object) -> object:
-    match release_workflow:
-        case {"jobs": {"notify-main-failure": job}}:
-            return job
-        case _:
-            pytest.fail("The main CI alert job is missing from the Release workflow.")
-
-
-@pytest.fixture
-def alert_step(alert_job: object) -> object:
-    match alert_job:
-        case {"steps": [step]}:
-            return step
-        case _:
-            pytest.fail("Expected the main CI alert job to contain one sender step.")
-
-
-@pytest.fixture
-def sender_script(alert_step: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    match alert_step:
-        case {"run": str(command)}:
-            header, *source, delimiter = command.splitlines()
-            assert header == "python3 -I - <<'PY'"
-            assert delimiter == "PY"
-        case _:
-            pytest.fail("The Telegram sender step is missing from the Release workflow.")
-
-    script = tmp_path / "sender.py"
-    script.write_text("\n".join(source) + "\n", encoding="utf-8")
+def event_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    event = tmp_path / "event.json"
     for name, value in {
+        "GITHUB_EVENT_PATH": str(event),
         "GITHUB_SERVER_URL": "https://github.com",
         "GITHUB_REPOSITORY": "org/repo",
         "TELEGRAM_BOT_TOKEN": "test-token",
         "TELEGRAM_CHAT_ID": "42",
-        "FAILED_HEAD_SHA": COMMIT,
-        "FAILED_RUN_ID": RUN_ID,
-        "FAILED_RUN_ATTEMPT": "1",
     }.items():
         monkeypatch.setenv(name, value)
-    return script
+    return event
 
 
-def test_release_listens_for_completed_ci_runs(release_workflow: object) -> None:
+@pytest.fixture
+def alert_workflow() -> object:
+    workflow = Path(__file__).parents[1] / "workflows" / "main-ci-alert.yml"
+    return yaml.safe_load(workflow.read_text(encoding="utf-8"))
+
+
+# PyYAML interprets an unquoted `on` key as the YAML 1.1 boolean true.
+def test_alert_workflow_subscribes_to_ci_completions_on_main(alert_workflow: object) -> None:
     # Arrange
-    expected = {"workflows": ["CI/CD"], "types": ["completed"]}
+    expected = {"workflows": ["CI/CD"], "types": ["completed"], "branches": ["main"]}
 
     # Act
-    # PyYAML interprets an unquoted `on` key as the YAML 1.1 boolean true.
-    match release_workflow:
+    match alert_workflow:
         case {"on": {"workflow_run": trigger}} | {True: {"workflow_run": trigger}}:
             actual = trigger
         case _:
-            pytest.fail("The Release workflow is missing its CI completion trigger.")
+            pytest.fail("The alert workflow is missing its CI completion trigger.")
 
     # Assert
     assert actual == expected
 
 
-def test_alert_job_only_runs_for_failed_main_ci_in_this_repository(alert_job: object) -> None:
-    # Arrange
-    expected = (
-        "github.event_name == 'workflow_run'"
-        " && github.event.workflow_run.conclusion == 'failure'"
-        " && github.event.workflow_run.head_branch == 'main'"
-        " && github.event.workflow_run.head_repository.full_name == github.repository"
-        " && (github.event.workflow_run.event == 'push'"
-        " || github.event.workflow_run.event == 'workflow_dispatch')"
-    )
-
-    # Act
-    match alert_job:
-        case {"if": str(condition)}:
-            actual = " ".join(condition.split())
-        case _:
-            pytest.fail("The main CI alert job has no condition.")
-
-    # Assert
-    assert actual == expected
-
-
-def test_alert_step_gets_run_fields_and_telegram_secrets_from_github(alert_step: object) -> None:
+def test_alert_workflow_runs_the_sender_with_the_existing_secrets(alert_workflow: object) -> None:
     # Arrange
     expected = {
-        "FAILED_RUN_ID": "${{ github.event.workflow_run.id }}",
-        "FAILED_RUN_ATTEMPT": "${{ github.event.workflow_run.run_attempt }}",
-        "FAILED_HEAD_SHA": "${{ github.event.workflow_run.head_sha }}",
         "TELEGRAM_BOT_TOKEN": "${{ secrets.TELEGRAM_BOT_TOKEN }}",
         "TELEGRAM_CHAT_ID": "${{ secrets.TELEGRAM_CHAT_ID }}",
     }
 
     # Act
-    match alert_step:
-        case {"env": bindings}:
+    match alert_workflow:
+        case {
+            "jobs": {
+                "notify": {
+                    "steps": [
+                        *_,
+                        {"run": "python3 -I .github/scripts/main_ci_alert.py", "env": bindings},
+                    ],
+                },
+            },
+        }:
             actual = bindings
         case _:
-            pytest.fail("The main CI alert step has no environment bindings.")
+            pytest.fail("The alert workflow is missing the sender step or its secrets.")
 
     # Assert
     assert actual == expected
 
 
-@pytest.mark.parametrize("attempt", ["1", "2"])
+@pytest.mark.parametrize(
+    ("source", "attempt"), [("push", 1), ("push", 2), ("workflow_dispatch", 1)]
+)
 def test_alert_links_to_the_commit_and_exact_failed_attempt(
-    sender_script: Path, monkeypatch: pytest.MonkeyPatch, attempt: str
+    event_path: Path, monkeypatch: pytest.MonkeyPatch, source: str, attempt: int
 ) -> None:
     # Arrange
     sent: list[tuple[str, str, int, object]] = []
@@ -134,11 +118,11 @@ def test_alert_links_to_the_commit_and_exact_failed_attempt(
         sent.append((request.get_method(), request.full_url, timeout, json.loads(request.data)))
         return io.BytesIO(b'{"ok": true}')
 
-    monkeypatch.setenv("FAILED_RUN_ATTEMPT", attempt)
+    _write_event(event_path, event=source, run_attempt=attempt)
     monkeypatch.setattr(urllib.request, "urlopen", deliver)
 
     # Act
-    runpy.run_path(str(sender_script))
+    alert.main()
 
     # Assert
     assert sent == [
@@ -161,20 +145,77 @@ def test_alert_links_to_the_commit_and_exact_failed_attempt(
     ]
 
 
-@pytest.mark.parametrize("secret", ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"])
-def test_alert_stops_before_contacting_telegram_when_a_secret_is_empty(
-    sender_script: Path, monkeypatch: pytest.MonkeyPatch, secret: str
+def _unexpected_request(_request: urllib.request.Request, **_options: int) -> io.BytesIO:
+    pytest.fail("The sender should stop before making a Telegram request.")
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"event": "pull_request"},
+        {"head_branch": "feature"},
+        {"head_repository": {"full_name": "fork/repo"}},
+        {"conclusion": "success"},
+        {"conclusion": "cancelled"},
+    ],
+    ids=["pull request", "other branch", "fork", "success", "cancelled"],
+)
+def test_alert_skips_runs_outside_the_failed_main_policy(
+    event_path: Path, monkeypatch: pytest.MonkeyPatch, fields: dict[str, object]
 ) -> None:
     # Arrange
-    def unexpected_request(_request: urllib.request.Request, **_options: int) -> io.BytesIO:
-        pytest.fail("Missing secrets should stop the sender before any HTTP request.")
+    _write_event(event_path, **fields)
+    monkeypatch.setattr(urllib.request, "urlopen", _unexpected_request)
 
-    monkeypatch.setenv(secret, "")
-    monkeypatch.setattr(urllib.request, "urlopen", unexpected_request)
+    # Act
+    result = alert.main()
+
+    # Assert
+    assert result is None
+
+
+def test_alert_rejects_a_failed_run_without_attempt_metadata(
+    event_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange
+    _write_event(event_path, run_attempt=None)
+    monkeypatch.setattr(urllib.request, "urlopen", _unexpected_request)
 
     # Act
     with pytest.raises(SystemExit) as error:
-        runpy.run_path(str(sender_script))
+        alert.main()
+
+    # Assert
+    assert str(error.value) == "GitHub event is missing failed run metadata."
+
+
+def test_alert_reports_invalid_event_json(
+    event_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange
+    event_path.write_text("not JSON", encoding="utf-8")
+    monkeypatch.setattr(urllib.request, "urlopen", _unexpected_request)
+
+    # Act
+    with pytest.raises(SystemExit) as error:
+        alert.main()
+
+    # Assert
+    assert str(error.value) == "Could not read the GitHub event: JSONDecodeError."
+
+
+@pytest.mark.parametrize("secret", ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"])
+def test_alert_stops_before_contacting_telegram_when_a_secret_is_empty(
+    event_path: Path, monkeypatch: pytest.MonkeyPatch, secret: str
+) -> None:
+    # Arrange
+    _write_event(event_path)
+    monkeypatch.setenv(secret, "")
+    monkeypatch.setattr(urllib.request, "urlopen", _unexpected_request)
+
+    # Act
+    with pytest.raises(SystemExit) as error:
+        alert.main()
 
     # Assert
     assert (
@@ -191,9 +232,11 @@ def test_alert_stops_before_contacting_telegram_when_a_secret_is_empty(
     ],
 )
 def test_alert_fails_when_telegram_does_not_confirm_delivery(
-    sender_script: Path, monkeypatch: pytest.MonkeyPatch, response: bytes, expected: str
+    event_path: Path, monkeypatch: pytest.MonkeyPatch, response: bytes, expected: str
 ) -> None:
     # Arrange
+    _write_event(event_path)
+
     def reject(_request: urllib.request.Request, **_options: int) -> io.BytesIO:
         return io.BytesIO(response)
 
@@ -201,7 +244,7 @@ def test_alert_fails_when_telegram_does_not_confirm_delivery(
 
     # Act
     with pytest.raises(SystemExit) as error:
-        runpy.run_path(str(sender_script))
+        alert.main()
 
     # Assert
     assert str(error.value) == expected
@@ -227,9 +270,11 @@ def test_alert_fails_when_telegram_does_not_confirm_delivery(
     ],
 )
 def test_alert_reports_transport_errors_without_disclosing_the_bot_token(
-    sender_script: Path, monkeypatch: pytest.MonkeyPatch, failure: OSError, expected: str
+    event_path: Path, monkeypatch: pytest.MonkeyPatch, failure: OSError, expected: str
 ) -> None:
     # Arrange
+    _write_event(event_path)
+
     def fail(_request: urllib.request.Request, **_options: int) -> io.BytesIO:
         raise failure
 
@@ -237,7 +282,7 @@ def test_alert_reports_transport_errors_without_disclosing_the_bot_token(
 
     # Act
     with pytest.raises(SystemExit) as error:
-        runpy.run_path(str(sender_script))
+        alert.main()
 
     # Assert
     assert str(error.value) == expected

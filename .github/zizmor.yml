@@ -1,6 +1,7 @@
 rules:
   dangerous-triggers:
     ignore:
-      # The workflow_run jobs check out nothing. They merge the release app's own pull request
-      # or notify Telegram of a failed CI run on main.
+      # Its workflow_run job checks out nothing and only merges the release app's own pull request.
       - release.yml
+      # This alert checks out only the default-branch commit to send a Telegram notification.
+      - main-ci-alert.yml
