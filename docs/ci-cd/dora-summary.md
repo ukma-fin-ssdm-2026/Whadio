@@ -142,7 +142,20 @@ from outside our code.
 **Action for next week.** A daily message in the team chat listing the pull requests that wait for
 review.
 
+## What Pain Did These Metrics Reveal in Our Team?
+
+- **A red `main` stopped everyone.** Nothing could be deployed for 5.5 days, and the 27 pull
+  requests merged on 18–19.10 waited for a green run until 25.10. Waiting for a green `main` is 60%
+  of all lead time.
+- **We fixed what was not ours.** 14 of the 16 red runs came from GitHub billing and new
+  advisories, and two pull requests did nothing but upgrade flagged packages (#148, #223).
+- **Feedback comes slowly.** A pull request waits 5.8 h (median) for its first review, and 19
+  stayed open for over two days.
+- **Deadlines crowd the runners.** On the eve of the midterm our runs waited 15.6 h for runners in
+  total, and the midterm commit sat 4.4 h in the queue.
+- **CI itself did not hurt:** it adds about 10 minutes, 1% of the lead time.
+
 ## AI Usage
 
-The run data was collected with `gh` and analysed, and both documents were drafted, with Claude
-Code; Andrii Shalaiev reviewed them.
+The run data was collected with `gh` and analysed, and the documents and the exported data were
+drafted, with Claude Code; Andrii Shalaiev reviewed them.
