@@ -22,7 +22,8 @@ def upgrade() -> None:
     op.create_check_constraint(
         "notes_request",
         "processing_job",
-        "job_type = 'notes' OR (template IS NULL AND requested_by_user_id IS NULL)",
+        "(template IS NULL) = (requested_by_user_id IS NULL) "
+        "AND (job_type = 'notes' OR template IS NULL)",
     )
     op.create_foreign_key(
         op.f("fk_processing_job_requested_by_user_id_user"),

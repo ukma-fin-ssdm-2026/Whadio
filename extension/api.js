@@ -55,7 +55,11 @@ export async function api(method, path, body) {
   return withDeadline(async (signal) => {
     const response = await fetch(`${server}/api/v1${path}`, { ...init, signal });
     if (response.status === 401) {
-      await chrome.storage.session.remove(["token", "expiresAt", "name"]);
+      // The request may have been sent before the user switched accounts or signed in again.
+      const current = await chrome.storage.session.get(["server", "token"]);
+      if (current.server === server && current.token === token) {
+        await chrome.storage.session.remove(["token", "expiresAt", "name", "userId"]);
+      }
     }
     if (!response.ok) {
       throw await failure(response);
@@ -80,8 +84,22 @@ export function originPattern(server) {
 }
 
 export async function signedIn() {
-  const { token, expiresAt } = await chrome.storage.session.get(["token", "expiresAt"]);
-  return Boolean(token) && Date.parse(expiresAt) > Date.now();
+  return (await sessionOwner()) !== null;
+}
+
+export async function sessionOwner() {
+  const { server, userId, token, expiresAt } = await chrome.storage.session.get([
+    "server",
+    "userId",
+    "token",
+    "expiresAt",
+  ]);
+  return token &&
+    Date.parse(expiresAt) > Date.now() &&
+    typeof userId === "string" &&
+    typeof server === "string"
+    ? { server, userId }
+    : null;
 }
 
 export async function signIn(server, email, password) {
@@ -105,12 +123,13 @@ export async function signIn(server, email, password) {
     token: session.token,
     expiresAt: session.expires_at,
     name: session.user.name,
+    userId: session.user.id,
   });
 }
 
 export async function signOut() {
   await api("DELETE", "/sessions/current").catch(() => {});
-  await chrome.storage.session.remove(["token", "expiresAt", "name"]);
+  await chrome.storage.session.remove(["token", "expiresAt", "name", "userId"]);
   await chrome.storage.local.remove("destination");
 }
 

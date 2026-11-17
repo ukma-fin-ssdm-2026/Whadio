@@ -62,7 +62,8 @@ class ProcessingJob(Base):
     __table_args__: tuple[Constraint | Index, ...] = (
         CheckConstraint("attempts >= 0", name="attempts"),
         CheckConstraint(
-            "job_type = 'notes' OR (template IS NULL AND requested_by_user_id IS NULL)",
+            "(template IS NULL) = (requested_by_user_id IS NULL) "
+            "AND (job_type = 'notes' OR template IS NULL)",
             name="notes_request",
         ),
         Index("ix_processing_job_meeting_id", "meeting_id"),

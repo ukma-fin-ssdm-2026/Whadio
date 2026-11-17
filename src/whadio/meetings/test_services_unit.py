@@ -34,6 +34,7 @@ class FakeMeetingRepository:
         self.meeting_rows: dict[UUID, Meeting] = {}
         self.folder_rows: dict[UUID, Folder] = {}
         self.term_rows: dict[UUID, GlossaryTerm] = {}
+        self.note_rows: list[Note] = []
         self.removed: list[UUID] = []
 
     async def scope(self, meeting_id: UUID, *, lock: bool = False) -> MeetingScope:
@@ -51,6 +52,10 @@ class FakeMeetingRepository:
 
     async def save(self, meeting: Meeting) -> None:
         self.meeting_rows[meeting.meeting_id] = meeting
+
+    async def save_notes(self, note: Note, context: tuple[ContextReference, ...]) -> None:
+        del context
+        self.note_rows.append(note)
 
     async def remove(self, meeting_id: UUID, now: datetime) -> None:
         del now
@@ -102,9 +107,6 @@ class FakeMeetingRepository:
 
     async def capacity_overflow(self, workspace_ids: list[UUID], limit: int) -> list[Meeting]:
         raise NotImplementedError(workspace_ids, limit)
-
-    async def save_notes(self, note: Note, context: tuple[ContextReference, ...]) -> None:
-        raise NotImplementedError(note, context)
 
     async def reserve_upload(self, key: str) -> None:
         raise NotImplementedError(key)

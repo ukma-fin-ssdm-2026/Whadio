@@ -160,8 +160,9 @@ The model covers the data required for these key project functions:
   clears the previous attempt timestamps; publication alone leaves it unchanged. Initial queues
   retain their creation time after migration. Historical retry queue times remain null when they
   cannot be reconstructed accurately.
-- `PROCESSING_JOB.template` and `PROCESSING_JOB.requested_by_user_id` are set only on a notes job
-  a member requested. The job is sent with that preset, both survive retries, and the requester
+- `PROCESSING_JOB.template` and `PROCESSING_JOB.requested_by_user_id` are set together, and only
+  on a notes job a member requested; the preset is resolved when the job is queued, the
+  workspace's default included. The job is sent with that preset, both survive retries, and the requester
   becomes `NOTE.created_by_user_id` and the actor of `notes_regenerated`. The automatic first
   notes job leaves both null and is sent with the workspace's default preset.
 - Segment time intervals must satisfy `start_time_seconds < end_time_seconds`.
