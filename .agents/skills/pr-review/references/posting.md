@@ -6,7 +6,8 @@ One review per round: the verdict, a short summary and the inline comments, sent
 Submit approval and inline nits together: the review processor inspects that review before
 releasing `Review processed`. Nits disable any pending auto-merge and leave merging to the author;
 they remain optional. Later comments can arrive after GitHub has already allowed a merge.
-This automation takes effect once its repository variable and required-status ruleset are configured.
+The workflow processes reviews once the state key is configured. The required-status ruleset
+makes merges wait for it.
 
 ## The summary
 

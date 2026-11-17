@@ -486,36 +486,24 @@ def release_gate(
     )
 
 
-def process(
-    github: GitHub,
-    number: int,
-    *,
-    enabled: bool,
-    queued: bool = False,
-) -> bool:
+def process(github: GitHub, number: int, *, queued: bool = False) -> bool:
     pull = github.pull(number)
     if not pull.eligible or pull.release:
-        return retry_delivery(github, pull, queued=enabled and queued)
+        return retry_delivery(github, pull, queued=queued)
     snapshot = review_snapshot(github, number)
     if snapshot is None:
-        if enabled:
-            github.status(
-                pull,
-                "pending",
-                "Reviews changed during inspection; waiting to retry",
-            )
-        return retry_delivery(github, pull, queued=enabled and queued)
+        github.status(
+            pull,
+            "pending",
+            "Reviews changed during inspection; waiting to retry",
+        )
+        return retry_delivery(github, pull, queued=queued)
     all_reviews, inline = snapshot
     reviews = eligible_reviews(github, all_reviews)
     nits = nit_reviews(reviews, inline)
     memory = github.memory(pull)
     manual = memory.manual or bool(nits)
     ready = approved(pull, reviews)
-    if not enabled:
-        sys.stdout.write(
-            f"Dry run #{number}: approved={ready}, manual={manual}, auto={pull.auto}\n"
-        )
-        return True
     if queued and memory.comment is None and not nits:
         github.status(pull, "pending", "Queued notification state could not be verified")
         raise ValueError("Queued notification has no authenticated state")
@@ -540,20 +528,14 @@ def process(
     return deliver(github, pull, memory) if queued else True
 
 
-def reconcile(
-    github: GitHub,
-    *,
-    enabled: bool,
-    targets: set[int] | None = None,
-) -> int:
+def reconcile(github: GitHub, *, targets: set[int] | None = None) -> int:
     failures = 0
     queued: set[int] = set()
-    if enabled:
-        try:
-            queued = github.queued_pulls()
-        except REQUEST_ERRORS:
-            sys.stderr.write("Unable to read the notification queue\n")
-            failures += 1
+    try:
+        queued = github.queued_pulls()
+    except REQUEST_ERRORS:
+        sys.stderr.write("Unable to read the notification queue\n")
+        failures += 1
     if targets is not None:
         queued &= targets
     try:
@@ -565,7 +547,7 @@ def reconcile(
     for number in sorted(numbers | queued):
         try:
             if number in numbers:
-                ok = process(github, number, enabled=enabled, queued=number in queued)
+                ok = process(github, number, queued=number in queued)
             else:
                 ok = retry_delivery(github, github.pull(number), queued=True)
             if not ok:
@@ -600,14 +582,14 @@ def positive_number(value: object) -> int:
 
 
 def main() -> None:
+    state_key = os.environ.get("REVIEW_PROCESSING_STATE_KEY", "")
+    if len(state_key) < MIN_STATE_KEY_LENGTH:
+        sys.exit("Configure a random REVIEW_PROCESSING_STATE_KEY of at least 32 characters")
     github = GitHub(
         os.environ["GITHUB_REPOSITORY"],
         os.environ["GITHUB_TOKEN"],
-        state_key=os.environ.get("REVIEW_PROCESSING_STATE_KEY", ""),
+        state_key=state_key,
     )
-    enabled = os.environ.get("REVIEW_PROCESSING_ENABLED") == "true"
-    if enabled and len(github.state_key) < MIN_STATE_KEY_LENGTH:
-        sys.exit("Configure a random REVIEW_PROCESSING_STATE_KEY before enabling processing")
     try:
         event: object = json.loads(
             Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8")
@@ -619,7 +601,7 @@ def main() -> None:
             targets = trial if targets is None else targets & trial
         if targets == set():
             return
-        failures = reconcile(github, enabled=enabled, targets=targets)
+        failures = reconcile(github, targets=targets)
     except RateLimitError:
         sys.exit("GitHub API rate limit reached; reconciliation will retry on a later run")
     except REQUEST_ERRORS:

@@ -22,7 +22,7 @@ def _load() -> ModuleType:
 
 
 processor = _load()
-STATE_KEY = "test state key for review queue"
+STATE_KEY = "test state key for the review queue"
 REPOSITORY = "o/r"
 
 
@@ -142,7 +142,7 @@ def test_clean_approval_leaves_authors_auto_merge_enabled(github: FakeGitHub) ->
     # Arrange
     github.reviews = [_review()]
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert github.events == ["success"]
 
@@ -154,7 +154,7 @@ def test_nullable_history_does_not_block_current_approval(
     # Arrange
     github.reviews = [historical, _review(2)]
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert github.events == ["success"]
 
@@ -164,7 +164,7 @@ def test_nullable_approval_cannot_release_gate(github: FakeGitHub, unusable: obj
     # Arrange
     github.reviews = [unusable]
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert github.events == ["pending"]
 
@@ -184,7 +184,7 @@ def test_approval_submitted_during_inline_comment_read_cancels_auto_merge(
 
     monkeypatch.setattr(github, "pages", read_pages)
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert github.events[:5] == ["pending", "disable", "queue", "remember", "success"]
 
@@ -194,7 +194,7 @@ def test_inline_nit_with_unavailable_review_keeps_gate_pending(github: FakeGitHu
     github.reviews = [_review()]
     github.comments = [{"pull_request_review_id": 2, "body": "Nit: rename this"}]
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert github.events == ["pending"]
 
@@ -212,7 +212,7 @@ def test_new_nits_before_status_publication_keep_gate_pending(
 
     monkeypatch.setattr(github, "memory", memory_after_new_review)
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert github.events == ["pending"]
 
@@ -221,7 +221,7 @@ def test_waiting_for_first_approval_keeps_auto_merge_enabled(github: FakeGitHub)
     # Arrange
     github.reviews = []
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert github.events == ["pending"]
 
@@ -230,7 +230,7 @@ def test_previous_clean_approval_keeps_auto_merge_enabled(github: FakeGitHub) ->
     # Arrange
     github.reviews = [_review(head="previous-head")]
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert github.events == ["pending"]
 
@@ -246,7 +246,7 @@ def test_review_processing_does_not_scan_other_prs(
 
     monkeypatch.setattr(github, "open_numbers", fail)
     # Act
-    result = processor.reconcile(github, enabled=True, targets={1})
+    result = processor.reconcile(github, targets={1})
     # Assert
     assert result == 0
 
@@ -255,7 +255,7 @@ def test_nit_disables_before_releasing_gate_and_notifying(github: FakeGitHub) ->
     # Arrange
     github.reviews = [_review(body="Nit: rename this")]
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert github.events == [
         "pending",
@@ -274,7 +274,7 @@ def test_manual_merge_with_nits_is_allowed_after_processing(github: FakeGitHub) 
     github.current = replace(github.current, auto=False)
     github.reviews = [_review(body="Nit: rename this")]
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert github.events == [
         "pending",
@@ -293,7 +293,7 @@ def test_failed_cancellation_never_releases_gate(github: FakeGitHub) -> None:
     github.cancel_fails = True
     # Act
     with pytest.raises(ValueError, match="Cancellation failed"):
-        processor.process(github, 1, enabled=True)
+        processor.process(github, 1)
     # Assert
     assert github.events == ["pending", "disable"]
 
@@ -303,7 +303,7 @@ def test_new_head_during_processing_is_not_released(github: FakeGitHub) -> None:
     github.reviews = [_review()]
     github.new_head = True
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert "success" not in github.events
 
@@ -321,7 +321,7 @@ def test_invalid_approval_does_not_release_gate(github: FakeGitHub, review: obje
     # Arrange
     github.reviews = [review]
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert "success" not in github.events
 
@@ -331,7 +331,7 @@ def test_reader_approval_does_not_release_gate(github: FakeGitHub) -> None:
     github.reviews = [_review()]
     github.permission = "read"
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert "success" not in github.events
 
@@ -348,7 +348,7 @@ def test_outsider_verdict_does_not_override_teammate(
 
     monkeypatch.setattr(github, "repo", repo)
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert github.events == ["success"]
 
@@ -362,7 +362,7 @@ def test_reenabling_during_cancellation_keeps_gate_blocked(
     monkeypatch.setattr(github, "disable", lambda _pull: github.events.append("disable"))
     # Act
     with pytest.raises(ValueError, match="re-enabled"):
-        processor.process(github, 1, enabled=True)
+        processor.process(github, 1)
     # Assert
     assert github.events == ["pending", "disable", "queue", "remember"]
 
@@ -371,7 +371,7 @@ def test_other_reviewer_changes_requested_blocks_clean_approval(github: FakeGitH
     # Arrange
     github.reviews = [_review(), _review(2, author="second", state="CHANGES_REQUESTED")]
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert "success" not in github.events
 
@@ -380,7 +380,7 @@ def test_clean_followup_does_not_override_earlier_nits(github: FakeGitHub) -> No
     # Arrange
     github.reviews = [_review(body="Nit: rename"), _review(2, author="second")]
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert "disable" in github.events
 
@@ -388,10 +388,10 @@ def test_clean_followup_does_not_override_earlier_nits(github: FakeGitHub) -> No
 def test_retry_does_not_duplicate_notification(github: FakeGitHub) -> None:
     # Arrange
     github.reviews = [_review(body="Nit: rename")]
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     github.events.clear()
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert github.events == ["success"]
 
@@ -408,7 +408,7 @@ def test_delivery_failure_leaves_gate_successful_and_persists_notification(
 
     monkeypatch.setattr(processor, "notify", fail)
     # Act
-    result = processor.process(github, 1, enabled=True)
+    result = processor.process(github, 1)
     # Assert
     memory = processor.memory_from(github.memory_items, STATE_KEY, REPOSITORY, 1)
     assert (result, github.events, set(memory.pending)) == (
@@ -429,7 +429,7 @@ def test_queue_write_failure_keeps_gate_pending(
 
     monkeypatch.setattr(github, "remember", fail)
     # Act
-    result = processor.reconcile(github, enabled=True)
+    result = processor.reconcile(github)
     # Assert
     assert (result, github.events) == (1, ["pending", "disable", "queue"])
 
@@ -446,13 +446,13 @@ def test_reconciliation_retries_saved_notification_after_merge(
 
     with monkeypatch.context() as patch:
         patch.setattr(processor, "notify", fail)
-        processor.reconcile(github, enabled=True)
+        processor.reconcile(github)
     github.current = replace(github.current, eligible=False)
     github.reviews.clear()
     delivered: list[object] = []
     monkeypatch.setattr(processor, "notify", lambda _, notification: delivered.append(notification))
     # Act
-    result = processor.reconcile(github, enabled=True)
+    result = processor.reconcile(github)
     # Assert
     assert (result, delivered, github.labeled) == (
         0,
@@ -473,7 +473,7 @@ def test_truncated_telegram_response_does_not_abort_reconciliation(
 
     monkeypatch.setattr(processor, "notify", truncate)
     # Act
-    result = processor.reconcile(github, enabled=True, targets={1, 2})
+    result = processor.reconcile(github, targets={1, 2})
     # Assert
     assert (result, github.labeled, github.events.count("success")) == (2, True, 2)
 
@@ -483,7 +483,7 @@ def test_unauthenticated_queue_state_keeps_label(github: FakeGitHub) -> None:
     github.current = replace(github.current, eligible=False)
     github.labeled = True
     # Act
-    result = processor.reconcile(github, enabled=True)
+    result = processor.reconcile(github)
     # Assert
     assert (result, github.labeled) == (1, True)
 
@@ -524,7 +524,7 @@ def test_reconciliation_ignores_closed_prs_without_pending_labels(github: FakeGi
     # Arrange
     github.current = replace(github.current, eligible=False)
     # Act
-    processor.reconcile(github, enabled=True)
+    processor.reconcile(github)
     # Assert
     assert github.reads == 0
 
@@ -549,30 +549,41 @@ def test_existing_memory_without_pending_notifications_preserves_delivery_histor
 def test_manual_decision_survives_deleted_nit(github: FakeGitHub) -> None:
     # Arrange
     github.reviews = [_review(body="Nit: rename")]
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     github.reviews = [_review()]
     github.current = replace(github.current, auto=True)
     github.events.clear()
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert github.events == ["pending", "disable", "success"]
 
 
-def test_dry_run_does_not_write_or_notify(github: FakeGitHub) -> None:
+def test_main_processes_an_approval_on_a_review_signal(
+    github: FakeGitHub, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     # Arrange
-    github.reviews = [_review(body="Nit: rename")]
+    path = tmp_path / "event.json"
+    path.write_text('{"workflow_run": {"pull_requests": [{"number": 1}]}}', encoding="utf-8")
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(path))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_run")
+    monkeypatch.setenv("REVIEW_PROCESSING_STATE_KEY", STATE_KEY)
+    monkeypatch.delenv("REVIEW_PROCESSING_TEST_PR", raising=False)
+    monkeypatch.setattr(processor, "GitHub", lambda *_, **__: github)
+    github.reviews = [_review()]
     # Act
-    processor.process(github, 1, enabled=False)
+    processor.main()
     # Assert
-    assert github.events == []
+    assert github.events == ["success"]
 
 
 def test_draft_or_non_main_is_skipped(github: FakeGitHub) -> None:
     # Arrange
     github.current = replace(github.current, eligible=False)
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert github.events == []
 
@@ -767,7 +778,7 @@ def test_release_pr_does_not_emit_status_that_release_job_would_wait_for(
     # Arrange
     github.current = replace(github.current, release=True)
     # Act
-    processor.process(github, 1, enabled=True)
+    processor.process(github, 1)
     # Assert
     assert github.events == []
 

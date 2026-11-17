@@ -1,12 +1,13 @@
 name: Review processing
 
-# Roll out with REVIEW_PROCESSING_ENABLED unset, then use REVIEW_PROCESSING_TEST_PR
-# to verify on one controlled PR. Restrict the review-processing environment to main
-# and store a random REVIEW_PROCESSING_STATE_KEY of at least 32 characters there.
+# Before merging, restrict the review-processing environment to main and store
+# a random REVIEW_PROCESSING_STATE_KEY of at least 32 characters there.
 # Keep the key stable so the processor can read signed decisions and delivery state.
+# Confirm TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are configured.
+# Set REVIEW_PROCESSING_TEST_PR to limit processing to one PR during rollout.
 # Require Review processed from GitHub Actions in a separate main ruleset with
 # only the release app as a PR bypass actor. Keep the existing approval and CI rules.
-# Verify cancellation, Telegram delivery and the release workflow before enabling all PRs.
+# Verify cancellation, Telegram delivery and the release workflow before removing the test scope.
 # Submit approval and nits together. Changes after inspection can race with merging.
 
 on:
@@ -60,7 +61,6 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           REVIEW_PROCESSING_STATE_KEY: ${{ secrets.REVIEW_PROCESSING_STATE_KEY }}
           REVIEW_PROCESSING_TEST_PR: ${{ vars.REVIEW_PROCESSING_TEST_PR }}
-          REVIEW_PROCESSING_ENABLED: ${{ vars.REVIEW_PROCESSING_ENABLED }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python3 -I .github/scripts/review_processing.py
