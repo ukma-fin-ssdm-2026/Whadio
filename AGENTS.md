@@ -127,7 +127,7 @@ the hooks only catch the cheap mistakes first, and stay within a time budget:
 |---|---|---|
 | `git commit` | 3 s | Branch name, file hygiene, gitleaks on the staged diff, `uv lock --check`, `ruff check --fix` and `ruff format` on the whole project, Biome on the frontend and the extension, the suppression ban, typos, schema and workflow checks, import-linter and ty. The commit message is checked last. |
 | `git push` | 12 s | Only what the push changes: `uv run task test:fast` for the backend; `tsc` and the Vitest tests the branch can affect for the frontend; the extension's Vitest tests for `extension/`; the OpenAPI drift check for `src/whadio/api/`; the API-types and route-tree drift checks for the frontend. |
-| CI | none | Everything below, on every pull request and on `main`. |
+| CI | none | Everything below on `main`; a pull request runs only the fast backend suite and no reliability tests. |
 
 CI runs these jobs in parallel, and every job and hook runs to the end, so one failure hides no
 other:
@@ -137,14 +137,16 @@ other:
   history; and `uv run task audit`, which runs uv audit and `npm audit` and only warns: a new
   advisory must not fail a pull request that changed no dependency.
 - **Frontend:** `tsc`, all the Vitest tests and the build.
-- **Backend tests and coverage:** `uv run task test:cov`, the whole test suite but the `models`
-  tests against the Compose services, failing below 85% line and branch coverage.
-- **Reliability tests:** `uv run task test:reliability`, the tests in the `reliability/` folders
-  under `src/whadio/`, against a migrated PostgreSQL.
+- **Backend tests and coverage:** on `main`, `uv run task test:cov`, the whole test suite but the
+  `models` tests against the Compose services, failing below 85% line and branch coverage; on a
+  pull request, `uv run task test:fast` with no services, its coverage reported but not gated. The
+  job summary gives the suite's test count and duration.
+- **Reliability tests:** on `main` only, `uv run task test:reliability`, the tests in the
+  `reliability/` folders under `src/whadio/`, against a migrated PostgreSQL.
 - **Worker image:** `uv run task image` builds it and runs its entry point.
-- **CI passed** fails unless all five succeeded. `main` requires it, "Reliability tests",
-  "SonarCloud Code Analysis" and the check of the pull request title and every commit message
-  against the commit format.
+- **CI passed** fails unless every job succeeded, apart from the reliability tests a pull request
+  skips. `main` requires it, "Reliability tests", "SonarCloud Code Analysis" and the check of the
+  pull request title and every commit message against the commit format.
 
 `uv run task ci` runs those jobs on your machine, in parallel and to the end, except the
 reliability tests, which `test:cov` already runs. It needs Docker, the services running and
