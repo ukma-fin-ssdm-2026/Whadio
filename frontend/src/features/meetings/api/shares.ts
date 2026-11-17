@@ -1,4 +1,4 @@
-import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
+import { infiniteQueryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/shared/api/client";
 import type { Schemas } from "@/shared/api/types";
 import { expectNoContent, unwrap } from "@/shared/api/unwrap";
@@ -6,20 +6,27 @@ import { detailKey } from "./keys";
 
 export type Share = Schemas["ShareRead"];
 
+const FIRST_PAGE = "";
+
 const sharesKey = (meetingId: string) => [...detailKey(meetingId), "shares"] as const;
 
 export const shareQueries = {
   list: (meetingId: string) =>
-    queryOptions({
+    infiniteQueryOptions({
       queryKey: sharesKey(meetingId),
-      queryFn: ({ signal }) =>
+      queryFn: ({ pageParam, signal }) =>
         unwrap(
           apiClient.GET("/api/v1/meetings/{meeting_id}/shares", {
-            params: { path: { meeting_id: meetingId }, query: { limit: 100 } },
+            params: {
+              path: { meeting_id: meetingId },
+              query: { limit: 100, cursor: pageParam || null },
+            },
             signal,
           }),
         ),
-      select: (page) => page.items,
+      initialPageParam: FIRST_PAGE,
+      getNextPageParam: ({ pagination }) => (pagination.has_more ? pagination.next_cursor : null),
+      select: ({ pages }) => pages.flatMap((page) => page.items),
     }),
 };
 
