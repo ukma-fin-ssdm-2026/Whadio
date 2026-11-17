@@ -72,13 +72,14 @@ def format_wait(delta: timedelta) -> str:
 
 
 def _line(entry: Entry, now: datetime) -> tuple[str, str]:
-    reviewers = f", re-review from {entry.names}" if entry.section == RE_REVIEW else ""
-    rest = (
-        f"{entry.pull.title} by {entry.pull.author}{reviewers}, "
-        f"waiting {format_wait(now - entry.since)}"
-    )
+    actor = "anyone" if entry.section == NOT_REVIEWED else entry.names
+    author = "" if entry.section == FIXES else f" · by {entry.pull.author}"
+    rest = f"{entry.pull.title}{author} · {format_wait(now - entry.since)}"
     link = f'<a href="{html.escape(entry.pull.url)}">#{entry.pull.number}</a>'
-    return f"{link} {html.escape(rest, quote=False)}", f"#{entry.pull.number} {rest}"
+    return (
+        f"<b>{html.escape(actor, quote=False)}</b> → {link} {html.escape(rest, quote=False)}",
+        f"{actor} → #{entry.pull.number} {rest}",
+    )
 
 
 def visible_length(lines: list[tuple[str, str]]) -> int:

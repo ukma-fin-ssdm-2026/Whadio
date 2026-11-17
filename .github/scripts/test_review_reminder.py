@@ -306,8 +306,8 @@ def test_message_lists_number_link_title_person_and_wait() -> None:
 
     # Assert
     assert message.splitlines()[1] == (
-        '<a href="https://github.com/org/repo/pull/12">#12</a> fix(#9): retry by denys, '
-        "waiting 2 d 2 h"
+        '<b>anyone</b> → <a href="https://github.com/org/repo/pull/12">#12</a> '
+        "fix(#9): retry · by denys · 2 d 2 h"
     )
 
 
@@ -320,7 +320,10 @@ def test_message_escapes_html_in_title_and_person() -> None:
     message = reminder.build_message(entries, NOW)
 
     # Assert
-    assert "fix: &lt;b&gt;&amp;&lt;/b&gt; by denys, re-review from a&lt;i&gt;" in message
+    assert message.splitlines()[1] == (
+        '<b>a&lt;i&gt;</b> → <a href="https://github.com/org/repo/pull/1">#1</a> '
+        "fix: &lt;b&gt;&amp;&lt;/b&gt; · by denys · 1 h"
+    )
 
 
 def test_message_headers_are_bold_and_count_their_pull_requests() -> None:
@@ -338,7 +341,7 @@ def test_message_headers_are_bold_and_count_their_pull_requests() -> None:
     message = reminder.build_message(entries, NOW)
 
     # Assert
-    assert re.findall(r"<b>(.*?)</b>", message) == [
+    assert re.findall(r"^<b>(.*?)</b>$", message, re.MULTILINE) == [
         "Not reviewed yet (2)",
         "Waiting for a re-review (1)",
         "Waiting for fixes (1)",
@@ -356,8 +359,8 @@ def test_empty_sections_are_left_out() -> None:
     assert message.splitlines() == [
         "<b>Waiting for a re-review (1)</b>",
         (
-            '<a href="https://github.com/org/repo/pull/1">#1</a> feat(#1): add by denys, '
-            "re-review from ana, waiting 1 h"
+            '<b>ana</b> → <a href="https://github.com/org/repo/pull/1">#1</a> '
+            "feat(#1): add · by denys · 1 h"
         ),
     ]
 
@@ -423,7 +426,7 @@ def test_pull_requests_past_the_limit_are_counted_in_the_last_line() -> None:
     lines = reminder.build_message(entries, NOW).splitlines()
 
     # Assert
-    listed = len(re.findall(r"^<a ", "\n".join(lines), flags=re.MULTILINE))
+    listed = len(re.findall(r" → <a ", "\n".join(lines)))
     assert lines[-1] == f"and {15 - listed} more"
 
 
