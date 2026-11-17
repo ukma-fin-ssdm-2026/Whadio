@@ -1,6 +1,7 @@
 import importlib.util
 import io
 import json
+import tempfile
 import urllib.error
 import urllib.request
 from email.message import Message
@@ -16,13 +17,22 @@ RUN_ID = 40963978557
 
 
 def _load() -> ModuleType:
-    path = Path(__file__).with_name("main_ci_alert.py")
-    spec = importlib.util.spec_from_file_location("main_ci_alert", path)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    path = Path(__file__).parents[1] / "workflows" / "main-ci-alert.yml"
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+    match workflow:
+        case {"jobs": {"notify": {"steps": [{"run": str(command)}]}}}:
+            source = "\n".join(command.splitlines()[1:-1])
+        case _:
+            raise AssertionError("The alert workflow must run only its embedded sender.")
+    with tempfile.TemporaryDirectory() as directory:
+        sender = Path(directory) / "main_ci_alert.py"
+        sender.write_text(source, encoding="utf-8")
+        spec = importlib.util.spec_from_file_location("main_ci_alert", sender)
+        assert spec is not None
+        assert spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
 
 
 alert = _load()
@@ -91,7 +101,7 @@ def test_alert_workflow_runs_the_sender_with_the_existing_secrets(alert_workflow
                 "notify": {
                     "steps": [
                         *_,
-                        {"run": "python3 -I .github/scripts/main_ci_alert.py", "env": bindings},
+                        {"run": str(), "env": bindings},
                     ],
                 },
             },
@@ -104,28 +114,19 @@ def test_alert_workflow_runs_the_sender_with_the_existing_secrets(alert_workflow
     assert actual == expected
 
 
-def test_alert_workflow_checks_out_only_trusted_default_branch_code(alert_workflow: object) -> None:
+def test_alert_workflow_needs_no_github_permissions_or_checkout(alert_workflow: object) -> None:
     # Arrange
-    expected = {"ref": "main", "persist-credentials": False}
+    expected = {}
 
     # Act
     match alert_workflow:
         case {
-            "jobs": {
-                "notify": {
-                    "steps": [
-                        {
-                            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-                            "with": checkout,
-                        },
-                        *_,
-                    ],
-                },
-            },
+            "permissions": permissions,
+            "jobs": {"notify": {"steps": [{"run": str()}]}},
         }:
-            actual = checkout
+            actual = permissions
         case _:
-            pytest.fail("The alert workflow does not check out trusted default-branch code.")
+            pytest.fail("The alert workflow must not check out code or need GitHub permissions.")
 
     # Assert
     assert actual == expected
