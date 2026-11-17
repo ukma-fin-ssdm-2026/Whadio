@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from conftest import NOW, AsyncDatabase
+from conftest import BUILT_IN_LLM, NOW, AsyncDatabase
 
 from ..access_policy.repositories import AccessRepository
 from ..access_policy.services import AccessPolicy
@@ -414,7 +414,9 @@ def processing_service(session: AsyncSession) -> ProcessingService:
             NoSpeakerTimeline(),
             DroppedNotices(),
             NoReaders(),
-        )
+        ),
+        notes_llm=BUILT_IN_LLM,
+        regeneration_limit=3,
     )
 
 

@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import Path
 from pydantic import Field, ValidationInfo, field_validator, model_validator
 
+from ...processing.enums import JobStatus, JobType
 from ..accounts.schemas import Preset, Provider
 from ..core.schemas import DisplayText, Input, Output, PageQuery, UtcDatetime
 
@@ -220,3 +221,19 @@ class NoteRead(Output):
     context_meetings: list[ContextMeetingRead] = Field(
         description="Meetings of the same folder used as context"
     )
+
+
+class NotesRegeneration(Input):
+    preset: Preset | None = Field(
+        default=None, description="Preset of the new notes; the workspace's default when omitted"
+    )
+
+
+class NotesJobRead(Output):
+    id: UUID = Field(description="Notes job identifier")
+    meeting_id: UUID = Field(description="Meeting whose notes are being regenerated")
+    kind: JobType = Field(description="Kind of job, always `notes`")
+    status: JobStatus = Field(description="Job state when it was accepted, always `queued`")
+    preset: Preset = Field(description="Preset the new notes follow")
+    provider: Provider = Field(description="Model provider configured to write them")
+    created_at: datetime = Field(description="When the job was queued")

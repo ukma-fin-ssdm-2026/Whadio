@@ -66,6 +66,7 @@ Each story has acceptance criteria in Given/When/Then form.
     - [ ] Given the Member confirms that consent was obtained, when they start recording, then the tab's audio and their microphone are captured into one recording, no additional participant appears in the call, and the confirmation is stored against the Meeting.
     - [ ] Given a recording is in progress, when the Member opens the extension, then it shows that recording is active and how long it has been running.
     - [ ] Given a Member stops the recording, when it ends, then the captured audio is complete and playable.
+    - [ ] Given a completed recording's local fallback cannot be saved, when the original account signs in to the same server after a browser restart, then the popup offers Retry download and confirmed Discard for that recording. Another account, a signed-out account or an expired sign-in cannot list, retry or discard it; an unexpired original sign-in can recover offline. A failure to make a durable local backup is clearly identified as temporary recovery only.
     - [ ] Given a recording has finished, when the Member confirms the destination, then a Meeting is created in that Workspace and Folder and queued for processing.
     - [ ] Given the Member chose no destination, when the recording finishes, then the Meeting is created in their personal Workspace's default Folder.
     - [ ] Given a Meeting has been queued, when the Member opens the Workspace, then the Meeting is listed as being processed.

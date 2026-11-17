@@ -3,9 +3,10 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, File, Form, Query, Response, UploadFile
+from fastapi import APIRouter, Body, File, Form, Query, Response, UploadFile
 from pydantic import Field
 
+from ...accounts.enums import NotesTemplate
 from ...meetings.enums import MeetingSource
 from ...meetings.services import MeetingChanges, RecordingInput
 from ...shared.errors import Failure, UseCaseError
@@ -33,10 +34,12 @@ from .schemas import (
     MeetingSummary,
     MeetingUpdate,
     NoteRead,
+    NotesJobRead,
+    NotesRegeneration,
     TranscriptRead,
 )
 from .upload_limits import MAX_UPLOAD_BYTES, RecordingUploadRoute
-from .views import meeting_read, meeting_summary, notes_read, transcript_read
+from .views import meeting_read, meeting_summary, notes_job_read, notes_read, transcript_read
 
 router = APIRouter(route_class=RecordingUploadRoute)
 
@@ -57,6 +60,9 @@ _MEETING_NOT_FOUND = (
     "reported as missing, never as forbidden)"
 )
 _NOT_TRANSCRIBED = f"`{ErrorCode.NOT_TRANSCRIBED}`: the meeting has no transcript yet"
+_MEETING_LOCATION = {
+    "Location": {"description": "URL of the meeting", "schema": {"type": "string", "format": "uri"}}
+}
 
 # --- Meetings ---
 
@@ -104,14 +110,7 @@ async def list_meetings(
     ),
     response_description="The new meeting, queued for processing",
     responses={
-        201: {
-            "headers": {
-                "Location": {
-                    "description": "URL of the meeting",
-                    "schema": {"type": "string", "format": "uri"},
-                }
-            }
-        },
+        201: {"headers": _MEETING_LOCATION},
         **error_responses(
             {
                 400: "`MALFORMED_REQUEST`: invalid or repeated Content-Length header",
@@ -346,23 +345,45 @@ async def list_notes(
 
 @router.post(
     "/meetings/{meeting_id}/notes",
-    status_code=503,
+    status_code=202,
     tags=["notes"],
-    summary="Regenerate the notes (not available yet)",
+    summary="Regenerate the notes",
     description=(
-        "Regenerating notes is outside the MVP. After checking that the caller can read the "
-        f"meeting, this always answers `503 {ErrorCode.INTEGRATION_UNAVAILABLE}`. The planned "
-        "behaviour is in `docs/api/api-design.md`."
+        "Any member who can read the meeting. Queues a notes job written from the current "
+        "transcript revision with `preset`, or the workspace's default without one; the "
+        "transcript itself is never regenerated. The meeting is `processing` until the run "
+        "ends, then `processed` with the new notes current, or `failed` with the previous ones "
+        "still current. Each meeting can be regenerated a number of times the operator "
+        "sets, and every request counts, failed runs included."
     ),
-    responses=error_responses(
-        {
-            401: DOC_UNAUTHENTICATED,
-            404: _MEETING_NOT_FOUND,
-            422: DOC_INVALID,
-            503: f"`{ErrorCode.INTEGRATION_UNAVAILABLE}`: regenerating notes is not available yet",
-        }
-    ),
+    response_description="The queued notes job",
+    responses={
+        202: {"headers": _MEETING_LOCATION},
+        **error_responses(
+            {
+                400: DOC_MALFORMED,
+                401: DOC_UNAUTHENTICATED,
+                404: _MEETING_NOT_FOUND,
+                409: f"{_NOT_TRANSCRIBED}; `{ErrorCode.NOTES_IN_PROGRESS}`: a notes job of the "
+                f"meeting is queued or running; `{ErrorCode.REGENERATION_LIMIT}`: the meeting "
+                "used up its regenerations",
+                422: DOC_INVALID,
+                503: f"`{ErrorCode.INTEGRATION_UNAVAILABLE}`: the server has no broker or "
+                "object storage",
+            }
+        ),
+    },
 )
-async def regenerate_notes(meeting_id: MeetingId, user: BrowserUser, service: Meetings) -> None:
-    await service.get(user.id, meeting_id)
-    raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+async def regenerate_notes(
+    meeting_id: MeetingId,
+    user: BrowserUser,
+    processing: Processing,
+    response: Response,
+    payload: Annotated[NotesRegeneration | None, Body()] = None,
+) -> NotesJobRead:
+    preset = None if payload is None or payload.preset is None else NotesTemplate(payload.preset)
+    queued = await processing.queue_notes(
+        meeting_id, user.id, preset, use_builtin_model=False, now=datetime.now(UTC)
+    )
+    response.headers["Location"] = f"/api/v1/meetings/{meeting_id}"
+    return notes_job_read(queued)

@@ -174,7 +174,12 @@ class CompositionRoot:
     def _processing_service(self, session: AsyncSession) -> ProcessingService:
         if self._storage is None:
             raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
-        return processing_service(session, self._storage)
+        return processing_service(
+            session,
+            self._storage,
+            self.notes_llm(),
+            self._web_settings.notes_regeneration_limit,
+        )
 
     @asynccontextmanager
     async def lifespan(self, _app: FastAPI) -> AsyncGenerator[None]:
@@ -342,7 +347,9 @@ def eviction_notifications(session: Session) -> IEvictionNotifier:
     return OutboxEvictionNotices(NotificationOutboxRepository(session))
 
 
-def processing_service(session: AsyncSession, storage: IObjectStorage) -> ProcessingService:
+def processing_service(
+    session: AsyncSession, storage: IObjectStorage, notes_llm: NotesLlm, regeneration_limit: int
+) -> ProcessingService:
     meetings = meeting_service(session, AuditWriter(session))
     memberships = WorkspaceMembershipService(MembershipRepository(session))
     return ProcessingService(
@@ -366,7 +373,9 @@ def processing_service(session: AsyncSession, storage: IObjectStorage) -> Proces
             PolicyMeetingReaders(
                 MeetingRepository(session), AccessPolicy(AccessRepository(session), memberships)
             ),
-        )
+        ),
+        notes_llm=notes_llm,
+        regeneration_limit=regeneration_limit,
     )
 
 

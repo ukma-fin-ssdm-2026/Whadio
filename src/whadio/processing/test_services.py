@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from conftest import NOW
+from conftest import BUILT_IN_LLM, NOW
 
 from ..accounts.enums import LlmProvider, NotesTemplate
 from ..contracts.common import JobKind, Segment, Transcript
@@ -36,14 +36,16 @@ from ..meetings.contracts import (
     InitialTranscript,
     PipelineMeeting,
     ProcessingUpdate,
+    QueuedNotes,
     TranscriptVersion,
 )
 from ..meetings.enums import ProcessingFailure, ProcessingState, RevisionType
 from ..meetings.models import GlossaryTerm, Meeting, Speaker, TranscriptRevision, TranscriptSegment
 from ..meetings.models import Transcript as StoredTranscript
 from ..meetings.persistence import GeneratedNotes
-from ..shared.errors import UseCaseError
+from ..shared.errors import Failure, UseCaseError
 from ..shared.fakes import FixedClock, InMemoryObjectStorage
+from ..shared.notes_llm import AnthropicLlm, NotesLlm
 from .enums import JobStatus, JobType, ProcessingOutcome
 from .repositories import Job
 from .services import (
@@ -107,6 +109,7 @@ def meeting_row(name: str = "Meeting 2026-10-11 12:00 UTC", *, generated: bool =
         recorded_at=NOW,
         processing_state=ProcessingState.QUEUED,
         created_by_user_id=uuid4(),
+        regeneration_count=0,
     )
 
 
@@ -117,9 +120,24 @@ class FakeJobs:
         self.failure_reasons: dict[UUID, str | None] = {}
         self.restarted: dict[UUID, datetime] = {}
 
-    async def add(self, meeting_id: UUID, job_type: JobType) -> UUID:
+    async def add(
+        self,
+        meeting_id: UUID,
+        job_type: JobType,
+        *,
+        template: NotesTemplate | None = None,
+        requested_by: UUID | None = None,
+    ) -> UUID:
         job_id = uuid4()
-        self.jobs[job_id] = Job(job_id, meeting_id, job_type, JobStatus.QUEUED, 0)
+        self.jobs[job_id] = Job(
+            job_id,
+            meeting_id,
+            job_type,
+            JobStatus.QUEUED,
+            0,
+            template=template,
+            requested_by=requested_by,
+        )
         return job_id
 
     async def lock(self, job_id: UUID) -> Job | None:
@@ -184,6 +202,7 @@ class FakeMeetings:
     saved: InitialTranscript | None = None
     transcript: TranscriptVersion | None = None
     others: list[ContextTranscript] = field(default_factory=list[ContextTranscript])
+    member_can_read: bool = True
 
     async def pipeline_meeting(
         self, meeting_id: UUID, *, lock: bool = False
@@ -192,6 +211,12 @@ class FakeMeetings:
         if meeting_id != self.meeting.meeting_id:
             return None
         return PipelineMeeting(self.meeting, self.workspace_id)
+
+    async def processing_snapshot(self, _actor_id: UUID, meeting_id: UUID) -> PipelineMeeting:
+        found = await self.pipeline_meeting(meeting_id, lock=True)
+        if found is None or not self.member_can_read:
+            raise UseCaseError(Failure.NOT_FOUND)
+        return found
 
     async def current_transcript(self, _meeting_id: UUID) -> TranscriptVersion | None:
         return self.transcript
@@ -224,11 +249,13 @@ class FakeMeetings:
 class FakeNotes:
     def __init__(self) -> None:
         self.saved: GeneratedNotes | None = None
+        self.requester_id: UUID | None = None
 
     async def save_generated_notes(
-        self, _meeting_id: UUID, notes: GeneratedNotes, _requester_id: UUID | None, _now: datetime
+        self, _meeting_id: UUID, notes: GeneratedNotes, requester_id: UUID | None, _now: datetime
     ) -> None:
         self.saved = notes
+        self.requester_id = requester_id
 
 
 class FakeWorkspaces:
@@ -289,7 +316,11 @@ class Pipeline:
 
 
 def make_pipeline(
-    meeting: Meeting | None = None, events: tuple[SpeakerEvent, ...] = ()
+    meeting: Meeting | None = None,
+    events: tuple[SpeakerEvent, ...] = (),
+    *,
+    limit: int = 3,
+    llm: NotesLlm = BUILT_IN_LLM,
 ) -> Pipeline:
     jobs, meetings, notes = FakeJobs(), FakeMeetings(meeting or meeting_row()), FakeNotes()
     storage = InMemoryObjectStorage(now=FixedClock(NOW))
@@ -305,7 +336,9 @@ def make_pipeline(
                 FakeTimeline(events),
                 notices,
                 readers,
-            )
+            ),
+            notes_llm=llm,
+            regeneration_limit=limit,
         ),
         jobs,
         meetings,
@@ -329,6 +362,14 @@ def add_job(
         job_id, pipeline.meeting_id, job_type, status, attempts, sent_context=sent
     )
     pipeline.jobs.published.add(job_id)
+    return job_id
+
+
+def add_requested_notes_job(pipeline: Pipeline, requester: UUID) -> UUID:
+    job_id = add_job(pipeline, JobType.NOTES)
+    pipeline.jobs.jobs[job_id] = replace(
+        pipeline.jobs.jobs[job_id], template=NotesTemplate.INTERVIEW, requested_by=requester
+    )
     return job_id
 
 
@@ -465,18 +506,207 @@ def test_queueing_a_meeting_with_a_transcript_is_refused() -> None:
     assert failure.value.code == "ALREADY_PROCESSED"
 
 
-def test_notes_regeneration_is_unavailable() -> None:
-    # Arrange
-    pipeline = make_pipeline()
-    # Act
-    with pytest.raises(UseCaseError) as failure:
-        asyncio.run(
-            pipeline.service.queue_notes(
-                pipeline.meeting_id, uuid4(), None, use_builtin_model=True, now=NOW
-            )
+# --- Regenerating notes ---
+
+
+REQUESTER: Final = uuid4()
+
+
+def transcribed_pipeline(limit: int = 3, llm: NotesLlm = BUILT_IN_LLM) -> Pipeline:
+    pipeline = make_pipeline(limit=limit, llm=llm)
+    pipeline.meetings.transcript = stored_version()
+    return pipeline
+
+
+def regenerate(
+    pipeline: Pipeline, preset: NotesTemplate | None = None, *, use_builtin_model: bool = False
+) -> QueuedNotes:
+    return asyncio.run(
+        pipeline.service.queue_notes(
+            pipeline.meeting_id, REQUESTER, preset, use_builtin_model=use_builtin_model, now=NOW
         )
+    )
+
+
+def only_notes_job(pipeline: Pipeline) -> Job:
+    [job] = [job for job in pipeline.jobs.jobs.values() if job.job_type is JobType.NOTES]
+    return job
+
+
+@pytest.mark.parametrize(
+    ("preset", "template"),
+    [
+        pytest.param(NotesTemplate.INTERVIEW, NotesTemplate.INTERVIEW, id="chosen-preset"),
+        pytest.param(None, NotesTemplate.DETAILED, id="workspace-default"),
+    ],
+)
+def test_regeneration_queues_a_notes_job_with_its_template_and_requester(
+    preset: NotesTemplate | None, template: NotesTemplate
+) -> None:
+    # Arrange
+    pipeline = transcribed_pipeline()
+    # Act
+    regenerate(pipeline, preset)
     # Assert
-    assert failure.value.code == "INTEGRATION_UNAVAILABLE"
+    job = only_notes_job(pipeline)
+    assert (job.template, job.requested_by) == (template, REQUESTER)
+
+
+def test_regeneration_counts_the_request_and_shows_the_meeting_processing() -> None:
+    # Arrange
+    pipeline = transcribed_pipeline()
+    # Act
+    regenerate(pipeline)
+    # Assert
+    assert pipeline.meetings.update == ProcessingUpdate(
+        ProcessingState.PROCESSING, regeneration_count=1
+    )
+
+
+@pytest.mark.parametrize(
+    ("llm", "provider"),
+    [
+        pytest.param(BUILT_IN_LLM, LlmProvider.WHADIO, id="ollama"),
+        pytest.param(AnthropicLlm(), LlmProvider.ANTHROPIC, id="anthropic"),
+    ],
+)
+def test_regeneration_reports_the_configured_provider(llm: NotesLlm, provider: LlmProvider) -> None:
+    # Arrange
+    pipeline = transcribed_pipeline(llm=llm)
+    # Act
+    queued = regenerate(pipeline)
+    # Assert
+    assert queued.provider is provider
+
+
+type Refusal = Callable[[], tuple[Pipeline, bool]]
+
+
+def _untranscribed() -> tuple[Pipeline, bool]:
+    return make_pipeline(), False
+
+
+def _with_notes_job(status: JobStatus) -> tuple[Pipeline, bool]:
+    pipeline = transcribed_pipeline()
+    add_job(pipeline, JobType.NOTES, status=status)
+    return pipeline, False
+
+
+def _at_the_limit() -> tuple[Pipeline, bool]:
+    pipeline = transcribed_pipeline()
+    pipeline.meetings.meeting.regeneration_count = 3
+    return pipeline, False
+
+
+def _limit_zero() -> tuple[Pipeline, bool]:
+    return transcribed_pipeline(limit=0), False
+
+
+def _unreadable() -> tuple[Pipeline, bool]:
+    pipeline = transcribed_pipeline()
+    pipeline.meetings.member_can_read = False
+    return pipeline, False
+
+
+def _with_the_builtin_model() -> tuple[Pipeline, bool]:
+    return transcribed_pipeline(), True
+
+
+_REFUSALS: Final[dict[str, tuple[Refusal, Failure]]] = {
+    "no-transcript": (_untranscribed, Failure.NOT_TRANSCRIBED),
+    "queued-notes-job": (partial(_with_notes_job, JobStatus.QUEUED), Failure.NOTES_IN_PROGRESS),
+    "running-notes-job": (partial(_with_notes_job, JobStatus.RUNNING), Failure.NOTES_IN_PROGRESS),
+    "count-at-the-limit": (_at_the_limit, Failure.REGENERATION_LIMIT),
+    "limit-zero": (_limit_zero, Failure.REGENERATION_LIMIT),
+    "unreadable-meeting": (_unreadable, Failure.NOT_FOUND),
+    "builtin-model": (_with_the_builtin_model, Failure.INTEGRATION_UNAVAILABLE),
+}
+
+
+def refused(pipeline: Pipeline, *, use_builtin_model: bool) -> Failure:
+    with pytest.raises(UseCaseError) as failure:
+        regenerate(pipeline, use_builtin_model=use_builtin_model)
+    return failure.value.code
+
+
+@pytest.mark.parametrize(("refusal", "code"), list(_REFUSALS.values()), ids=list(_REFUSALS))
+def test_regeneration_is_refused(refusal: Refusal, code: Failure) -> None:
+    # Arrange
+    pipeline, use_builtin_model = refusal()
+    # Act
+    found = refused(pipeline, use_builtin_model=use_builtin_model)
+    # Assert
+    assert found == code
+
+
+@pytest.mark.parametrize(
+    "refusal", [refusal for refusal, _ in _REFUSALS.values()], ids=list(_REFUSALS)
+)
+def test_refused_regeneration_queues_nothing(refusal: Refusal) -> None:
+    # Arrange
+    pipeline, use_builtin_model = refusal()
+    before = (len(pipeline.jobs.jobs), pipeline.meetings.update)
+    # Act
+    refused(pipeline, use_builtin_model=use_builtin_model)
+    # Assert
+    assert (len(pipeline.jobs.jobs), pipeline.meetings.update) == before
+
+
+@pytest.mark.parametrize(
+    ("regeneration_count", "state"),
+    [
+        pytest.param(2, ProcessingState.PROCESSED, id="one-below-the-limit"),
+        pytest.param(0, ProcessingState.FAILED, id="notes-failed"),
+    ],
+)
+def test_regeneration_is_queued(regeneration_count: int, state: ProcessingState) -> None:
+    # Arrange
+    pipeline = transcribed_pipeline()
+    pipeline.meetings.meeting.regeneration_count = regeneration_count
+    pipeline.meetings.meeting.processing_state = state
+    # Act
+    regenerate(pipeline)
+    # Assert
+    assert only_notes_job(pipeline).status is JobStatus.QUEUED
+
+
+def test_regeneration_after_the_recording_was_deleted_is_sent() -> None:
+    # Arrange
+    pipeline = transcribed_pipeline()
+    pipeline.meetings.meeting.storage_path = None
+    regenerate(pipeline)
+    # Act
+    requests = publish_all(pipeline)
+    # Assert
+    assert len(notes_requests(requests)) == 1
+
+
+def test_regeneration_is_written_from_the_edited_revision() -> None:
+    # Arrange
+    pipeline = transcribed_pipeline()
+    regenerate(pipeline)
+    edited = stored_version()
+    edited.segments[0].text = "Виправлений текст"
+    pipeline.meetings.transcript = edited
+    # Act
+    requests = publish_all(pipeline)
+    # Assert
+    assert [
+        [segment.text for segment in request.transcript.segments]
+        for request in notes_requests(requests)
+    ] == [["Виправлений текст"]]
+
+
+def test_failed_regeneration_saves_no_notes() -> None:
+    # Arrange
+    pipeline = transcribed_pipeline()
+    job_id = regenerate(pipeline).job_id
+    publish_all(pipeline)
+    handle(pipeline, started(pipeline, job_id, JobKind.NOTES))
+    # Act
+    handle(pipeline, notes_failed(pipeline, job_id, NotesFailure.TRANSCRIPT_TOO_LONG))
+    # Assert
+    assert pipeline.notes.saved is None
 
 
 # --- Publishing ---
@@ -662,6 +892,24 @@ def test_ready_transcript_queues_notes_with_the_workspace_preset() -> None:
     assert [request.preset for request in notes_requests(requests)] == [NotesPreset.DETAILED]
 
 
+def test_requested_notes_job_is_sent_with_its_template() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    pipeline.meetings.transcript = stored_version()
+    asyncio.run(
+        pipeline.jobs.add(
+            pipeline.meeting_id,
+            JobType.NOTES,
+            template=NotesTemplate.INTERVIEW,
+            requested_by=uuid4(),
+        )
+    )
+    # Act
+    requests = publish_all(pipeline)
+    # Assert
+    assert [request.preset for request in notes_requests(requests)] == [NotesPreset.INTERVIEW]
+
+
 def test_notes_request_leaves_a_generated_name_out() -> None:
     # Arrange
     pipeline = make_pipeline(meeting_row(generated=True))
@@ -746,6 +994,17 @@ def test_ready_notes_are_saved_with_the_provider() -> None:
         proposed_name="Sprint planning",
         context=(),
     )
+
+
+def test_ready_requested_notes_are_saved_for_the_requester() -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    requester = uuid4()
+    job_id = add_requested_notes_job(pipeline, requester)
+    # Act
+    handle(pipeline, notes_ready(pipeline, job_id))
+    # Assert
+    assert pipeline.notes.requester_id == requester
 
 
 def test_ready_notes_keep_only_context_meetings_that_were_sent() -> None:
@@ -1344,6 +1603,32 @@ def test_uploader_who_can_no_longer_read_the_meeting_is_not_notified() -> None:
     job_id = add_job(pipeline, JobType.NOTES)
     # Act
     handle(pipeline, notes_ready(pipeline, job_id))
+    # Assert
+    assert pipeline.notices.sent == []
+
+
+def _notes_ready(pipeline: Pipeline, job_id: UUID) -> None:
+    handle(pipeline, notes_ready(pipeline, job_id))
+
+
+def _notes_fail_permanently(pipeline: Pipeline, job_id: UUID) -> None:
+    handle(pipeline, notes_failed(pipeline, job_id, NotesFailure.TRANSCRIPT_TOO_LONG))
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        pytest.param(_notes_ready, id="ready"),
+        pytest.param(_notes_fail_permanently, id="permanent-failure"),
+        pytest.param(_dead_letter, id="dead-lettered"),
+    ],
+)
+def test_requested_notes_job_notifies_nobody(event: JobEvent) -> None:
+    # Arrange
+    pipeline = make_pipeline()
+    job_id = add_requested_notes_job(pipeline, uuid4())
+    # Act
+    event(pipeline, job_id)
     # Assert
     assert pipeline.notices.sent == []
 

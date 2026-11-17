@@ -116,7 +116,10 @@ def test_invalid_path_parameter_is_echoed() -> None:
         (Failure.SHARE_ALREADY_BOUND, "The share is already bound to another account"),
         (Failure.SHARE_REVOKED, "The share was revoked"),
         (Failure.NOTES_IN_PROGRESS, "Notes are already being written"),
-        (Failure.REGENERATION_LIMIT, "The notes cannot be regenerated again yet"),
+        (
+            Failure.REGENERATION_LIMIT,
+            "This meeting's notes have been regenerated the maximum number of times",
+        ),
         (Failure.RECORDING_NOT_READY, "The recording is not ready yet"),
         (Failure.RECORDING_DELETED, "The recording was deleted"),
         (

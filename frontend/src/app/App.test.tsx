@@ -25,6 +25,7 @@ const FAILURE_REASON = "transcription_failed";
 const FAILURE_TEXT = "This recording could not be transcribed.";
 const GENERATED_NOTES = "Decisions from the weekly sync";
 const STALE_MS = 30_000;
+const SUGGESTED_NAME = { name: "Suggested meeting name" };
 const RETRIES_MS = 4_000;
 const POLL_WAIT_MS = 3_000;
 const REFUSALS = [
@@ -345,6 +346,25 @@ async function returnToTheWindow() {
   await act(() => vi.advanceTimersByTimeAsync(0));
 }
 
+test("keeping a generated name stops the meeting asking about it", async () => {
+  // Arrange
+  startSession(CURRENT_LINK);
+  server.use(
+    http.get("/api/v1/meetings/meeting", () =>
+      HttpResponse.json(meetingRead({ name_is_generated: true })),
+    ),
+    http.patch("/api/v1/meetings/meeting", () => HttpResponse.json(meetingRead())),
+  );
+  const user = userEvent.setup();
+  render(<App />);
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "Keep name" }));
+
+  // Assert
+  await waitFor(() => expect(screen.queryByRole("group", SUGGESTED_NAME)).not.toBeInTheDocument());
+});
+
 describe("a meeting that finishes while it is open", () => {
   async function watchMeeting(
     initial: Schemas["ProcessingState"] = "processing",
@@ -358,6 +378,7 @@ describe("a meeting that finishes while it is open", () => {
       polls: 0,
       content: [] as string[],
       failure: null as MeetingFailure | null,
+      changes: {} as Partial<Schemas["MeetingRead"]>,
     };
     server.use(
       http.get("/api/v1/meetings/meeting", () => {
@@ -370,6 +391,7 @@ describe("a meeting that finishes while it is open", () => {
           meetingRead({
             processing_state: live.state,
             failure_reason: live.state === "failed" ? FAILURE_REASON : null,
+            ...live.changes,
           }),
         );
       }),
@@ -516,6 +538,33 @@ describe("a meeting that finishes while it is open", () => {
 
     // Assert
     expect(await screen.findByText(GENERATED_NOTES)).toBeInTheDocument();
+  });
+
+  test("asks its recorder to keep or rename the generated name", async () => {
+    // Arrange
+    const { live } = await watchMeeting();
+    live.changes = { name_is_generated: true };
+
+    // Act
+    live.state = "processed";
+    await nextPoll();
+
+    // Assert
+    expect(await screen.findByRole("group", SUGGESTED_NAME)).toBeInTheDocument();
+  });
+
+  test("asks nobody but its recorder about the generated name", async () => {
+    // Arrange
+    const { live } = await watchMeeting();
+    live.changes = { name_is_generated: true, created_by_user_id: "other" };
+
+    // Act
+    live.state = "processed";
+    await nextPoll();
+    await screen.findByText(GENERATED_NOTES);
+
+    // Assert
+    expect(screen.queryByRole("group", SUGGESTED_NAME)).not.toBeInTheDocument();
   });
 
   test.for(["processed", "failed"] as const)(
