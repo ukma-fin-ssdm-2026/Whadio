@@ -167,6 +167,10 @@ draft pull request to try something.
   whole file.
 - Changing a route or a schema regenerates `docs/api/openapi-generated.*` and
   `frontend/src/shared/api/schema.gen.ts`; commit them with it.
+- A pull request that changes the SQLAlchemy models or the Alembic migrations gets no migration
+  check from CI before the merge: run `WHADIO_DB_NAME=whadio_test uv run task db:upgrade` and
+  `WHADIO_DB_NAME=whadio_test uv run alembic check` against the disposable test database, never the
+  development database `whadio`, and record both results in its description.
 
 ## Agent skills
 
