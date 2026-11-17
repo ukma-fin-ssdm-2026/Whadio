@@ -102,6 +102,7 @@ Overload -> notify in the primary channel -> brief discussion and selection of a
     - CI, on every pull request and on `main`, and required for merging: the same hooks on all files, basedpyright, Bandit, deptry, the whole test suite against the Compose services, which fails below 85% line and branch coverage, the frontend's tests and build, the worker image, a secret scan of the whole history, and the pull request title and commit messages; the dependency audit (uv audit, and npm audit for the frontend, its build tools included) warns but does not fail;
     - checks are never bypassed (`--no-verify`, `SKIP=`), and inline suppressions are refused: a false positive gets a scoped exception in `pyproject.toml` or `frontend/biome.jsonc` with a one-line reason, in its own pull request.
 - Code review rules:
+    - when the review-processing gate is deployed, authors may enable native auto-merge; approvals with `Nit:` comments disable it and notify Telegram, leaving optional nits and manual merging to the author. Manual merges also wait for review processing; see `docs/testing/review-processing.md` for rollout and timing limitations;
     - each PR requires at least one approval, and the reviewer submits the review themselves;
     - AI-assisted review: the reviewer goes through the PR with an AI agent, discusses its findings, and posts only the comments they agree with and can justify. The agent, the depth of discussion, and how comments reach GitHub (inline, in the summary, drafted by the agent as a pending review) are the reviewer's choice. PRs that only add report links or signatures are exempt;
     - the reviewer answers for every posted comment as their own, and the review summary names the AI tool used and states that the reviewer verified each point.
@@ -117,4 +118,5 @@ Overload -> notify in the primary channel -> brief discussion and selection of a
     - every member reviews teammates' pull requests, and each module owner answers for the quality of their module.
 
 ## AI Usage
+The review-processing policy was drafted with Codex.
 This document was prepared with the assistance of AI (Gemini 3.1 Pro); the review rules were revised, and section 11 and the Lab 5 roles were drafted, with Claude Code (Claude Opus 5.5). The author reviewed and edited the content, and the document is reviewed through a pull request before merging.
