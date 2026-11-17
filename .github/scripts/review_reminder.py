@@ -4,6 +4,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -12,7 +13,10 @@ TELEGRAM_API = "https://api.telegram.org"
 PAGE_SIZE = 100
 TIMEOUT_SECONDS = 30
 MESSAGE_LIMIT = 4096
-VERDICTS = {"APPROVED", "CHANGES_REQUESTED", "DISMISSED"}
+NOT_REVIEWED = "Not reviewed yet"
+RE_REVIEW = "Waiting for a re-review"
+FIXES = "Waiting for fixes"
+SECTIONS = (NOT_REVIEWED, RE_REVIEW, FIXES)
 
 
 @dataclass(frozen=True)
@@ -21,23 +25,43 @@ class PullRequest:
     title: str
     url: str
     author: str
-    draft: bool
-    waiting_since: datetime
+    ready_at: datetime
+    pushed_at: datetime
+    verdicts: dict[str, tuple[str, datetime]]
+
+
+@dataclass(frozen=True)
+class Entry:
+    pull: PullRequest
+    section: str
+    names: str
+    since: datetime
 
 
 def parse_time(value: str) -> datetime:
     return datetime.fromisoformat(value)
 
 
-def is_reviewed(reviews: list[tuple[str, str]]) -> bool:
-    latest = {reviewer: state for reviewer, state in reviews if state in VERDICTS}
-    return not {"APPROVED", "CHANGES_REQUESTED"}.isdisjoint(latest.values())
+def classify(pull: PullRequest) -> Entry | None:
+    """Sorts a pull request by whom it waits for; approvals stand through pushes."""
+    changes = {
+        reviewer: submitted_at
+        for reviewer, (state, submitted_at) in pull.verdicts.items()
+        if state == "CHANGES_REQUESTED"
+    }
+    if any(submitted_at > pull.pushed_at for submitted_at in changes.values()):
+        return Entry(pull, FIXES, pull.author, max(changes.values()))
+    if changes:
+        return Entry(pull, RE_REVIEW, ", ".join(sorted(changes)), pull.pushed_at)
+    if not pull.verdicts:
+        return Entry(pull, NOT_REVIEWED, pull.author, pull.ready_at)
+    return None
 
 
-def waiting(pulls: list[PullRequest], reviewed: set[int]) -> list[PullRequest]:
+def waiting(pulls: list[PullRequest]) -> list[Entry]:
     return sorted(
-        (pull for pull in pulls if not pull.draft and pull.number not in reviewed),
-        key=lambda pull: pull.waiting_since,
+        (entry for pull in pulls if (entry := classify(pull)) is not None),
+        key=lambda entry: (SECTIONS.index(entry.section), entry.since),
     )
 
 
@@ -47,12 +71,14 @@ def format_wait(delta: timedelta) -> str:
     return f"{days} d {hours} h" if days else f"{hours} h"
 
 
-def _line(pull: PullRequest, now: datetime) -> tuple[str, str]:
-    rest = f"{pull.title} by {pull.author}, waiting {format_wait(now - pull.waiting_since)}"
-    return (
-        f'<a href="{html.escape(pull.url)}">#{pull.number}</a> {html.escape(rest, quote=False)}',
-        f"#{pull.number} {rest}",
+def _line(entry: Entry, now: datetime) -> tuple[str, str]:
+    reviewers = f", re-review from {entry.names}" if entry.section == RE_REVIEW else ""
+    rest = (
+        f"{entry.pull.title} by {entry.pull.author}{reviewers}, "
+        f"waiting {format_wait(now - entry.since)}"
     )
+    link = f'<a href="{html.escape(entry.pull.url)}">#{entry.pull.number}</a>'
+    return f"{link} {html.escape(rest, quote=False)}", f"#{entry.pull.number} {rest}"
 
 
 def visible_length(lines: list[tuple[str, str]]) -> int:
@@ -61,19 +87,25 @@ def visible_length(lines: list[tuple[str, str]]) -> int:
     return len(text.encode("utf-16-le")) // 2
 
 
-def build_message(pulls: list[PullRequest], now: datetime) -> str:
-    """Lists the pull requests in order; those past Telegram's limit become an "and N more" line."""
-    header = f"{len(pulls)} pull request(s) waiting for review"
-    lines = [(f"<b>{header}</b>", header)]
-    for index, pull in enumerate(pulls):
-        hidden = len(pulls) - index - 1
+def build_message(entries: list[Entry], now: datetime) -> str:
+    """Lists entries under a header per section; those past Telegram's limit become "and N more"."""
+    counts = Counter(entry.section for entry in entries)
+    lines: list[tuple[str, str]] = []
+    previous = None
+    for index, entry in enumerate(entries):
+        hidden = len(entries) - index - 1
         more = f"and {hidden} more"
         tail = [(more, more)] if hidden else []
-        if visible_length([*lines, _line(pull, now), *tail]) > MESSAGE_LIMIT:
+        block = [_line(entry, now)]
+        if entry.section != previous:
+            title = f"{entry.section} ({counts[entry.section]})"
+            block = [*([("", "")] if lines else []), (f"<b>{title}</b>", title), *block]
+        if visible_length([*lines, *block, *tail]) > MESSAGE_LIMIT:
             more = f"and {hidden + 1} more"
             lines.append((more, more))
             break
-        lines.append(_line(pull, now))
+        lines.extend(block)
+        previous = entry.section
     return "\n".join(markup for markup, _ in lines)
 
 
@@ -82,18 +114,22 @@ def _request(request: urllib.request.Request) -> object:
         return json.load(response)
 
 
+def _authorized(url: str, token: str) -> urllib.request.Request:
+    return urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+
+
 def _github(path: str, token: str) -> list[object]:
     items: list[object] = []
     page = 1
     while True:
-        request = urllib.request.Request(
-            f"{GITHUB_API}{path}?per_page={PAGE_SIZE}&page={page}",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-        )
+        request = _authorized(f"{GITHUB_API}{path}?per_page={PAGE_SIZE}&page={page}", token)
         match _request(request):
             case list(chunk):
                 items.extend(chunk)
@@ -104,18 +140,22 @@ def _github(path: str, token: str) -> list[object]:
         page += 1
 
 
-def _pull_request(item: object, ready_at: datetime | None) -> PullRequest | None:
+def _pull_request(
+    item: object,
+    ready_at: datetime | None,
+    pushed_at: datetime,
+    verdicts: dict[str, tuple[str, datetime]],
+) -> PullRequest | None:
     match item:
         case {
             "number": int(number),
             "title": str(title),
             "html_url": str(url),
-            "draft": bool(draft),
             "created_at": str(created_at),
             "user": {"login": str(author)},
         }:
             return PullRequest(
-                number, title, url, author, draft, ready_at or parse_time(created_at)
+                number, title, url, author, ready_at or parse_time(created_at), pushed_at, verdicts
             )
         case _:
             return None
@@ -132,36 +172,52 @@ def last_ready(events: list[object]) -> datetime | None:
     return max(ready, default=None)
 
 
-def _reviews(items: list[object]) -> list[tuple[str, str]]:
-    reviews: list[tuple[str, str]] = []
-    for item in items:
-        match item:
-            case {"state": str(state), "user": {"login": str(reviewer)}}:
-                reviews.append((reviewer, state))
+def standing_verdicts(reviews: list[object]) -> dict[str, tuple[str, datetime]]:
+    """Each reviewer's latest approval or change request; a dismissal withdraws it."""
+    verdicts: dict[str, tuple[str, datetime]] = {}
+    for review in reviews:
+        match review:
+            case {
+                "state": "DISMISSED",
+                "user": {"login": str(reviewer)},
+            }:
+                verdicts.pop(reviewer, None)
+            case {
+                "state": str(state),
+                "user": {"login": str(reviewer)},
+                "submitted_at": str(submitted_at),
+            } if state in {"APPROVED", "CHANGES_REQUESTED"}:
+                verdicts[reviewer] = (state, parse_time(submitted_at))
             case _:
                 continue
-    return reviews
+    return verdicts
 
 
-def open_pull_requests(repository: str, token: str) -> tuple[list[PullRequest], set[int]]:
+def open_pull_requests(repository: str, token: str) -> list[PullRequest]:
     pulls: list[PullRequest] = []
-    reviewed: set[int] = set()
     for item in _github(f"/repos/{repository}/pulls", token):
         match item:
             case {"user": {"type": "Bot"}}:
                 continue
-            case {"number": int(number), "draft": False}:
+            case {"number": int(number), "draft": False, "head": {"sha": str(sha)}}:
                 events = _github(f"/repos/{repository}/issues/{number}/events", token)
-                pull = _pull_request(item, last_ready(events))
+                match _request(
+                    _authorized(f"{GITHUB_API}/repos/{repository}/commits/{sha}", token)
+                ):
+                    case {"commit": {"committer": {"date": str(date)}}}:
+                        pushed_at = parse_time(date)
+                    case _:
+                        sys.exit(f"Unexpected commit shape from GitHub for #{number}")
+                verdicts = standing_verdicts(
+                    _github(f"/repos/{repository}/pulls/{number}/reviews", token)
+                )
+                pull = _pull_request(item, last_ready(events), pushed_at, verdicts)
                 if pull is None:
                     sys.exit(f"Unexpected pull request shape from GitHub for #{number}")
-                reviews = _reviews(_github(f"/repos/{repository}/pulls/{number}/reviews", token))
-                if is_reviewed(reviews):
-                    reviewed.add(number)
                 pulls.append(pull)
             case _:
                 continue
-    return pulls, reviewed
+    return pulls
 
 
 def send(text: str, bot_token: str, chat_id: str) -> None:
@@ -183,10 +239,9 @@ def send(text: str, bot_token: str, chat_id: str) -> None:
 
 def main() -> None:
     try:
-        pulls, reviewed = open_pull_requests(
-            os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"]
+        pending = waiting(
+            open_pull_requests(os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"])
         )
-        pending = waiting(pulls, reviewed)
         if not pending:
             sys.stdout.write("No pull request is waiting for review.\n")
             return
