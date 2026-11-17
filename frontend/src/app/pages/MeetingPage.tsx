@@ -6,6 +6,7 @@ import { sessionQueries } from "@/features/accounts/api/session";
 import { ExportMenu } from "@/features/export/components/ExportMenu";
 import { folderQueries } from "@/features/meetings/api/folders";
 import { isMeetingGone, meetingQueries } from "@/features/meetings/api/meetings";
+import { GeneratedNamePrompt } from "@/features/meetings/detail/GeneratedNamePrompt";
 import { MeetingActions } from "@/features/meetings/detail/MeetingActions";
 import { MeetingDetail } from "@/features/meetings/detail/MeetingDetail";
 import type { MeetingTab } from "@/features/meetings/model";
@@ -107,6 +108,11 @@ export function MeetingPage({
                   })
                 }
               />
+            )
+          }
+          namePrompt={
+            user?.id === meeting.createdByUserId && (
+              <GeneratedNamePrompt key={meeting.id} meeting={meeting} />
             )
           }
         />

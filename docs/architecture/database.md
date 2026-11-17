@@ -133,8 +133,8 @@ Revision `0010` adds `processing_job.applied_result_ids`, a `uuid[]` defaulting 
 message IDs of the worker results already applied to the job, so a resent copy changes nothing.
 
 Revision `0011` adds `processing_job.template` and `processing_job.requested_by_user_id`, both
-nullable: the preset and the requester of a notes job a member asked for. A CHECK keeps both null
-on a transcription job, another limits `template` to the fixed presets, and the requester is a
+nullable: the preset and the requester of a notes job a member asked for. A CHECK sets both or
+neither, and neither on a transcription job; another limits `template` to the fixed presets, and the requester is a
 foreign key to `user` with `ON DELETE RESTRICT`, as `note.created_by_user_id` is. Downgrade
 refuses to discard jobs that hold either value.
 The current head is `0011`.

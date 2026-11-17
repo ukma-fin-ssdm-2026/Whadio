@@ -34,6 +34,7 @@ interface MeetingDetailProps {
   renderExport: (content: MeetingContent) => ReactNode;
   renderPresetField: (field: PresetFieldProps) => ReactNode;
   actions?: ReactNode;
+  namePrompt?: ReactNode;
 }
 
 export function MeetingDetail({
@@ -48,6 +49,7 @@ export function MeetingDetail({
   renderExport,
   renderPresetField,
   actions,
+  namePrompt,
 }: MeetingDetailProps) {
   const id = useId();
   const notesResult = useQuery(meetingQueries.notes(meeting));
@@ -90,6 +92,7 @@ export function MeetingDetail({
           </>
         }
       />
+      {namePrompt}
       <Tabs
         value={tab}
         onChange={(_, value) => onTab(value)}

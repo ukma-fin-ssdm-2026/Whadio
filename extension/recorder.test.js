@@ -4,11 +4,21 @@ let root;
 
 function event() {
   const listeners = [];
-  return { listeners, addListener: (listener) => listeners.push(listener) };
+  return {
+    listeners,
+    addListener: (listener) => listeners.push(listener),
+    removeListener: (listener) => listeners.splice(listeners.indexOf(listener), 1),
+  };
 }
 
 function port() {
-  return { onDisconnect: event(), disconnect: vi.fn() };
+  const ready = event();
+  const add = ready.addListener;
+  ready.addListener = (listener) => {
+    add(listener);
+    queueMicrotask(() => listener({ type: "recording-ready", startedAt: Date.now() }));
+  };
+  return { onMessage: ready, onDisconnect: event(), disconnect: vi.fn() };
 }
 
 function fakeChrome({ signedIn = true, unreachable = false } = {}) {
@@ -35,6 +45,7 @@ function fakeChrome({ signedIn = true, unreachable = false } = {}) {
 
 async function load(options) {
   globalThis.chrome = fakeChrome(options);
+  await import("./recording-port.js");
   await import("./audio.js");
   await import("./recorder.js");
 }
@@ -173,8 +184,113 @@ beforeEach(() => {
 afterEach(() => {
   vi.clearAllTimers();
   vi.useRealTimers();
-  vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+function stubPickedCapture() {
+  const tabTrack = { stop: vi.fn(), addEventListener: vi.fn() };
+  const microphoneTrack = { stop: vi.fn() };
+  const tab = {
+    getVideoTracks: () => [],
+    getAudioTracks: () => [tabTrack],
+    getTracks: () => [tabTrack],
+  };
+  const close = vi.fn(async () => {});
+  const createSource = () => ({ connect() {} });
+  vi.stubGlobal("navigator", {
+    mediaDevices: {
+      getDisplayMedia: async () => tab,
+      getUserMedia: async () => ({ getTracks: () => [microphoneTrack] }),
+    },
+  });
+  vi.stubGlobal(
+    "AudioContext",
+    class {
+      createMediaStreamDestination = () => ({});
+      createMediaStreamSource = createSource;
+      close = close;
+    },
+  );
+  const port = { onMessage: event(), onDisconnect: event(), disconnect: vi.fn() };
+  chrome.runtime.connect.mockReturnValue(port);
+  return { tabTrack, microphoneTrack, close, port };
+}
+
+test("a rejected recording port releases the picked tab and microphone without starting", async () => {
+  // Arrange
+  await load();
+  const { tabTrack, microphoneTrack, close, port } = stubPickedCapture();
+  const createRecorder = vi.fn();
+  vi.stubGlobal("MediaRecorder", createRecorder);
+
+  // Act
+  root.querySelector("button.primary").disabled = false;
+  root.querySelector("button.primary").click();
+  await vi.waitFor(() => expect(port.onMessage.listeners).toHaveLength(1));
+  const startedBeforeReply = createRecorder.mock.calls.length;
+  port.onMessage.listeners[0]({
+    type: "recording-rejected",
+    error: "Sign in to Whadio before recording.",
+  });
+  await vi.waitFor(() => expect(cardError()).toBe("Sign in to Whadio before recording."));
+
+  // Assert
+  expect({
+    startedBeforeReply,
+    totalStarts: createRecorder.mock.calls.length,
+    tabStopped: tabTrack.stop.mock.calls.length,
+    microphoneStopped: microphoneTrack.stop.mock.calls.length,
+    audioClosed: close.mock.calls.length,
+  }).toEqual({
+    startedBeforeReply: 0,
+    totalStarts: 0,
+    tabStopped: 1,
+    microphoneStopped: 1,
+    audioClosed: 1,
+  });
+});
+
+test("disconnecting the recording port stops the recorder and releases both audio tracks", async () => {
+  // Arrange
+  await load();
+  const { tabTrack, microphoneTrack, close, port } = stubPickedCapture();
+  const start = vi.fn();
+  const listeners = {};
+  const stop = vi.fn(() => {
+    for (const listener of listeners.stop) {
+      listener();
+    }
+  });
+  vi.stubGlobal(
+    "MediaRecorder",
+    class {
+      addEventListener = (type, listener) => {
+        listeners[type] ??= [];
+        listeners[type].push(listener);
+      };
+      start = start;
+      stop = stop;
+    },
+  );
+  root.querySelector("button.primary").disabled = false;
+  root.querySelector("button.primary").click();
+  await vi.waitFor(() => expect(port.onMessage.listeners).toHaveLength(1));
+  port.onMessage.listeners[0]({ type: "recording-ready", startedAt: 1 });
+  await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+
+  // Act
+  for (const listener of port.onDisconnect.listeners) {
+    listener();
+  }
+
+  // Assert
+  expect({
+    stopped: stop.mock.calls.length,
+    tabReleased: tabTrack.stop.mock.calls.length,
+    microphoneReleased: microphoneTrack.stop.mock.calls.length,
+    contextClosed: close.mock.calls.length,
+  }).toEqual({ stopped: 1, tabReleased: 1, microphoneReleased: 1, contextClosed: 1 });
 });
 
 describe("the recorder's answers to the extension", () => {
@@ -497,4 +613,23 @@ describe("the recorder's answers to the extension", () => {
     // Assert
     expect([sentTypes(), sendResponse.mock.calls, cardShown()]).toEqual([[], [], false]);
   });
+});
+
+test("a recording started while registration waits keeps its session", async () => {
+  // Arrange
+  await load();
+  const { port } = stubPickedCapture();
+  FakeRecorder.last = null;
+  vi.stubGlobal("MediaRecorder", FakeRecorder);
+  root.querySelector("button.primary").disabled = false;
+  root.querySelector("button.primary").click();
+  await vi.waitFor(() => expect(port.onMessage.listeners).toHaveLength(1));
+  send({ type: "started", startedAt: 2000 });
+
+  // Act
+  port.onMessage.listeners[0]({ type: "recording-ready", startedAt: 1 });
+  await vi.waitFor(() => expect(FakeRecorder.last?.state).toBe("inactive"));
+
+  // Assert
+  expect(send({ type: "started", startedAt: 3000 }).mock.calls).toEqual([[{ taken: false }]]);
 });

@@ -4,6 +4,24 @@ All notable changes to Whadio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.4] - 2026-11-17
+
+### Fixed
+
+- Retain recovery copies after interrupted downloads ([#341](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/341))
+
+## [0.14.3] - 2026-11-17
+
+### Fixed
+
+- Retain recordings when local saving fails ([#340](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/340))
+
+## [0.14.2] - 2026-11-16
+
+### Fixed
+
+- Hold generated meeting names to the display-text rule ([#387](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/387))
+
 ## [0.14.1] - 2026-11-16
 
 ### Fixed
@@ -129,7 +147,7 @@ All notable changes to Whadio are recorded here. The format follows
 
 ### Refactoring
 
-- Dispatch the recorder's messages from a table ([#285](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/285))
+- Dispatch the recorder's messages from a table (Replace Conditional with Polymorphism, Extract Function) ([#285](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/285))
 
 ## [0.2.0] - 2026-11-03
 
@@ -141,7 +159,7 @@ All notable changes to Whadio are recorded here. The format follows
 
 ### Refactoring
 
-- Extract capture assembly from the event loop ([#279](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/279))
+- Extract capture assembly from the event loop (Extract Function) ([#279](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/279))
 
 ## [0.1.1] - 2026-11-03
 
