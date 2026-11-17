@@ -104,6 +104,33 @@ def test_alert_workflow_runs_the_sender_with_the_existing_secrets(alert_workflow
     assert actual == expected
 
 
+def test_alert_workflow_checks_out_only_trusted_default_branch_code(alert_workflow: object) -> None:
+    # Arrange
+    expected = {"ref": "main", "persist-credentials": False}
+
+    # Act
+    match alert_workflow:
+        case {
+            "jobs": {
+                "notify": {
+                    "steps": [
+                        {
+                            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+                            "with": checkout,
+                        },
+                        *_,
+                    ],
+                },
+            },
+        }:
+            actual = checkout
+        case _:
+            pytest.fail("The alert workflow does not check out trusted default-branch code.")
+
+    # Assert
+    assert actual == expected
+
+
 @pytest.mark.parametrize(
     ("source", "attempt"), [("push", 1), ("push", 2), ("workflow_dispatch", 1)]
 )

@@ -17,8 +17,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # For workflow_run, github.sha identifies the default-branch commit.
-          ref: ${{ github.sha }}
+          # workflow_run can carry fork-controlled data; execute only trusted default-branch code.
+          ref: main
           persist-credentials: false
 
       - name: Post the failed run link to Telegram
