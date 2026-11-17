@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from psycopg.errors import UniqueViolation
 from sqlalchemy import Select, case, delete, func, or_, select, update
@@ -548,7 +548,7 @@ class FolderRepository:
             await self._session.scalars(
                 update(Meeting)
                 .where(Meeting.folder_id == folder_id)
-                .values(folder_id=destination_id)
+                .values(folder_id=destination_id, folder_revision_id=func.gen_random_uuid())
                 .returning(Meeting.meeting_id)
             )
         )
@@ -603,6 +603,7 @@ class FolderRepository:
         await MeetingRepository(self._session).save_folder(folder)
         for row in rows:
             row.folder_id = folder_id
+            row.folder_revision_id = uuid4()
         await self._session.flush()
         await self._session.execute(
             delete(FolderRecovery).where(FolderRecovery.folder_id == folder_id)

@@ -25,6 +25,7 @@ export interface Meeting {
   id: string;
   workspaceId: string;
   folderId: string;
+  folderRevisionId: string;
   createdByUserId: string | null;
   title: string;
   date: string;
@@ -49,6 +50,7 @@ export function mapMeeting(item: MeetingFields): Meeting {
     id: item.id,
     workspaceId: item.workspace_id,
     folderId: item.folder_id,
+    folderRevisionId: item.folder_revision_id,
     createdByUserId: item.created_by_user_id ?? null,
     title: item.name,
     date: item.recorded_at,

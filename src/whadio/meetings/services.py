@@ -59,6 +59,7 @@ class MeetingChanges:
     name: str | None = None
     folder_id: UUID | None = None
     expected_folder_id: UUID | None = None
+    expected_folder_revision_id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -122,6 +123,7 @@ class MeetingService:
         meeting = Meeting(
             meeting_id=uuid4(),
             folder_id=folder.folder_id,
+            folder_revision_id=uuid4(),
             created_by_user_id=actor_id,
             name=self._name(recording.name)
             if recording.name is not None
@@ -193,6 +195,11 @@ class MeetingService:
             and meeting.folder_id != changes.expected_folder_id
         ):
             raise UseCaseError(Failure.MEETING_MOVE_CONFLICT)
+        if (
+            changes.expected_folder_revision_id is not None
+            and meeting.folder_revision_id != changes.expected_folder_revision_id
+        ):
+            raise UseCaseError(Failure.MEETING_MOVE_CONFLICT)
         if changes.folder_id is not None and changes.folder_id != meeting.folder_id:
             try:
                 await self._repository.folder(scope.workspace_id, changes.folder_id)
@@ -202,6 +209,7 @@ class MeetingService:
                 raise
             old_folder_id = meeting.folder_id
             meeting.folder_id = changes.folder_id
+            meeting.folder_revision_id = uuid4()
             await self._repository.save(meeting)
             await self._audit.write(
                 ContentEvent(

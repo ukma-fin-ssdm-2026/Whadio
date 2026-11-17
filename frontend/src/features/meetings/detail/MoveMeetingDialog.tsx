@@ -31,11 +31,12 @@ export function MoveMeetingDialog({ meeting, folders, onClose }: MoveMeetingDial
   const close = () => {
     if (!updateMeeting.isPending) onClose();
   };
-  const undo = async () => {
+  const undo = async (folderRevisionId: string) => {
     try {
       await updateMeeting.mutateAsync({
         folder_id: meeting.folderId,
         expected_folder_id: folderId,
+        expected_folder_revision_id: folderRevisionId,
       });
       notify("Meeting move undone.");
     } catch (caught) {
@@ -47,10 +48,17 @@ export function MoveMeetingDialog({ meeting, folders, onClose }: MoveMeetingDial
   };
   const move = () =>
     updateMeeting.mutate(
-      { folder_id: folderId, expected_folder_id: meeting.folderId },
       {
-        onSuccess: () => {
-          notify("Meeting moved.", "success", { label: "Undo", onClick: undo });
+        folder_id: folderId,
+        expected_folder_id: meeting.folderId,
+        expected_folder_revision_id: meeting.folderRevisionId,
+      },
+      {
+        onSuccess: (movedMeeting) => {
+          notify("Meeting moved.", "success", {
+            label: "Undo",
+            onClick: () => undo(movedMeeting.folder_revision_id),
+          });
           onClose();
         },
       },

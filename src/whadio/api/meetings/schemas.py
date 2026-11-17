@@ -81,6 +81,9 @@ class MeetingSummary(Output):
     id: UUID = Field(description="Meeting identifier", examples=[MEETING_ID_EXAMPLE])
     workspace_id: UUID = Field(description="Workspace of the meeting")
     folder_id: UUID = Field(description="Folder of the meeting", examples=[FOLDER_ID_EXAMPLE])
+    folder_revision_id: UUID = Field(
+        description="Changes whenever the meeting enters a folder; use it for conditional moves"
+    )
     name: str = Field(description="Meeting name", examples=["Sprint 12 review"])
     name_is_generated: bool = Field(
         description="True while the name is the system's proposal; prompt the user to "
@@ -129,8 +132,12 @@ class MeetingUpdate(Input):
         default=None,
         description="Move only if the meeting is still in this folder",
     )
+    expected_folder_revision_id: UUID | None = Field(
+        default=None,
+        description="Move only if the meeting still has this folder placement revision",
+    )
 
-    @field_validator("expected_folder_id")
+    @field_validator("expected_folder_id", "expected_folder_revision_id")
     @classmethod
     def _expected_folder_requires_move(
         cls, value: UUID | None, info: ValidationInfo

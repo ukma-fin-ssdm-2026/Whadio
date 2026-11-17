@@ -300,17 +300,25 @@ def test_move_from_the_expected_folder_succeeds() -> None:
     # Arrange
     unit = team()
     planning = asyncio.run(unit.meetings.create_folder(unit.owner, unit.workspace, "Planning", NOW))
+    initial_revision = unit.repository.meeting_rows[unit.meeting].folder_revision_id
     # Act
     moved = asyncio.run(
         unit.meetings.update(
             unit.owner,
             unit.meeting,
             NOW,
-            MeetingChanges(folder_id=planning.folder_id, expected_folder_id=unit.default_folder),
+            MeetingChanges(
+                folder_id=planning.folder_id,
+                expected_folder_id=unit.default_folder,
+                expected_folder_revision_id=initial_revision,
+            ),
         )
     )
     # Assert
-    assert moved.folder_id == planning.folder_id
+    assert (moved.folder_id, moved.folder_revision_id != initial_revision) == (
+        planning.folder_id,
+        True,
+    )
 
 
 def test_undo_refuses_to_overwrite_a_later_move() -> None:
@@ -318,20 +326,30 @@ def test_undo_refuses_to_overwrite_a_later_move() -> None:
     unit = team()
     planning = asyncio.run(unit.meetings.create_folder(unit.owner, unit.workspace, "Planning", NOW))
     archive = asyncio.run(unit.meetings.create_folder(unit.owner, unit.workspace, "Archive", NOW))
-    asyncio.run(
+    initial_revision = unit.repository.meeting_rows[unit.meeting].folder_revision_id
+    moved = asyncio.run(
         unit.meetings.update(
             unit.owner,
             unit.meeting,
             NOW,
-            MeetingChanges(folder_id=planning.folder_id, expected_folder_id=unit.default_folder),
+            MeetingChanges(
+                folder_id=planning.folder_id,
+                expected_folder_id=unit.default_folder,
+                expected_folder_revision_id=initial_revision,
+            ),
         )
     )
+    moved_revision = moved.folder_revision_id
     asyncio.run(
         unit.meetings.update(
             unit.owner,
             unit.meeting,
             NOW,
-            MeetingChanges(folder_id=archive.folder_id, expected_folder_id=planning.folder_id),
+            MeetingChanges(
+                folder_id=archive.folder_id,
+                expected_folder_id=planning.folder_id,
+                expected_folder_revision_id=moved_revision,
+            ),
         )
     )
     # Act
@@ -340,13 +358,78 @@ def test_undo_refuses_to_overwrite_a_later_move() -> None:
             unit.owner,
             unit.meeting,
             NOW,
-            MeetingChanges(folder_id=unit.default_folder, expected_folder_id=planning.folder_id),
+            MeetingChanges(
+                folder_id=unit.default_folder,
+                expected_folder_id=planning.folder_id,
+                expected_folder_revision_id=moved_revision,
+            ),
         )
     )
     # Assert
     assert (failure, unit.repository.meeting_rows[unit.meeting].folder_id) == (
         Failure.MEETING_MOVE_CONFLICT,
         archive.folder_id,
+    )
+
+
+def test_undo_refuses_a_later_move_that_returned_to_the_same_folder() -> None:
+    # Arrange
+    unit = team()
+    planning = asyncio.run(unit.meetings.create_folder(unit.owner, unit.workspace, "Planning", NOW))
+    archive = asyncio.run(unit.meetings.create_folder(unit.owner, unit.workspace, "Archive", NOW))
+    initial_revision = unit.repository.meeting_rows[unit.meeting].folder_revision_id
+    first_move = asyncio.run(
+        unit.meetings.update(
+            unit.owner,
+            unit.meeting,
+            NOW,
+            MeetingChanges(
+                folder_id=planning.folder_id,
+                expected_folder_revision_id=initial_revision,
+            ),
+        )
+    )
+    first_move_revision = first_move.folder_revision_id
+    second_move = asyncio.run(
+        unit.meetings.update(
+            unit.owner,
+            unit.meeting,
+            NOW,
+            MeetingChanges(
+                folder_id=archive.folder_id,
+                expected_folder_revision_id=first_move_revision,
+            ),
+        )
+    )
+    second_move_revision = second_move.folder_revision_id
+    asyncio.run(
+        unit.meetings.update(
+            unit.owner,
+            unit.meeting,
+            NOW,
+            MeetingChanges(
+                folder_id=planning.folder_id,
+                expected_folder_revision_id=second_move_revision,
+            ),
+        )
+    )
+    # Act
+    failure = refusal(
+        unit.meetings.update(
+            unit.owner,
+            unit.meeting,
+            NOW,
+            MeetingChanges(
+                folder_id=unit.default_folder,
+                expected_folder_id=planning.folder_id,
+                expected_folder_revision_id=first_move_revision,
+            ),
+        )
+    )
+    # Assert
+    assert (failure, unit.repository.meeting_rows[unit.meeting].folder_id) == (
+        Failure.MEETING_MOVE_CONFLICT,
+        planning.folder_id,
     )
 
 

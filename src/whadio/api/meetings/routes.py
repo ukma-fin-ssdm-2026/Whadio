@@ -231,8 +231,9 @@ async def get_meeting(meeting_id: MeetingId, user: BrowserUser, service: Meeting
     summary="Rename or move a meeting",
     description="Any member who can read the meeting. Renaming clears `name_is_generated`. "
     "Moving keeps the recording, transcript and notes; only folders of the same workspace "
-    "are accepted, and later notes use the new folder as context. Give `expected_folder_id` "
-    "to refuse the move if another member moved the meeting since it was read. `recorded_at` "
+    "are accepted, and later notes use the new folder as context. Give `expected_folder_id` and "
+    "`expected_folder_revision_id` to refuse the move if another member moved the meeting since "
+    "it was read. `recorded_at` "
     "cannot be changed.",
     response_description="The updated meeting",
     responses=error_responses(
@@ -241,8 +242,8 @@ async def get_meeting(meeting_id: MeetingId, user: BrowserUser, service: Meeting
             401: DOC_UNAUTHENTICATED,
             404: _MEETING_NOT_FOUND,
             409: (
-                f"`{ErrorCode.MEETING_MOVE_CONFLICT}`: the meeting is no longer in the "
-                "expected folder"
+                f"`{ErrorCode.MEETING_MOVE_CONFLICT}`: the meeting no longer has the "
+                "expected folder placement"
             ),
             422: f"{DOC_INVALID}; `folder_id` must be a folder of the meeting's workspace",
         }
@@ -255,7 +256,12 @@ async def update_meeting(
         user.id,
         meeting_id,
         datetime.now(UTC),
-        MeetingChanges(payload.name, payload.folder_id, payload.expected_folder_id),
+        MeetingChanges(
+            payload.name,
+            payload.folder_id,
+            payload.expected_folder_id,
+            payload.expected_folder_revision_id,
+        ),
     )
     return await get_meeting(meeting_id, user, service)
 

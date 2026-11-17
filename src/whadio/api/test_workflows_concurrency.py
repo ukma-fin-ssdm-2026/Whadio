@@ -128,13 +128,14 @@ def test_undo_waits_for_and_refuses_a_concurrent_move(
                     ),
                     datetime.now(UTC),
                 )
-                await service.update(
+                moved_to_planning = await service.update(
                     owner,
                     meeting.meeting_id,
                     datetime.now(UTC),
                     MeetingChanges(
                         folder_id=planning.folder_id,
                         expected_folder_id=original.folder_id,
+                        expected_folder_revision_id=meeting.folder_revision_id,
                     ),
                 )
 
@@ -147,6 +148,7 @@ def test_undo_waits_for_and_refuses_a_concurrent_move(
                         MeetingChanges(
                             folder_id=archive.folder_id,
                             expected_folder_id=planning.folder_id,
+                            expected_folder_revision_id=moved_to_planning.folder_revision_id,
                         ),
                     )
                     archive_locked.set()
@@ -165,6 +167,7 @@ def test_undo_waits_for_and_refuses_a_concurrent_move(
                             MeetingChanges(
                                 folder_id=original.folder_id,
                                 expected_folder_id=planning.folder_id,
+                                expected_folder_revision_id=moved_to_planning.folder_revision_id,
                             ),
                         )
                     except UseCaseError as error:

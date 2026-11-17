@@ -455,7 +455,7 @@ export interface paths {
         head?: never;
         /**
          * Rename or move a meeting
-         * @description Any member who can read the meeting. Renaming clears `name_is_generated`. Moving keeps the recording, transcript and notes; only folders of the same workspace are accepted, and later notes use the new folder as context. Give `expected_folder_id` to refuse the move if another member moved the meeting since it was read. `recorded_at` cannot be changed.
+         * @description Any member who can read the meeting. Renaming clears `name_is_generated`. Moving keeps the recording, transcript and notes; only folders of the same workspace are accepted, and later notes use the new folder as context. Give `expected_folder_id` and `expected_folder_revision_id` to refuse the move if another member moved the meeting since it was read. `recorded_at` cannot be changed.
          */
         patch: operations["update_meeting_api_v1_meetings__meeting_id__patch"];
         trace?: never;
@@ -1670,6 +1670,12 @@ export interface components {
              */
             folder_id: string;
             /**
+             * Folder Revision Id
+             * Format: uuid
+             * @description Changes whenever the meeting enters a folder; use it for conditional moves
+             */
+            folder_revision_id: string;
+            /**
              * Name
              * @description Meeting name
              * @example Sprint 12 review
@@ -1762,6 +1768,12 @@ export interface components {
              */
             folder_id: string;
             /**
+             * Folder Revision Id
+             * Format: uuid
+             * @description Changes whenever the meeting enters a folder; use it for conditional moves
+             */
+            folder_revision_id: string;
+            /**
              * Name
              * @description Meeting name
              * @example Sprint 12 review
@@ -1809,6 +1821,11 @@ export interface components {
              * @description Move only if the meeting is still in this folder
              */
             expected_folder_id?: string | null;
+            /**
+             * Expected Folder Revision Id
+             * @description Move only if the meeting still has this folder placement revision
+             */
+            expected_folder_revision_id?: string | null;
         };
         /** MemberRead */
         MemberRead: {
@@ -4484,7 +4501,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `MEETING_MOVE_CONFLICT`: the meeting is no longer in the expected folder */
+            /** @description `MEETING_MOVE_CONFLICT`: the meeting no longer has the expected folder placement */
             409: {
                 headers: {
                     [name: string]: unknown;

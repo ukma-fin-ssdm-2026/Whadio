@@ -50,6 +50,7 @@ export function meetingSummary(
     id: "meeting",
     workspace_id: "workspace",
     folder_id: "folder",
+    folder_revision_id: "folder-revision",
     name: "Weekly sync",
     name_is_generated: false,
     recorded_at: CREATED_AT,

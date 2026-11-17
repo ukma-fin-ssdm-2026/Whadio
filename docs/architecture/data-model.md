@@ -82,6 +82,9 @@ The model covers the data required for these key project functions:
 - One `MEETING` has zero or one `TRANSCRIPT`; one transcript has one or more `TRANSCRIPT_REVISION` rows.
 - One `TRANSCRIPT_REVISION` has many `TRANSCRIPT_SEGMENT` rows.
 - One `TRANSCRIPT_REVISION` has many `SPEAKER` rows; each segment may reference one speaker label from the same revision.
+- A meeting's `folder_revision_id` changes every time it enters a folder, including folder deletion
+  and restoration. Conditional moves compare it while holding the meeting row lock so an old Undo
+  cannot apply after any later move, even when the meeting returns to the same folder.
 - One `WORKSPACE` has many `GLOSSARY_TERM` rows.
 - One `MEETING` can produce many `NOTE` rows, for example from different presets or regenerations.
 - One `NOTE` can reference many context meetings through `NOTE_CONTEXT_MEETING`.

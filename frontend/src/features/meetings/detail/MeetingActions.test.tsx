@@ -128,12 +128,18 @@ async function moveToPlanning(showMoveState = false) {
 function serveMoves(refuseUndo = false) {
   const bodies: unknown[] = [];
   let folderId = "folder";
+  let folderRevisionId = "folder-revision";
+  let revision = 0;
   server.use(
     http.get("/api/v1/meetings/{meeting_id}", ({ response }) =>
-      response(200).json(meetingRead({ folder_id: folderId })),
+      response(200).json(
+        meetingRead({ folder_id: folderId, folder_revision_id: folderRevisionId }),
+      ),
     ),
     http.get("/api/v1/workspaces/{workspace_id}/meetings", ({ response }) =>
-      response(200).json(page([meetingRead({ folder_id: folderId })])),
+      response(200).json(
+        page([meetingRead({ folder_id: folderId, folder_revision_id: folderRevisionId })]),
+      ),
     ),
     http.get("/api/v1/workspaces/{workspace_id}/folders", ({ response }) =>
       response(200).json(
@@ -155,7 +161,10 @@ function serveMoves(refuseUndo = false) {
       }
       folderId =
         typeof body === "object" && body && "folder_id" in body ? String(body.folder_id) : folderId;
-      return response(200).json(meetingRead({ folder_id: folderId }));
+      folderRevisionId = `folder-revision-${++revision}`;
+      return response(200).json(
+        meetingRead({ folder_id: folderId, folder_revision_id: folderRevisionId }),
+      );
     }),
   );
   return bodies;
@@ -243,7 +252,13 @@ test("a member can move a meeting to a workspace folder", async () => {
 
   // Assert
   await waitFor(() =>
-    expect(bodies).toEqual([{ folder_id: "planning", expected_folder_id: "folder" }]),
+    expect(bodies).toEqual([
+      {
+        folder_id: "planning",
+        expected_folder_id: "folder",
+        expected_folder_revision_id: "folder-revision",
+      },
+    ]),
   );
 });
 
@@ -258,8 +273,16 @@ test("Undo moves the meeting back to its previous folder", async () => {
   // Assert
   await waitFor(() =>
     expect(bodies).toEqual([
-      { folder_id: "planning", expected_folder_id: "folder" },
-      { folder_id: "folder", expected_folder_id: "planning" },
+      {
+        folder_id: "planning",
+        expected_folder_id: "folder",
+        expected_folder_revision_id: "folder-revision",
+      },
+      {
+        folder_id: "folder",
+        expected_folder_id: "planning",
+        expected_folder_revision_id: "folder-revision-1",
+      },
     ]),
   );
 });
