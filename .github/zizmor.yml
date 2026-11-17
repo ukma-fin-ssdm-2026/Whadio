@@ -3,6 +3,6 @@ rules:
     ignore:
       # Its workflow_run job checks out nothing and only merges the release app's own pull request.
       - release.yml
-      # Default-branch checkout only; ignores event payloads/artifacts and fetches live GitHub state.
+      # Uses only PR numbers from events and fetches live state. It executes embedded code only.
       # The unprivileged review signal never checks out code or receives credentials.
       - review-processing.yml

@@ -1,41 +1,59 @@
 import importlib.util
-import json
+import tempfile
 import urllib.request
 from dataclasses import replace
+from http.client import IncompleteRead
 from io import BytesIO
 from pathlib import Path
 from types import ModuleType
 from typing import Protocol
 
 import pytest
+import yaml
 
 
 def _load() -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        "review_processing",
-        Path(__file__).with_name("review_processing.py"),
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    path = Path(__file__).parents[1] / "workflows" / "review-processing.yml"
+    workflow: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+    match workflow:
+        case {"jobs": {"process": {"steps": [{"run": str(command)}]}}}:
+            pass
+        case _:
+            raise AssertionError("Review processing must run only its embedded processor.")
+
+    match command.splitlines():
+        case ["python3 -I - <<'PY'", *lines, "PY"]:
+            source = "\n".join(lines) + "\n"
+        case _:
+            raise AssertionError("Review processing must use a quoted Python heredoc.")
+
+    with tempfile.TemporaryDirectory() as directory:
+        script = Path(directory) / "review_processing.py"
+        script.write_text(source, encoding="utf-8")
+        spec = importlib.util.spec_from_file_location("review_processing", script)
+        assert spec is not None
+        assert spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
 
 
 processor = _load()
+STATE_KEY = "test state key for review queue"
+REPOSITORY = "o/r"
 
 
 def _review(
     identity: int = 1,
     *,
     state: str = "APPROVED",
-    head: str = "head",
-    author: str = "reviewer",
+    head: str | None = "head",
+    author: str | None = "reviewer",
     body: str = "Looks good",
 ) -> object:
     return {
         "id": identity,
-        "user": {"login": author},
+        "user": {"login": author} if author is not None else None,
         "state": state,
         "commit_id": head,
         "body": body,
@@ -44,8 +62,9 @@ def _review(
 
 
 class IMemory(Protocol):
-    manual: bool
-    notified: set[int]
+    comment: int | None
+
+    def body(self) -> str: ...
 
 
 class FakeGitHub:
@@ -61,12 +80,13 @@ class FakeGitHub:
         )
         self.reviews: list[object] = []
         self.comments: list[object] = []
-        self.memory: list[object] = []
+        self.memory_items: list[object] = []
         self.events: list[str] = []
         self.permission = "write"
         self.cancel_fails = False
         self.new_head = False
         self.reads = 0
+        self.labeled = False
 
     def pull(self, _number: int) -> object:
         self.reads += 1
@@ -74,12 +94,35 @@ class FakeGitHub:
             return replace(self.current, head="new-head")
         return self.current
 
+    def open_numbers(self) -> set[int]:
+        return {1} if self.current.eligible else set()
+
+    def queued_pulls(self) -> set[int]:
+        return {1} if self.labeled else set()
+
+    def queue(self, _number: int) -> None:
+        self.events.append("queue")
+        self.labeled = True
+
+    def unqueue(self, _number: int) -> None:
+        self.events.append("unqueue")
+        self.labeled = False
+
     def pages(self, path: str) -> list[object]:
         if path.endswith("/reviews"):
             return self.reviews
         if path == "/pulls/1/comments":
             return self.comments
-        return self.memory
+        return self.memory_items
+
+    def read_reviews(self, number: int) -> list[object]:
+        reviews: list[object] = [
+            processor.Review.parse(item) for item in self.pages(f"/pulls/{number}/reviews")
+        ]
+        return reviews
+
+    def memory(self, _pull: object) -> object:
+        return processor.memory_from(self.memory_items, STATE_KEY, REPOSITORY, 1)
 
     def repo(self, _path: str) -> object:
         return {"permission": self.permission}
@@ -95,18 +138,12 @@ class FakeGitHub:
 
     def remember(self, _pull: object, memory: IMemory) -> None:
         self.events.append("remember")
-        self.memory = [
+        memory.comment = 10
+        self.memory_items = [
             {
                 "id": 10,
                 "user": {"login": "github-actions[bot]"},
-                "body": processor.MARKER
-                + "\n"
-                + json.dumps(
-                    {
-                        "manual": memory.manual,
-                        "notified": sorted(memory.notified),
-                    }
-                ),
+                "body": processor.seal_state(memory.body(), STATE_KEY, REPOSITORY, 1),
             }
         ]
 
@@ -127,6 +164,76 @@ def test_clean_approval_leaves_authors_auto_merge_enabled(github: FakeGitHub) ->
     assert github.events == ["success"]
 
 
+@pytest.mark.parametrize("historical", [_review(head=None), _review(author=None)])
+def test_nullable_history_does_not_block_current_approval(
+    github: FakeGitHub, historical: object
+) -> None:
+    # Arrange
+    github.reviews = [historical, _review(2)]
+    # Act
+    processor.process(github, 1, enabled=True)
+    # Assert
+    assert github.events == ["success"]
+
+
+@pytest.mark.parametrize("unusable", [_review(head=None), _review(author=None)])
+def test_nullable_approval_cannot_release_gate(github: FakeGitHub, unusable: object) -> None:
+    # Arrange
+    github.reviews = [unusable]
+    # Act
+    processor.process(github, 1, enabled=True)
+    # Assert
+    assert github.events == ["pending"]
+
+
+def test_approval_submitted_during_inline_comment_read_cancels_auto_merge(
+    github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange
+    github.reviews = [_review()]
+    pages = github.pages
+
+    def read_pages(path: str) -> list[object]:
+        if path == "/pulls/1/comments":
+            github.reviews = [_review(), _review(2, author="teammate")]
+            return [{"pull_request_review_id": 2, "body": "Nit: rename this"}]
+        return pages(path)
+
+    monkeypatch.setattr(github, "pages", read_pages)
+    # Act
+    processor.process(github, 1, enabled=True)
+    # Assert
+    assert github.events[:5] == ["pending", "disable", "queue", "remember", "success"]
+
+
+def test_inline_nit_with_unavailable_review_keeps_gate_pending(github: FakeGitHub) -> None:
+    # Arrange
+    github.reviews = [_review()]
+    github.comments = [{"pull_request_review_id": 2, "body": "Nit: rename this"}]
+    # Act
+    processor.process(github, 1, enabled=True)
+    # Assert
+    assert github.events == ["pending"]
+
+
+def test_new_nits_before_status_publication_keep_gate_pending(
+    github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange
+    github.reviews = [_review()]
+    memory = github.memory
+
+    def memory_after_new_review(pull: object) -> object:
+        github.reviews.append(_review(2, author="teammate", body="Nit: rename this"))
+        return memory(pull)
+
+    monkeypatch.setattr(github, "memory", memory_after_new_review)
+    # Act
+    processor.process(github, 1, enabled=True)
+    # Assert
+    assert github.events == ["pending"]
+
+
 def test_waiting_for_first_approval_keeps_auto_merge_enabled(github: FakeGitHub) -> None:
     # Arrange
     github.reviews = []
@@ -136,13 +243,47 @@ def test_waiting_for_first_approval_keeps_auto_merge_enabled(github: FakeGitHub)
     assert github.events == ["pending"]
 
 
+def test_previous_clean_approval_keeps_auto_merge_enabled(github: FakeGitHub) -> None:
+    # Arrange
+    github.reviews = [_review(head="previous-head")]
+    # Act
+    processor.process(github, 1, enabled=True)
+    # Assert
+    assert github.events == ["pending"]
+
+
+def test_review_processing_does_not_scan_other_prs(
+    github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange
+    github.reviews = [_review()]
+
+    def fail() -> set[int]:
+        pytest.fail("A targeted run should not list open pull requests")
+
+    monkeypatch.setattr(github, "open_numbers", fail)
+    # Act
+    result = processor.reconcile(github, enabled=True, targets={1})
+    # Assert
+    assert result == 0
+
+
 def test_nit_disables_before_releasing_gate_and_notifying(github: FakeGitHub) -> None:
     # Arrange
     github.reviews = [_review(body="Nit: rename this")]
     # Act
     processor.process(github, 1, enabled=True)
     # Assert
-    assert github.events == ["pending", "disable", "remember", "success", "notify", "remember"]
+    assert github.events == [
+        "pending",
+        "disable",
+        "queue",
+        "remember",
+        "success",
+        "notify",
+        "remember",
+        "unqueue",
+    ]
 
 
 def test_manual_merge_with_nits_is_allowed_after_processing(github: FakeGitHub) -> None:
@@ -152,7 +293,15 @@ def test_manual_merge_with_nits_is_allowed_after_processing(github: FakeGitHub) 
     # Act
     processor.process(github, 1, enabled=True)
     # Assert
-    assert github.events == ["remember", "success", "notify", "remember"]
+    assert github.events == [
+        "pending",
+        "queue",
+        "remember",
+        "success",
+        "notify",
+        "remember",
+        "unqueue",
+    ]
 
 
 def test_failed_cancellation_never_releases_gate(github: FakeGitHub) -> None:
@@ -232,7 +381,7 @@ def test_reenabling_during_cancellation_keeps_gate_blocked(
     with pytest.raises(ValueError, match="re-enabled"):
         processor.process(github, 1, enabled=True)
     # Assert
-    assert github.events == ["pending", "disable", "remember"]
+    assert github.events == ["pending", "disable", "queue", "remember"]
 
 
 def test_other_reviewer_changes_requested_blocks_clean_approval(github: FakeGitHub) -> None:
@@ -264,7 +413,7 @@ def test_retry_does_not_duplicate_notification(github: FakeGitHub) -> None:
     assert github.events == ["success"]
 
 
-def test_delivery_failure_leaves_gate_successful_and_retries(
+def test_delivery_failure_leaves_gate_successful_and_persists_notification(
     github: FakeGitHub,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -278,11 +427,134 @@ def test_delivery_failure_leaves_gate_successful_and_retries(
     # Act
     result = processor.process(github, 1, enabled=True)
     # Assert
-    assert (result, github.events, processor.memory_from(github.memory).notified) == (
+    memory = processor.memory_from(github.memory_items, STATE_KEY, REPOSITORY, 1)
+    assert (result, github.events, set(memory.pending)) == (
         False,
-        ["pending", "disable", "remember", "success"],
-        set(),
+        ["pending", "disable", "queue", "remember", "success"],
+        {1},
     )
+
+
+def test_queue_write_failure_keeps_gate_pending(
+    github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange
+    github.reviews = [_review(body="Nit: rename")]
+
+    def fail(*_: object) -> None:
+        raise ValueError("Could not save review state")
+
+    monkeypatch.setattr(github, "remember", fail)
+    # Act
+    result = processor.reconcile(github, enabled=True)
+    # Assert
+    assert (result, github.events) == (1, ["pending", "disable", "queue"])
+
+
+def test_reconciliation_retries_saved_notification_after_merge(
+    github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange
+    github.reviews = [_review(body="Nit: rename")]
+
+    def fail(*_: object) -> None:
+        raise ValueError("Telegram is unreachable")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(processor, "notify", fail)
+        processor.reconcile(github, enabled=True)
+    github.current = replace(github.current, eligible=False)
+    github.reviews.clear()
+    github.events.clear()
+    # Act
+    result = processor.reconcile(github, enabled=True)
+    # Assert
+    assert (result, github.events, github.labeled) == (0, ["notify", "remember", "unqueue"], False)
+
+
+def test_truncated_telegram_response_does_not_abort_reconciliation(
+    github: FakeGitHub,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    github.reviews = [_review(body="Nit: rename")]
+
+    def truncate(*_: object) -> None:
+        raise IncompleteRead(b'{"ok":')
+
+    monkeypatch.setattr(processor, "notify", truncate)
+    # Act
+    result = processor.reconcile(github, enabled=True, targets={1, 2})
+    # Assert
+    assert (result, github.labeled, github.events.count("success")) == (2, True, 2)
+
+
+def test_unauthenticated_queue_state_keeps_label(github: FakeGitHub) -> None:
+    # Arrange
+    github.current = replace(github.current, eligible=False)
+    github.labeled = True
+    # Act
+    result = processor.reconcile(github, enabled=True)
+    # Assert
+    assert (result, github.labeled) == (1, True)
+
+
+def test_inventory_does_not_parse_full_pull_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    def pages(_self: object, _path: str) -> list[object]:
+        return [{"number": 1, "user": None}, {"number": 2}, {"user": None}]
+
+    monkeypatch.setattr(processor.GitHub, "pages", pages)
+    github = processor.GitHub(REPOSITORY, "test")
+    # Act
+    result = github.open_numbers()
+    # Assert
+    assert result == {1, 2}
+
+
+@pytest.mark.parametrize(
+    ("event", "payload", "expected"),
+    [
+        ("pull_request_target", {"pull_request": {"number": 2}}, {2}),
+        ("workflow_run", {"workflow_run": {"pull_requests": [{"number": 3}]}}, {3}),
+        ("workflow_run", {"workflow_run": {"pull_requests": []}}, set()),
+        ("workflow_dispatch", {"inputs": {"pull_request": "7"}}, {7}),
+        ("schedule", {}, None),
+    ],
+)
+def test_event_targets_single_pr_when_known(
+    event: str, payload: object, expected: set[int] | None
+) -> None:
+    # Arrange / Act
+    result = processor.event_targets(event, payload)
+    # Assert
+    assert result == expected
+
+
+def test_reconciliation_ignores_closed_prs_without_pending_labels(github: FakeGitHub) -> None:
+    # Arrange
+    github.current = replace(github.current, eligible=False)
+    # Act
+    processor.reconcile(github, enabled=True)
+    # Assert
+    assert github.reads == 0
+
+
+def test_existing_memory_without_pending_notifications_preserves_delivery_history() -> None:
+    # Arrange
+    comments = [
+        {
+            "id": 10,
+            "user": {"login": "github-actions[bot]"},
+            "body": processor.seal_state(
+                processor.MARKER + '\n{"manual": true, "notified": [1]}', STATE_KEY, REPOSITORY, 1
+            ),
+        }
+    ]
+    # Act
+    memory = processor.memory_from(comments, STATE_KEY, REPOSITORY, 1)
+    # Assert
+    assert memory == processor.Memory(comment=10, manual=True, notified={1})
 
 
 def test_manual_decision_survives_deleted_nit(github: FakeGitHub) -> None:
@@ -322,7 +594,7 @@ def test_inline_nit_is_associated_with_approving_review(body: str) -> None:
     review = processor.Review.parse(_review())
     comments = [{"pull_request_review_id": 1, "body": body}]
     # Act
-    result = processor.nit_reviews([review], comments)
+    result = processor.nit_reviews([review], processor.inline_nit_ids(comments))
     # Assert
     assert result == [review]
 
@@ -331,7 +603,7 @@ def test_ordinary_mention_of_nits_is_not_a_nit() -> None:
     # Arrange
     review = processor.Review.parse(_review(body='Comments marked "Nit" are optional.'))
     # Act
-    result = processor.nit_reviews([review], [])
+    result = processor.nit_reviews([review], set())
     # Assert
     assert result == []
 
@@ -346,7 +618,20 @@ def test_human_comment_cannot_spoof_saved_state() -> None:
         }
     ]
     # Act
-    result = processor.memory_from(comments)
+    result = processor.memory_from(comments, STATE_KEY, REPOSITORY, 1)
+    # Assert
+    assert result == processor.Memory()
+
+
+@pytest.mark.parametrize("signed_number", [None, 2])
+def test_other_actions_state_cannot_spoof_or_replay_saved_state(signed_number: int | None) -> None:
+    # Arrange
+    body = processor.MARKER + '\n{"manual": false, "notified": [1]}'
+    if signed_number is not None:
+        body = processor.seal_state(body, STATE_KEY, REPOSITORY, signed_number)
+    comments = [{"id": 10, "user": {"login": "github-actions[bot]"}, "body": body}]
+    # Act
+    result = processor.memory_from(comments, STATE_KEY, REPOSITORY, 1)
     # Assert
     assert result == processor.Memory()
 
@@ -430,6 +715,22 @@ def test_pagination_reads_all_pages(monkeypatch: pytest.MonkeyPatch) -> None:
     assert (result, paths[-1]) == (list(range(101)), "/pulls?state=open&per_page=100&page=2")
 
 
+def test_notification_queue_searches_closed_pull_requests(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    paths: list[str] = []
+
+    def pages(_self: object, path: str) -> list[object]:
+        paths.append(path)
+        return [{"number": 12, "state": "closed", "pull_request": {}}, {"number": 13}]
+
+    monkeypatch.setattr(processor.GitHub, "pages", pages)
+    github = processor.GitHub("o/r", "token")
+    # Act
+    result = github.queued_pulls()
+    # Assert
+    assert (result, paths) == ({12}, ["/issues?state=all&labels=review-notification-pending"])
+
+
 def test_telegram_notification_escapes_names_and_links_review(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -438,7 +739,7 @@ def test_telegram_notification_escapes_names_and_links_review(
 
     def urlopen(request: urllib.request.Request, *, timeout: int) -> BytesIO:
         requests.append(request)
-        assert timeout == 30
+        assert timeout == 5
         return BytesIO(b'{"ok": true}')
 
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
@@ -446,7 +747,9 @@ def test_telegram_notification_escapes_names_and_links_review(
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
     pull = replace(FakeGitHub().current, author="<author>")
     # Act
-    processor.notify(pull, processor.Review.parse(_review()))
+    processor.notify(
+        pull, processor.Notification(1, "reviewer", "https://github.com/o/r/pull/1#review")
+    )
     # Assert
     data = requests[0].data
     assert isinstance(data, bytes)
@@ -459,7 +762,10 @@ def test_missing_chat_id_does_not_send(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
     # Act
     with pytest.raises(ValueError, match="chat ID"):
-        processor.notify(FakeGitHub().current, processor.Review.parse(_review()))
+        processor.notify(
+            FakeGitHub().current,
+            processor.Notification(1, "reviewer", "https://github.com/o/r/pull/1#review"),
+        )
 
 
 def test_release_pr_does_not_emit_status_that_release_job_would_wait_for(
