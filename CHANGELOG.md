@@ -4,6 +4,13 @@ All notable changes to Whadio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-11-17
+
+### Added
+
+- Delete workspaces from web app ([#383](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/383))
+- Regenerate a meeting's notes through the API ([#391](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/391))
+
 ## [0.15.0] - 2026-11-17
 
 ### Added
