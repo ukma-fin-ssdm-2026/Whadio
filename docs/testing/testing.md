@@ -1,6 +1,6 @@
 # Unit Testing and Coverage
 
-Starting point: `main` at `ff3f913`, with 485 passing tests.
+Starting point: `main` at `ff3f913`, with 485 passing tests. This line only checks that CI skips the code jobs for documentation.
 
 ## 1. Unit tests
 
