@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 from sqlalchemy import Select, Update, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..accounts.enums import NotesTemplate
 from ..meetings.contracts import ContextReference
 from .enums import JobStatus, JobType
 from .models import ProcessingJob
@@ -23,10 +24,20 @@ class Job:
     sent_context: tuple[ContextReference, ...] = ()
     applied_results: frozenset[UUID] = frozenset()
     started_at: datetime | None = None
+    template: NotesTemplate | None = None
+    requested_by: UUID | None = None
 
 
 class IJobRepository(Protocol):
-    async def add(self, meeting_id: UUID, job_type: JobType, /) -> UUID: ...
+    async def add(
+        self,
+        meeting_id: UUID,
+        job_type: JobType,
+        /,
+        *,
+        template: NotesTemplate | None = None,
+        requested_by: UUID | None = None,
+    ) -> UUID: ...
 
     async def lock(self, job_id: UUID, /) -> Job | None: ...
 
@@ -68,8 +79,21 @@ class JobRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session: AsyncSession = session
 
-    async def add(self, meeting_id: UUID, job_type: JobType) -> UUID:
-        job = ProcessingJob(meeting_id=meeting_id, job_type=job_type, status=JobStatus.QUEUED)
+    async def add(
+        self,
+        meeting_id: UUID,
+        job_type: JobType,
+        *,
+        template: NotesTemplate | None = None,
+        requested_by: UUID | None = None,
+    ) -> UUID:
+        job = ProcessingJob(
+            meeting_id=meeting_id,
+            job_type=job_type,
+            status=JobStatus.QUEUED,
+            template=template,
+            requested_by_user_id=requested_by,
+        )
         self._session.add(job)
         await self._session.flush()
         return job.processing_job_id
@@ -230,4 +254,6 @@ def _job(found: ProcessingJob) -> Job:
         sent_context=tuple(ContextReference(item.meeting_id, item.name) for item in sent),
         applied_results=frozenset(found.applied_result_ids),
         started_at=found.started_at,
+        template=found.template,
+        requested_by=found.requested_by_user_id,
     )

@@ -9,6 +9,13 @@
     <main class="card">
       <p class="brand">Whadio</p>
 
+      <section id="recovery" hidden aria-labelledby="recovery-title">
+        <h2 id="recovery-title">Recordings to save</h2>
+        <ul id="recovery-list"></ul>
+        <p id="recovery-locked" role="status" hidden></p>
+        <p id="recovery-error" class="error" role="alert" hidden></p>
+      </section>
+
       <form id="sign-in" hidden>
         <h1>Sign in</h1>
         <p>Sign in to your Whadio server so recordings go to your workspace.</p>

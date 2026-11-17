@@ -27,6 +27,7 @@ interface MeetingDetailProps {
   onUnsavedChange: (unsaved: boolean) => void;
   renderExport: (content: MeetingContent) => ReactNode;
   actions?: ReactNode;
+  namePrompt?: ReactNode;
 }
 
 export function MeetingDetail({
@@ -40,6 +41,7 @@ export function MeetingDetail({
   onUnsavedChange,
   renderExport,
   actions,
+  namePrompt,
 }: MeetingDetailProps) {
   const id = useId();
   const notesResult = useQuery(meetingQueries.notes(meeting));
@@ -81,6 +83,7 @@ export function MeetingDetail({
           </>
         }
       />
+      {namePrompt}
       <Tabs
         value={tab}
         onChange={(_, value) => onTab(value)}

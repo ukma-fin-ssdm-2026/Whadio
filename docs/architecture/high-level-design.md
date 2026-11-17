@@ -217,6 +217,7 @@ How the architecture meets fault tolerance (NFR-015) and recoverability (NFR-014
 | LLM runtime or notes worker down | Transcripts are readable. | Notes jobs wait in `notes.requests`; the meeting shows its transcript while processing. |
 | The configured provider fails | Transcripts are readable. | The job is retried for a temporary failure; a permanent or exhausted failure marks the meeting failed with its cause. Offering generation with the built-in model (FR-023) is designed, not built yet. |
 | Notes generation fails, so no name is proposed | The transcript and the meeting itself. | The meeting keeps a default name built from its date and time until the member names it or notes are regenerated (FR-033). |
+| The proposed name is not one a member could give: nothing visible in it, or a control character | The transcript and the notes, which are saved. | The proposed name is not applied; the meeting keeps the name it had until the member names it (FR-033). |
 | A job fails repeatedly | Everything else. | Past the delivery limit, the meeting is failed with the cause and the member is notified (FR-014, FR-024). |
 | A job's message is lost (a purged queue, a recreated broker volume) | Everything else. | 2 days after the publish, the scheduler hands the job back to the publisher as one more attempt, and the meeting is processed from the new message; a job whose attempts are used up is failed as timed out, and the member is notified (FR-014, FR-024). |
 | A worker is lost with a job's result (a host that does not come back, a deleted results queue) | Everything else. | Once the job has run past its type's limit, 5 h for transcription and 1 h for notes, both above the workers' own timeouts, the scheduler hands it back to the publisher; its attempt was counted when it started. A job whose attempts are used up is failed as timed out, and the member is notified. A redelivered job reports its start again, which restarts its limit. |
@@ -225,6 +226,9 @@ How the architecture meets fault tolerance (NFR-015) and recoverability (NFR-014
 | Object storage slow or down | Everything that does not move recordings: transcripts, notes, sharing, signing in. | Storage calls give up after a short timeout, and reads and deletes after a few spaced retries, so an upload, a capture chunk or the completion of a capture is refused with `503` instead of hanging; the extension retries its chunks and, if storage stays down, saves the call locally. A transcription job that cannot fetch its recording is retried, and recordings due for deletion are deleted on a later scheduler pass. |
 | SMTP relay down | Everything except email; existing accounts sign in as usual. | Registration, invitation and password-reset links cannot be delivered, so new registrations and resets in `verified` mode cannot complete; notifications are not delivered. The operator can still issue registration and reset links from the command line (FR-049). |
 | Main host down | Nothing. | Availability is deliberately not among the requirements: a single main host cannot guarantee it. |
+
+The notices above go to the uploader for the meeting's own processing. A regeneration a member
+asked for sends none, since its requester follows it on the meeting page (FR-024).
 
 ## 8. Deployment
 

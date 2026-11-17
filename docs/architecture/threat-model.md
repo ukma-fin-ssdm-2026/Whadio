@@ -72,6 +72,9 @@ The most sensitive assets are password hashes, meeting recordings and capture ch
 
 ## Design Constraints Derived From This Model
 
+- The worker may attempt the first local download of a recording it just finished after that recording's extension sign-in ends. If a different account or server has an unexpired sign-in, the worker keeps the copy for the original owner.
+- The popup requires the original account on the same server and an unexpired extension sign-in to list, retry or discard individual recovery copies. It can report that locked copies exist without revealing their metadata. Meet content scripts cannot invoke recovery.
+- Recovery audio remains in the browser profile until downloaded or discarded, independently of server retention. Offline recovery trusts the stored sign-in until expiry and cannot detect server-side revocation.
 - All meeting content paths, including web UI, direct links, shares, exports generated on request, and MCP, must call the same server-side access policy (`NFR-007`, `NFR-009`, `ADR-003`).
 - Credentials and tokens must be stored only as hashes or encrypted secrets, never as plaintext (`NFR-012`, `NFR-013`).
 - Recording and chunk object access must be mediated by short-lived, access-checked URLs (`NFR-007`, `NFR-009`, `ADR-002`).

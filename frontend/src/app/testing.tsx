@@ -104,6 +104,7 @@ export function serveApi(signedIn: boolean): ApiTraffic {
         workspace_id: "workspace",
         folder_id: "folder",
         name: LINKED_TITLE,
+        name_is_generated: false,
         recorded_at: "2026-10-25T10:00:00Z",
         processing_state: "processed",
         duration_seconds: 5,
