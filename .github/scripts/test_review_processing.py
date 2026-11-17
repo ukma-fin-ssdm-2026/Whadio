@@ -1,5 +1,5 @@
 import importlib.util
-import tempfile
+import json
 import urllib.request
 from dataclasses import replace
 from http.client import IncompleteRead
@@ -9,33 +9,16 @@ from types import ModuleType
 from typing import Protocol
 
 import pytest
-import yaml
 
 
 def _load() -> ModuleType:
-    path = Path(__file__).parents[1] / "workflows" / "review-processing.yml"
-    workflow: object = yaml.safe_load(path.read_text(encoding="utf-8"))
-    match workflow:
-        case {"jobs": {"process": {"steps": [{"run": str(command)}]}}}:
-            pass
-        case _:
-            raise AssertionError("Review processing must run only its embedded processor.")
-
-    match command.splitlines():
-        case ["python3 -I - <<'PY'", *lines, "PY"]:
-            source = "\n".join(lines) + "\n"
-        case _:
-            raise AssertionError("Review processing must use a quoted Python heredoc.")
-
-    with tempfile.TemporaryDirectory() as directory:
-        script = Path(directory) / "review_processing.py"
-        script.write_text(source, encoding="utf-8")
-        spec = importlib.util.spec_from_file_location("review_processing", script)
-        assert spec is not None
-        assert spec.loader is not None
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
+    path = Path(__file__).with_name("review_processing.py")
+    spec = importlib.util.spec_from_file_location("review_processing", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 processor = _load()
@@ -455,7 +438,8 @@ def test_reconciliation_retries_saved_notification_after_merge(
     github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Arrange
-    github.reviews = [_review(body="Nit: rename")]
+    github.reviews = [_review()]
+    github.comments = [{"pull_request_review_id": 1, "body": "Nit: rename"}]
 
     def fail(*_: object) -> None:
         raise ValueError("Telegram is unreachable")
@@ -465,11 +449,16 @@ def test_reconciliation_retries_saved_notification_after_merge(
         processor.reconcile(github, enabled=True)
     github.current = replace(github.current, eligible=False)
     github.reviews.clear()
-    github.events.clear()
+    delivered: list[object] = []
+    monkeypatch.setattr(processor, "notify", lambda _, notification: delivered.append(notification))
     # Act
     result = processor.reconcile(github, enabled=True)
     # Assert
-    assert (result, github.events, github.labeled) == (0, ["notify", "remember", "unqueue"], False)
+    assert (result, delivered, github.labeled) == (
+        0,
+        [processor.Notification(1, "reviewer", "https://github.com/o/r/pull/1#review")],
+        False,
+    )
 
 
 def test_truncated_telegram_response_does_not_abort_reconciliation(
@@ -746,14 +735,18 @@ def test_telegram_notification_escapes_names_and_links_review(
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "chat")
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
     pull = replace(FakeGitHub().current, author="<author>")
+    review_url = "https://github.com/o/r/pull/1#review"
     # Act
-    processor.notify(
-        pull, processor.Notification(1, "reviewer", "https://github.com/o/r/pull/1#review")
-    )
+    processor.notify(pull, processor.Notification(1, "reviewer", review_url))
     # Assert
     data = requests[0].data
     assert isinstance(data, bytes)
-    assert b"&lt;author&gt;" in data
+    assert json.loads(data)["text"] == (
+        '<a href="https://github.com/o/r/pull/1">PR #1</a> '
+        "by &lt;author&gt; approved with nits by reviewer.\n"
+        "This review left the PR for manual merging.\n"
+        f'<a href="{review_url}">Review</a>'
+    )
 
 
 def test_missing_chat_id_does_not_send(monkeypatch: pytest.MonkeyPatch) -> None:
