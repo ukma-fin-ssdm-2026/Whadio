@@ -3,10 +3,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from ...contracts.notes import NotesFailure
+from pydantic import TypeAdapter, ValidationError
+
+from ...contracts.notes import MeetingName, NotesFailure
 from .errors import NotesError
 
-MAX_NAME_LENGTH: Final = 200
+_NAME: Final = TypeAdapter(MeetingName)
 _FENCE: Final = "```"
 
 
@@ -20,9 +22,10 @@ def parse_notes(text: str, headings: Sequence[str]) -> ParsedNotes:
     title, _, content = _unfenced(text.strip()).partition("\n")
     if not title.startswith("# "):
         raise NotesError(NotesFailure.INVALID_OUTPUT)
-    name = " ".join(title.removeprefix("# ").split())
-    if not name or len(name) > MAX_NAME_LENGTH or not name.isprintable():
-        raise NotesError(NotesFailure.INVALID_OUTPUT)
+    try:
+        name = _NAME.validate_python(" ".join(title.removeprefix("# ").split()))
+    except ValidationError:
+        raise NotesError(NotesFailure.INVALID_OUTPUT) from None
     content = content.strip()
     found = [_normalise(line[3:]) for line in content.splitlines() if line.startswith("## ")]
     if found != [_normalise(heading) for heading in headings]:

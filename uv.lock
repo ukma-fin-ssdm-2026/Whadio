@@ -4870,7 +4870,7 @@ wheels = [
 
 [[package]]
 name = "whadio"
-version = "0.14.1"
+version = "0.14.4"
 source = { editable = "." }
 dependencies = [
     { name = "aio-pika" },
