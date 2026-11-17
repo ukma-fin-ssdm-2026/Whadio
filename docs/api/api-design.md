@@ -785,7 +785,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 #### `GET`, `POST /meetings/{meeting_id}/shares` · List or create shares
 
 - **Status:** Implemented · **Caller:** any member who can read it · **Success:** `200`, a page
-  of shares, revoked ones included; `201`, the new share with its link, shown once
+  of the caller's own shares, revoked ones included; `201`, the new share with its link, shown once
 - **Rules:**
   - Opening the link grants nothing by itself. The recipient signs in and requests access,
     and the share's creator approves one account (FR-038).

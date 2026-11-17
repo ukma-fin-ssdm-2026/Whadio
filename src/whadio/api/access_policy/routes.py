@@ -98,6 +98,7 @@ class ShareRead(Output):
     redact_speaker_names: bool = Field(description="Whether speaker names are hidden")
     recipient_user_id: UUID | None = Field(description="Approved recipient")
     revoked_at: datetime | None = Field(description="When access ended")
+    created_at: datetime = Field(description="When the share was created")
 
 
 class ShareCreated(ShareRead):
@@ -110,12 +111,13 @@ def _share_read(share: ExternalShare) -> ShareRead:
         redact_speaker_names=share.redact_speaker_names,
         recipient_user_id=share.recipient_user_id,
         revoked_at=share.revoked_at,
+        created_at=share.created_at,
     )
 
 
 @router.get(
     "/meetings/{meeting_id}/shares",
-    description="List shares of a meeting the caller can read, newest first.",
+    description="List the caller's own shares of a meeting they can read, newest first.",
 )
 async def list_shares(
     meeting_id: MeetingId, query: Annotated[PageQuery, Query()], user: BrowserUser, service: Access
@@ -170,6 +172,7 @@ async def create_share(
         redact_speaker_names=share.redact_speaker_names,
         recipient_user_id=share.recipient_user_id,
         revoked_at=share.revoked_at,
+        created_at=share.created_at,
         link=f"{request.base_url}shares/{share.share_id}#token={created.token}",
     )
 

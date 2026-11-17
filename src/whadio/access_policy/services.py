@@ -161,7 +161,7 @@ class AccessService:
     ) -> list[ExternalShare]:
         scope = await self._dependencies.meetings.scope(meeting_id)
         await self.policy.authorize(scope, actor_id)
-        return await self._dependencies.repository.shares(meeting_id, page)
+        return await self._dependencies.repository.shares(meeting_id, page, created_by=actor_id)
 
     async def recipient_shares(self, actor_id: UUID, page: ListWindow) -> list[ExternalShare]:
         return await self._dependencies.repository.recipient_shares(actor_id, page)
