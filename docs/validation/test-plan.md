@@ -72,6 +72,7 @@ speakers, preset sections, time). A pass in one never stands in for the other.
 | TC-AUD-03 | Audit: history cannot change | Integration | Negative | The application's database role cannot delete, update or truncate audit events, and an event survives its workspace's deletion. | Denys | NFR-010 | CI, exists |
 | TC-MTG-01 | Meetings: upload validation | Unit | Negative | Bytes that do not decode as audio are refused with `415`, and no meeting is created. | Valeriia | US-004 (Test-02) | CI, exists |
 | TC-MTG-03 | Meetings: the name the notes propose | Unit | Positive, Negative | A displayable proposed name replaces the date-and-time name; one a member could not give (only a Hangul filler, a Braille blank or a combining mark, or one holding a control character) leaves that name, and the notes are still saved; a name a member gave is never replaced. The notes worker accepts a title with an invisible format character (a soft hyphen, a joined emoji, a direction mark) and refuses one with a control character as `invalid_output`. | Andrii | US-013 (Test-07), FR-033 | CI, exists |
+| TC-MTG-04 | Web app: the suggested meeting name | Unit | Positive, Negative | Vitest with Testing Library and a mocked API: the recorder of a processed meeting whose name is generated is asked to keep or rename it, also when the meeting finishes while it is open; nobody else is asked, nor is anyone about a name a member gave or a meeting that failed or is still being processed; keeping sends the name unchanged, and the meeting stops asking; renaming starts from the generated name and refuses a blank one without a request; a dismissed prompt asks again when the meeting is opened again. | Andrii | US-013 (Test-06, Test-07 web app), FR-033 | CI, exists |
 | TC-NFR-02 | Meeting and workspace lists under load | System | Positive | k6, 50 virtual users for 30 s per list endpoint, one uvicorn worker: p95 at most 200 ms and no failed request, the API's share of NFR-001's 2-second page budget (QA-1). It does not time a page in the browser, so NFR-001 is covered only in part. | Zlata | NFR-001, US-013 | Manual, `tests/performance/test_lists.js` with k6 from its Docker image |
 | TC-WS-01 | Accounts: creating and deleting a workspace | Integration | Positive | A new workspace has its creator as Owner and a default folder; a Member cannot delete a workspace, and nobody can delete a personal one. | Denys | US-002 (Test-01, Test-04) | CI, exists |
 | TC-WS-02 | Web app: creating a workspace | Unit | Positive, Negative | Vitest with Testing Library and a mocked API: the dialog sends the name and the chosen notes preset, adds the server's copy to the cached list and opens the new workspace; an empty, blank or over-100-character name is refused without a request; a `422` shows each detail on its field, and any other failure shows the server's message under the form. | Zlata | US-002 (Test-01 web app) | CI, exists |
@@ -182,7 +183,7 @@ TC-ACL-04 was drafted with Claude Code (Claude Opus 5.5) for #187.
 
 TC-ACC-09 was drafted with Claude Code for #294.
 
-TC-MTG-03 was drafted with Claude Code for #191.
+TC-MTG-03 and TC-MTG-04 were drafted with Claude Code for #191.
 
 TC-EDIT-02 and the web-app scope of transcript edits and speaker renames were written with Claude
 Code for #186.
