@@ -4,26 +4,55 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 
 
-def failed_main_attempt(event: object, repository: str) -> tuple[int, int, str] | None:
+@dataclass(frozen=True)
+class WorkflowRun:
+    run_id: int | None
+    attempt: int | None
+    sha: str | None
+    conclusion: str
+    branch: str
+    repository: str
+    trigger: str
+
+
+def workflow_run(event: object) -> WorkflowRun | None:
     match event:
         case {
             "workflow_run": {
-                "conclusion": "failure",
-                "head_branch": "main",
-                "head_repository": {"full_name": str(head_repository)},
-                "event": "push" | "workflow_dispatch",
-            } as run,
-        } if head_repository == repository:
-            match run:
-                case {"id": int(run_id), "run_attempt": int(attempt), "head_sha": str(sha)}:
-                    return run_id, attempt, sha
-                case _:
-                    sys.exit("GitHub event is missing failed run metadata.")
+                "id": (int() | None) as run_id,
+                "run_attempt": (int() | None) as attempt,
+                "head_sha": (str() | None) as sha,
+                "conclusion": str(conclusion),
+                "head_branch": str(branch),
+                "head_repository": {"full_name": str(repository)},
+                "event": str(trigger),
+            },
+        }:
+            return WorkflowRun(run_id, attempt, sha, conclusion, branch, repository, trigger)
         case _:
             return None
+
+
+def should_alert(run: WorkflowRun, repository: str) -> bool:
+    return (
+        run.conclusion == "failure"
+        and run.branch == "main"
+        and run.repository == repository
+        and run.trigger in {"push", "workflow_dispatch"}
+    )
+
+
+def failed_main_attempt(event: object, repository: str) -> tuple[int, int, str] | None:
+    run = workflow_run(event)
+    if run is None or not should_alert(run, repository):
+        return None
+    if run.run_id is None or run.attempt is None or run.sha is None:
+        sys.exit("GitHub event is missing failed run metadata.")
+    return run.run_id, run.attempt, run.sha
 
 
 def main() -> None:

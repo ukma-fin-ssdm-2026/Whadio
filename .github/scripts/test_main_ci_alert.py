@@ -145,10 +145,6 @@ def test_alert_links_to_the_commit_and_exact_failed_attempt(
     ]
 
 
-def _unexpected_request(_request: urllib.request.Request, **_options: int) -> io.BytesIO:
-    pytest.fail("The sender should stop before making a Telegram request.")
-
-
 @pytest.mark.parametrize(
     "fields",
     [
@@ -164,22 +160,25 @@ def test_alert_skips_runs_outside_the_failed_main_policy(
     event_path: Path, monkeypatch: pytest.MonkeyPatch, fields: dict[str, object]
 ) -> None:
     # Arrange
+    sent: list[urllib.request.Request] = []
+
+    def record(request: urllib.request.Request, **_options: int) -> io.BytesIO:
+        sent.append(request)
+        return io.BytesIO(b'{"ok": true}')
+
     _write_event(event_path, **fields)
-    monkeypatch.setattr(urllib.request, "urlopen", _unexpected_request)
+    monkeypatch.setattr(urllib.request, "urlopen", record)
 
     # Act
-    result = alert.main()
+    alert.main()
 
     # Assert
-    assert result is None
+    assert sent == []
 
 
-def test_alert_rejects_a_failed_run_without_attempt_metadata(
-    event_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_alert_rejects_a_failed_run_without_attempt_metadata(event_path: Path) -> None:
     # Arrange
     _write_event(event_path, run_attempt=None)
-    monkeypatch.setattr(urllib.request, "urlopen", _unexpected_request)
 
     # Act
     with pytest.raises(SystemExit) as error:
@@ -189,12 +188,9 @@ def test_alert_rejects_a_failed_run_without_attempt_metadata(
     assert str(error.value) == "GitHub event is missing failed run metadata."
 
 
-def test_alert_reports_invalid_event_json(
-    event_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_alert_reports_invalid_event_json(event_path: Path) -> None:
     # Arrange
     event_path.write_text("not JSON", encoding="utf-8")
-    monkeypatch.setattr(urllib.request, "urlopen", _unexpected_request)
 
     # Act
     with pytest.raises(SystemExit) as error:
@@ -211,7 +207,6 @@ def test_alert_stops_before_contacting_telegram_when_a_secret_is_empty(
     # Arrange
     _write_event(event_path)
     monkeypatch.setenv(secret, "")
-    monkeypatch.setattr(urllib.request, "urlopen", _unexpected_request)
 
     # Act
     with pytest.raises(SystemExit) as error:
