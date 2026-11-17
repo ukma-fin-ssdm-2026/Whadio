@@ -4,6 +4,12 @@ All notable changes to Whadio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-11-18
+
+### Added
+
+- Regenerate a meeting's notes from the web app ([#393](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/393))
+
 ## [0.17.0] - 2026-11-18
 
 ### Added
