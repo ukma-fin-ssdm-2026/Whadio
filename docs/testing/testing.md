@@ -101,7 +101,7 @@ fixtures: the application role cannot delete append-only audit records. Cleanup 
 host, port and database from `WHADIO_TEST_DATABASE_URL`; the tested use cases still run as
 `whadio_app`. Use a disposable test database.
 
-Then measure with the command that CI runs. `task test:cov` refuses to start without `WHADIO_TEST_DATABASE_URL`, so skipped database tests cannot quietly change the number. The second command also writes the HTML report to `htmlcov-ci/`:
+Then measure with the command that CI runs on `main`. `task test:cov` refuses to start without `WHADIO_TEST_DATABASE_URL`, so skipped database tests cannot quietly change the number. The second command also writes the HTML report to `htmlcov-ci/`:
 
 ```bash
 uv run task test:cov
@@ -110,7 +110,9 @@ uv run task test:cov -- --cov-report=term-missing:skip-covered --cov-report=html
 
 The run fails below 85% coverage of lines and branches combined: an `if` counts as covered only when both of its sides ran. The threshold is set in one place, `[tool.coverage.report]` in `pyproject.toml`. Test files, migration revisions and the shared test doubles (`fakes.py`) are left out of the numbers.
 
-`uv run task test:reliability` runs only the tests in the `reliability/` folders under `src/whadio/`, with the same `WHADIO_TEST_DATABASE_URL` and no coverage gate; CI runs it as the "Reliability tests" job.
+`uv run task test:reliability` runs only the tests in the `reliability/` folders under `src/whadio/`, with the same `WHADIO_TEST_DATABASE_URL` and no coverage gate; CI runs it on `main` as the "Reliability tests" job.
+
+On a pull request, CI runs only the fast suite, `uv run task test:fast`: the tests not marked `slow`, which need no services. It reports their coverage without the gate, since they alone cover less than 85%. The whole suite and the reliability tests run after the merge, on `main`.
 
 Coverage also follows greenlets (`concurrency = ["greenlet", "thread"]`). SQLAlchemy's async layer runs every database call in a greenlet, and without this setting coverage.py does not see the code that runs after an awaited call return, so it reports that code as never run. Turning it on raised the first full run from 84.7% to 85.6%. Nearly all of the gain is in database-backed code: the session and workspace routes went from 67% and 91% to 100%, the MCP server from 72% to 91%, and the meeting routes from 73% to 83%.
 
@@ -125,7 +127,8 @@ database-backed modules. The midterm snapshot of 2026-11-01 is the
 [`htmlcov/`](https://github.com/ukma-fin-ssdm-2026/Whadio/tree/649377738acbd740ec84f26e77d2fd99aa22259b/htmlcov) of `6493777`, the
 last commit that updated the committed report. CI
 writes a fresh report on every run and uploads it with the JUnit XML as the `test-reports`
-artifact, and the job summary shows the coverage table and the failed tests.
+artifact, and the job summary shows the suite's test count and duration, the failed tests and
+the coverage table.
 
 ### Before and after
 
@@ -195,4 +198,4 @@ It signs in as `ui-evidence@whadio.dev`, a development account it creates with `
 
 ## AI Usage
 
-The tests, the coverage runs and this document were made with Claude Code (Claude Opus 5.5); checked by Denys Zabiiaka. Section 5 and the capture script were added with Claude Code in #266. Claude Code later matched its status statements to the code for #257.
+The tests, the coverage runs and this document were made with Claude Code (Claude Opus 5.5); checked by Denys Zabiiaka. Section 5 and the capture script were added with Claude Code in #266. Claude Code later matched its status statements to the code for #257, and described the pull-request suite for #350.

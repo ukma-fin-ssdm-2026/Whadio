@@ -99,7 +99,8 @@ Overload -> notify in the primary channel -> brief discussion and selection of a
 - Where the checks run:
     - every commit, in under 3 seconds: file hygiene, the staged-diff secret scan, Ruff, ty, import-linter, and Biome when the commit touches the frontend or the extension;
     - every push, in about 12 seconds: for what the push changes, the fast tests, the frontend's type check and affected tests, and the OpenAPI drift check;
-    - CI, on every pull request and on `main`, and required for merging: the same hooks on all files, basedpyright, Bandit, deptry, the whole test suite against the Compose services, which fails below 85% line and branch coverage, the frontend's tests and build, the worker image, a secret scan of the whole history, and the pull request title and commit messages; the dependency audit (uv audit, and npm audit for the frontend, its build tools included) warns but does not fail;
+    - CI on every pull request, required for merging through the `CI passed` check: the same hooks on all files, basedpyright, Bandit, deptry, the fast tests, whose coverage is reported but not gated, the frontend's tests and build, the worker image and a secret scan of the whole history; the pull request title and commit messages and SonarCloud's analysis are required as well, and the dependency audit (uv audit, and npm audit for the frontend, its build tools included) warns but does not fail;
+    - CI on `main`, after the merge: the same jobs, but the whole test suite instead of the fast tests, against the Compose services after the migrations and `alembic check`, failing below 85% line and branch coverage, and the reliability tests; a failure there turns `main` red and is fixed or reverted;
     - checks are never bypassed (`--no-verify`, `SKIP=`), and inline suppressions are refused: a false positive gets a scoped exception in `pyproject.toml` or `frontend/biome.jsonc` with a one-line reason, in its own pull request.
 - Code review rules:
     - each PR requires at least one approval, and the reviewer submits the review themselves;
@@ -117,4 +118,4 @@ Overload -> notify in the primary channel -> brief discussion and selection of a
     - every member reviews teammates' pull requests, and each module owner answers for the quality of their module.
 
 ## AI Usage
-This document was prepared with the assistance of AI (Gemini 3.1 Pro); the review rules were revised, and section 11 and the Lab 5 roles were drafted, with Claude Code (Claude Opus 5.5). The author reviewed and edited the content, and the document is reviewed through a pull request before merging.
+This document was prepared with the assistance of AI (Gemini 3.1 Pro); the review rules were revised, and section 11 and the Lab 5 roles were drafted, with Claude Code (Claude Opus 5.5). Claude Code later split the CI checks of section 11 between pull requests and `main` for #350. The author reviewed and edited the content, and the document is reviewed through a pull request before merging.
