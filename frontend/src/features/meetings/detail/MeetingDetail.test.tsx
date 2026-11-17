@@ -1,8 +1,9 @@
+import type { QueryClient } from "@tanstack/react-query";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import type { ComponentProps } from "react";
+import { type ComponentProps, StrictMode } from "react";
 import { expect, test, vi } from "vitest";
 import { ExportMenu } from "@/features/export/components/ExportMenu";
-import type { Schemas } from "@/shared/api/types";
+import type { NoteRead, Schemas } from "@/shared/api/types";
 import { errorBody, meetingRead, noteRead, page, transcriptRead } from "@/shared/testing/fixtures";
 import { createTestQueryClient, renderWithProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
@@ -26,12 +27,12 @@ function revision(revisionId: string): Schemas["TranscriptRead"] {
   });
 }
 
-function serveContent() {
+function serveContent(notes: NoteRead[] = [noteRead()]) {
   const requests: string[] = [];
   server.use(
     http.get("/api/v1/meetings/{meeting_id}/notes", ({ response }) => {
       requests.push("notes");
-      return response(200).json(page([noteRead()]));
+      return response(200).json(page(notes));
     }),
     http.get("/api/v1/meetings/{meeting_id}/transcript", ({ request, response }) => {
       const revisionId = new URL(request.url).searchParams.get("revision_id");
@@ -165,7 +166,7 @@ test.for([
   ["processing", /^Processing$/],
 ] as const)("a %s meeting's notes panel is headed by its real state", ([state, label]) => {
   // Arrange
-  serveContent();
+  serveContent([]);
   renderDetail({ meeting: meeting({ processing_state: state }) });
   const panel = screen.getByRole("tabpanel");
 
@@ -190,7 +191,7 @@ test.for(["recording", "queued", "processing"] as const)(
   },
 );
 
-test("in-progress notes panel offers no control", () => {
+test("a queued meeting's notes panel offers no control", () => {
   // Arrange
   renderDetail({ meeting: meeting({ processing_state: "queued" }) });
 
@@ -244,7 +245,7 @@ test("notes render as Markdown, without their markup characters", async () => {
 
 test("a failed meeting explains its failure on the notes tab", () => {
   // Arrange
-  serveContent();
+  serveContent([]);
 
   // Act
   renderDetail({ meeting: failed() });
@@ -257,7 +258,7 @@ test("a failed meeting explains its failure on the notes tab", () => {
 
 test("a failed meeting with an unknown reason never shows the code", () => {
   // Arrange
-  serveContent();
+  serveContent([]);
 
   // Act
   renderDetail({
@@ -321,20 +322,265 @@ test.for(WITHOUT_NOTES)("a %s meeting offers its transcript for download", async
   expect(await screen.findByRole("button", { name: "Download transcript" })).toBeInTheDocument();
 });
 
-test.for(WITHOUT_NOTES)(
-  "the notes tab of a %s meeting loads the transcript but not the notes",
+test.for([
+  ["a meeting regenerating its notes", "processing"],
+  ["a failed regeneration", "failed"],
+] as const)("%s keeps showing the previous notes", async ([, state]) => {
+  // Arrange
+  serveContent();
+
+  // Act
+  renderDetail({ meeting: transcribing(state) });
+
+  // Assert
+  expect(await screen.findByText("Saved notes")).toBeInTheDocument();
+});
+
+test("a meeting regenerating its notes says so", async () => {
+  // Arrange
+  serveContent();
+
+  // Act
+  renderDetail({ meeting: processing() });
+
+  // Assert
+  expect(await screen.findByRole("status")).toHaveTextContent(
+    "Regenerating notes. The current notes stay until the new ones are ready.",
+  );
+});
+
+test("a failed regeneration says the previous notes are still current", async () => {
+  // Arrange
+  serveContent();
+
+  // Act
+  renderDetail({ meeting: failed() });
+  await screen.findByText("Saved notes");
+
+  // Assert
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    /^Notes could not be written for this meeting\. The previous notes are still current\.$/,
+  );
+});
+
+test("notes regenerated while the meeting is open replace the earlier ones", async () => {
+  // Arrange
+  serveContent();
+  const { rerender } = renderDetail({ meeting: processing() });
+  await screen.findByText("Saved notes");
+  serveContent([noteRead({ content: "Regenerated notes" })]);
+
+  // Act
+  rerender(detail());
+
+  // Assert
+  expect(await screen.findByText("Regenerated notes")).toBeInTheDocument();
+});
+
+function seedNotes(queryClient: QueryClient, id: string) {
+  queryClient.setQueryData(
+    meetingQueries.notes({ id, state: "processed" }).queryKey,
+    page([noteRead()]),
+  );
+}
+
+async function waitUntilIdle(queryClient: QueryClient) {
+  await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+}
+
+test("reopening a processed meeting asks for its notes once", async () => {
+  // Arrange
+  const requests = serveContent();
+  const queryClient = createTestQueryClient();
+  seedNotes(queryClient, "meeting");
+
+  // Act
+  renderWithProviders(<StrictMode>{detail()}</StrictMode>, queryClient);
+  await waitUntilIdle(queryClient);
+
+  // Assert
+  expect(requests.filter((request) => request === "notes")).toHaveLength(1);
+});
+
+test("a processed meeting opened after one in progress asks for its notes once", async () => {
+  // Arrange
+  const requests = serveContent();
+  const { rerender, queryClient } = renderDetail({
+    meeting: meeting({ processing_state: "queued" }),
+  });
+  seedNotes(queryClient, "other");
+
+  // Act
+  rerender(detail({ meeting: meeting({ id: "other" }) }));
+  await waitUntilIdle(queryClient);
+
+  // Assert
+  expect(requests.filter((request) => request === "notes")).toHaveLength(1);
+});
+
+test("a meeting that starts regenerating does not ask for its notes again", async () => {
+  // Arrange
+  serveContent();
+  const { rerender, queryClient } = renderDetail();
+  await screen.findByText("Saved notes");
+
+  // Act
+  rerender(detail({ meeting: processing() }));
+
+  // Assert
+  expect(queryClient.isFetching({ queryKey: meetingQueries.notes(processing()).queryKey })).toBe(0);
+});
+
+const CURRENT_NOTES = noteRead();
+const EARLIER_NOTES = noteRead({
+  id: "earlier",
+  preset: "detailed",
+  content: "Notes of the first run",
+  is_current: false,
+});
+const OLDEST_NOTES = noteRead({ id: "oldest", preset: "interview", is_current: false });
+
+function serveNoteVersions(pages: NoteRead[][] | null = [[CURRENT_NOTES, EARLIER_NOTES]]) {
+  const requests = serveContent();
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}/notes", ({ request, response }) => {
+      const query = new URL(request.url).searchParams;
+      if (query.get("limit") === "1") return response(200).json(page([CURRENT_NOTES], "more"));
+      requests.push("versions");
+      if (!pages) return response(404).json(errorBody("NOT_FOUND", "Meeting not found"));
+      const index = Number(query.get("cursor") ?? "0");
+      const next = index + 1 < pages.length ? String(index + 1) : null;
+      return response(200).json(page(pages[index] ?? [], next));
+    }),
+  );
+  return requests;
+}
+
+async function openNoteVersions() {
+  const view = renderDetail();
+  await view.user.click(await screen.findByRole("button", { name: "Notes versions" }));
+  return view;
+}
+
+async function loadSecondVersionsPage() {
+  serveNoteVersions([[CURRENT_NOTES, EARLIER_NOTES], [OLDEST_NOTES]]);
+  const view = await openNoteVersions();
+  await view.user.click(await screen.findByRole("menuitem", { name: "Load more versions" }));
+  await screen.findByRole("menuitem", { name: /^Interview · / });
+  return view;
+}
+
+async function showEarlierNotes() {
+  serveNoteVersions();
+  const view = await openNoteVersions();
+  await view.user.click(await screen.findByRole("menuitem", { name: /^Detailed · / }));
+  return view;
+}
+
+test("a meeting with a single version of notes offers no version list", async () => {
+  // Arrange
+  serveContent();
+
+  // Act
+  renderDetail();
+  await screen.findByText("Saved notes");
+
+  // Assert
+  expect(screen.queryByRole("button", { name: "Notes versions" })).not.toBeInTheDocument();
+});
+
+test.for(["processed", "processing", "failed"] as const)(
+  "a %s meeting with earlier notes offers the version list",
   async (state) => {
     // Arrange
-    const requests = serveContent();
+    serveNoteVersions();
 
     // Act
-    renderDetail({ meeting: transcribing(state) });
-    await waitFor(() => expect(requests).toContain("transcript"));
+    renderDetail({ meeting: meeting({ processing_state: state }) });
 
     // Assert
-    expect(requests).not.toContain("notes");
+    expect(await screen.findByRole("button", { name: "Notes versions" })).toBeInTheDocument();
   },
 );
+
+test("the notes versions are not asked for before their list is opened", async () => {
+  // Arrange
+  const requests = serveNoteVersions();
+
+  // Act
+  renderDetail();
+  await screen.findByRole("button", { name: "Notes versions" });
+
+  // Assert
+  expect(requests).not.toContain("versions");
+});
+
+test("opening the version list shows the versions of its first page", async () => {
+  // Arrange
+  serveNoteVersions();
+
+  // Act
+  await openNoteVersions();
+  await screen.findByRole("menuitem", { name: /^Detailed · / });
+
+  // Assert
+  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+    expect.stringMatching(/^Summary · .+ \(current\)$/),
+    expect.stringMatching(/^Detailed · /),
+  ]);
+});
+
+test("the version list loads the next page on request", async () => {
+  // Act
+  await loadSecondVersionsPage();
+
+  // Assert
+  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+    expect.stringMatching(/^Summary · /),
+    expect.stringMatching(/^Detailed · /),
+    expect.stringMatching(/^Interview · /),
+  ]);
+});
+
+test("the version list offers no more once the last page is loaded", async () => {
+  // Act
+  await loadSecondVersionsPage();
+
+  // Assert
+  expect(screen.queryByRole("menuitem", { name: "Load more versions" })).not.toBeInTheDocument();
+});
+
+test("a failed version list shows the server's message", async () => {
+  // Arrange
+  serveNoteVersions(null);
+
+  // Act
+  await openNoteVersions();
+
+  // Assert
+  expect(await within(screen.getByRole("menu")).findByRole("alert")).toHaveTextContent(
+    "Meeting not found",
+  );
+});
+
+test("choosing an earlier version shows its notes", async () => {
+  // Act
+  await showEarlierNotes();
+
+  // Assert
+  expect(await screen.findByText("Notes of the first run")).toBeInTheDocument();
+});
+
+test("an earlier version is one action away from the current notes", async () => {
+  // Arrange
+  const { user } = await showEarlierNotes();
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "View current notes" }));
+
+  // Assert
+  expect(await screen.findByText("Saved notes")).toBeInTheDocument();
+});
 
 test("a revision is requested by its identifier", async () => {
   // Arrange
@@ -524,7 +770,9 @@ test("a meeting sent back to the queue does not ask for its transcript", async (
   rerender(detail({ meeting: meeting({ processing_state: "queued" }), tab: "transcript" }));
 
   // Assert
-  expect(queryClient.isFetching()).toBe(0);
+  expect(
+    queryClient.isFetching({ queryKey: meetingQueries.transcript(processing(), null).queryKey }),
+  ).toBe(0);
 });
 
 test("a revision link to a meeting with no transcript reports the error", async () => {

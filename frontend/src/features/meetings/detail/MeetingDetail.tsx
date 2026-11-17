@@ -5,7 +5,12 @@ import type { NoteRead, TranscriptRead } from "@/shared/api/types";
 import { formatDate } from "@/shared/lib/format";
 import { ErrorBanner } from "@/shared/ui/ErrorBanner";
 import { PageHeader } from "@/shared/ui/PageHeader";
-import { meetingQueries, TRANSCRIPT_PENDING, useForgetRecordingLink } from "../api/meetings";
+import {
+  meetingQueries,
+  TRANSCRIPT_PENDING,
+  useForgetRecordingLink,
+  useRefreshNotesWhenSettled,
+} from "../api/meetings";
 import { isInProgress, type Meeting, type MeetingTab } from "../model";
 import { NotesPanel } from "./NotesPanel";
 import { RecordingPlayer } from "./RecordingPlayer";
@@ -47,7 +52,7 @@ export function MeetingDetail({
   const notesResult = useQuery(meetingQueries.notes(meeting));
   const transcriptResult = useQuery(meetingQueries.transcript(meeting, revisionId));
   const { data: transcriptAnswer, refetch: refetchTranscript } = transcriptResult;
-  const notes = notesResult.data ?? null;
+  const notes = notesResult.data?.current ?? null;
   const transcriptPending = transcriptAnswer === TRANSCRIPT_PENDING;
   const transcript = transcriptPending ? null : (transcriptAnswer ?? null);
   const meetingEnded = !isInProgress(meeting.state);
@@ -58,6 +63,7 @@ export function MeetingDetail({
   }, [transcriptPending, meetingEnded, refetchTranscript]);
 
   useForgetRecordingLink(meeting);
+  useRefreshNotesWhenSettled(meeting);
 
   const contentError = notesResult.error ?? transcriptResult.error;
 
@@ -110,8 +116,10 @@ export function MeetingDetail({
       <Box role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${tab}-tab`}>
         {tab === "notes" ? (
           <NotesPanel
+            key={meeting.id}
             meeting={meeting}
             notes={notes}
+            hasEarlierNotes={notesResult.data?.hasEarlier ?? false}
             loading={notesResult.isLoading}
             failed={notesResult.isError}
           />

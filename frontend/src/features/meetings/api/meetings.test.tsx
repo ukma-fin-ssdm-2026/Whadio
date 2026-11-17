@@ -2,6 +2,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import { apiClient } from "@/shared/api/client";
+import type { NoteRead } from "@/shared/api/types";
 import {
   errorBody,
   meetingRead,
@@ -82,6 +83,7 @@ test("a meeting's content sits under its detail key", () => {
     meetingQueries.detail("alpha").queryKey,
     meetingQueries.transcript(meeting, "revision").queryKey,
     meetingQueries.notes(meeting).queryKey,
+    meetingQueries.noteVersions("alpha").queryKey,
     meetingQueries.recording(meeting).queryKey,
   ];
 
@@ -90,6 +92,7 @@ test("a meeting's content sits under its detail key", () => {
     ["meetings", "detail", "alpha"],
     ["meetings", "detail", "alpha", "transcript", { revisionId: "revision" }],
     ["meetings", "detail", "alpha", "notes"],
+    ["meetings", "detail", "alpha", "notes", "versions"],
     ["meetings", "detail", "alpha", "recording"],
   ]);
 });
@@ -110,10 +113,10 @@ test("each transcript revision gets its own cache entry", () => {
 
 test.for([
   ["processed", true, true],
-  ["failed", true, false],
+  ["failed", true, true],
   ["recording", false, false],
   ["queued", false, false],
-  ["processing", true, false],
+  ["processing", true, true],
 ] as const)(
   "%s meeting enables its transcript: %s, its notes: %s",
   ([state, transcript, notes]) => {
@@ -217,35 +220,45 @@ test("a transcript request that fails otherwise stays an error", async () => {
   await expect(request).rejects.toMatchObject({ code: "NOT_FOUND" });
 });
 
-test("notes query selects the newest version", async () => {
-  // Arrange
+async function selectNotes(notes: NoteRead[], nextCursor: string | null = null) {
   server.use(
     http.get("/api/v1/meetings/{meeting_id}/notes", ({ response }) =>
-      response(200).json(page([noteRead({ content: "Newest" })])),
+      response(200).json(page(notes, nextCursor)),
     ),
   );
   const query = meetingQueries.notes({ id: "meeting", state: "processed" });
+  return query.select?.(await createTestQueryClient().fetchQuery(query));
+}
 
+test("notes query selects the newest version", async () => {
   // Act
-  const notes = await createTestQueryClient().fetchQuery(query);
+  const notes = await selectNotes([noteRead({ content: "Newest" })]);
 
   // Assert
-  expect(query.select?.(notes)?.content).toBe("Newest");
+  expect(notes?.current?.content).toBe("Newest");
 });
 
 test("a meeting without notes selects none", async () => {
-  // Arrange
-  server.use(
-    http.get("/api/v1/meetings/{meeting_id}/notes", ({ response }) => response(200).json(page([]))),
-  );
-  const query = meetingQueries.notes({ id: "meeting", state: "processed" });
-
   // Act
-  const notes = await createTestQueryClient().fetchQuery(query);
+  const notes = await selectNotes([]);
 
   // Assert
-  expect(query.select?.(notes)).toBeNull();
+  expect(notes?.current).toBeNull();
 });
+
+test.for([
+  ["more", true],
+  [null, false],
+] as const)(
+  "notes query says when earlier versions exist: next cursor %s means %s",
+  async ([nextCursor, hasEarlier]) => {
+    // Act
+    const notes = await selectNotes([noteRead()], nextCursor);
+
+    // Assert
+    expect(notes?.hasEarlier).toBe(hasEarlier);
+  },
+);
 
 test("an upload trims the name", async () => {
   // Arrange

@@ -114,7 +114,7 @@ export function serveApi(signedIn: boolean): ApiTraffic {
     ),
     http.get(
       "/api/v1/meetings/meeting/notes",
-      member(() => ({ items: [] })),
+      member(() => page([])),
     ),
     http.get(
       "/api/v1/meetings/meeting/transcript",
