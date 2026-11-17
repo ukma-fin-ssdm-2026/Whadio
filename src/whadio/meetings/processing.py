@@ -20,12 +20,16 @@ class IMeetingProcessing(Protocol):
         use_builtin_model: bool,
         now: datetime,
     ) -> QueuedNotes:
-        """Reserve a notes job in this transaction; do not publish before commit.
+        """Reserve a notes job in this transaction; nothing is published before the commit.
 
-        Processing authorizes and locks the meeting, checks job state and regeneration limits,
-        and persists its state/count decision through Meetings. It selects the provider and
-        snapshots the current transcript, unrestricted same-folder context and glossary.
-        It retains the requester and requested preset across
-        retries, and persists results through Meetings only for a successfully completed job.
+        Processing checks that the requester can read the meeting and locks it, then refuses a
+        meeting without a transcript (`NOT_TRANSCRIBED`), one with a notes job queued or running
+        (`NOTES_IN_PROGRESS`) and one that used up its regenerations (`REGENERATION_LIMIT`).
+        Otherwise the meeting becomes `processing` and its regeneration count rises by one. The
+        job keeps the preset, the workspace's default when none is given, and the requester
+        across retries. Its request is built at publication from the current transcript
+        revision, edits included, and the notes are saved, as the requester's, only when the
+        job succeeds. `use_builtin_model` is refused with `INTEGRATION_UNAVAILABLE` until FR-023
+        is built.
         """
         ...

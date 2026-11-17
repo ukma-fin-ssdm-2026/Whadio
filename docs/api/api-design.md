@@ -49,8 +49,9 @@ operation. Other operations below retain their design contracts.
 
 Sign-in, sign-out and workspace administration use stored accounts and sessions. An upload is
 stored and queued for transcription and notes, which the workers run; without a broker and
-object storage it refuses with `503 INTEGRATION_UNAVAILABLE`. Notes regeneration is outside the
-MVP and always refuses with `503 INTEGRATION_UNAVAILABLE`. A capture from the extension stores
+object storage it refuses with `503 INTEGRATION_UNAVAILABLE`. Regenerating notes queues a notes
+job from the current transcript revision; without a broker and object storage it refuses with
+`503 INTEGRATION_UNAVAILABLE`, like an upload. A capture from the extension stores
 its chunks in object storage and, once completed, is queued through the same path as an upload;
 an interrupted capture is never finalised (out of scope, #292). A share access request, a recording deletion
 warning and a meeting evicted at the hosted cap each reserve an email notice in the same
@@ -709,17 +710,15 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /meetings/{meeting_id}/notes` · Regenerate the notes
 
-- **Status:** Implemented as an explicit refusal; regeneration is outside the MVP. The server
-  answers every request that passes the read
-  check with `503 INTEGRATION_UNAVAILABLE`, and its OpenAPI specification documents only that.
-  What follows is the planned behaviour.
-- **Caller:** any member who can read it · **Success:** `202`, the queued job; `Location`
-  points to the meeting to poll
+- **Status:** Implemented · **Caller:** any member who can read it · **Success:** `202`, the
+  queued job; `Location` points to the meeting
 - **Rules:**
-  - `preset` defaults to the workspace's. `use_builtin_model` bypasses a configured provider,
-    for example after it failed (FR-023).
+  - `preset` defaults to the workspace's. The body takes `preset` only; `use_builtin_model`
+    (FR-023) waits for the workspace provider (#361).
   - One run may be in progress at a time. Each meeting has a configured number of
     regenerations, 3 by default (FR-025).
+  - The meeting is `processing` while the run is queued or running, then `processed` with new
+    current notes or `failed` with the previous ones current.
   - The transcript is never regenerated. A failed run keeps the previous notes current
     (FR-026).
 - **Errors:**
@@ -727,7 +726,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - `409 NOT_TRANSCRIBED`: there is no transcript to write notes from.
   - `409 NOTES_IN_PROGRESS`: a run is already queued or running.
   - `409 REGENERATION_LIMIT`: the meeting used up its regenerations.
-  - `503 INTEGRATION_UNAVAILABLE`: regeneration is not available yet; it is outside the MVP.
+  - `503 INTEGRATION_UNAVAILABLE`: the server has no broker or object storage.
 
 #### `GET /meetings/{meeting_id}/transcript/export` · Download the transcript
 
@@ -1254,7 +1253,7 @@ pages, and workspaces the caller leaves drop out of the results.
 
 Transcription and notes run in workers, not in the request:
 - **Regenerating notes** answers `202 Accepted` with the queued job. Its `Location` points to
-  the meeting.
+  the meeting, which shows `processing` until the run ends.
 - **Completing a capture or uploading a file** creates the meeting in state `queued` at once.
 - **Clients poll the meeting** until `processing_state` becomes `processed` or `failed`
   (FR-014). The meeting's `failure_reason` gives the cause without content (FR-023).
@@ -1339,6 +1338,8 @@ checker and with scripted requests against every implemented operation. The auth
 and edited the content, and the document is reviewed through a pull request before merging.
 
 These PR #63 review revisions were assisted by OpenAI Codex. Everything was reviewed by me.
+
+The notes regeneration (#291) was implemented with Claude Code and reviewed by the author.
 
 The Export implementation and review changes were assisted by OpenAI Codex.
 

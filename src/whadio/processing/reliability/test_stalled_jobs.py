@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from conftest import AsyncDatabase
+from conftest import BUILT_IN_LLM, AsyncDatabase
 
 from ...contracts.common import JobKind, Segment, Transcript
 from ...contracts.notes import NotesPreset, NotesProvider, NotesReady, NotesRequested
@@ -92,7 +92,9 @@ async def processing_with_a_queued_meeting(session: AsyncSession) -> Processing:
             FakeTimeline(),
             notices,
             FakeReaders(),
-        )
+        ),
+        notes_llm=BUILT_IN_LLM,
+        regeneration_limit=3,
     )
     await service.queue_transcription(meeting.meeting_id)
     return Processing(service, JobRecovery(jobs, LIMITS), LosingBroker(), meetings, notices)

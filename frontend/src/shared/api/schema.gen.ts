@@ -494,8 +494,8 @@ export interface paths {
         get: operations["list_notes_api_v1_meetings__meeting_id__notes_get"];
         put?: never;
         /**
-         * Regenerate the notes (not available yet)
-         * @description Regenerating notes is outside the MVP. After checking that the caller can read the meeting, this always answers `503 INTEGRATION_UNAVAILABLE`. The planned behaviour is in `docs/api/api-design.md`.
+         * Regenerate the notes
+         * @description Any member who can read the meeting. Queues a notes job written from the current transcript revision with `preset`, or the workspace's default without one; the transcript itself is never regenerated. The meeting is `processing` until the run ends, then `processed` with the new notes current, or `failed` with the previous ones still current. Each meeting can be regenerated a number of times the operator sets, and every request counts, failed runs included.
          */
         post: operations["regenerate_notes_api_v1_meetings__meeting_id__notes_post"];
         delete?: never;
@@ -1927,6 +1927,40 @@ export interface components {
              * @description Meetings of the same folder used as context
              */
             context_meetings: components["schemas"]["ContextMeetingRead"][];
+        };
+        /** NotesJobRead */
+        NotesJobRead: {
+            /**
+             * Id
+             * Format: uuid
+             * @description Notes job identifier
+             */
+            id: string;
+            /**
+             * Meeting Id
+             * Format: uuid
+             * @description Meeting whose notes are being regenerated
+             */
+            meeting_id: string;
+            /** @description Kind of job, always `notes` */
+            kind: components["schemas"]["JobType"];
+            /** @description Job state when it was accepted, always `queued` */
+            status: components["schemas"]["JobStatus"];
+            /** @description Preset the new notes follow */
+            preset: components["schemas"]["Preset"];
+            /** @description Model provider configured to write them */
+            provider: components["schemas"]["Provider"];
+            /**
+             * Created At
+             * Format: date-time
+             * @description When the job was queued
+             */
+            created_at: string;
+        };
+        /** NotesRegeneration */
+        NotesRegeneration: {
+            /** @description Preset of the new notes; the workspace's default when omitted */
+            preset?: components["schemas"]["Preset"] | null;
         };
         /** PageInfo */
         PageInfo: {
@@ -4617,8 +4651,32 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["NotesRegeneration"] | null;
+            };
+        };
         responses: {
+            /** @description The queued notes job */
+            202: {
+                headers: {
+                    /** @description URL of the meeting */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotesJobRead"];
+                };
+            };
+            /** @description `MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description `UNAUTHENTICATED`: the session is missing, expired or ended */
             401: {
                 headers: {
@@ -4637,6 +4695,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description `NOT_TRANSCRIBED`: the meeting has no transcript yet; `NOTES_IN_PROGRESS`: a notes job of the meeting is queued or running; `REGENERATION_LIMIT`: the meeting used up its regenerations */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each */
             422: {
                 headers: {
@@ -4646,7 +4713,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `INTEGRATION_UNAVAILABLE`: regenerating notes is not available yet */
+            /** @description `INTEGRATION_UNAVAILABLE`: the server has no broker or object storage */
             503: {
                 headers: {
                     [name: string]: unknown;
