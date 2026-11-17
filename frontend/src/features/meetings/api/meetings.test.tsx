@@ -8,6 +8,7 @@ import {
   meetingRead,
   meetingSummary,
   noteRead,
+  notesJobRead,
   page,
   transcriptRead,
 } from "@/shared/testing/fixtures";
@@ -19,6 +20,7 @@ import {
   TRANSCRIPT_PENDING,
   useDeleteMeeting,
   useEditTranscript,
+  useRegenerateNotes,
   useUpdateMeeting,
   useUploadMeeting,
 } from "./meetings";
@@ -363,6 +365,65 @@ const isInvalidated = (
   queryClient: ReturnType<typeof createTestQueryClient>,
   queryKey: readonly unknown[],
 ) => queryClient.getQueryState(queryKey)?.isInvalidated;
+
+const FAILED_NOTES = meetingRead({ processing_state: "failed", failure_reason: "notes_failed" });
+
+async function requestRegeneration(answer: "queued" | Parameters<typeof errorBody>[0]) {
+  server.use(
+    http.post("/api/v1/meetings/{meeting_id}/notes", ({ response }) =>
+      answer === "queued"
+        ? response(202).json(notesJobRead())
+        : response(409).json(errorBody(answer, "Refused")),
+    ),
+  );
+  const { queryClient, wrapper } = seedCaches();
+  queryClient.setQueryData(meetingQueries.detail("meeting").queryKey, FAILED_NOTES);
+  const { result } = renderHook(
+    () => useRegenerateNotes({ id: "meeting", workspaceId: "workspace" }),
+    { wrapper },
+  );
+  await result.current.mutateAsync(null).catch(() => undefined);
+  return queryClient;
+}
+
+test("a queued regeneration marks the meeting as processing", async () => {
+  // Act
+  const queryClient = await requestRegeneration("queued");
+
+  // Assert
+  expect(queryClient.getQueryData(meetingQueries.detail("meeting").queryKey)).toMatchObject({
+    processing_state: "processing",
+    failure_reason: null,
+  });
+});
+
+test("a queued regeneration marks its workspace's meetings for a refetch", async () => {
+  // Act
+  const queryClient = await requestRegeneration("queued");
+
+  // Assert
+  expect(isInvalidated(queryClient, meetingQueries.latest("workspace").queryKey)).toBe(true);
+});
+
+test.for([
+  ["NOTES_IN_PROGRESS", true],
+  ["NOT_TRANSCRIBED", true],
+  ["REGENERATION_LIMIT", false],
+] as const)("a regeneration refused with %s reloads the meeting: %s", async ([code, reloads]) => {
+  // Act
+  const queryClient = await requestRegeneration(code);
+
+  // Assert
+  expect(isInvalidated(queryClient, meetingQueries.detail("meeting").queryKey)).toBe(reloads);
+});
+
+test("a regeneration refused at the limit leaves the meeting as it was", async () => {
+  // Act
+  const queryClient = await requestRegeneration("REGENERATION_LIMIT");
+
+  // Assert
+  expect(queryClient.getQueryData(meetingQueries.detail("meeting").queryKey)).toEqual(FAILED_NOTES);
+});
 
 const RENAMED = meetingRead({ name: "Quarterly review" });
 

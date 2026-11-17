@@ -12,6 +12,7 @@ import { MeetingDetail } from "@/features/meetings/detail/MeetingDetail";
 import type { MeetingTab } from "@/features/meetings/model";
 import { memberQueries } from "@/features/members/api/members";
 import { workspaceQueries } from "@/features/workspaces/api/workspaces";
+import { WorkspacePresetSelect } from "@/features/workspaces/components/WorkspacePresetSelect";
 import { canManage } from "@/shared/lib/roles";
 import { ErrorBanner } from "@/shared/ui/ErrorBanner";
 import { Breadcrumbs } from "../layout/Breadcrumbs";
@@ -84,6 +85,9 @@ export function MeetingPage({
           onUnsavedChange={onUnsavedChange}
           renderExport={({ transcript, notes }) => (
             <ExportMenu meetingId={meeting.id} tab={tab} transcript={transcript} notes={notes} />
+          )}
+          renderPresetField={(field) => (
+            <WorkspacePresetSelect workspaceId={meeting.workspaceId} {...field} />
           )}
           actions={
             workspace &&

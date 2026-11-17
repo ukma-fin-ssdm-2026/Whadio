@@ -1,11 +1,18 @@
 import { focusManager } from "@tanstack/react-query";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { type UserEvent, userEvent } from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { POLL_INTERVAL_MS } from "@/features/meetings/api/meetings";
 import type { Schemas } from "@/shared/api/types";
-import { errorBody, meetingRead, meetingSummary, noteRead, page } from "@/shared/testing/fixtures";
+import {
+  errorBody,
+  meetingRead,
+  meetingSummary,
+  noteRead,
+  notesJobRead,
+  page,
+} from "@/shared/testing/fixtures";
 import { server } from "@/shared/testing/server";
 import { App } from "./App";
 import {
@@ -25,6 +32,7 @@ const FAILURE_REASON = "transcription_failed";
 const FAILURE_TEXT = "This recording could not be transcribed.";
 const GENERATED_NOTES = "Decisions from the weekly sync";
 const REGENERATED_NOTES = "Decisions from the weekly sync, in detail";
+const LIMIT_MESSAGE = "This meeting's notes have been regenerated the maximum number of times";
 const STALE_MS = 30_000;
 const SUGGESTED_NAME = { name: "Suggested meeting name" };
 const RETRIES_MS = 4_000;
@@ -427,6 +435,16 @@ describe("a meeting that finishes while it is open", () => {
     return watch;
   }
 
+  type LiveMeeting = Awaited<ReturnType<typeof watchMeeting>>["live"];
+
+  async function requestRegeneration(answer: (live: LiveMeeting) => Response) {
+    const watch = await watchMeeting("processed", true, GENERATED_NOTES);
+    server.use(http.post("/api/v1/meetings/meeting/notes", () => answer(watch.live)));
+    await watch.user.click(await screen.findByRole("button", { name: "Regenerate notes" }));
+    await watch.user.click(await screen.findByRole("button", { name: "Regenerate" }));
+    return watch;
+  }
+
   async function watchTranscriptTab(transcribed = false) {
     const watch = await watchMeeting("processing", transcribed);
     await watch.user.click(screen.getByRole("tab", { name: "Transcript" }));
@@ -575,6 +593,29 @@ describe("a meeting that finishes while it is open", () => {
 
     // Assert
     expect(await screen.findByText(REGENERATED_NOTES)).toBeInTheDocument();
+  });
+
+  test("a started regeneration shows its progress before the next poll", async () => {
+    // Act
+    await requestRegeneration((live) => {
+      live.state = "processing";
+      return HttpResponse.json(notesJobRead(), { status: 202 });
+    });
+
+    // Assert
+    expect(await screen.findByText(/^Regenerating notes\. /)).toBeInTheDocument();
+  });
+
+  test("a regeneration refused at the limit says so", async () => {
+    // Act
+    await requestRegeneration(() =>
+      HttpResponse.json(errorBody("REGENERATION_LIMIT", LIMIT_MESSAGE), { status: 409 }),
+    );
+
+    // Assert
+    expect(await within(screen.getByRole("dialog")).findByRole("alert")).toHaveTextContent(
+      LIMIT_MESSAGE,
+    );
   });
 
   test("asks its recorder to keep or rename the generated name", async () => {

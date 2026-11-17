@@ -1,3 +1,4 @@
+import AutorenewOutlinedIcon from "@mui/icons-material/AutorenewOutlined";
 import { Alert, Box, Button, Card, CircularProgress, Stack, Typography } from "@mui/material";
 import { type ReactNode, useState } from "react";
 import type { NoteRead } from "@/shared/api/types";
@@ -6,6 +7,7 @@ import { ErrorBanner } from "@/shared/ui/ErrorBanner";
 import { Markdown } from "@/shared/ui/Markdown";
 import { describeFailure, IN_PROGRESS_LABELS, isInProgress, type Meeting } from "../model";
 import { NoteVersionsMenu } from "./NoteVersionsMenu";
+import { type PresetFieldProps, RegenerateNotesDialog } from "./RegenerateNotesDialog";
 
 interface NotesPanelProps {
   meeting: Meeting;
@@ -13,6 +15,8 @@ interface NotesPanelProps {
   hasEarlierNotes: boolean;
   loading: boolean;
   failed: boolean;
+  canRegenerate: boolean;
+  renderPresetField: (field: PresetFieldProps) => ReactNode;
 }
 
 interface NotesContentProps {
@@ -88,8 +92,17 @@ function NotesContent({ meeting, notes, shown, loading }: NotesContentProps) {
   return <Markdown>{shown.content}</Markdown>;
 }
 
-export function NotesPanel({ meeting, notes, hasEarlierNotes, loading, failed }: NotesPanelProps) {
+export function NotesPanel({
+  meeting,
+  notes,
+  hasEarlierNotes,
+  loading,
+  failed,
+  canRegenerate,
+  renderPresetField,
+}: NotesPanelProps) {
   const [shownVersion, setShownVersion] = useState<NoteRead | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   if (failed && !notes && meeting.state === "processed") return null;
   const shown = shownVersion ?? notes;
   return (
@@ -107,13 +120,20 @@ export function NotesPanel({ meeting, notes, hasEarlierNotes, loading, failed }:
               </Typography>
             )}
           </Box>
-          {(hasEarlierNotes || shownVersion) && (
-            <NoteVersionsMenu
-              meetingId={meeting.id}
-              shownId={shown?.id ?? null}
-              onShow={setShownVersion}
-            />
-          )}
+          <Stack direction="row" sx={{ gap: 1, alignItems: "center", ml: "auto" }}>
+            {canRegenerate && (
+              <Button startIcon={<AutorenewOutlinedIcon />} onClick={() => setDialogOpen(true)}>
+                Regenerate notes
+              </Button>
+            )}
+            {(hasEarlierNotes || shownVersion) && (
+              <NoteVersionsMenu
+                meetingId={meeting.id}
+                shownId={shown?.id ?? null}
+                onShow={setShownVersion}
+              />
+            )}
+          </Stack>
         </Stack>
         {shownVersion && (
           <Alert
@@ -130,6 +150,14 @@ export function NotesPanel({ meeting, notes, hasEarlierNotes, loading, failed }:
         )}
         <NotesContent meeting={meeting} notes={notes} shown={shown} loading={loading} />
       </Stack>
+      {/* Not gated on canRegenerate: a refusal as already running must outlive the reload. */}
+      {dialogOpen && (
+        <RegenerateNotesDialog
+          meeting={meeting}
+          renderPresetField={renderPresetField}
+          onClose={() => setDialogOpen(false)}
+        />
+      )}
     </Card>
   );
 }

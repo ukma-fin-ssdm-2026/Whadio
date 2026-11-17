@@ -14,6 +14,7 @@ import {
 import { isInProgress, type Meeting, type MeetingTab } from "../model";
 import { NotesPanel } from "./NotesPanel";
 import { RecordingPlayer } from "./RecordingPlayer";
+import type { PresetFieldProps } from "./RegenerateNotesDialog";
 import { TranscriptPanel } from "./TranscriptPanel";
 
 interface MeetingContent {
@@ -31,6 +32,7 @@ interface MeetingDetailProps {
   onRevision: (revisionId: string | null) => void;
   onUnsavedChange: (unsaved: boolean) => void;
   renderExport: (content: MeetingContent) => ReactNode;
+  renderPresetField: (field: PresetFieldProps) => ReactNode;
   actions?: ReactNode;
   namePrompt?: ReactNode;
 }
@@ -45,6 +47,7 @@ export function MeetingDetail({
   onRevision,
   onUnsavedChange,
   renderExport,
+  renderPresetField,
   actions,
   namePrompt,
 }: MeetingDetailProps) {
@@ -122,6 +125,8 @@ export function MeetingDetail({
             hasEarlierNotes={notesResult.data?.hasEarlier ?? false}
             loading={notesResult.isLoading}
             failed={notesResult.isError}
+            canRegenerate={meetingEnded && transcript !== null}
+            renderPresetField={renderPresetField}
           />
         ) : (
           <Box
