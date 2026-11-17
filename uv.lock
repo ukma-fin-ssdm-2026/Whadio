@@ -847,43 +847,43 @@ wheels = [
 
 [package.optional-dependencies]
 cublas = [
-    { name = "nvidia-cublas", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cublas", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' or extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda'" },
+    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' or extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda'" },
 ]
 cudart = [
-    { name = "nvidia-cuda-runtime", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cuda-runtime", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' or extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda'" },
 ]
 cufft = [
-    { name = "nvidia-cufft", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cufft", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' or extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda'" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' or extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda'" },
 ]
 cufile = [
-    { name = "nvidia-cufile", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cufile", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' or extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda'" },
 ]
 cupti = [
-    { name = "nvidia-cuda-cupti", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cuda-cupti", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' or extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda'" },
 ]
 curand = [
-    { name = "nvidia-curand", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-curand", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' or extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda'" },
 ]
 cusolver = [
-    { name = "nvidia-cublas", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "nvidia-cusolver", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cublas", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' or extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda'" },
+    { name = "nvidia-cusolver", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' or extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda'" },
+    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' or extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda'" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' or extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda'" },
 ]
 cusparse = [
-    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' or extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda'" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' or extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda'" },
 ]
 nvjitlink = [
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' or extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda'" },
 ]
 nvrtc = [
-    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' or extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda'" },
 ]
 nvtx = [
-    { name = "nvidia-nvtx", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-nvtx", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-6-whadio-cpu' or extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda'" },
 ]
 
 [[package]]
@@ -4274,19 +4274,19 @@ resolution-markers = [
     "python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "cuda-bindings", marker = "(sys_platform == 'linux' and extra == 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "cuda-toolkit", extra = ["cublas", "cudart", "cufft", "cufile", "cupti", "curand", "cusolver", "cusparse", "nvjitlink", "nvrtc", "nvtx"], marker = "(sys_platform == 'linux' and extra == 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "cuda-bindings", marker = "(sys_platform == 'linux' or extra == 'extra-6-whadio-cpu') and extra == 'extra-6-whadio-cuda'" },
+    { name = "cuda-toolkit", extra = ["cublas", "cudart", "cufft", "cufile", "cupti", "curand", "cusolver", "cusparse", "nvjitlink", "nvrtc", "nvtx"], marker = "(sys_platform == 'linux' or extra == 'extra-6-whadio-cpu') and extra == 'extra-6-whadio-cuda'" },
     { name = "filelock", marker = "extra == 'extra-6-whadio-cuda'" },
     { name = "fsspec", marker = "extra == 'extra-6-whadio-cuda'" },
     { name = "jinja2", marker = "extra == 'extra-6-whadio-cuda'" },
     { name = "networkx", marker = "extra == 'extra-6-whadio-cuda'" },
-    { name = "nvidia-cudnn-cu13", marker = "(sys_platform == 'linux' and extra == 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "nvidia-cusparselt-cu13", marker = "(sys_platform == 'linux' and extra == 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "nvidia-nccl-cu13", marker = "(sys_platform == 'linux' and extra == 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
-    { name = "nvidia-nvshmem-cu13", marker = "(sys_platform == 'linux' and extra == 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "nvidia-cudnn-cu13", marker = "(sys_platform == 'linux' or extra == 'extra-6-whadio-cpu') and extra == 'extra-6-whadio-cuda'" },
+    { name = "nvidia-cusparselt-cu13", marker = "(sys_platform == 'linux' or extra == 'extra-6-whadio-cpu') and extra == 'extra-6-whadio-cuda'" },
+    { name = "nvidia-nccl-cu13", marker = "(sys_platform == 'linux' or extra == 'extra-6-whadio-cpu') and extra == 'extra-6-whadio-cuda'" },
+    { name = "nvidia-nvshmem-cu13", marker = "(sys_platform == 'linux' or extra == 'extra-6-whadio-cpu') and extra == 'extra-6-whadio-cuda'" },
     { name = "setuptools", marker = "extra == 'extra-6-whadio-cuda'" },
     { name = "sympy", marker = "extra == 'extra-6-whadio-cuda'" },
-    { name = "triton", marker = "(sys_platform == 'linux' and extra == 'extra-6-whadio-cuda') or (extra == 'extra-6-whadio-cpu' and extra == 'extra-6-whadio-cuda')" },
+    { name = "triton", marker = "(sys_platform == 'linux' or extra == 'extra-6-whadio-cpu') and extra == 'extra-6-whadio-cuda'" },
     { name = "typing-extensions", marker = "extra == 'extra-6-whadio-cuda'" },
 ]
 wheels = [
@@ -4870,7 +4870,7 @@ wheels = [
 
 [[package]]
 name = "whadio"
-version = "0.14.4"
+version = "0.16.0"
 source = { editable = "." }
 dependencies = [
     { name = "aio-pika" },

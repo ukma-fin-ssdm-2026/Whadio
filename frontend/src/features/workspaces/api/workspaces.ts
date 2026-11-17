@@ -1,7 +1,7 @@
 import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/shared/api/client";
 import type { WorkspaceCreate, WorkspaceUpdate } from "@/shared/api/types";
-import { unwrap } from "@/shared/api/unwrap";
+import { expectNoContent, unwrap } from "@/shared/api/unwrap";
 import { mapWorkspace } from "../model";
 
 export const workspaceQueries = {
@@ -68,6 +68,39 @@ export function useUpdateWorkspace(workspaceId: string) {
     onSuccess: (workspace) => {
       queryClient.setQueryData(workspaceQueries.detail(workspaceId).queryKey, workspace);
       return queryClient.invalidateQueries({ queryKey: workspaceQueries.list().queryKey });
+    },
+  });
+}
+
+export interface WorkspaceDeleteCleanup {
+  removeFromList: () => void;
+  removeDetail: () => void;
+}
+
+export function useDeleteWorkspace(
+  workspaceId: string,
+  onDeleted: (cleanup: WorkspaceDeleteCleanup) => void,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      expectNoContent(
+        apiClient.DELETE("/api/v1/workspaces/{workspace_id}", {
+          params: { path: { workspace_id: workspaceId } },
+        }),
+      ),
+    onSuccess: async () => {
+      await queryClient.cancelQueries({ queryKey: workspaceQueries.list().queryKey, exact: true });
+      onDeleted({
+        removeFromList: () =>
+          queryClient.setQueryData(workspaceQueries.list().queryKey, (current) =>
+            current
+              ? { ...current, items: current.items.filter(({ id }) => id !== workspaceId) }
+              : current,
+          ),
+        removeDetail: () =>
+          queryClient.removeQueries({ queryKey: workspaceQueries.detail(workspaceId).queryKey }),
+      });
     },
   });
 }
