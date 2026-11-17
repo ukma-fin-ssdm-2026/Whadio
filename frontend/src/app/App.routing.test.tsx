@@ -620,6 +620,42 @@ describe("a workspace page", () => {
     expect(queryClient.getQueryData(workspaceQueries.detail("workspace").queryKey)).toBeUndefined();
   });
 
+  test("Back during deletion clears the deleted workspace after settings unmounts", async () => {
+    // Arrange
+    const deletionStarted = deferred();
+    const finishDeletion = deferred();
+    window.history.replaceState(null, "", "/");
+    window.history.pushState(null, "", "/workspaces/workspace/settings");
+    const { queryClient, user } = openWithInternals("/workspaces/workspace/settings", () =>
+      server.use(
+        http.get("/api/v1/workspaces", () => HttpResponse.json(page([workspaceSummary()]))),
+        http.get("/api/v1/workspaces/workspace", () => HttpResponse.json(workspaceRead())),
+        http.delete("/api/v1/workspaces/workspace", async () => {
+          deletionStarted.resolve();
+          await finishDeletion.promise;
+          return new HttpResponse(null, { status: 204 });
+        }),
+      ),
+    );
+    await user.click(await screen.findByRole("button", { name: "Delete workspace" }));
+    await user.click(screen.getByRole("button", { name: "Delete workspace" }));
+    await deletionStarted.promise;
+
+    // Act
+    window.history.back();
+    await screen.findByRole("heading", { name: "Workspaces" });
+    finishDeletion.resolve();
+
+    // Assert
+    await waitFor(() =>
+      expect({
+        path: currentPath(),
+        list: queryClient.getQueryData(workspaceQueries.list().queryKey),
+        detail: queryClient.getQueryData(workspaceQueries.detail("workspace").queryKey),
+      }).toEqual({ path: "/", list: page([]), detail: undefined }),
+    );
+  });
+
   test("settings stay mounted while Home is still loading", async () => {
     // Arrange
     const homeReady = deferred();

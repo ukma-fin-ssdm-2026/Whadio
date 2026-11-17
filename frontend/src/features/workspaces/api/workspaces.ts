@@ -72,7 +72,15 @@ export function useUpdateWorkspace(workspaceId: string) {
   });
 }
 
-export function useDeleteWorkspace(workspaceId: string) {
+export interface WorkspaceDeleteCleanup {
+  removeFromList: () => void;
+  removeDetail: () => void;
+}
+
+export function useDeleteWorkspace(
+  workspaceId: string,
+  onDeleted: (cleanup: WorkspaceDeleteCleanup) => void,
+) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () =>
@@ -81,7 +89,18 @@ export function useDeleteWorkspace(workspaceId: string) {
           params: { path: { workspace_id: workspaceId } },
         }),
       ),
-    onSuccess: () =>
-      queryClient.cancelQueries({ queryKey: workspaceQueries.list().queryKey, exact: true }),
+    onSuccess: async () => {
+      await queryClient.cancelQueries({ queryKey: workspaceQueries.list().queryKey, exact: true });
+      onDeleted({
+        removeFromList: () =>
+          queryClient.setQueryData(workspaceQueries.list().queryKey, (current) =>
+            current
+              ? { ...current, items: current.items.filter(({ id }) => id !== workspaceId) }
+              : current,
+          ),
+        removeDetail: () =>
+          queryClient.removeQueries({ queryKey: workspaceQueries.detail(workspaceId).queryKey }),
+      });
+    },
   });
 }

@@ -17,7 +17,12 @@ import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
 import { useNotify } from "@/shared/ui/NotifyProvider";
 import { SectionHeader } from "@/shared/ui/SectionHeader";
 import { SettingsRow } from "@/shared/ui/SettingsRow";
-import { useDeleteWorkspace, useUpdateWorkspace, workspaceQueries } from "../api/workspaces";
+import {
+  useDeleteWorkspace,
+  useUpdateWorkspace,
+  type WorkspaceDeleteCleanup,
+  workspaceQueries,
+} from "../api/workspaces";
 import { PRESETS } from "../model";
 
 function PresetSelect({ workspace }: { workspace: Schemas["WorkspaceRead"] }) {
@@ -62,7 +67,7 @@ function notesDescription({ notes_provider, notes_model }: Schemas["WorkspaceRea
 
 interface WorkspaceDefaultsProps {
   workspaceId: string;
-  onDeleted: () => void;
+  onDeleted: (cleanup: WorkspaceDeleteCleanup) => void;
 }
 
 function WorkspaceDefaults({ workspaceId, onDeleted }: WorkspaceDefaultsProps) {
@@ -114,16 +119,13 @@ function DeleteWorkspace({
   onDeleted,
 }: {
   workspace: Schemas["WorkspaceRead"];
-  onDeleted: () => void;
+  onDeleted: (cleanup: WorkspaceDeleteCleanup) => void;
 }) {
   const [confirming, setConfirming] = useState(false);
-  const remove = useDeleteWorkspace(workspace.id);
+  const remove = useDeleteWorkspace(workspace.id, onDeleted);
   const notify = useNotify();
   const confirm = () => {
-    remove.mutate(undefined, {
-      onSuccess: onDeleted,
-      onError: (caught) => notify(caught.message, "error"),
-    });
+    remove.mutate(undefined, { onError: (caught) => notify(caught.message, "error") });
   };
 
   return (
@@ -158,7 +160,7 @@ export function WorkspaceSettings({
   onDeleted,
 }: {
   workspaceId: string;
-  onDeleted: () => void;
+  onDeleted: (cleanup: WorkspaceDeleteCleanup) => void;
 }) {
   return (
     <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 } }}>

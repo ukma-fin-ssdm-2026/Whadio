@@ -50,7 +50,14 @@ function renderDelete() {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <TestProviders queryClient={queryClient}>{children}</TestProviders>
   );
-  const { result } = renderHook(() => useDeleteWorkspace("workspace"), { wrapper });
+  const { result } = renderHook(
+    () =>
+      useDeleteWorkspace("workspace", ({ removeFromList, removeDetail }) => {
+        removeFromList();
+        removeDetail();
+      }),
+    { wrapper },
+  );
   return { result, queryClient };
 }
 
@@ -139,9 +146,6 @@ test("a stale list response cannot restore a deleted workspace", async () => {
 
   // Act
   await result.current.mutateAsync();
-  queryClient.setQueryData(workspaceQueries.list().queryKey, (current) =>
-    current ? { ...current, items: current.items.filter(({ id }) => id !== "workspace") } : current,
-  );
   release.resolve();
   await staleRequest.catch(() => undefined);
 
