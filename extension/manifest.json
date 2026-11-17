@@ -14,7 +14,7 @@
   "content_scripts": [
     {
       "matches": ["https://meet.google.com/*"],
-      "js": ["audio.js", "recorder.js"]
+      "js": ["recording-port.js", "audio.js", "recorder.js"]
     }
   ],
   "commands": {

@@ -8,7 +8,7 @@ globalThis.whadioAudio = {
     return btoa(binary);
   },
 
-  record(tab, microphone, name, playBack) {
+  async record(tab, microphone, name, playBack) {
     let context;
     let port;
     const release = () => {
@@ -31,14 +31,17 @@ globalThis.whadioAudio = {
 
       // The background uploads the audio as it arrives and completes the recording when this port disconnects.
       port = chrome.runtime.connect({ name });
+      await globalThis.whadioRecordingReady(port);
       const recorder = new MediaRecorder(mix.stream, { mimeType: "audio/webm;codecs=opus" });
       let sent = Promise.resolve();
+      let disconnected = false;
       recorder.addEventListener("dataavailable", (event) => {
-        sent = sent.then(async () =>
-          port.postMessage({
-            audio: globalThis.whadioAudio.base64(await event.data.arrayBuffer()),
-          }),
-        );
+        sent = sent.then(async () => {
+          const audio = globalThis.whadioAudio.base64(await event.data.arrayBuffer());
+          if (!disconnected) {
+            port.postMessage({ audio });
+          }
+        });
       });
       recorder.addEventListener(
         "stop",
@@ -50,6 +53,7 @@ globalThis.whadioAudio = {
       );
       // A restarted service worker has lost this recording's upload, so nothing could stop it or take its audio.
       port.onDisconnect.addListener(() => {
+        disconnected = true;
         if (recorder.state !== "inactive") {
           recorder.stop();
         }
