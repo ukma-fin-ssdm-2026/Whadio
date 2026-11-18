@@ -162,8 +162,10 @@ review.
 
 A script computes the four metrics by the definitions above, with the queue and the run apart, for
 any period. `fetch` exports the run history from the GitHub API into [`evidence/`](evidence/), and
-`report` computes [`dora-metrics.md`](dora-metrics.md) from that export alone. The dates are Kyiv
-time, and `--until` is the day after the period's last day:
+`report` computes [`dora-metrics.md`](dora-metrics.md) from that export alone. `report` therefore
+needs an export from `fetch` that covers the requested dates, and that export may hold one green run
+after `--until`, the one that ends the recovery of a red run at the end of the period. The dates are
+Kyiv time, and `--until` is the day after the period's last day:
 
 ```bash
 GITHUB_TOKEN=$(gh auth token) uv run python .github/scripts/dora_metrics.py fetch --since 2026-10-20 --until 2026-11-10
