@@ -123,17 +123,17 @@ class Notification:
 @dataclass
 class Memory:
     comment: int | None = None
-    manual: bool = False
+    manual_heads: set[str] = field(default_factory=set)
     notified: set[int] = field(default_factory=set)
     pending: dict[int, Notification] = field(default_factory=dict)
 
     def body(self) -> str:
         return (
             f"{MARKER}\n"
-            "Review processing state. Nits leave this PR for manual merging.\n"
+            "Review processing state. Nits leave the reviewed commit for manual merging.\n"
             + json.dumps(
                 {
-                    "manual": self.manual,
+                    "manual_heads": sorted(self.manual_heads),
                     "notified": sorted(self.notified),
                     "pending": [asdict(item) for item in self.pending.values()],
                 }
@@ -215,13 +215,19 @@ class GitHub:
         except urllib.error.HTTPError as error:
             if error.code != HTTPStatus.NOT_FOUND:
                 raise
-            self.repo(
-                "/labels",
-                "POST",
-                name=PENDING_LABEL,
-                color="fbca04",
-                description="Review processing has Telegram notifications to send",
-            )
+            try:
+                self.repo(
+                    "/labels",
+                    "POST",
+                    name=PENDING_LABEL,
+                    color="fbca04",
+                    description="Review processing has Telegram notifications to send",
+                )
+            except urllib.error.HTTPError as conflict:
+                if conflict.code != HTTPStatus.UNPROCESSABLE_ENTITY:
+                    raise
+                # Another PR's run may have created the shared label.
+                self.repo(f"/labels/{PENDING_LABEL}")
         self.repo(f"/issues/{number}/labels", "POST", labels=[PENDING_LABEL])
 
     def unqueue(self, number: int) -> None:
@@ -319,15 +325,20 @@ def memory_from(items: list[object], key: str, repository: str, number: int) -> 
                 if not hmac.compare_digest(signature.encode(), expected.encode()):
                     continue
                 match json.loads(payload.splitlines()[-1]):
-                    case {"manual": bool(manual), "notified": list(notified), **remaining}:
+                    case {"notified": list(notified), **remaining}:
+                        # Legacy decisions had no commit SHA. Keep their delivery history.
+                        heads = remaining.get("manual_heads", [])
                         pending = remaining.get("pending", [])
-                        if isinstance(pending, list) and all(
-                            isinstance(value, int) for value in notified
+                        if (
+                            isinstance(heads, list)
+                            and all(isinstance(value, str) for value in heads)
+                            and isinstance(pending, list)
+                            and all(isinstance(value, int) for value in notified)
                         ):
                             notices = [Notification.parse(item) for item in pending]
                             return Memory(
                                 identity,
-                                manual,
+                                set(heads),
                                 set(notified),
                                 {item.id: item for item in notices if item.id not in notified},
                             )
@@ -384,7 +395,7 @@ def notify(pull: Pull, review: Notification) -> None:
     text = (
         f'<a href="{html.escape(pull.url, quote=True)}">PR #{pull.number}</a> '
         f"by {html.escape(pull.author)} approved with nits by {html.escape(review.author)}.\n"
-        "This review left the PR for manual merging.\n"
+        "Nits leave the reviewed commit for manual merging.\n"
         f'<a href="{html.escape(review.url, quote=True)}">Review</a>'
     )
     request = urllib.request.Request(
@@ -448,21 +459,12 @@ def retry_delivery(github: GitHub, pull: Pull, *, queued: bool) -> bool:
     return deliver(github, pull, github.memory(pull))
 
 
-def save_notifications(
-    github: GitHub,
-    pull: Pull,
-    memory: Memory,
-    notices: dict[int, Notification],
-    *,
-    queued: bool,
-) -> bool:
+def save_state(github: GitHub, pull: Pull, memory: Memory, *, queued: bool, changed: bool) -> bool:
     # Apply the label before saving state so the queue can find the notification after a restart.
-    if (notices or memory.pending) and not queued:
+    if memory.pending and not queued:
         github.queue(pull.number)
         queued = True
-    if notices:
-        memory.manual = True
-        memory.pending.update(notices)
+    if changed:
         github.remember(pull, memory)
     return queued
 
@@ -502,7 +504,8 @@ def process(github: GitHub, number: int, *, queued: bool = False) -> bool:
     reviews = eligible_reviews(github, all_reviews)
     nits = nit_reviews(reviews, inline)
     memory = github.memory(pull)
-    manual = memory.manual or bool(nits)
+    saved_manual = pull.head in memory.manual_heads
+    manual = saved_manual or any(review.head == pull.head for review in nits)
     ready = approved(pull, reviews)
     if queued and memory.comment is None and not nits:
         github.status(pull, "pending", "Queued notification state could not be verified")
@@ -522,7 +525,16 @@ def process(github: GitHub, number: int, *, queued: bool = False) -> bool:
         )
     if manual and pull.auto:
         github.disable(pull)
-    queued = save_notifications(github, pull, memory, new_notices, queued=queued)
+    if manual:
+        memory.manual_heads.add(pull.head)
+    memory.pending.update(new_notices)
+    queued = save_state(
+        github,
+        pull,
+        memory,
+        queued=queued,
+        changed=bool(new_notices) or (manual and not saved_manual),
+    )
     if ready:
         release_gate(github, pull, snapshot, manual=manual)
     return deliver(github, pull, memory) if queued else True
@@ -581,9 +593,33 @@ def positive_number(value: object) -> int:
     raise ValueError("Expected a positive pull request number")
 
 
+def scoped_targets(targets: set[int] | None) -> set[int] | None:
+    test_pr = os.environ.get("REVIEW_PROCESSING_TEST_PR", "")
+    if not test_pr:
+        return targets
+    trial = {positive_number(test_pr)}
+    return trial if targets is None else targets & trial
+
+
+def workflow_targets() -> set[int] | None:
+    target = os.environ.get("REVIEW_PROCESSING_TARGET", "")
+    if target:
+        return {positive_number(target)}
+    event: object = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
+    return event_targets(os.environ["GITHUB_EVENT_NAME"], event)
+
+
+def write_inventory(github: GitHub, targets: set[int] | None) -> None:
+    if targets is None:
+        targets = github.open_numbers() | github.queued_pulls()
+    with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+        output.write(f"pull_requests={json.dumps(sorted(targets))}\n")
+
+
 def main() -> None:
+    inventory = sys.argv[1:] == ["--inventory"]
     state_key = os.environ.get("REVIEW_PROCESSING_STATE_KEY", "")
-    if len(state_key) < MIN_STATE_KEY_LENGTH:
+    if not inventory and len(state_key) < MIN_STATE_KEY_LENGTH:
         sys.exit("Configure a random REVIEW_PROCESSING_STATE_KEY of at least 32 characters")
     github = GitHub(
         os.environ["GITHUB_REPOSITORY"],
@@ -591,14 +627,10 @@ def main() -> None:
         state_key=state_key,
     )
     try:
-        event: object = json.loads(
-            Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8")
-        )
-        targets = event_targets(os.environ["GITHUB_EVENT_NAME"], event)
-        test_pr = os.environ.get("REVIEW_PROCESSING_TEST_PR", "")
-        if test_pr:
-            trial = {positive_number(test_pr)}
-            targets = trial if targets is None else targets & trial
+        targets = scoped_targets(workflow_targets())
+        if inventory:
+            write_inventory(github, targets)
+            return
         if targets == set():
             return
         failures = reconcile(github, targets=targets)

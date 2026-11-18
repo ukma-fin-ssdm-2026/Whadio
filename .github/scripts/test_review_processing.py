@@ -2,11 +2,14 @@ import importlib.util
 import json
 import urllib.request
 from dataclasses import replace
+from email.message import Message
+from http import HTTPStatus
 from http.client import IncompleteRead
 from io import BytesIO
 from pathlib import Path
 from types import ModuleType
 from typing import Protocol
+from urllib.error import HTTPError
 
 import pytest
 
@@ -385,6 +388,20 @@ def test_clean_followup_does_not_override_earlier_nits(github: FakeGitHub) -> No
     assert "disable" in github.events
 
 
+def test_clean_approval_on_new_head_allows_reenabled_auto_merge(github: FakeGitHub) -> None:
+    # Arrange
+    old_review = _review(body="Nit: rename")
+    github.reviews = [old_review]
+    processor.process(github, 1)
+    github.current = replace(github.current, head="new-head", auto=True)
+    github.reviews = [old_review, _review(2, head="new-head")]
+    github.events.clear()
+    # Act
+    processor.process(github, 1)
+    # Assert
+    assert (github.current.auto, github.events) == (True, ["success"])
+
+
 def test_retry_does_not_duplicate_notification(github: FakeGitHub) -> None:
     # Arrange
     github.reviews = [_review(body="Nit: rename")]
@@ -520,6 +537,19 @@ def test_event_targets_single_pr_when_known(
     assert result == expected
 
 
+def test_scheduled_inventory_includes_open_prs_and_closed_notification_retries(
+    github: FakeGitHub, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Arrange
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setattr(github, "queued_pulls", lambda: {1, 3})
+    # Act
+    processor.write_inventory(github, None)
+    # Assert
+    assert output.read_text(encoding="utf-8") == "pull_requests=[1, 3]\n"
+
+
 def test_reconciliation_ignores_closed_prs_without_pending_labels(github: FakeGitHub) -> None:
     # Arrange
     github.current = replace(github.current, eligible=False)
@@ -543,7 +573,7 @@ def test_existing_memory_without_pending_notifications_preserves_delivery_histor
     # Act
     memory = processor.memory_from(comments, STATE_KEY, REPOSITORY, 1)
     # Assert
-    assert memory == processor.Memory(comment=10, manual=True, notified={1})
+    assert memory == processor.Memory(comment=10, notified={1})
 
 
 def test_manual_decision_survives_deleted_nit(github: FakeGitHub) -> None:
@@ -559,7 +589,7 @@ def test_manual_decision_survives_deleted_nit(github: FakeGitHub) -> None:
     assert github.events == ["pending", "disable", "success"]
 
 
-def test_main_processes_an_approval_on_a_review_signal(
+def test_main_processes_an_approval_with_nits_on_a_review_signal(
     github: FakeGitHub, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # Arrange
@@ -572,11 +602,20 @@ def test_main_processes_an_approval_on_a_review_signal(
     monkeypatch.setenv("REVIEW_PROCESSING_STATE_KEY", STATE_KEY)
     monkeypatch.delenv("REVIEW_PROCESSING_TEST_PR", raising=False)
     monkeypatch.setattr(processor, "GitHub", lambda *_, **__: github)
-    github.reviews = [_review()]
+    github.reviews = [_review(body="Nit: rename")]
     # Act
     processor.main()
     # Assert
-    assert github.events == ["success"]
+    assert github.events == [
+        "pending",
+        "disable",
+        "queue",
+        "remember",
+        "success",
+        "notify",
+        "remember",
+        "unqueue",
+    ]
 
 
 def test_draft_or_non_main_is_skipped(github: FakeGitHub) -> None:
@@ -586,6 +625,26 @@ def test_draft_or_non_main_is_skipped(github: FakeGitHub) -> None:
     processor.process(github, 1)
     # Assert
     assert github.events == []
+
+
+@pytest.mark.parametrize(("draft", "base"), [(True, "main"), (False, "other")])
+def test_pull_parse_marks_draft_and_non_main_prs_ineligible(*, draft: bool, base: str) -> None:
+    # Arrange
+    payload = {
+        "number": 1,
+        "head": {"sha": "head"},
+        "user": {"login": "author"},
+        "html_url": "https://github.com/o/r/pull/1",
+        "node_id": "PR_node",
+        "state": "open",
+        "base": {"ref": base},
+        "draft": draft,
+        "auto_merge": None,
+    }
+    # Act
+    pull = processor.Pull.parse(payload)
+    # Assert
+    assert not pull.eligible
 
 
 @pytest.mark.parametrize("body", ["Nit: rename", "  nIt: rename", "Looks good\nNit: rename"])
@@ -604,6 +663,15 @@ def test_ordinary_mention_of_nits_is_not_a_nit() -> None:
     review = processor.Review.parse(_review(body='Comments marked "Nit" are optional.'))
     # Act
     result = processor.nit_reviews([review], set())
+    # Assert
+    assert result == []
+
+
+def test_nit_in_changes_requested_review_is_ignored() -> None:
+    # Arrange
+    review = processor.Review.parse(_review(state="CHANGES_REQUESTED", body="Nit: rename"))
+    # Act
+    result = processor.nit_reviews([review], {1})
     # Assert
     assert result == []
 
@@ -699,6 +767,22 @@ def test_status_reconciliation_does_not_post_identical_success(
     assert len(posts) == 1
 
 
+def test_status_reconciliation_posts_success_again_after_pending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    success = {"context": processor.CONTEXT, "state": "success", "description": "Done"}
+    statuses = [{"context": processor.CONTEXT, "state": "pending"}, success]
+    posts: list[object] = []
+    monkeypatch.setattr(processor.GitHub, "pages", lambda *_: statuses)
+    monkeypatch.setattr(processor.GitHub, "repo", lambda *_, **payload: posts.append(payload))
+    github = processor.GitHub(REPOSITORY, "token")
+    # Act
+    github.status(FakeGitHub().current, "success", "Done")
+    # Assert
+    assert posts == [success]
+
+
 def test_pagination_reads_all_pages(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
     paths: list[str] = []
@@ -731,6 +815,31 @@ def test_notification_queue_searches_closed_pull_requests(monkeypatch: pytest.Mo
     assert (result, paths) == ({12}, ["/issues?state=all&labels=review-notification-pending"])
 
 
+def test_queue_accepts_label_created_by_another_pr_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    label = f"/labels/{processor.PENDING_LABEL}"
+    calls: list[tuple[str, str]] = []
+
+    def repo(_self: object, path: str, method: str = "GET", **_: object) -> None:
+        calls.append((path, method))
+        if len(calls) == 1:
+            raise HTTPError(path, HTTPStatus.NOT_FOUND, "", Message(), None)
+        if path == "/labels":
+            raise HTTPError(path, HTTPStatus.UNPROCESSABLE_ENTITY, "", Message(), None)
+
+    monkeypatch.setattr(processor.GitHub, "repo", repo)
+    github = processor.GitHub(REPOSITORY, "test")
+    # Act
+    github.queue(1)
+    # Assert
+    assert calls == [
+        (label, "GET"),
+        ("/labels", "POST"),
+        (label, "GET"),
+        ("/issues/1/labels", "POST"),
+    ]
+
+
 def test_telegram_notification_escapes_names_and_links_review(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -755,7 +864,7 @@ def test_telegram_notification_escapes_names_and_links_review(
     assert json.loads(data)["text"] == (
         '<a href="https://github.com/o/r/pull/1">PR #1</a> '
         "by &lt;author&gt; approved with nits by reviewer.\n"
-        "This review left the PR for manual merging.\n"
+        "Nits leave the reviewed commit for manual merging.\n"
         f'<a href="{review_url}">Review</a>'
     )
 
