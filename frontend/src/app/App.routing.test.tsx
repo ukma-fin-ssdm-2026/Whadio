@@ -387,6 +387,59 @@ describe("share links", () => {
     expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
   });
 
+  test("a recipient signs in on the share page and requests access", async () => {
+    // Arrange
+    const bodies: unknown[] = [];
+    server.use(
+      http.post("/api/v1/shares/:shareId/access-requests", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(
+          {
+            id: "request",
+            requester_user_id: "member",
+            name: "Demo Member",
+            email: "member@example.com",
+            status: "pending",
+          },
+          { status: 201 },
+        );
+      }),
+    );
+    const { user } = open(SHARE_LINK, false);
+    await user.click(await screen.findByRole("button", { name: "Sign in" }));
+    await signIn(user);
+
+    // Act
+    await user.click(await screen.findByRole("button", { name: "Request access" }));
+
+    // Assert
+    await waitFor(() => expect(bodies).toEqual([{ token: "shared-secret" }]));
+  });
+
+  test("the sign-in form on a share link offers no registration", async () => {
+    // Arrange
+    const { user } = open(SHARE_LINK, false);
+
+    // Act
+    await user.click(await screen.findByRole("button", { name: "Sign in" }));
+    await screen.findByLabelText(SIGN_IN_FORM);
+
+    // Assert
+    expect(screen.queryByText(/create account|register|sign up/i)).not.toBeInTheDocument();
+  });
+
+  test("a refused request brings the sign-in form back", async () => {
+    // Arrange
+    server.use(http.post("/api/v1/shares/:shareId/access-requests", expired));
+    const { user } = open(SHARE_LINK);
+
+    // Act
+    await user.click(await screen.findByRole("button", { name: "Request access" }));
+
+    // Assert
+    expect(await screen.findByLabelText(SIGN_IN_FORM)).toBeInTheDocument();
+  });
+
   test("a share link shows no token", async () => {
     // Act
     open(SHARE_LINK, false);
