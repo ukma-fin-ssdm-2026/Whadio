@@ -182,7 +182,11 @@ class Period:
     until: date
 
     def __contains__(self, moment: datetime) -> bool:
-        return _midnight(self.since) <= moment < _midnight(self.until)
+        return _midnight(self.since) <= moment < self.end
+
+    @property
+    def end(self) -> datetime:
+        return _midnight(self.until)
 
     @property
     def weeks(self) -> float:
@@ -249,6 +253,11 @@ def timing(run: Run, jobs: Sequence[Job]) -> Timing | None:
     if not ran:
         return None
     return Timing(run.created_at, min(start for start, _ in ran), max(end for _, end in ran))
+
+
+def _finished(run: Run, jobs: Sequence[Job]) -> datetime:
+    measured = timing(run, jobs)
+    return measured.ended if measured else run.updated_at
 
 
 def recovery_times(runs: Sequence[Run], finished: Mapping[int, datetime]) -> list[timedelta]:
@@ -343,6 +352,7 @@ class Summary:
     lead: Spread | None
     team_lead: Spread | None
     recovery: Spread | None
+    unrecovered: int
     parts: list[Part]
     queue_share: float | None
 
@@ -359,14 +369,17 @@ def summarise(
     pulls: Sequence[PullRequest],
 ) -> Summary:
     counted = [run for run in runs if run.created_at in period]
+    recovering = [
+        *counted,
+        *(run for run in runs if run.conclusion == "success" and run.created_at >= period.end),
+    ]
     timings = {run.database_id: timing(run, jobs.get(run.database_id, [])) for run in counted}
     finished = {
-        run.database_id: measured.ended
-        if (measured := timings[run.database_id])
-        else run.updated_at
-        for run in counted
+        run.database_id: _finished(run, jobs.get(run.database_id, [])) for run in recovering
     }
     green = [run for run in counted if run.conclusion == "success"]
+    red = sum(run.conclusion == "failure" for run in counted)
+    recoveries = recovery_times(recovering, finished)
     leads = [
         lead_time(pull, deployed)
         for pull in pulls
@@ -377,12 +390,13 @@ def summarise(
         period=period,
         runs=len(counted),
         green=len(green),
-        red=sum(run.conclusion == "failure" for run in counted),
+        red=red,
         cancelled=sum(run.conclusion == "cancelled" for run in counted),
         team_green=sum(run.head_sha not in released for run in green),
         lead=spread([lead.total for lead in leads]),
         team_lead=spread([lead.total for lead in leads if lead.author != RELEASE_BOT]),
-        recovery=spread(recovery_times(counted, finished)),
+        recovery=spread(recoveries),
+        unrecovered=red - len(recoveries),
         parts=split(leads),
         queue_share=queue_share(leads),
     )
@@ -413,6 +427,7 @@ def render(summary: Summary) -> str:
     )
     queue = summary.queue_share
     queue_vs_run = f"{queue:.0%} queue, {1 - queue:.0%} run" if queue is not None else DASH
+    unrecovered = f"; not yet recovered: {summary.unrecovered}" if summary.unrecovered else ""
     lines = [
         "# Computed DORA Metrics",
         "",
@@ -436,7 +451,7 @@ def render(summary: Summary) -> str:
             f"{_spread(summary.team_lead)} |"
         ),
         f"| Change fail rate | {fail_rate} |",
-        f"| Failed deployment recovery time | {_spread(summary.recovery)} |",
+        f"| Failed deployment recovery time | {_spread(summary.recovery)}{unrecovered} |",
         "",
         "## Where the Lead Time Goes",
         "",
@@ -506,6 +521,20 @@ def runs_created(first: date, last: date, get: Get) -> list[Run]:
     return [*runs_created(middle + timedelta(days=1), last, get), *runs_created(first, middle, get)]
 
 
+def exported_runs(runs: Sequence[Run], period: Period) -> list[Run]:
+    """The runs of the period, and the green run after it that recovers a red run at its end."""
+    ordered = sorted(runs, key=lambda run: run.created_at)
+    in_period = [run for run in ordered if run.created_at in period]
+    completed = [run.conclusion for run in in_period if run.conclusion in ("success", "failure")]
+    if not completed or completed[-1] == "success":
+        return in_period
+    recovery = next(
+        (run for run in ordered if run.conclusion == "success" and run.created_at >= period.end),
+        None,
+    )
+    return in_period if recovery is None else [*in_period, recovery]
+
+
 def write_evidence(path: Path, rows: Sequence[BaseModel]) -> None:
     path.write_text("[\n" + ",\n".join(row.model_dump_json() for row in rows) + "\n]\n")
 
@@ -520,7 +549,8 @@ def fetch(period: Period, get: Get) -> None:
         for pull in _paged("pulls?state=closed&base=main", get, _PULLS.validate_json)
         if (merge := pull.merge()) is not None
     ]
-    # A merge before the period may have been deployed by a run before it
+    # A merge before the period may have been deployed by a run before it; a red run at its end
+    # recovers after it
     first = min([period.since, *(merge.merged_at.astimezone(KYIV).date() for merge in merges)])
     runs = runs_created(first, datetime.now(KYIV).date(), get)
     pulls = [
@@ -540,19 +570,17 @@ def fetch(period: Period, get: Get) -> None:
         for merge, run in sorted(deployments(merges, runs, order), key=lambda pair: pair[0].number)
         if run.created_at in period
     ]
-    in_period = sorted(
-        (run for run in runs if run.created_at in period), key=lambda run: run.created_at
-    )
+    exported = exported_runs(runs, period)
     jobs = [
         RunJobs(
             run=run.database_id, jobs=_paged(f"actions/runs/{run.database_id}/jobs", get, _jobs)
         )
-        for run in in_period
+        for run in exported
     ]
-    write_evidence(EVIDENCE / "runs.json", in_period)
+    write_evidence(EVIDENCE / "runs.json", exported)
     write_evidence(EVIDENCE / "jobs.json", jobs)
     write_evidence(EVIDENCE / "pull-requests.json", pulls)
-    sys.stdout.write(f"Wrote {len(in_period)} runs and {len(pulls)} pull requests to {EVIDENCE}\n")
+    sys.stdout.write(f"Wrote {len(exported)} runs and {len(pulls)} pull requests to {EVIDENCE}\n")
 
 
 def report(period: Period) -> None:

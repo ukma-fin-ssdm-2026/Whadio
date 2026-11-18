@@ -24,6 +24,7 @@ dora = _load()
 START = datetime(2026, 10, 25, 9, 0, tzinfo=UTC)
 PERIOD = dora.Period(date(2026, 10, 20), date(2026, 11, 10))
 ORDER = {"a": 0, "b": 1, "c": 2, "d": 3}
+AFTER_PERIOD = 16 * 24 * 60
 
 
 def _at(minutes: float) -> datetime:
@@ -166,6 +167,67 @@ def test_red_run_with_no_later_green_run_has_no_recovery() -> None:
 
     # Assert
     assert times == []
+
+
+def test_red_run_at_the_end_of_the_period_recovers_at_the_next_green_run_after_it() -> None:
+    # Arrange
+    runs = [_run(1, "failure", updated=5), _run(2, created=AFTER_PERIOD, updated=AFTER_PERIOD)]
+    recovery = timedelta(minutes=AFTER_PERIOD - 5)
+
+    # Act
+    summary = dora.summarise(PERIOD, runs, {}, [])
+
+    # Assert
+    assert summary.recovery == dora.Spread(1, recovery, recovery)
+
+
+def test_green_run_after_the_period_is_not_a_deployment() -> None:
+    # Arrange
+    runs = [_run(1, "failure"), _run(2, created=AFTER_PERIOD)]
+
+    # Act
+    summary = dora.summarise(PERIOD, runs, {}, [])
+
+    # Assert
+    assert summary.green == 0
+
+
+def test_red_run_after_the_period_has_no_recovery_of_its_own() -> None:
+    # Arrange
+    runs = [
+        _run(1, "failure"),
+        _run(2, "failure", created=AFTER_PERIOD),
+        _run(3, created=AFTER_PERIOD + 10),
+    ]
+
+    # Act
+    summary = dora.summarise(PERIOD, runs, {}, [])
+
+    # Assert
+    assert summary.recovery.count == 1
+
+
+def test_pull_request_deployed_after_the_period_has_no_lead_time() -> None:
+    # Arrange
+    runs = [_run(2, "failure"), _run(1, created=AFTER_PERIOD)]
+    jobs = {1: [_job(AFTER_PERIOD, AFTER_PERIOD + 10)]}
+
+    # Act
+    summary = dora.summarise(PERIOD, runs, jobs, [_pull(1)])
+
+    # Assert
+    assert summary.lead is None
+
+
+def test_red_run_with_no_later_green_run_is_not_yet_recovered() -> None:
+    # Arrange
+    runs = [_run(1), _run(2, "failure", created=10)]
+
+    # Act
+    summary = dora.summarise(PERIOD, runs, {}, [])
+
+    # Assert
+    assert summary.unrecovered == 1
 
 
 def test_red_run_without_a_runner_recovers_from_its_last_update() -> None:
@@ -362,6 +424,49 @@ def test_report_shows_the_change_fail_rate_of_completed_runs() -> None:
 
     # Assert
     assert "| Change fail rate | 1 / 2 = **50.0%** |" in report.splitlines()
+
+
+def test_report_counts_the_red_runs_not_yet_recovered() -> None:
+    # Arrange
+    summary = dora.summarise(PERIOD, [_run(1), _run(2, "failure", created=10)], {}, [])
+
+    # Act
+    report = dora.render(summary)
+
+    # Assert
+    assert (
+        f"| Failed deployment recovery time | {dora.DASH}; not yet recovered: 1 |"
+        in report.splitlines()
+    )
+
+
+def test_export_adds_the_green_run_after_the_period_that_recovers_its_last_red_run() -> None:
+    # Arrange
+    runs = [
+        _run(1),
+        _run(2, "failure", created=10),
+        _run(3, "cancelled", created=20),
+        _run(4, "failure", created=AFTER_PERIOD),
+        _run(5, created=AFTER_PERIOD + 10),
+        _run(6, created=AFTER_PERIOD + 20),
+    ]
+
+    # Act
+    exported = dora.exported_runs(runs, PERIOD)
+
+    # Assert
+    assert [run.database_id for run in exported] == [1, 2, 3, 5]
+
+
+def test_export_holds_only_the_period_when_its_last_completed_run_is_green() -> None:
+    # Arrange
+    runs = [_run(1, "failure"), _run(2, created=10), _run(3, created=AFTER_PERIOD)]
+
+    # Act
+    exported = dora.exported_runs(runs, PERIOD)
+
+    # Assert
+    assert [run.database_id for run in exported] == [1, 2]
 
 
 def _json(model: object) -> str:
