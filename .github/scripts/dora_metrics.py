@@ -536,7 +536,9 @@ def exported_runs(runs: Sequence[Run], period: Period) -> list[Run]:
 
 
 def write_evidence(path: Path, rows: Sequence[BaseModel]) -> None:
-    path.write_text("[\n" + ",\n".join(row.model_dump_json() for row in rows) + "\n]\n")
+    path.write_text(
+        "[\n" + ",\n".join(row.model_dump_json() for row in rows) + "\n]\n", encoding="utf-8"
+    )
 
 
 def fetch(period: Period, get: Get) -> None:
@@ -583,13 +585,14 @@ def fetch(period: Period, get: Get) -> None:
     sys.stdout.write(f"Wrote {len(exported)} runs and {len(pulls)} pull requests to {EVIDENCE}\n")
 
 
-def report(period: Period) -> None:
-    runs = _RUNS.validate_json((EVIDENCE / "runs.json").read_bytes())
-    run_jobs = _RUN_JOBS.validate_json((EVIDENCE / "jobs.json").read_bytes())
-    pulls = _PULL_REQUESTS.validate_json((EVIDENCE / "pull-requests.json").read_bytes())
+def report(period: Period, ci_cd: Path) -> None:
+    evidence = ci_cd / "evidence"
+    runs = _RUNS.validate_json((evidence / "runs.json").read_bytes())
+    run_jobs = _RUN_JOBS.validate_json((evidence / "jobs.json").read_bytes())
+    pulls = _PULL_REQUESTS.validate_json((evidence / "pull-requests.json").read_bytes())
     summary = summarise(period, runs, {entry.run: entry.jobs for entry in run_jobs}, pulls)
-    (CI_CD / "dora-metrics.md").write_text(render(summary))
-    sys.stdout.write(f"Wrote {CI_CD / 'dora-metrics.md'}\n")
+    (ci_cd / "dora-metrics.md").write_text(render(summary), encoding="utf-8")
+    sys.stdout.write(f"Wrote {ci_cd / 'dora-metrics.md'}\n")
 
 
 class _Arguments(argparse.Namespace):
@@ -617,7 +620,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         parser.error("--until must be after --since")
     period = Period(arguments.since, arguments.until)
     if arguments.command == "report":
-        report(period)
+        report(period, CI_CD)
         return
     token = os.environ.get("GITHUB_TOKEN", "")
     if not token:

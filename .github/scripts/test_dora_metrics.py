@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import urllib.parse
 from collections.abc import Mapping
 from datetime import UTC, date, datetime, timedelta
@@ -51,9 +52,11 @@ def _run(
     )
 
 
-def _job(started: float, ended: float, runner: str | None = "ssdm-1") -> object:
+def _job(
+    started: float, ended: float, runner: str | None = "ssdm-1", *, name: str = "Checks"
+) -> object:
     return dora.Job(
-        name="Checks",
+        name=name,
         conclusion="skipped" if runner is None else "success",
         started_at=_at(started),
         completed_at=_at(ended),
@@ -413,6 +416,43 @@ def test_evidence_file_holds_one_compact_object_per_line(tmp_path: Path) -> None
         '"conclusion":"success","attempt":1,"createdAt":"2026-10-25T09:00:00Z",'
         '"updatedAt":"2026-10-25T09:00:00Z"}\n]\n'
     )
+
+
+def _windows_encoding(encoding: str | None) -> str:
+    return encoding or "cp1252"
+
+
+@pytest.fixture
+def windows_locale(monkeypatch: pytest.MonkeyPatch) -> None:
+    # pathlib asks io.text_encoding for the default encoding, which is the ANSI code page on Windows
+    monkeypatch.setattr(io, "text_encoding", _windows_encoding)
+
+
+@pytest.mark.usefixtures("windows_locale")
+def test_evidence_file_is_utf_8_whatever_the_locale(tmp_path: Path) -> None:
+    # Arrange
+    path = tmp_path / "jobs.json"
+    name = f"Backend {dora.DASH} tests"
+
+    # Act
+    dora.write_evidence(path, [dora.RunJobs(run=1, jobs=[_job(0, 1, name=name)])])
+
+    # Assert
+    assert name.encode() in path.read_bytes()
+
+
+@pytest.mark.usefixtures("windows_locale")
+def test_report_is_utf_8_whatever_the_locale(tmp_path: Path) -> None:
+    # Arrange
+    (tmp_path / "evidence").mkdir()
+    for name in ("runs", "jobs", "pull-requests"):
+        (tmp_path / "evidence" / f"{name}.json").write_bytes(b"[]")
+
+    # Act
+    dora.report(PERIOD, tmp_path)
+
+    # Assert
+    assert PERIOD.label.encode() in (tmp_path / "dora-metrics.md").read_bytes()
 
 
 def test_report_shows_the_change_fail_rate_of_completed_runs() -> None:
