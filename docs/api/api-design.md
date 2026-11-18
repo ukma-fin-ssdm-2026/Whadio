@@ -194,7 +194,7 @@ sub-resource, such as `…/cancel`, `…/complete` or `…/approve`.
 - **Description:** a link to a meeting for someone outside the workspace. It grants nothing
   until its creator approves one account's request.
 - **Attributes:**
-  - share: `id`, `redact_speaker_names`, `recipient_user_id`, `revoked_at`
+  - share: `id`, `redact_speaker_names`, `recipient_user_id`, `created_at`, `revoked_at`
   - request: `id`, requester's `name` and `email`, `status`
 - **Relations:** a share belongs to a meeting and its creator; it has access requests and
   binds to at most one account.
