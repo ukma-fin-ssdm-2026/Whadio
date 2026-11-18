@@ -1,5 +1,5 @@
 import { Button, Chip, CircularProgress, ListItem, ListItemText, Stack } from "@mui/material";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { ApiError } from "@/shared/api/errors";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { ErrorBanner } from "@/shared/ui/ErrorBanner";
@@ -22,7 +22,7 @@ function listError(error: Error) {
 
 export function AccessRequests({ shareId }: { shareId: string }) {
   const notify = useNotify();
-  const requests = useQuery(shareQueries.requests(shareId));
+  const requests = useInfiniteQuery(shareQueries.requests(shareId));
   const decide = useDecideRequest(shareId);
 
   if (requests.isLoading) return <CircularProgress aria-label="Loading requests" size={24} />;
@@ -41,6 +41,8 @@ export function AccessRequests({ shareId }: { shareId: string }) {
       { requestId, approve },
       { onSuccess: () => notify(approve ? "Request approved." : "Request declined.") },
     );
+
+  const approved = requests.data.some((request) => request.status === "approved");
 
   return (
     <Stack sx={{ gap: 2 }}>
@@ -63,13 +65,15 @@ export function AccessRequests({ shareId }: { shareId: string }) {
                 >
                   Decline
                 </Button>
-                <Button
-                  variant="contained"
-                  disabled={decide.isPending}
-                  onClick={() => answer(request.id, true)}
-                >
-                  Approve
-                </Button>
+                {!approved && (
+                  <Button
+                    variant="contained"
+                    disabled={decide.isPending}
+                    onClick={() => answer(request.id, true)}
+                  >
+                    Approve
+                  </Button>
+                )}
               </Stack>
             ) : (
               <Chip size="small" label={STATUS_LABELS[request.status] ?? request.status} />
@@ -77,6 +81,22 @@ export function AccessRequests({ shareId }: { shareId: string }) {
           </ListItem>
         ))}
       </ListPanel>
+      {requests.hasNextPage && (
+        <Button
+          disabled={requests.isFetchingNextPage}
+          onClick={() => requests.fetchNextPage()}
+          sx={{ alignSelf: "center" }}
+        >
+          Show more
+        </Button>
+      )}
+      {requests.isFetchingNextPage && (
+        <CircularProgress
+          aria-label="Loading more requests"
+          size={24}
+          sx={{ alignSelf: "center" }}
+        />
+      )}
     </Stack>
   );
 }

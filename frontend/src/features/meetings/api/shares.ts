@@ -37,25 +37,35 @@ export const shareQueries = {
       select: ({ pages }) => pages.flatMap((page) => page.items),
     }),
   requests: (shareId: string) =>
-    queryOptions({
+    infiniteQueryOptions({
       queryKey: requestsKey(shareId),
-      queryFn: ({ signal }) =>
+      queryFn: ({ pageParam, signal }) =>
         unwrap(
           apiClient.GET("/api/v1/shares/{share_id}/access-requests", {
-            params: { path: { share_id: shareId }, query: { limit: 100 } },
+            params: {
+              path: { share_id: shareId },
+              query: { limit: 100, cursor: pageParam || null },
+            },
             signal,
           }),
         ),
-      select: (page) => page.items,
+      initialPageParam: FIRST_PAGE,
+      getNextPageParam: ({ pagination }) => (pagination.has_more ? pagination.next_cursor : null),
+      select: ({ pages }) => pages.flatMap((page) => page.items),
     }),
   received: () =>
-    queryOptions({
+    infiniteQueryOptions({
       queryKey: receivedKey,
-      queryFn: ({ signal }) =>
+      queryFn: ({ pageParam, signal }) =>
         unwrap(
-          apiClient.GET("/api/v1/users/me/shares", { params: { query: { limit: 100 } }, signal }),
+          apiClient.GET("/api/v1/users/me/shares", {
+            params: { query: { limit: 100, cursor: pageParam || null } },
+            signal,
+          }),
         ),
-      select: (page) => page.items,
+      initialPageParam: FIRST_PAGE,
+      getNextPageParam: ({ pagination }) => (pagination.has_more ? pagination.next_cursor : null),
+      select: ({ pages }) => pages.flatMap((page) => page.items),
     }),
   transcript: (shareId: string) =>
     queryOptions({
