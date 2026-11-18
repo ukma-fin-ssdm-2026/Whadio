@@ -199,6 +199,8 @@ def test_preview_and_decline_are_public_and_decline_consumes_link(
 @pytest.mark.parametrize(
     ("password", "terms", "name"),
     [("weak", True, "New member"), (PASSWORD, False, "New member"), (PASSWORD, True, "   ")],
+    # PASSWORD is random, so ids derived from it would change between runs.
+    ids=["weak-password", "terms-declined", "blank-name"],
 )
 def test_invalid_registration_keeps_invitation_pending(
     async_database: AsyncDatabase, password: str, name: str, *, terms: bool
