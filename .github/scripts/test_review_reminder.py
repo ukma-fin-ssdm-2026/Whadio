@@ -365,6 +365,20 @@ def test_empty_sections_are_left_out() -> None:
     ]
 
 
+def test_fixes_line_names_the_author_and_leaves_out_by() -> None:
+    # Arrange
+    entries = reminder.waiting([_pull(1, pushed=10, verdicts={"ana": ("CHANGES_REQUESTED", 4)})])
+
+    # Act
+    message = reminder.build_message(entries, NOW)
+
+    # Assert
+    assert message.splitlines() == [
+        "<b>Waiting for fixes (1)</b>",
+        '<b>denys</b> → <a href="https://github.com/org/repo/pull/1">#1</a> feat(#1): add · 4 h',
+    ]
+
+
 def test_sections_are_separated_by_a_blank_line() -> None:
     # Arrange
     entries = reminder.waiting(
@@ -428,6 +442,25 @@ def test_pull_requests_past_the_limit_are_counted_in_the_last_line() -> None:
     # Assert
     listed = len(re.findall(r" → <a ", "\n".join(lines)))
     assert lines[-1] == f"and {15 - listed} more"
+
+
+def test_section_change_at_the_limit_counts_its_header_and_blank_line() -> None:
+    # Arrange
+    backlogs = [
+        reminder.waiting(
+            [
+                _pull(1, "x" * length),
+                _pull(2, pushed=1, verdicts={"ana": ("CHANGES_REQUESTED", 5)}),
+            ]
+        )
+        for length in range(3900, 4060)
+    ]
+
+    # Act
+    lengths = [len(_shown(reminder.build_message(entries, NOW))) for entries in backlogs]
+
+    # Assert
+    assert max(lengths) <= reminder.MESSAGE_LIMIT
 
 
 def test_short_backlog_lists_every_pull_request() -> None:
