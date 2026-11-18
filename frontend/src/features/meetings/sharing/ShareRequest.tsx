@@ -1,9 +1,10 @@
 import { Alert, Box, Button, Card, CircularProgress, Stack, Typography } from "@mui/material";
-import { useState } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import { ApiError } from "@/shared/api/errors";
 import type { Schemas } from "@/shared/api/types";
-import { requestShareAccess } from "../api/shares";
+import { requestShareAccess, shareQueries } from "../api/shares";
 
 const validId = z.uuid();
 
@@ -15,7 +16,9 @@ interface ShareRequestProps {
   onRetrySession?: () => void;
   onRequestSignIn: () => void;
   onSessionExpired: () => void;
+  onUseDifferentAccount: () => void;
   onOpen: () => void;
+  onOpenMeetings: () => void;
 }
 
 type RequestState =
@@ -38,6 +41,49 @@ function ShareCard({ children }: { children: React.ReactNode }) {
   );
 }
 
+function HasAccess({
+  shareId,
+  onOpen,
+  onOpenMeetings,
+}: {
+  shareId: string;
+  onOpen: () => void;
+  onOpenMeetings: () => void;
+}) {
+  const received = useInfiniteQuery(shareQueries.received());
+  const bound = received.data?.some((share) => share.id === shareId) ?? false;
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = received;
+
+  useEffect(() => {
+    if (!bound && hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [bound, hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  if (received.error) return <Alert severity="error">{received.error.message}</Alert>;
+  if (received.isLoading || (!bound && hasNextPage)) {
+    return <CircularProgress size={24} aria-label="Checking your access" />;
+  }
+  if (bound) {
+    return (
+      <>
+        <Typography color="textSecondary">This share is bound to your account.</Typography>
+        <Button variant="contained" onClick={onOpen}>
+          Open the shared meeting
+        </Button>
+      </>
+    );
+  }
+  return (
+    <>
+      <Typography color="textSecondary">
+        This meeting is in your workspace, so you read it there.
+      </Typography>
+      <Button variant="contained" onClick={onOpenMeetings}>
+        Meetings
+      </Button>
+    </>
+  );
+}
+
 export function ShareRequest({
   shareId,
   token,
@@ -46,7 +92,9 @@ export function ShareRequest({
   onRetrySession,
   onRequestSignIn,
   onSessionExpired,
+  onUseDifferentAccount,
   onOpen,
+  onOpenMeetings,
 }: ShareRequestProps) {
   const usable = token !== null && validId.safeParse(shareId).success;
   const [state, setState] = useState<RequestState>({ kind: usable ? "ready" : "invalid" });
@@ -80,12 +128,7 @@ export function ShareRequest({
     return (
       <ShareCard>
         <Typography variant="h1">You already have access</Typography>
-        <Typography color="textSecondary">
-          This share is yours, or you can read the meeting in its workspace.
-        </Typography>
-        <Button variant="contained" onClick={onOpen}>
-          Open shared meetings
-        </Button>
+        <HasAccess shareId={shareId} onOpen={onOpen} onOpenMeetings={onOpenMeetings} />
       </ShareCard>
     );
   }
@@ -149,6 +192,7 @@ export function ShareRequest({
           <Button variant="contained" loading={requesting} onClick={() => void request()}>
             Request access
           </Button>
+          <Button onClick={onUseDifferentAccount}>Use a different account</Button>
         </Stack>
       )}
     </ShareCard>
