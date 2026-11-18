@@ -4,6 +4,12 @@ All notable changes to Whadio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-11-18
+
+### Added
+
+- Create, list and revoke meeting shares from the web app ([#367](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/367))
+
 ## [0.18.0] - 2026-11-18
 
 ### Added
