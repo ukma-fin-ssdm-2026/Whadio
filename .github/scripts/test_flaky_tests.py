@@ -143,11 +143,22 @@ def test_test_is_flaky_only_when_its_outcome_differed(
     assert flaky == expected
 
 
-def test_test_missing_from_one_repeat_is_flaky(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "runs",
+    [
+        pytest.param(
+            [[("test_a", "passed"), ("test_b", "passed")], [("test_b", "passed")]],
+            id="absent-from-a-later-repeat",
+        ),
+        pytest.param(
+            [[("test_b", "passed")], [("test_a", "passed"), ("test_b", "passed")]],
+            id="absent-from-the-first-repeat",
+        ),
+    ],
+)
+def test_test_missing_from_one_repeat_is_flaky(tmp_path: Path, runs: list[Run]) -> None:
     # Arrange
-    directories = _repeats(
-        tmp_path, [("test_a", "passed"), ("test_b", "passed")], [("test_b", "passed")]
-    )
+    directories = _repeats(tmp_path, *runs)
 
     # Act
     flaky = flaky_tests.flaky(flaky_tests.compare(directories))
