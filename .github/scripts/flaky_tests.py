@@ -2,6 +2,7 @@ import string
 import sys
 import xml.etree.ElementTree as ET
 from collections import Counter
+from collections.abc import Iterator
 from enum import StrEnum
 from pathlib import Path
 
@@ -25,17 +26,28 @@ def _outcome(case: ET.Element) -> Outcome:
     return Outcome.PASSED
 
 
+def _cases(report: Path) -> Iterator[tuple[str, Outcome]]:
+    root = ET.parse(report).getroot()
+    # Only pytest repeats an id for one test: a failed call, then its teardown error.
+    from_pytest = any(suite.get("name") == "pytest" for suite in root.iter("testsuite"))
+    occurrences: Counter[str] = Counter()
+    for case in root.iter("testcase"):
+        test_id = f"{case.get('classname', '')}::{case.get('name', '')}"
+        occurrences[test_id] += 1
+        if not from_pytest and occurrences[test_id] > 1:
+            test_id = f"{test_id} #{occurrences[test_id]}"
+        yield test_id, _outcome(case)
+
+
 def read_repeat(directory: Path) -> dict[str, Outcome]:
     reports = sorted(directory.glob("*.xml"))
     if not reports:
         raise FileNotFoundError(f"{directory} holds no JUnit report")
     outcomes: dict[str, Outcome] = {}
     for report in reports:
-        for case in ET.parse(report).iter("testcase"):
-            test_id = f"{case.get('classname', '')}::{case.get('name', '')}"
-            # An id can occur twice in one run (pytest's teardown errors, same-named Vitest tests).
+        for test_id, outcome in _cases(report):
             if outcomes.get(test_id) is not Outcome.FAILED:
-                outcomes[test_id] = _outcome(case)
+                outcomes[test_id] = outcome
     return outcomes
 
 

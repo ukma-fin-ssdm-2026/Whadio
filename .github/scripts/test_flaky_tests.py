@@ -31,21 +31,21 @@ def _load() -> ModuleType:
 flaky_tests = _load()
 
 
-def _write(directory: Path, cases: Run, report: str = "backend.xml") -> None:
+def _write(directory: Path, cases: Run, report: str = "backend.xml", suite: str = "pytest") -> None:
     directory.mkdir(exist_ok=True)
     body = "".join(
         f'<testcase classname="app.test_x" name="{name}">{BODIES[kind]}</testcase>'
         for name, kind in cases
     )
     (directory / report).write_text(
-        f'<testsuites><testsuite name="pytest">{body}</testsuite></testsuites>', encoding="utf-8"
+        f'<testsuites><testsuite name="{suite}">{body}</testsuite></testsuites>', encoding="utf-8"
     )
 
 
-def _repeats(root: Path, *runs: Run) -> list[Path]:
+def _repeats(root: Path, *runs: Run, suite: str = "pytest") -> list[Path]:
     directories = [root / f"repeat-{number}" for number in range(len(runs))]
     for directory, cases in zip(directories, runs, strict=True):
-        _write(directory, cases)
+        _write(directory, cases, suite=suite)
     return directories
 
 
@@ -71,7 +71,7 @@ def test_testcase_outcome_comes_from_its_child_element(
     assert outcomes == {TEST_A: expected}
 
 
-def test_failure_of_a_duplicate_test_id_keeps_the_repeat_failed(tmp_path: Path) -> None:
+def test_failure_of_a_repeated_pytest_id_keeps_the_repeat_failed(tmp_path: Path) -> None:
     # Arrange
     _write(tmp_path, [("test_a", "failed"), ("test_a", "passed")])
 
@@ -80,6 +80,22 @@ def test_failure_of_a_duplicate_test_id_keeps_the_repeat_failed(tmp_path: Path) 
 
     # Assert
     assert outcomes == {TEST_A: "failed"}
+
+
+def test_same_titled_vitest_cases_that_take_turns_failing_are_both_flaky(tmp_path: Path) -> None:
+    # Arrange
+    directories = _repeats(
+        tmp_path,
+        [("test_a", "failed"), ("test_a", "passed")],
+        [("test_a", "passed"), ("test_a", "failed")],
+        suite="popup.test.js",
+    )
+
+    # Act
+    flaky = flaky_tests.flaky(flaky_tests.compare(directories))
+
+    # Assert
+    assert flaky == [TEST_A, f"{TEST_A} #2"]
 
 
 def test_every_report_of_a_repeat_is_read(tmp_path: Path) -> None:
