@@ -2481,7 +2481,7 @@
           "meetings"
         ],
         "summary": "Rename or move a meeting",
-        "description": "Any member who can read the meeting. Renaming clears `name_is_generated`. Moving keeps the recording, transcript and notes; only folders of the same workspace are accepted, and later notes use the new folder as context. `recorded_at` cannot be changed.",
+        "description": "Any member who can read the meeting. Renaming clears `name_is_generated`. Moving keeps the recording, transcript and notes; only folders of the same workspace are accepted, and later notes use the new folder as context. Give `expected_folder_id` and `expected_folder_revision_id` to refuse the move if another member moved the meeting since it was read. `recorded_at` cannot be changed.",
         "operationId": "update_meeting_api_v1_meetings__meeting_id__patch",
         "security": [
           {
@@ -2548,6 +2548,16 @@
           },
           "404": {
             "description": "`NOT_FOUND`: no such meeting, or the caller cannot read it (restricted meetings are reported as missing, never as forbidden)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`MEETING_MOVE_CONFLICT`: the meeting no longer has the expected folder placement",
             "content": {
               "application/json": {
                 "schema": {
@@ -7041,6 +7051,7 @@
           "FOLDER_EXISTS",
           "TERM_EXISTS",
           "STALE_REVISION",
+          "MEETING_MOVE_CONFLICT",
           "LINK_INVALID",
           "ACCESS_REQUEST_EXISTS",
           "ALREADY_HAS_ACCESS",
@@ -7872,6 +7883,12 @@
               "e8f7d6c5-b4a3-4291-8f7e-6d5c4b3a2918"
             ]
           },
+          "folder_revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Folder Revision Id",
+            "description": "Changes whenever the meeting enters a folder; use it for conditional moves"
+          },
           "name": {
             "type": "string",
             "title": "Name",
@@ -7981,6 +7998,7 @@
           "id",
           "workspace_id",
           "folder_id",
+          "folder_revision_id",
           "name",
           "name_is_generated",
           "recorded_at",
@@ -8024,6 +8042,12 @@
             "examples": [
               "e8f7d6c5-b4a3-4291-8f7e-6d5c4b3a2918"
             ]
+          },
+          "folder_revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Folder Revision Id",
+            "description": "Changes whenever the meeting enters a folder; use it for conditional moves"
           },
           "name": {
             "type": "string",
@@ -8078,6 +8102,7 @@
           "id",
           "workspace_id",
           "folder_id",
+          "folder_revision_id",
           "name",
           "name_is_generated",
           "recorded_at",
@@ -8121,6 +8146,32 @@
             ],
             "title": "Folder Id",
             "description": "Folder of the same workspace to move the meeting to"
+          },
+          "expected_folder_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Folder Id",
+            "description": "Move only if the meeting is still in this folder"
+          },
+          "expected_folder_revision_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Folder Revision Id",
+            "description": "Move only if the meeting still has this folder placement revision"
           }
         },
         "additionalProperties": false,

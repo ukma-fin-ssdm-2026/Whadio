@@ -23,12 +23,13 @@ from ..meetings.enums import (
 from ..meetings.models import Meeting, Note, Transcript
 from ..meetings.repositories import FolderRepository
 from ..meetings.retention import IRetentionMeetings, RetentionMeetings
-from ..meetings.services import FolderService, RecordingInput, TranscriptEdit
+from ..meetings.services import FolderService, MeetingChanges, RecordingInput, TranscriptEdit
 from ..retention.services import RetentionService, StorageUnavailableError
 from ..shared.database import DatabaseSettings
 from ..shared.errors import Failure, UseCaseError
 from ..shared.pagination import ListCursor, ListWindow
 from .access_policy.routes import ShareRead
+from .core.errors import ErrorCode, ErrorResponse
 from .core.schemas import Page
 from .meetings.routes_content import FolderRead
 from .meetings.views import meeting_read
@@ -247,6 +248,77 @@ def test_folder_restore_preserves_content_and_restricted_access(
     asyncio.run(scenario())
 
 
+def test_patch_refuses_an_old_move_after_returning_to_the_same_folder(
+    database_settings: DatabaseSettings,
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit:
+            original = await unit.meetings.get(unit.owner, unit.meeting)
+            original_folder = original.folder_id
+            original_revision = original.folder_revision_id
+            planning = await unit.meetings.create_folder(
+                unit.owner, unit.workspace, "Planning", datetime.now(UTC)
+            )
+            archive = await unit.meetings.create_folder(
+                unit.owner, unit.workspace, "Archive", datetime.now(UTC)
+            )
+            first_move = await unit.meetings.update(
+                unit.owner,
+                unit.meeting,
+                datetime.now(UTC),
+                MeetingChanges(
+                    folder_id=planning.folder_id,
+                    expected_folder_revision_id=original_revision,
+                ),
+            )
+            stale_revision = first_move.folder_revision_id
+            second_move = await unit.meetings.update(
+                unit.owner,
+                unit.meeting,
+                datetime.now(UTC),
+                MeetingChanges(
+                    folder_id=archive.folder_id,
+                    expected_folder_revision_id=stale_revision,
+                ),
+            )
+            second_revision = second_move.folder_revision_id
+            returned = await unit.meetings.update(
+                unit.owner,
+                unit.meeting,
+                datetime.now(UTC),
+                MeetingChanges(
+                    folder_id=planning.folder_id,
+                    expected_folder_revision_id=second_revision,
+                ),
+            )
+            # Act
+            async with client_fixture(unit, unit.owner) as client:
+                response = await client.patch(
+                    f"/api/v1/meetings/{unit.meeting}",
+                    json={
+                        "folder_id": str(original_folder),
+                        "expected_folder_id": str(planning.folder_id),
+                        "expected_folder_revision_id": str(stale_revision),
+                    },
+                )
+            stored = await unit.meetings.get(unit.owner, unit.meeting)
+            # Assert
+            assert (
+                response.status_code,
+                ErrorResponse.model_validate_json(response.content).error.code,
+                stored.folder_id,
+                stored.folder_revision_id,
+            ) == (
+                409,
+                ErrorCode.MEETING_MOVE_CONFLICT,
+                planning.folder_id,
+                returned.folder_revision_id,
+            )
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
 def test_folder_restore_refuses_to_overwrite_a_later_move(
     database_settings: DatabaseSettings,
 ) -> None:
@@ -264,7 +336,10 @@ def test_folder_restore_refuses_to_overwrite_a_later_move(
                 unit.owner, unit.workspace, "other", datetime.now(UTC)
             )
             await unit.meetings.update(
-                unit.owner, unit.meeting, datetime.now(UTC), folder_id=other.folder_id
+                unit.owner,
+                unit.meeting,
+                datetime.now(UTC),
+                MeetingChanges(folder_id=other.folder_id),
             )
             # Act
             with pytest.raises(UseCaseError) as error:
