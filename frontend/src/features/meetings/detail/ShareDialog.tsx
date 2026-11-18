@@ -24,7 +24,7 @@ import { type Share, shareQueries, useCreateShare, useRevokeShare } from "../api
 
 interface ShareDialogProps {
   meetingId: string;
-  requestsHref: (shareId: string) => string;
+  onOpenRequests: (shareId: string) => void;
   onClose: () => void;
 }
 
@@ -34,7 +34,7 @@ function shareState(share: Share) {
   return "No approved recipient yet";
 }
 
-export function ShareDialog({ meetingId, requestsHref, onClose }: ShareDialogProps) {
+export function ShareDialog({ meetingId, onOpenRequests, onClose }: ShareDialogProps) {
   const notify = useNotify();
   const shares = useInfiniteQuery(shareQueries.list(meetingId));
   const createShare = useCreateShare(meetingId);
@@ -97,7 +97,7 @@ export function ShareDialog({ meetingId, requestsHref, onClose }: ShareDialogPro
                       !share.revoked_at && (
                         <Stack direction="row" sx={{ gap: 1 }}>
                           {!share.recipient_user_id && (
-                            <Button size="small" href={requestsHref(share.id)}>
+                            <Button size="small" onClick={() => onOpenRequests(share.id)}>
                               Requests
                             </Button>
                           )}

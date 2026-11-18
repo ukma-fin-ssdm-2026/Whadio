@@ -51,13 +51,9 @@ function serveShares(shares: Schemas["ShareRead"][] = [], pageSize = 100) {
   return { created, revoked };
 }
 
-function renderDialog() {
+function renderDialog(onOpenRequests: (shareId: string) => void = () => {}) {
   return renderWithProviders(
-    <ShareDialog
-      meetingId="meeting"
-      requestsHref={(shareId) => `/shares/${shareId}/access-requests`}
-      onClose={() => {}}
-    />,
+    <ShareDialog meetingId="meeting" onOpenRequests={onOpenRequests} onClose={() => {}} />,
   );
 }
 
@@ -89,18 +85,17 @@ test("each share shows whether it waits, is approved or was revoked", async () =
   ]);
 });
 
-test("a waiting share links to its access requests", async () => {
+test("Requests opens the access requests of that share", async () => {
   // Arrange
-  serveShares([share({ id: "waiting" })]);
+  serveShares([share({ id: "first", revoked_at: REVOKED_AT }), share({ id: "waiting" })]);
+  const onOpenRequests = vi.fn();
+  const { user } = renderDialog(onOpenRequests);
 
   // Act
-  renderDialog();
+  await user.click(await screen.findByRole("button", { name: "Requests" }));
 
   // Assert
-  expect(await screen.findByRole("link", { name: "Requests" })).toHaveAttribute(
-    "href",
-    "/shares/waiting/access-requests",
-  );
+  expect(onOpenRequests).toHaveBeenCalledWith("waiting");
 });
 
 test("a share hides speaker names when asked to", async () => {
@@ -177,7 +172,7 @@ test("each Revoke button names the share by its creation date", async () => {
   // Assert
   expect(
     within(await screen.findByRole("list", { name: "Your shares" }))
-      .getAllByRole("button")
+      .getAllByRole("button", { name: /^Revoke share/ })
       .map((button) => button.getAttribute("aria-label")),
   ).toEqual([
     `Revoke share created ${formatDate("2026-11-11T09:00:00Z")}`,
@@ -389,11 +384,7 @@ test("escape keeps the dialog open while a share is being created", async () => 
   );
   const onClose = vi.fn();
   const { user } = renderWithProviders(
-    <ShareDialog
-      meetingId="meeting"
-      requestsHref={(shareId) => `/shares/${shareId}/access-requests`}
-      onClose={onClose}
-    />,
+    <ShareDialog meetingId="meeting" onOpenRequests={() => {}} onClose={onClose} />,
   );
   await user.click(screen.getByRole("button", { name: "Create link" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Close" })).toBeDisabled());

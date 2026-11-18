@@ -41,7 +41,7 @@ function renderActions(
       members={members}
       onAccessOpen={() => {}}
       onLeave={onDeleted}
-      requestsHref={(shareId) => `/shares/${shareId}/access-requests`}
+      onOpenRequests={() => {}}
     />,
   );
 }
