@@ -44,12 +44,13 @@ jobs:
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
           GH_TOKEN: ${{ github.token }}
           # Not the push's `before`: a newer push cancels a pending run on `main` before any of its
-          # jobs, so a push counts every commit since the last run that ran.
+          # jobs, and a failed run may not have run them, so a push counts every commit since the
+          # last green run.
           LAST_TESTED_COMMIT: >-
             first(.workflow_runs[]
             | select(.id != (env.GITHUB_RUN_ID | tonumber))
             | select(.event == "push" or .event == "workflow_dispatch")
-            | select(.conclusion == "success" or .conclusion == "failure")
+            | select(.conclusion == "success")
             ).head_sha
         run: |
           # Whenever the changed files are unknown, everything runs.
