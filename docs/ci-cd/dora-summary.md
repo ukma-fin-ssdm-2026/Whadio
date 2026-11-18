@@ -104,7 +104,7 @@ A blameless review of each episode of consecutive red runs; the numbers are the 
 | Deployment frequency | Every figure is an approximation; 18 of 94 deployments are release commits | The application is not deployed anywhere yet, so a green run stands in for a deployment | Deploy the application to its public server from every green `main` run, and measure the four metrics from those deployments | `@Hukyl` |
 | Deployment frequency | Approved pull requests wait to be merged: 10 of 112 waited over 12 h | The author has to come back to merge | Allow auto-merge, so an approved pull request merges as soon as its checks pass | `@v-missirova` |
 | Change lead time | A pull request waits 5.8 h (median) for its first review, half of the time it is open | Reviews happen when someone remembers | A daily message in the team chat listing the pull requests that wait for review | `@SquidBow` |
-| Change lead time | Waits of up to 5.7 h on 01.11 | Six jobs per run on four runners shared by the course | Skip CI for documentation-only pushes | `@t-zlata` |
+| Change lead time | Waits of up to 5.7 h on 01.11 | Six jobs per run on four runners shared by the course | Done in #411: documentation-only changes skip the code jobs (bonus 2 below) | `@t-zlata` |
 | Lead time, recovery time | 60% of all lead time is waiting for a green `main`; recovery median 14.2 h | Merges went on while `main` was red | Done: `CI passed` must pass before a merge (02.11). `main` has had no red run since 01.11 | `@Hukyl` |
 | Recovery time | A red `main` waited for whoever looked next | Nothing tells the team that `main` is red | Post to the team chat when a run on `main` turns red | `@v-missirova` |
 | Change fail rate | 10 of 16 red runs came from the audit | A new advisory failed every run, whatever the change | Done: the audit warns instead of failing (01.11) | `@Hukyl` |
@@ -176,6 +176,57 @@ uv run python .github/scripts/dora_metrics.py report --since 2026-10-20 --until 
 this script. On 17.11 `fetch` wrote the three evidence files byte for byte as committed, and every
 row of [`metrics-raw.md`](metrics-raw.md) matches the script's queue, run and end times. Only the
 rounding differs: 31 and 25 deployments a week above, 31.3 and 25.3 in the script's output.
+
+### 2. Improvement with a measured effect
+
+The backlog's "Skip CI for documentation-only pushes", merged in #411 on 18.11. A first job on a
+GitHub-hosted runner compares the change with the last green run on `main`, or a pull request with
+its base. When only documentation changed, Frontend, Backend, Reliability tests and Worker image are
+skipped; the static checks, `CI passed` and the Pages deploy still run. It targets the time that
+documentation-only runs hold the four shared runners, which every team's queue waits on.
+
+| | Run | Shared-runner time | Run time |
+| --- | --- | ---: | ---: |
+| Before | [43929743361](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/43929743361) | 24.4 min | 10.7 min |
+| Before | [43739524354](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/43739524354) | 18.4 min | 7.7 min |
+| Before | [42388287693](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/42388287693) | 17.2 min | 13.3 min |
+| Before | [42373020035](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/42373020035) | 17.6 min | 9.1 min |
+| Before | [41884110878](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/41884110878) | 15.7 min | 18.4 min |
+| After (pull request) | [44185953034](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/44185953034) | 2.4 min | 15.3 min |
+
+The "before" rows are the last five documentation-only runs on `main` before #411. Shared-runner
+time is the sum of the jobs on the course runners. Run time is from the first job's start to the
+last job's end, so it also holds the waits for a free runner: the run after #411 waited for one.
+
+### 3. Fast and slow test suites
+
+Since #405, a pull request runs only the fast suite: no services, and its coverage is reported but
+not gated. `main` runs the whole suite against PostgreSQL, RabbitMQ and SeaweedFS from Compose, after
+the migrations and `alembic check`, with the 85% coverage gate and the reliability tests. The slow
+suite includes integration tests against the real database, such as the repository tests and the
+stalled-job reliability tests.
+
+| Run | Suite | Tests | Duration |
+| --- | --- | ---: | ---: |
+| Pull request #405, [44174316846](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/44174316846) | Fast | 1,226 | 77 s (backend job 2 min 22 s) |
+| `main` after #411, [44414378729](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/44414378729) | Fast and slow | 2,038 | 431 s (backend job 8 min 23 s) |
+| The same `main` run | Reliability | 40 | 0.7 s |
+
+### 4. Flaky-test finder
+
+A manual workflow (#406) runs the backend, frontend and extension suites five times in one job on
+one runner and lists the tests whose outcome differed between the repeats:
+
+```bash
+gh workflow run flaky-tests.yml -f repeats=5
+```
+
+Its first run, [44416995772](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/runs/44416995772),
+took 38 min for 3,534 tests: none failed, and none changed between passing and failing. It still
+flagged three cases of one registration test, because pytest named them after a random password, so
+each repeat gave them new names. #417 gives them fixed names.
+
+None of the 130 runs on `main` in the Stage 1 period was a re-run: every one was a first attempt.
 
 ## AI Usage
 
