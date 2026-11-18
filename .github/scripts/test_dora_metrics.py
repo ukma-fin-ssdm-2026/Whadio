@@ -1,9 +1,12 @@
 import importlib.util
+import urllib.parse
+from collections.abc import Mapping
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from types import ModuleType
 
 import pytest
+from pydantic import BaseModel
 
 
 def _load() -> ModuleType:
@@ -359,3 +362,70 @@ def test_report_shows_the_change_fail_rate_of_completed_runs() -> None:
 
     # Assert
     assert "| Change fail rate | 1 / 2 = **50.0%** |" in report.splitlines()
+
+
+def _json(model: object) -> str:
+    assert isinstance(model, BaseModel)
+    return model.model_dump_json()
+
+
+def _within(window: str, moment: datetime) -> bool:
+    since, until = (datetime.fromisoformat(end) for end in window.split(".."))
+    return since <= moment <= until
+
+
+class FakeRunsApi:
+    def __init__(self, runs_per_day: Mapping[date, int]) -> None:
+        offsets = [
+            (day - START.date()).days * 24 * 60
+            for day, count in runs_per_day.items()
+            for _ in range(count)
+        ]
+        self.runs = sorted(
+            ((_at(offset), _run(run_id, created=offset)) for run_id, offset in enumerate(offsets)),
+            key=lambda pair: pair[0],
+            reverse=True,
+        )
+
+    def __call__(self, path: str) -> bytes:
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
+        windows = query.get("created", [])
+        matching = [
+            run for moment, run in self.runs if all(_within(window, moment) for window in windows)
+        ]
+        size = int(query["per_page"][0])
+        start = (int(query.get("page", ["1"])[0]) - 1) * size
+        listed = matching[: dora.RUN_LIMIT][start : start + size]
+        rows = ",".join(_json(run) for run in listed)
+        return f'{{"total_count":{len(matching)},"workflow_runs":[{rows}]}}'.encode()
+
+
+def test_runs_of_a_range_over_the_limit_are_all_fetched_by_splitting_it() -> None:
+    # Arrange
+    api = FakeRunsApi({date(2026, 10, 26): 600, date(2026, 10, 27): 600})
+
+    # Act
+    runs = dora.runs_created(date(2026, 10, 26), date(2026, 10, 27), api)
+
+    # Assert
+    assert len({run.database_id for run in runs}) == 1200
+
+
+def test_newer_runs_over_the_limit_do_not_hide_the_runs_of_the_range() -> None:
+    # Arrange
+    api = FakeRunsApi({date(2026, 11, 5): 130, date(2026, 11, 12): 1000})
+
+    # Act
+    runs = dora.runs_created(PERIOD.since, date(2026, 11, 9), api)
+
+    # Assert
+    assert len(runs) == 130
+
+
+def test_day_with_more_runs_than_github_lists_fails_the_fetch() -> None:
+    # Arrange
+    api = FakeRunsApi({date(2026, 10, 26): 1000})
+
+    # Act / Assert
+    with pytest.raises(dora.RunLimitError, match=r"26\.10\.2026"):
+        dora.runs_created(date(2026, 10, 26), date(2026, 10, 26), api)

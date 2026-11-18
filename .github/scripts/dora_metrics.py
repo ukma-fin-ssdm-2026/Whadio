@@ -3,6 +3,7 @@ import os
 import statistics
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from bisect import bisect_left
 from collections.abc import Callable, Mapping, Sequence
@@ -16,7 +17,10 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, TypeAdapter, Va
 from pydantic.alias_generators import to_camel
 
 GITHUB_API = "https://api.github.com/repos/ukma-fin-ssdm-2026/Whadio"
+RUNS = "actions/workflows/ci.yml/runs?branch=main&event=push"
 PAGE_SIZE = 100
+# GitHub lists at most this many runs for a query filtered by branch, event or date
+RUN_LIMIT = 1000
 TIMEOUT_SECONDS = 30
 KYIV = ZoneInfo("Europe/Kyiv")
 DASH = "\N{EN DASH}"
@@ -98,6 +102,7 @@ _PULL_REQUESTS = TypeAdapter(list[PullRequest])
 
 
 class _RunsPage(BaseModel):
+    total_count: int = Field(description="How many runs match, listed or not.")
     workflow_runs: list[Run] = Field(description="A page of the workflow's runs.")
 
 
@@ -450,38 +455,74 @@ def render(summary: Summary) -> str:
 # --- Commands ---
 
 
-def _paged[T](path: str, token: str, parse: Callable[[bytes], list[T]]) -> list[T]:
+type Get = Callable[[str], bytes]
+
+
+def github(token: str) -> Get:
+    def get(path: str) -> bytes:
+        request = urllib.request.Request(
+            f"{GITHUB_API}/{path}",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+        )
+        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+            return bytes(response.read())
+
+    return get
+
+
+def _paged[T](path: str, get: Get, parse: Callable[[bytes], list[T]]) -> list[T]:
     items: list[T] = []
     separator = "&" if "?" in path else "?"
     page = 1
     while True:
-        request = urllib.request.Request(
-            f"{GITHUB_API}/{path}{separator}per_page={PAGE_SIZE}&page={page}",
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
-        )
-        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-            chunk = parse(response.read())
+        chunk = parse(get(f"{path}{separator}per_page={PAGE_SIZE}&page={page}"))
         items.extend(chunk)
         if len(chunk) < PAGE_SIZE:
             return items
         page += 1
 
 
+class RunLimitError(Exception):
+    pass
+
+
+def runs_created(first: date, last: date, get: Get) -> list[Run]:
+    """The runs created on the Kyiv days `first` to `last`; RunLimitError if GitHub hides some."""
+    if first > last:
+        return []
+    end = _midnight(last + timedelta(days=1)) - timedelta(seconds=1)
+    window = f"{_midnight(first).isoformat()}..{end.isoformat()}"
+    path = f"{RUNS}&created={urllib.parse.quote(window, safe='')}"
+    count = _RunsPage.model_validate_json(get(f"{path}&per_page=1")).total_count
+    if count < RUN_LIMIT:
+        return _paged(path, get, _workflow_runs)
+    if first == last:
+        message = (
+            f"{count} runs were created on {first:%d.%m.%Y}, and GitHub lists at most "
+            f"{RUN_LIMIT} for one query"
+        )
+        raise RunLimitError(message)
+    middle = first + timedelta(days=(last - first).days // 2)
+    return [*runs_created(middle + timedelta(days=1), last, get), *runs_created(first, middle, get)]
+
+
 def write_evidence(path: Path, rows: Sequence[BaseModel]) -> None:
     path.write_text("[\n" + ",\n".join(row.model_dump_json() for row in rows) + "\n]\n")
 
 
-def fetch(period: Period, token: str) -> None:
-    runs = _paged("actions/workflows/ci.yml/runs?branch=main&event=push", token, _workflow_runs)
-    history = _paged("commits?sha=main", token, _MAIN_COMMITS.validate_json)
+def fetch(period: Period, get: Get) -> None:
+    history = _paged("commits?sha=main", get, _MAIN_COMMITS.validate_json)
     order = first_parent_order(
         history[0].sha, {commit.sha: commit.parents[0].sha for commit in history if commit.parents}
     )
     merges = [
         merge
-        for pull in _paged("pulls?state=closed&base=main", token, _PULLS.validate_json)
+        for pull in _paged("pulls?state=closed&base=main", get, _PULLS.validate_json)
         if (merge := pull.merge()) is not None
     ]
+    # A merge before the period may have been deployed by a run before it
+    first = min([period.since, *(merge.merged_at.astimezone(KYIV).date() for merge in merges)])
+    runs = runs_created(first, datetime.now(KYIV).date(), get)
     pulls = [
         PullRequest(
             number=merge.number,
@@ -489,7 +530,7 @@ def fetch(period: Period, token: str) -> None:
             first_commit_at=min(
                 commit.commit.author.date
                 for commit in _paged(
-                    f"pulls/{merge.number}/commits", token, _PULL_COMMITS.validate_json
+                    f"pulls/{merge.number}/commits", get, _PULL_COMMITS.validate_json
                 )
             ),
             merged_at=merge.merged_at,
@@ -504,7 +545,7 @@ def fetch(period: Period, token: str) -> None:
     )
     jobs = [
         RunJobs(
-            run=run.database_id, jobs=_paged(f"actions/runs/{run.database_id}/jobs", token, _jobs)
+            run=run.database_id, jobs=_paged(f"actions/runs/{run.database_id}/jobs", get, _jobs)
         )
         for run in in_period
     ]
@@ -554,9 +595,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     if not token:
         sys.exit("Set GITHUB_TOKEN, for example GITHUB_TOKEN=$(gh auth token)")
     try:
-        fetch(period, token)
+        fetch(period, github(token))
     except urllib.error.HTTPError as error:
         sys.exit(f"HTTP {error.code} from {error.url}")
+    except RunLimitError as error:
+        sys.exit(str(error))
     except (urllib.error.URLError, TimeoutError, ValidationError) as error:
         sys.exit(f"Fetching from GitHub failed: {type(error).__name__}")
 
