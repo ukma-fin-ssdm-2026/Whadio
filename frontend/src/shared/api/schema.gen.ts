@@ -677,7 +677,7 @@ export interface paths {
         };
         /**
          * List Shares
-         * @description List shares of a meeting the caller can read, newest first.
+         * @description List the caller's own shares of a meeting they can read, newest first.
          */
         get: operations["list_shares_api_v1_meetings__meeting_id__shares_get"];
         put?: never;
@@ -2397,6 +2397,12 @@ export interface components {
              */
             revoked_at: string | null;
             /**
+             * Created At
+             * Format: date-time
+             * @description When the share was created
+             */
+            created_at: string;
+            /**
              * Link
              * @description Share link with one-time token disclosure in its fragment
              */
@@ -2434,6 +2440,12 @@ export interface components {
              * @description When access ended
              */
             revoked_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description When the share was created
+             */
+            created_at: string;
         };
         /** SignIn */
         SignIn: {

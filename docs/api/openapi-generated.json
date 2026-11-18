@@ -4456,7 +4456,7 @@
           "access"
         ],
         "summary": "List Shares",
-        "description": "List shares of a meeting the caller can read, newest first.",
+        "description": "List the caller's own shares of a meeting they can read, newest first.",
         "operationId": "list_shares_api_v1_meetings__meeting_id__shares_get",
         "security": [
           {
@@ -9216,6 +9216,12 @@
             "title": "Revoked At",
             "description": "When access ended"
           },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "When the share was created"
+          },
           "link": {
             "type": "string",
             "title": "Link",
@@ -9228,6 +9234,7 @@
           "redact_speaker_names",
           "recipient_user_id",
           "revoked_at",
+          "created_at",
           "link"
         ],
         "title": "ShareCreated"
@@ -9283,6 +9290,12 @@
             ],
             "title": "Revoked At",
             "description": "When access ended"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "When the share was created"
           }
         },
         "type": "object",
@@ -9290,7 +9303,8 @@
           "id",
           "redact_speaker_names",
           "recipient_user_id",
-          "revoked_at"
+          "revoked_at",
+          "created_at"
         ],
         "title": "ShareRead"
       },
