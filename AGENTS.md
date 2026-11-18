@@ -148,9 +148,9 @@ other:
   `reliability/` folders under `src/whadio/`, against a migrated PostgreSQL.
 - **Worker image:** `uv run task image` builds it and runs its entry point.
 - **CI passed** fails unless every job succeeded, apart from the reliability tests a pull request
-  skips and the jobs a change to documentation alone skips. `main` requires it, "Reliability
-  tests", "SonarCloud Code Analysis" and the check of the pull request title and every commit
-  message against the commit format.
+  skips and the jobs a change to documentation alone skips. `main` requires it, "SonarCloud Code
+  Analysis" and the check of the pull request title and every commit message against the commit
+  format.
 
 `uv run task ci` runs those jobs on your machine, in parallel and to the end, except the
 reliability tests, which `test:cov` already runs. It needs Docker, the services running and
