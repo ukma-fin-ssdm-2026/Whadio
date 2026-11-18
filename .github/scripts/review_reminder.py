@@ -54,7 +54,7 @@ def classify(pull: PullRequest) -> Entry | None:
     if changes:
         return Entry(pull, RE_REVIEW, ", ".join(sorted(changes)), pull.pushed_at)
     if not pull.verdicts:
-        return Entry(pull, NOT_REVIEWED, pull.author, pull.ready_at)
+        return Entry(pull, NOT_REVIEWED, "anyone", pull.ready_at)
     return None
 
 
@@ -72,13 +72,12 @@ def format_wait(delta: timedelta) -> str:
 
 
 def _line(entry: Entry, now: datetime) -> tuple[str, str]:
-    actor = "anyone" if entry.section == NOT_REVIEWED else entry.names
     author = "" if entry.section == FIXES else f" · by {entry.pull.author}"
     rest = f"{entry.pull.title}{author} · {format_wait(now - entry.since)}"
     link = f'<a href="{html.escape(entry.pull.url)}">#{entry.pull.number}</a>'
     return (
-        f"<b>{html.escape(actor, quote=False)}</b> → {link} {html.escape(rest, quote=False)}",
-        f"{actor} → #{entry.pull.number} {rest}",
+        f"<b>{html.escape(entry.names, quote=False)}</b> → {link} {html.escape(rest, quote=False)}",
+        f"{entry.names} → #{entry.pull.number} {rest}",
     )
 
 

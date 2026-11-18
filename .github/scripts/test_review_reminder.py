@@ -58,7 +58,7 @@ def test_pull_request_without_a_verdict_is_not_reviewed_yet() -> None:
     # Assert
     assert (entry.section, entry.names, entry.since) == (
         "Not reviewed yet",
-        "denys",
+        "anyone",
         NOW - timedelta(hours=5),
     )
 
