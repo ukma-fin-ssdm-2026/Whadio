@@ -75,26 +75,32 @@ jobs:
         run: |
           WHADIO_TEST_DATABASE_URL="$(uv run --frozen python -I -c 'from whadio.shared.database import DatabaseSettings; print(DatabaseSettings().application_url().render_as_string(False))')"
           export WHADIO_TEST_DATABASE_URL
-          missing=0
+          incomplete=0
           for repeat in $(seq "$REPEATS"); do
             reports="$GITHUB_WORKSPACE/reports/flaky/$repeat"
             mkdir -p "$reports"
             echo "::group::Repeat $repeat of $REPEATS"
-            # A failing test must not end the loop: the comparison needs every repeat's outcomes.
-            uv run --frozen pytest -m "not models" --junitxml="$reports/backend.xml" || true
+            # 1 is failed tests; above 1, pytest did not run them all but may still write a report.
+            pytest_status=0
+            uv run --frozen pytest -m "not models" --junitxml="$reports/backend.xml" || pytest_status=$?
+            # Vitest exits 1 for its own errors too; they become failing testcases or leave no report.
             npm --prefix frontend test -- \
               --reporter=default --reporter=junit --outputFile.junit="$reports/frontend.xml" || true
             npm --prefix frontend run test:extension -- \
               --reporter=default --reporter=junit --outputFile.junit="$reports/extension.xml" || true
             echo "::endgroup::"
+            if ((pytest_status > 1)); then
+              echo "::error title=pytest error::Repeat $repeat: pytest exited with status $pytest_status"
+              incomplete=1
+            fi
             for suite in backend frontend extension; do
               if [ ! -s "$reports/$suite.xml" ]; then
                 echo "::error title=Missing report::Repeat $repeat wrote no $suite report"
-                missing=1
+                incomplete=1
               fi
             done
           done
-          exit "$missing"
+          exit "$incomplete"
 
       - name: List the tests whose outcome differed
         if: ${{ !cancelled() && steps.repeats.outcome != 'skipped' }}
