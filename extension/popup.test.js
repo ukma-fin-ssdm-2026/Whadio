@@ -15,11 +15,15 @@ test("popup lists every destination and preserves a selection beyond the first p
   document.body.innerHTML = popupHtml;
   globalThis.chrome = {
     storage: {
+      onChanged: { addListener: vi.fn() },
       session: { get: vi.fn(async () => ({ name: "Alice" })) },
       local: {
         get: vi.fn(async () => ({ destination: { folder_id: "later" } })),
         set: vi.fn(),
       },
+    },
+    runtime: {
+      sendMessage: vi.fn(async () => ({ recordings: [], hasLockedRecordings: false })),
     },
     tabs: { query: vi.fn(async () => []) },
   };

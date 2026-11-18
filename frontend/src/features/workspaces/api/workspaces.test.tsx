@@ -1,10 +1,16 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { expect, test } from "vitest";
+import { deferred } from "@/shared/testing/deferred";
 import { page, workspaceRead, workspaceSummary } from "@/shared/testing/fixtures";
 import { createTestQueryClient, TestProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
-import { useCreateWorkspace, useUpdateWorkspace, workspaceQueries } from "./workspaces";
+import {
+  useCreateWorkspace,
+  useDeleteWorkspace,
+  useUpdateWorkspace,
+  workspaceQueries,
+} from "./workspaces";
 
 const CREATED = workspaceRead({ id: "created", name: "Created Workspace" });
 const UPDATED = workspaceRead({ default_preset: "interview" });
@@ -29,6 +35,30 @@ function serveUpdate() {
     }),
   );
   return bodies;
+}
+
+function renderDelete() {
+  const queryClient = createTestQueryClient();
+  queryClient.setQueryData(
+    workspaceQueries.list().queryKey,
+    page([workspaceSummary(), workspaceSummary({ id: "other", name: "Other" })]),
+  );
+  queryClient.setQueryData(workspaceQueries.detail("workspace").queryKey, workspaceRead());
+  server.use(
+    http.delete("/api/v1/workspaces/{workspace_id}", ({ response }) => response(204).empty()),
+  );
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <TestProviders queryClient={queryClient}>{children}</TestProviders>
+  );
+  const { result } = renderHook(
+    () =>
+      useDeleteWorkspace("workspace", ({ removeFromList, removeDetail }) => {
+        removeFromList();
+        removeDetail();
+      }),
+    { wrapper },
+  );
+  return { result, queryClient };
 }
 
 test("workspace keys share the workspaces domain", () => {
@@ -96,6 +126,32 @@ test("updating a workspace marks the list for a refetch", async () => {
   // Assert
   await waitFor(() =>
     expect(queryClient.getQueryState(workspaceQueries.list().queryKey)?.isInvalidated).toBe(true),
+  );
+});
+
+test("a stale list response cannot restore a deleted workspace", async () => {
+  // Arrange
+  const started = deferred();
+  const release = deferred();
+  const { result, queryClient } = renderDelete();
+  server.use(
+    http.get("/api/v1/workspaces", async ({ response }) => {
+      started.resolve();
+      await release.promise;
+      return response(200).json(page([workspaceSummary()]));
+    }),
+  );
+  const staleRequest = queryClient.fetchQuery(workspaceQueries.list());
+  await started.promise;
+
+  // Act
+  await result.current.mutateAsync();
+  release.resolve();
+  await staleRequest.catch(() => undefined);
+
+  // Assert
+  expect(queryClient.getQueryData(workspaceQueries.list().queryKey)).toEqual(
+    page([workspaceSummary({ id: "other", name: "Other" })]),
   );
 });
 

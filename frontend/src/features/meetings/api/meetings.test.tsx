@@ -2,11 +2,13 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import { apiClient } from "@/shared/api/client";
+import type { NoteRead } from "@/shared/api/types";
 import {
   errorBody,
   meetingRead,
   meetingSummary,
   noteRead,
+  notesJobRead,
   page,
   transcriptRead,
 } from "@/shared/testing/fixtures";
@@ -18,6 +20,7 @@ import {
   TRANSCRIPT_PENDING,
   useDeleteMeeting,
   useEditTranscript,
+  useRegenerateNotes,
   useUpdateMeeting,
   useUploadMeeting,
 } from "./meetings";
@@ -82,6 +85,7 @@ test("a meeting's content sits under its detail key", () => {
     meetingQueries.detail("alpha").queryKey,
     meetingQueries.transcript(meeting, "revision").queryKey,
     meetingQueries.notes(meeting).queryKey,
+    meetingQueries.noteVersions("alpha").queryKey,
     meetingQueries.recording(meeting).queryKey,
   ];
 
@@ -90,6 +94,7 @@ test("a meeting's content sits under its detail key", () => {
     ["meetings", "detail", "alpha"],
     ["meetings", "detail", "alpha", "transcript", { revisionId: "revision" }],
     ["meetings", "detail", "alpha", "notes"],
+    ["meetings", "detail", "alpha", "notes", "versions"],
     ["meetings", "detail", "alpha", "recording"],
   ]);
 });
@@ -110,10 +115,10 @@ test("each transcript revision gets its own cache entry", () => {
 
 test.for([
   ["processed", true, true],
-  ["failed", true, false],
+  ["failed", true, true],
   ["recording", false, false],
   ["queued", false, false],
-  ["processing", true, false],
+  ["processing", true, true],
 ] as const)(
   "%s meeting enables its transcript: %s, its notes: %s",
   ([state, transcript, notes]) => {
@@ -217,35 +222,45 @@ test("a transcript request that fails otherwise stays an error", async () => {
   await expect(request).rejects.toMatchObject({ code: "NOT_FOUND" });
 });
 
-test("notes query selects the newest version", async () => {
-  // Arrange
+async function selectNotes(notes: NoteRead[], nextCursor: string | null = null) {
   server.use(
     http.get("/api/v1/meetings/{meeting_id}/notes", ({ response }) =>
-      response(200).json(page([noteRead({ content: "Newest" })])),
+      response(200).json(page(notes, nextCursor)),
     ),
   );
   const query = meetingQueries.notes({ id: "meeting", state: "processed" });
+  return query.select?.(await createTestQueryClient().fetchQuery(query));
+}
 
+test("notes query selects the newest version", async () => {
   // Act
-  const notes = await createTestQueryClient().fetchQuery(query);
+  const notes = await selectNotes([noteRead({ content: "Newest" })]);
 
   // Assert
-  expect(query.select?.(notes)?.content).toBe("Newest");
+  expect(notes?.current?.content).toBe("Newest");
 });
 
 test("a meeting without notes selects none", async () => {
-  // Arrange
-  server.use(
-    http.get("/api/v1/meetings/{meeting_id}/notes", ({ response }) => response(200).json(page([]))),
-  );
-  const query = meetingQueries.notes({ id: "meeting", state: "processed" });
-
   // Act
-  const notes = await createTestQueryClient().fetchQuery(query);
+  const notes = await selectNotes([]);
 
   // Assert
-  expect(query.select?.(notes)).toBeNull();
+  expect(notes?.current).toBeNull();
 });
+
+test.for([
+  ["more", true],
+  [null, false],
+] as const)(
+  "notes query says when earlier versions exist: next cursor %s means %s",
+  async ([nextCursor, hasEarlier]) => {
+    // Act
+    const notes = await selectNotes([noteRead()], nextCursor);
+
+    // Assert
+    expect(notes?.hasEarlier).toBe(hasEarlier);
+  },
+);
 
 test("an upload trims the name", async () => {
   // Arrange
@@ -350,6 +365,65 @@ const isInvalidated = (
   queryClient: ReturnType<typeof createTestQueryClient>,
   queryKey: readonly unknown[],
 ) => queryClient.getQueryState(queryKey)?.isInvalidated;
+
+const FAILED_NOTES = meetingRead({ processing_state: "failed", failure_reason: "notes_failed" });
+
+async function requestRegeneration(answer: "queued" | Parameters<typeof errorBody>[0]) {
+  server.use(
+    http.post("/api/v1/meetings/{meeting_id}/notes", ({ response }) =>
+      answer === "queued"
+        ? response(202).json(notesJobRead())
+        : response(409).json(errorBody(answer, "Refused")),
+    ),
+  );
+  const { queryClient, wrapper } = seedCaches();
+  queryClient.setQueryData(meetingQueries.detail("meeting").queryKey, FAILED_NOTES);
+  const { result } = renderHook(
+    () => useRegenerateNotes({ id: "meeting", workspaceId: "workspace" }),
+    { wrapper },
+  );
+  await result.current.mutateAsync(null).catch(() => undefined);
+  return queryClient;
+}
+
+test("a queued regeneration marks the meeting as processing", async () => {
+  // Act
+  const queryClient = await requestRegeneration("queued");
+
+  // Assert
+  expect(queryClient.getQueryData(meetingQueries.detail("meeting").queryKey)).toMatchObject({
+    processing_state: "processing",
+    failure_reason: null,
+  });
+});
+
+test("a queued regeneration marks its workspace's meetings for a refetch", async () => {
+  // Act
+  const queryClient = await requestRegeneration("queued");
+
+  // Assert
+  expect(isInvalidated(queryClient, meetingQueries.latest("workspace").queryKey)).toBe(true);
+});
+
+test.for([
+  ["NOTES_IN_PROGRESS", true],
+  ["NOT_TRANSCRIBED", true],
+  ["REGENERATION_LIMIT", false],
+] as const)("a regeneration refused with %s reloads the meeting: %s", async ([code, reloads]) => {
+  // Act
+  const queryClient = await requestRegeneration(code);
+
+  // Assert
+  expect(isInvalidated(queryClient, meetingQueries.detail("meeting").queryKey)).toBe(reloads);
+});
+
+test("a regeneration refused at the limit leaves the meeting as it was", async () => {
+  // Act
+  const queryClient = await requestRegeneration("REGENERATION_LIMIT");
+
+  // Assert
+  expect(queryClient.getQueryData(meetingQueries.detail("meeting").queryKey)).toEqual(FAILED_NOTES);
+});
 
 const RENAMED = meetingRead({ name: "Quarterly review" });
 

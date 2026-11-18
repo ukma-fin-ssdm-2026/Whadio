@@ -41,6 +41,7 @@ from ..meetings.enums import ProcessingFailure, ProcessingState
 from ..meetings.models import GlossaryTerm, Meeting
 from ..meetings.persistence import GeneratedNotes
 from ..shared.errors import Failure, UseCaseError
+from ..shared.notes_llm import NotesLlm
 from ..shared.storage import IObjectStorage
 from .enums import JobStatus, JobType, ProcessingOutcome
 from .repositories import IJobRepository, Job
@@ -87,11 +88,16 @@ class IJobPublisher(Protocol):
 
 
 class IPipelineMeetings(Protocol):
-    """The Meetings service methods Processing uses; none of them checks a member's access."""
+    """The Meetings service methods Processing uses; only `processing_snapshot` checks a
+    member's access."""
 
     async def pipeline_meeting(
         self, meeting_id: UUID, /, *, lock: bool = False
     ) -> PipelineMeeting | None: ...
+
+    async def processing_snapshot(self, actor_id: UUID, meeting_id: UUID, /) -> PipelineMeeting:
+        """The meeting, locked, once `actor_id` may read it; `NOT_FOUND` otherwise."""
+        ...
 
     async def current_transcript(self, meeting_id: UUID, /) -> TranscriptVersion | None: ...
 
@@ -152,7 +158,13 @@ class ProcessingService:
     It is also Meetings' `IMeetingProcessing`.
     """
 
-    def __init__(self, collaborators: ProcessingCollaborators) -> None:
+    def __init__(
+        self,
+        collaborators: ProcessingCollaborators,
+        *,
+        notes_llm: NotesLlm,
+        regeneration_limit: int,
+    ) -> None:
         self._jobs: IJobRepository = collaborators.jobs
         self._meetings: IPipelineMeetings = collaborators.meetings
         self._notes: IGeneratedNotes = collaborators.notes
@@ -161,6 +173,8 @@ class ProcessingService:
         self._speaker_timeline: ISpeakerTimeline = collaborators.speaker_timeline
         self._notices: IProcessingNotifier = collaborators.notices
         self._readers: IMeetingReaders = collaborators.readers
+        self._provider: LlmProvider = _PROVIDERS[NotesProvider(notes_llm.reported_provider)]
+        self._regeneration_limit: int = regeneration_limit
 
     async def queue_transcription(self, meeting_id: UUID) -> None:
         # The lock serializes two submissions of the same meeting, so only one finds no job.
@@ -184,9 +198,31 @@ class ProcessingService:
         use_builtin_model: bool,
         now: datetime,
     ) -> QueuedNotes:
-        # Regenerating notes is outside the MVP.
-        del meeting_id, requester_id, preset, use_builtin_model, now
-        raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+        # The lock makes two requests take turns, so the second finds the first one's job.
+        found = await self._meetings.processing_snapshot(requester_id, meeting_id)
+        if use_builtin_model:
+            # Falling back to the built-in model (FR-023) waits for the workspace provider (#361).
+            raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+        meeting = found.meeting
+        if await self._meetings.current_transcript(meeting_id) is None:
+            raise UseCaseError(Failure.NOT_TRANSCRIBED)
+        if await self._jobs.has_unfinished(meeting_id, JobType.NOTES):
+            raise UseCaseError(Failure.NOTES_IN_PROGRESS)
+        if meeting.regeneration_count >= self._regeneration_limit:
+            raise UseCaseError(Failure.REGENERATION_LIMIT)
+        template = preset or await self._workspaces.default_template(found.workspace_id)
+        job_id = await self._jobs.add(
+            meeting_id, JobType.NOTES, template=template, requested_by=requester_id
+        )
+        # Shown as `processing`, like the first notes after the transcript; `queued` means the
+        # meeting has no transcript yet.
+        await self._meetings.save_processing_state(
+            meeting_id,
+            ProcessingUpdate(
+                ProcessingState.PROCESSING, regeneration_count=meeting.regeneration_count + 1
+            ),
+        )
+        return QueuedNotes(job_id, meeting_id, template, self._provider, now)
 
     async def publish_next(self, publisher: IJobPublisher, now: datetime) -> bool:
         """Publish the oldest unpublished job; False when none is left.
@@ -316,13 +352,13 @@ class ProcessingService:
                     if context_id in sent
                 ),
             ),
-            None,
+            job.requested_by,
             result.finished_at,
         )
         await self._meetings.save_processing_state(
             job.meeting_id, ProcessingUpdate(ProcessingState.PROCESSED)
         )
-        await self._notify_uploader(job.meeting_id, ProcessingOutcome.FINISHED)
+        await self._notify_uploader(job, ProcessingOutcome.FINISHED)
 
     async def _failed(self, job: Job, result: TranscriptionFailed | NotesFailed) -> None:
         if result.reason.retryable and job.attempts < MAX_ATTEMPTS:
@@ -342,18 +378,21 @@ class ProcessingService:
         await self._meetings.save_processing_state(
             job.meeting_id, ProcessingUpdate(ProcessingState.FAILED, failure)
         )
-        await self._notify_uploader(job.meeting_id, ProcessingOutcome.FAILED)
+        await self._notify_uploader(job, ProcessingOutcome.FAILED)
 
-    async def _notify_uploader(self, meeting_id: UUID, outcome: ProcessingOutcome) -> None:
+    async def _notify_uploader(self, job: Job, outcome: ProcessingOutcome) -> None:
+        # A requested run is watched by its requester; FR-024 covers the meeting's own processing.
+        if job.requested_by is not None:
+            return
         # Read after the save: generated notes may have renamed the meeting.
-        found = await self._meetings.pipeline_meeting(meeting_id)
+        found = await self._meetings.pipeline_meeting(job.meeting_id)
         if found is None or not await self._readers.can_read(
-            found.meeting.created_by_user_id, meeting_id
+            found.meeting.created_by_user_id, job.meeting_id
         ):
             return
         meeting = found.meeting
         await self._notices.notify(
-            ProcessingNotice(meeting.created_by_user_id, meeting_id, meeting.name, outcome)
+            ProcessingNotice(meeting.created_by_user_id, job.meeting_id, meeting.name, outcome)
         )
 
     async def _request(self, job: Job) -> tuple[JobRequest, tuple[ContextReference, ...]]:
@@ -362,7 +401,7 @@ class ProcessingService:
             raise UseCaseError(Failure.NOT_FOUND)
         if job.job_type is JobType.TRANSCRIPTION:
             return await self._transcription_request(job.job_id, found), ()
-        return await self._notes_request(job.job_id, found)
+        return await self._notes_request(job, found)
 
     async def _transcription_request(
         self, job_id: UUID, found: PipelineMeeting
@@ -382,20 +421,20 @@ class ProcessingService:
         )
 
     async def _notes_request(
-        self, job_id: UUID, found: PipelineMeeting
+        self, job: Job, found: PipelineMeeting
     ) -> tuple[NotesRequested, tuple[ContextReference, ...]]:
         """The request, and the context meetings it sends, as `handle` checks the notes against."""
         meeting = found.meeting
         transcript = await self._meetings.current_transcript(meeting.meeting_id)
         if transcript is None:
             raise UseCaseError(Failure.NOT_TRANSCRIBED)
-        template = await self._workspaces.default_template(found.workspace_id)
+        template = job.template or await self._workspaces.default_template(found.workspace_id)
         context = await self._meetings.notes_context(meeting, MAX_CONTEXT_MEETINGS)
         sent = tuple(
             ContextReference(other.meeting.meeting_id, other.meeting.name) for other in context
         )
         return NotesRequested(
-            job_id=job_id,
+            job_id=job.job_id,
             meeting_id=meeting.meeting_id,
             preset=NotesPreset(template.value),
             meeting=MeetingBrief(

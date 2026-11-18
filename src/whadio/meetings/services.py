@@ -595,10 +595,10 @@ class MeetingService:
         await self._repository.save_initial(version)
         return version
 
-    async def processing_snapshot(self, actor_id: UUID, meeting_id: UUID) -> Meeting:
+    async def processing_snapshot(self, actor_id: UUID, meeting_id: UUID) -> PipelineMeeting:
         """Processing locks before deciding whether to reserve a job and enforce its limits."""
-        await self._authorize(actor_id, meeting_id, lock=True)
-        return await self._repository.get(meeting_id)
+        scope = await self._authorize(actor_id, meeting_id, lock=True)
+        return PipelineMeeting(await self._repository.get(meeting_id), scope.workspace_id)
 
     async def save_processing_state(self, meeting_id: UUID, update: ProcessingUpdate) -> None:
         """Persist Processing's decision without choosing transitions or enforcing job limits."""
@@ -651,11 +651,11 @@ class MeetingService:
             raise
 
     async def notes_context(self, meeting: Meeting, limit: int) -> list[ContextTranscript]:
-        """Processed meetings of the same folder; a restricted one never reaches another
+        """Transcribed meetings of the same folder; a restricted one never reaches another
         meeting's notes (FR-019)."""
         context: list[ContextTranscript] = []
         # One extra row makes up for the meeting itself.
-        for other in await self._repository.processed_in_folder(meeting.folder_id, limit + 1):
+        for other in await self._repository.transcribed_in_folder(meeting.folder_id, limit + 1):
             transcript = (
                 None
                 if other.meeting_id == meeting.meeting_id

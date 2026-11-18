@@ -281,30 +281,55 @@ async def transcribed(session: AsyncSession, meeting_id: UUID) -> None:
 
 
 @pytest.mark.slow
-def test_notes_context_holds_only_processed_open_meetings_of_the_folder(
+def test_notes_context_holds_the_transcribed_open_meetings_of_the_folder(
     async_database: AsyncDatabase,
 ) -> None:
     # Arrange
-    async def scenario(session: AsyncSession) -> tuple[list[UUID], UUID]:
+    async def scenario(session: AsyncSession) -> tuple[set[UUID], set[UUID]]:
         place = await AsyncDatabase.add_workspace(session)
         meeting = await AsyncDatabase.add_meeting(session, place, state=ProcessingState.PROCESSED)
         context = await AsyncDatabase.add_meeting(session, place, state=ProcessingState.PROCESSED)
+        failed = await AsyncDatabase.add_meeting(session, place, state=ProcessingState.FAILED)
         restricted = await AsyncDatabase.add_meeting(
             session, place, state=ProcessingState.PROCESSED, access_mode=AccessMode.RESTRICTED
         )
-        queued = await AsyncDatabase.add_meeting(session, place)
-        for transcribed_id in (meeting, context, restricted, queued):
+        await AsyncDatabase.add_meeting(session, place)
+        for transcribed_id in (meeting, context, failed, restricted):
             await transcribed(session, transcribed_id)
         service = pipeline_service(session)
         target = await service.pipeline_meeting(meeting)
         assert target is not None
         # Act
         found = await service.notes_context(target.meeting, 5)
-        return [other.meeting.meeting_id for other in found], context
+        return {other.meeting.meeting_id for other in found}, {context, failed}
 
-    found, context = async_database.run(scenario)
+    found, expected = async_database.run(scenario)
     # Assert
-    assert found == [context]
+    assert found == expected
+
+
+@pytest.mark.slow
+def test_a_meeting_without_a_transcript_takes_no_place_in_the_notes_context(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[list[UUID], UUID]:
+        place = await AsyncDatabase.add_workspace(session)
+        older = await AsyncDatabase.add_meeting(session, place, state=ProcessingState.PROCESSED)
+        meeting = await AsyncDatabase.add_meeting(session, place, state=ProcessingState.PROCESSED)
+        await AsyncDatabase.add_meeting(session, place)
+        for transcribed_id in (older, meeting):
+            await transcribed(session, transcribed_id)
+        service = pipeline_service(session)
+        target = await service.pipeline_meeting(meeting)
+        assert target is not None
+        # Act
+        found = await service.notes_context(target.meeting, 1)
+        return [other.meeting.meeting_id for other in found], older
+
+    found, older = async_database.run(scenario)
+    # Assert
+    assert found == [older]
 
 
 @pytest.mark.slow

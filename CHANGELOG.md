@@ -4,6 +4,56 @@ All notable changes to Whadio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-11-18
+
+### Added
+
+- Regenerate a meeting's notes from the web app ([#393](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/393))
+
+## [0.17.0] - 2026-11-18
+
+### Added
+
+- Keep notes on screen during a regeneration and show earlier versions ([#392](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/392))
+
+## [0.16.0] - 2026-11-17
+
+### Added
+
+- Delete workspaces from web app ([#383](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/383))
+- Regenerate a meeting's notes through the API ([#391](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/391))
+
+## [0.15.0] - 2026-11-17
+
+### Added
+
+- Ask the recorder to keep or rename a generated meeting name ([#388](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/388))
+- Remember the preset and requester of a notes job ([#390](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/390))
+
+## [0.14.4] - 2026-11-17
+
+### Fixed
+
+- Retain recovery copies after interrupted downloads ([#341](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/341))
+
+## [0.14.3] - 2026-11-17
+
+### Fixed
+
+- Retain recordings when local saving fails ([#340](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/340))
+
+## [0.14.2] - 2026-11-16
+
+### Fixed
+
+- Hold generated meeting names to the display-text rule ([#387](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/387))
+
+## [0.14.1] - 2026-11-16
+
+### Fixed
+
+- Use keyset cursors for workspace and destination lists ([#355](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/355))
+
 ## [0.14.0] - 2026-11-16
 
 ### Added
@@ -123,7 +173,7 @@ All notable changes to Whadio are recorded here. The format follows
 
 ### Refactoring
 
-- Dispatch the recorder's messages from a table ([#285](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/285))
+- Dispatch the recorder's messages from a table (Replace Conditional with Polymorphism, Extract Function) ([#285](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/285))
 
 ## [0.2.0] - 2026-11-03
 
@@ -135,7 +185,7 @@ All notable changes to Whadio are recorded here. The format follows
 
 ### Refactoring
 
-- Extract capture assembly from the event loop ([#279](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/279))
+- Extract capture assembly from the event loop (Extract Function) ([#279](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/279))
 
 ## [0.1.1] - 2026-11-03
 

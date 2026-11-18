@@ -261,8 +261,14 @@ Meet call with at least one other participant.
    Allow it, close that tab and press Start recording again. Chrome remembers the choice, so later
    recordings start at once.
 6. Stop from the popup. The meeting appears in the web app; it's transcribed and gets notes once
-   the [workers](#running-the-workers) are running. If the upload fails, the extension saves the
-   recording as a `.webm` file in your downloads instead.
+   the [workers](#running-the-workers) are running. If the upload fails, the extension tries to save
+   a `.webm` download, even if your sign-in has expired. If saving fails or you have switched to a
+   different account or server, it keeps a recovery copy. Sign in to the original account and server
+   to **Retry download** or **Discard** in the popup. Recovery copies survive Chrome restarts, and
+   the popup marks temporary copies that cannot survive a restart.
+
+   If you permanently lose access to the original account or server, removing Whadio from Chrome
+   clears its local data, including pending recordings for every account in that Chrome profile.
 
 ## Running the workers
 
