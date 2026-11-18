@@ -93,9 +93,10 @@ jobs:
               echo "::error title=pytest error::Repeat $repeat: pytest exited with status $pytest_status"
               incomplete=1
             fi
+            # Vitest that finds no test file still writes a report, one without testcases.
             for suite in backend frontend extension; do
-              if [ ! -s "$reports/$suite.xml" ]; then
-                echo "::error title=Missing report::Repeat $repeat wrote no $suite report"
+              if ! grep -qs '<testcase' "$reports/$suite.xml"; then
+                echo "::error title=Missing tests::Repeat $repeat wrote no $suite report or one without tests"
                 incomplete=1
               fi
             done
