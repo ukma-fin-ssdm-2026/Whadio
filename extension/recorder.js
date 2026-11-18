@@ -108,7 +108,7 @@ if (!globalThis.whadioRecorder) {
     // The audio goes to the background as it is recorded, so closing the tab cannot lose it; the port
     // disconnects whether the recording stopped or the page went away.
     const startedAt = Date.now();
-    const recorder = globalThis.whadioAudio.record(
+    const recorder = await globalThis.whadioAudio.record(
       tab,
       microphone,
       `recording:${startedAt}`,
@@ -119,7 +119,10 @@ if (!globalThis.whadioRecorder) {
         recorder.stop();
       }
     };
-    began(startedAt, finish);
+    if (!began(startedAt, finish)) {
+      finish();
+      return;
+    }
     recorder.addEventListener("stop", () => {
       if (session?.finish === finish) {
         end();

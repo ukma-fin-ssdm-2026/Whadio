@@ -91,6 +91,21 @@ export function noteRead(changes: Partial<Schemas["NoteRead"]> = {}): Schemas["N
   };
 }
 
+export function notesJobRead(
+  changes: Partial<Schemas["NotesJobRead"]> = {},
+): Schemas["NotesJobRead"] {
+  return {
+    id: "job",
+    meeting_id: "meeting",
+    kind: "notes",
+    status: "queued",
+    preset: "summary",
+    provider: "whadio",
+    created_at: CREATED_AT,
+    ...changes,
+  };
+}
+
 export function transcriptRead(
   changes: Partial<Schemas["TranscriptRead"]> = {},
 ): Schemas["TranscriptRead"] {

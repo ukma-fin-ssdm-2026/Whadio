@@ -130,7 +130,21 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --extra asr --extra cpu
 
+      # The fast suite alone stays below fail_under, so pull requests report its coverage ungated.
+      - name: Run the fast suite
+        id: fast
+        if: github.event_name == 'pull_request'
+        run: |
+          # `--cov` takes an optional source, so it goes last or it swallows the next argument.
+          uv run --frozen task test:fast -- \
+            --junitxml=reports/junit.xml \
+            --cov-report=term-missing:skip-covered \
+            --cov-report=html \
+            --cov-fail-under=0 \
+            --cov
+
       - name: Start the services and migrate the test database
+        if: github.event_name != 'pull_request'
         env:
           WHADIO_DB_HOST: 127.0.0.1
         run: |
@@ -141,7 +155,8 @@ jobs:
 
       # CI has no downloaded ML models; the tests that need them run locally.
       - name: Run the whole test suite with the coverage gate
-        id: tests
+        id: whole
+        if: github.event_name != 'pull_request'
         env:
           WHADIO_DB_HOST: 127.0.0.1
         run: |
@@ -153,21 +168,23 @@ jobs:
             --cov-report=term-missing:skip-covered \
             --cov-report=html
 
-      - name: Summarise coverage and failed tests
-        if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
+      - name: Summarise the suite, failed tests and coverage
+        if: ${{ !cancelled() && (steps.fast.outcome != 'skipped' || steps.whole.outcome != 'skipped') }}
+        env:
+          SUITE: ${{ steps.fast.outcome != 'skipped' && 'Fast suite' || 'Whole suite' }}
         run: |
           {
-            echo "### Coverage (line and branch)"
+            uv run --frozen python -I .github/scripts/junit_summary.py reports/junit.xml "$SUITE" ||
+              printf '### %s\n\nTest report unavailable.\n' "$SUITE"
+            echo
+            echo "### $SUITE coverage (line and branch)"
             echo
             uv run --frozen coverage report --format=markdown --fail-under=0 ||
               echo "Coverage report unavailable."
-            echo
-            uv run --frozen python -I .github/scripts/junit_failures.py reports/junit.xml ||
-              printf '### Failed tests\n\nTest report unavailable.\n'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the test and coverage reports
-        if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
+        if: ${{ !cancelled() && (steps.fast.outcome != 'skipped' || steps.whole.outcome != 'skipped') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-reports
@@ -178,6 +195,7 @@ jobs:
 
   reliability:
     name: Reliability tests
+    if: github.event_name != 'pull_request'
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -234,8 +252,13 @@ jobs:
       - name: Require every job to have succeeded
         env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
+          RELIABILITY_SKIPPED_BY_DESIGN: ${{ github.event_name == 'pull_request' && needs.reliability.result == 'skipped' }}
         run: |
           echo "$RESULTS"
+          # Pull requests skip the reliability tests: drop that one skip, so any other still fails.
+          if [ "$RELIABILITY_SKIPPED_BY_DESIGN" = true ]; then
+            RESULTS="${RESULTS/skipped/}"
+          fi
           for result in $RESULTS; do
             [ "$result" = success ] || exit 1
           done

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from conftest import AsyncDatabase
 
+from ..accounts.enums import NotesTemplate
 from ..meetings.contracts import ContextReference
 from .enums import JobStatus, JobType
 from .models import ProcessingJob
@@ -80,6 +81,33 @@ def test_requeued_job_is_unpublished_again(async_database: AsyncDatabase) -> Non
     found, job_id = async_database.run(scenario)
     # Assert
     assert found == job_id
+
+
+@pytest.mark.slow
+def test_requested_notes_job_keeps_its_template_and_requester_when_requeued(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[Job | None, UUID]:
+        actor, folder = await AsyncDatabase.add_workspace(session)
+        jobs = JobRepository(session)
+        job_id = await jobs.add(
+            await AsyncDatabase.add_meeting(session, (actor, folder)),
+            JobType.NOTES,
+            template=NotesTemplate.INTERVIEW,
+            requested_by=actor,
+        )
+        await jobs.mark_running(job_id, NOW)
+        # Act
+        await jobs.requeue(job_id)
+        return await jobs.lock(job_id), actor
+
+    job, actor = async_database.run(scenario)
+    # Assert
+    assert (None if job is None else (job.template, job.requested_by)) == (
+        NotesTemplate.INTERVIEW,
+        actor,
+    )
 
 
 @pytest.mark.slow

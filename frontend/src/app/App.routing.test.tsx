@@ -1,8 +1,12 @@
+import { createLazyFileRoute, RouterProvider } from "@tanstack/react-router";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { POLL_INTERVAL_MS } from "@/features/meetings/api/meetings";
+import { workspaceQueries } from "@/features/workspaces/api/workspaces";
+import { Route as HomeRoute } from "@/routes/_authed/index";
+import { deferred } from "@/shared/testing/deferred";
 import {
   errorBody,
   meetingRead,
@@ -14,6 +18,8 @@ import {
 } from "@/shared/testing/fixtures";
 import { server } from "@/shared/testing/server";
 import { App } from "./App";
+import { createApp } from "./create-app";
+import { AppProviders } from "./providers";
 import {
   CURRENT_WORDING,
   LINKED_TITLE,
@@ -30,6 +36,8 @@ const RETRIES_MS = 4_000;
 const SESSION_REFUSED = /did not accept the session/;
 const SIGN_IN_REQUIRED = errorBody("UNAUTHENTICATED", "Sign in required");
 const LIST_ROW = /Weekly sync/;
+const HOME_LAZY = HomeRoute.lazyFn;
+let resetHomeRoute: () => void = () => undefined;
 
 const expired = () => HttpResponse.json(SIGN_IN_REQUIRED, { status: 401 });
 
@@ -43,6 +51,24 @@ function open(path: string, signedIn = true, basepath?: string) {
   return { traffic, user: userEvent.setup() };
 }
 
+function openWithInternals(
+  path: string,
+  serve: () => void,
+  configure: (app: ReturnType<typeof createApp>) => void = () => undefined,
+) {
+  window.history.replaceState(null, "", path);
+  serveApi(true);
+  serve();
+  const app = createApp();
+  configure(app);
+  render(
+    <AppProviders queryClient={app.queryClient}>
+      <RouterProvider router={app.router} />
+    </AppProviders>,
+  );
+  return { ...app, user: userEvent.setup() };
+}
+
 function serveWorkspaceMeetings() {
   server.use(
     http.get("/api/v1/workspaces/workspace/meetings", () =>
@@ -52,6 +78,8 @@ function serveWorkspaceMeetings() {
 }
 
 afterEach(() => {
+  resetHomeRoute();
+  resetHomeRoute = () => undefined;
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -554,6 +582,153 @@ describe("a workspace page", () => {
 
     // Assert
     expect(screen.queryByRole("heading", { name: "Invitations" })).not.toBeInTheDocument();
+  });
+
+  test("deleting a workspace opens the workspace list", async () => {
+    // Arrange
+    const { user } = openWithInternals("/workspaces/workspace/settings", () =>
+      server.use(
+        http.get("/api/v1/workspaces", () => HttpResponse.json(page([workspaceSummary()]))),
+        http.get("/api/v1/workspaces/workspace", () => HttpResponse.json(workspaceRead())),
+        http.delete("/api/v1/workspaces/workspace", () => new HttpResponse(null, { status: 204 })),
+      ),
+    );
+    await user.click(await screen.findByRole("button", { name: "Delete workspace" }));
+
+    // Act
+    await user.click(screen.getByRole("button", { name: "Delete workspace" }));
+
+    // Assert
+    await waitFor(() => expect(currentPath()).toBe("/"));
+  });
+
+  test("workspace detail is cleared after Home mounts", async () => {
+    // Arrange
+    const { queryClient, user } = openWithInternals("/workspaces/workspace/settings", () =>
+      server.use(
+        http.get("/api/v1/workspaces", () => HttpResponse.json(page([workspaceSummary()]))),
+        http.get("/api/v1/workspaces/workspace", () => HttpResponse.json(workspaceRead())),
+        http.delete("/api/v1/workspaces/workspace", () => new HttpResponse(null, { status: 204 })),
+      ),
+    );
+    await user.click(await screen.findByRole("button", { name: "Delete workspace" }));
+
+    // Act
+    await user.click(screen.getByRole("button", { name: "Delete workspace" }));
+    await waitFor(() => expect(currentPath()).toBe("/"));
+
+    // Assert
+    expect(queryClient.getQueryData(workspaceQueries.detail("workspace").queryKey)).toBeUndefined();
+  });
+
+  test("Back during deletion clears the deleted workspace after settings unmounts", async () => {
+    // Arrange
+    const deletionStarted = deferred();
+    const finishDeletion = deferred();
+    window.history.replaceState(null, "", "/");
+    window.history.pushState(null, "", "/workspaces/workspace/settings");
+    const { queryClient, user } = openWithInternals("/workspaces/workspace/settings", () =>
+      server.use(
+        http.get("/api/v1/workspaces", () => HttpResponse.json(page([workspaceSummary()]))),
+        http.get("/api/v1/workspaces/workspace", () => HttpResponse.json(workspaceRead())),
+        http.delete("/api/v1/workspaces/workspace", async () => {
+          deletionStarted.resolve();
+          await finishDeletion.promise;
+          return new HttpResponse(null, { status: 204 });
+        }),
+      ),
+    );
+    await user.click(await screen.findByRole("button", { name: "Delete workspace" }));
+    await user.click(screen.getByRole("button", { name: "Delete workspace" }));
+    await deletionStarted.promise;
+
+    // Act
+    window.history.back();
+    await screen.findByRole("heading", { name: "Workspaces" });
+    finishDeletion.resolve();
+
+    // Assert
+    await waitFor(() =>
+      expect({
+        path: currentPath(),
+        list: queryClient.getQueryData(workspaceQueries.list().queryKey),
+        detail: queryClient.getQueryData(workspaceQueries.detail("workspace").queryKey),
+      }).toEqual({ path: "/", list: page([]), detail: undefined }),
+    );
+  });
+
+  test("settings stay mounted while Home is still loading", async () => {
+    // Arrange
+    const homeReady = deferred();
+    const { router, user } = openWithInternals(
+      "/workspaces/workspace/settings",
+      () =>
+        server.use(
+          http.get("/api/v1/workspaces", () => HttpResponse.json(page([workspaceSummary()]))),
+          http.get("/api/v1/workspaces/workspace", () => HttpResponse.json(workspaceRead())),
+          http.delete(
+            "/api/v1/workspaces/workspace",
+            () => new HttpResponse(null, { status: 204 }),
+          ),
+        ),
+      ({ router: appRouter }) => {
+        const replace = appRouter._replaceRouteChunk;
+        if (!replace) throw new Error("Route chunk replacement is unavailable");
+        replace(HomeRoute, () =>
+          homeReady.promise.then(() => createLazyFileRoute("/_authed/")({})),
+        );
+        resetHomeRoute = () => replace(HomeRoute, HOME_LAZY);
+      },
+    );
+    await user.click(await screen.findByRole("button", { name: "Delete workspace" }));
+
+    // Act
+    await user.click(screen.getByRole("button", { name: "Delete workspace" }));
+    await waitFor(() => expect(router.state.status).toBe("pending"));
+
+    // Assert
+    expect({
+      settings: screen.queryByText("Workspace settings") !== null,
+      notFound: screen.queryByText("Page not found") !== null,
+    }).toEqual({ settings: true, notFound: false });
+    homeReady.resolve();
+    await screen.findByRole("heading", { name: "Workspaces" });
+  });
+
+  test("an older workspace list response cannot restore the deleted workspace", async () => {
+    // Arrange
+    const staleStarted = deferred();
+    const releaseStale = deferred();
+    const { queryClient, user } = openWithInternals("/workspaces/workspace/settings", () =>
+      server.use(
+        http.get("/api/v1/workspaces", () => HttpResponse.json(page([workspaceSummary()]))),
+        http.get("/api/v1/workspaces/workspace", () => HttpResponse.json(workspaceRead())),
+        http.delete("/api/v1/workspaces/workspace", () => new HttpResponse(null, { status: 204 })),
+      ),
+    );
+    await screen.findByRole("heading", { name: "Workspace settings" });
+    server.use(
+      http.get("/api/v1/workspaces", async () => {
+        staleStarted.resolve();
+        await releaseStale.promise;
+        return HttpResponse.json(page([workspaceSummary()]));
+      }),
+    );
+    const staleRequest = queryClient.refetchQueries({
+      queryKey: workspaceQueries.list().queryKey,
+      exact: true,
+    });
+    await staleStarted.promise;
+    await user.click(screen.getByRole("button", { name: "Delete workspace" }));
+
+    // Act
+    await user.click(screen.getByRole("button", { name: "Delete workspace" }));
+    await waitFor(() => expect(currentPath()).toBe("/"));
+    releaseStale.resolve();
+    await staleRequest;
+
+    // Assert
+    expect(queryClient.getQueryData(workspaceQueries.list().queryKey)).toEqual(page([]));
   });
 });
 

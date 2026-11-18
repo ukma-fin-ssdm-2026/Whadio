@@ -98,6 +98,25 @@ def test_title_spaces_are_collapsed_before_its_length_is_counted() -> None:
 
 
 @pytest.mark.parametrize(
+    "name",
+    [
+        pytest.param("Планування\xadMVP", id="soft hyphen"),
+        pytest.param("\U0001f468\u200d\U0001f4bb Планування MVP", id="joined emoji"),
+        pytest.param("Планування\u200fMVP", id="direction mark"),
+    ],
+)
+def test_title_with_an_invisible_format_character_becomes_the_name(name: str) -> None:
+    # Arrange
+    notes = _NOTES.replace("Планування MVP", name)
+
+    # Act
+    parsed = parse_notes(notes, _HEADINGS)
+
+    # Assert
+    assert parsed.proposed_name == name
+
+
+@pytest.mark.parametrize(
     "notes",
     [
         pytest.param(_NOTES.removeprefix("# Планування MVP\n"), id="no title"),
@@ -109,6 +128,7 @@ def test_title_spaces_are_collapsed_before_its_length_is_counted() -> None:
         ),
         pytest.param(_NOTES.replace("Планування MVP", "x" * 201), id="name too long"),
         pytest.param(_NOTES.replace("# Планування MVP", "# "), id="empty name"),
+        pytest.param(_NOTES.replace("Планування MVP", "Планування\x07MVP"), id="control in name"),
     ],
 )
 def test_notes_that_break_the_format_are_refused_as_invalid_output(notes: str) -> None:

@@ -53,7 +53,7 @@ The model covers the data required for these key project functions:
 | `NOTE_CONTEXT_MEETING` | `note_context_meeting_id` | Records the meetings used as context for a generated note, including a name snapshot so notes remain understandable after a context meeting is deleted. | `context_meeting_name_snapshot` can reveal sensitive meeting topics. |
 | `LLM_PROVIDER_CONFIG` | `provider_config_id` | Workspace notes-provider configuration, either built-in `Whadio` or an external BYOK provider. | `api_key_encrypted` is secret credential material when an external provider is used. |
 | `MCP_KEY` | `mcp_key_id` | Personal access key for MCP clients. | `key_hash` is sensitive authentication material. |
-| `PROCESSING_JOB` | `processing_job_id` | Tracks transcription and notes jobs for monitoring. Diarization is part of the transcription job. | Failure reasons can include sensitive operational or content-derived details. |
+| `PROCESSING_JOB` | `processing_job_id` | Tracks transcription and notes jobs for monitoring. Diarization is part of the transcription job. A notes job a member requested also keeps the preset and the requester of that regeneration. | Failure reasons can include sensitive operational or content-derived details. `requested_by_user_id` links a member to the regeneration they asked for. |
 | `NOTIFICATION_OUTBOX` | `notice_id` | A notification mail reserved in the transaction of the change it reports, waiting for the scheduler to send it. | `recipient_user_id` is personal data. `payload` holds metadata only: meeting and share IDs, meeting names, and for a share access request the requester's name and email, which are personal. `last_error` is sanitised and names no address. |
 | `AUDIT_EVENT` | `audit_event_id` | Append-only record of who changed a meeting's content or access (`NFR-010`), kept after the meeting or workspace it refers to is deleted. | `actor_user_id` links a person to their actions. `subject_id` and `details` hold user IDs for membership, access-grant and share-request events. No content or names. |
 
@@ -128,6 +128,8 @@ The model covers the data required for these key project functions:
 - Before removing its last selected recipient, explicitly grant access to another remaining
   workspace member. Removal never automatically grants the Owner access or unrestricts the
   meeting. Remove the departing member's grants and membership in the same transaction.
+- The context set of a meeting's notes is drawn from the other meetings of its folder that have a
+  transcript, whatever their `processing_state`.
 - A restricted meeting must not be used as cross-meeting context for another meeting's notes.
 - External shares are read-only, require a signed-in recipient, can be revoked, and must store only `token_hash`, never a raw share token.
 - An external share grants access only to its `recipient_user_id`. While it is null, opening the link only creates a `SHARE_ACCESS_REQUEST`; approving a request sets `recipient_user_id` to the requester.
@@ -158,6 +160,11 @@ The model covers the data required for these key project functions:
   clears the previous attempt timestamps; publication alone leaves it unchanged. Initial queues
   retain their creation time after migration. Historical retry queue times remain null when they
   cannot be reconstructed accurately.
+- `PROCESSING_JOB.template` and `PROCESSING_JOB.requested_by_user_id` are set together, and only
+  on a notes job a member requested; the preset is resolved when the job is queued, the
+  workspace's default included. The job is sent with that preset, both survive retries, and the requester
+  becomes `NOTE.created_by_user_id` and the actor of `notes_regenerated`. The automatic first
+  notes job leaves both null and is sent with the workspace's default preset.
 - Segment time intervals must satisfy `start_time_seconds < end_time_seconds`.
 - Implementation-only `FOLDER_RECOVERY` and `FOLDER_RECOVERY_MEETING` retain deleted folder
   metadata and references to meetings moved to the default folder for NFR-005. Restoration is

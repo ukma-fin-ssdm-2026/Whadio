@@ -104,6 +104,7 @@ export function serveApi(signedIn: boolean): ApiTraffic {
         workspace_id: "workspace",
         folder_id: "folder",
         name: LINKED_TITLE,
+        name_is_generated: false,
         recorded_at: "2026-10-25T10:00:00Z",
         processing_state: "processed",
         duration_seconds: 5,
@@ -113,7 +114,7 @@ export function serveApi(signedIn: boolean): ApiTraffic {
     ),
     http.get(
       "/api/v1/meetings/meeting/notes",
-      member(() => ({ items: [] })),
+      member(() => page([])),
     ),
     http.get(
       "/api/v1/meetings/meeting/transcript",
