@@ -56,6 +56,7 @@ class Meeting(Base):
 
     meeting_id: Mapped[UUID] = MappedColumn[UUID](primary_key=True, default=uuid4)
     folder_id: Mapped[UUID] = MappedColumn[UUID](ForeignKey("folder.folder_id", ondelete="CASCADE"))
+    folder_revision_id: Mapped[UUID] = MappedColumn[UUID](server_default=func.gen_random_uuid())
     created_by_user_id: Mapped[UUID] = MappedColumn[UUID](
         ForeignKey("user.user_id", ondelete="RESTRICT")
     )

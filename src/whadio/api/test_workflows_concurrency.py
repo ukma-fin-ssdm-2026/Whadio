@@ -1,10 +1,13 @@
 import asyncio
+import contextlib
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from conftest import BUILT_IN_LLM
 
 from ..access_policy.repositories import AccessRepository
 from ..access_policy.services import AccessPolicy
@@ -14,8 +17,13 @@ from ..meetings.enums import MeetingSource
 from ..meetings.models import Folder, Meeting, RecordingDeletion
 from ..meetings.persistence import MeetingPersistence, PersistenceDependencies
 from ..meetings.repositories import MeetingRepository
-from ..meetings.services import MeetingService, RecordingInput
+from ..meetings.services import MeetingChanges, MeetingService, RecordingInput
+from ..processing.enums import JobType
+from ..processing.models import ProcessingJob
 from ..shared.database import Database, DatabaseSettings
+from ..shared.errors import Failure, UseCaseError
+from ..shared.fakes import InMemoryObjectStorage
+from .composition import processing_service
 from .test_composition import EvictionNotices
 
 pytestmark = pytest.mark.slow
@@ -24,6 +32,15 @@ pytestmark = pytest.mark.slow
 class AuditFixture:
     async def write(self, event: ContentEvent) -> None:
         del event
+
+
+def _meeting_service(session: AsyncSession) -> MeetingService:
+    repository, audit, memberships = (
+        MeetingRepository(session),
+        AuditFixture(),
+        MembershipRepository(session),
+    )
+    return MeetingService(repository, AccessPolicy(AccessRepository(session), memberships), audit)
 
 
 def _services(session: AsyncSession, *, hosted_limit: int | None = None) -> MeetingPersistence:
@@ -88,3 +105,137 @@ def test_concurrent_hosted_ingests_keep_the_owner_within_capacity(
             await database.close()
 
     asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+def test_undo_waits_for_and_refuses_a_concurrent_move(
+    database_settings: DatabaseSettings,
+    committed_workspace: tuple[UUID, UUID],
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        owner, workspace = committed_workspace
+        database = Database(database_settings)
+        archive_locked = asyncio.Event()
+        undo_started = asyncio.Event()
+        try:
+            async with database.transaction() as session:
+                service = _meeting_service(session)
+                original = next(folder for folder in await service.folders(owner, workspace))
+                planning = await service.create_folder(
+                    owner, workspace, "Planning", datetime.now(UTC)
+                )
+                archive = await service.create_folder(
+                    owner, workspace, "Archive", datetime.now(UTC)
+                )
+                meeting = await service.create(
+                    owner,
+                    workspace,
+                    RecordingInput(
+                        f"concurrent/{uuid4()}", datetime.now(UTC), MeetingSource.UPLOAD
+                    ),
+                    datetime.now(UTC),
+                )
+                moved_to_planning = await service.update(
+                    owner,
+                    meeting.meeting_id,
+                    datetime.now(UTC),
+                    MeetingChanges(
+                        folder_id=planning.folder_id,
+                        expected_folder_id=original.folder_id,
+                        expected_folder_revision_id=meeting.folder_revision_id,
+                    ),
+                )
+
+            async def move_to_archive() -> str:
+                async with database.transaction() as session:
+                    await _meeting_service(session).update(
+                        owner,
+                        meeting.meeting_id,
+                        datetime.now(UTC),
+                        MeetingChanges(
+                            folder_id=archive.folder_id,
+                            expected_folder_id=planning.folder_id,
+                            expected_folder_revision_id=moved_to_planning.folder_revision_id,
+                        ),
+                    )
+                    archive_locked.set()
+                    await undo_started.wait()
+                return "moved"
+
+            async def undo() -> Failure | None:
+                await archive_locked.wait()
+                async with database.transaction() as session:
+                    undo_started.set()
+                    try:
+                        await _meeting_service(session).update(
+                            owner,
+                            meeting.meeting_id,
+                            datetime.now(UTC),
+                            MeetingChanges(
+                                folder_id=original.folder_id,
+                                expected_folder_id=planning.folder_id,
+                                expected_folder_revision_id=moved_to_planning.folder_revision_id,
+                            ),
+                        )
+                    except UseCaseError as error:
+                        return error.code
+                return None
+
+            # Act
+            results = await asyncio.wait_for(asyncio.gather(move_to_archive(), undo()), timeout=10)
+            async with database.transaction() as session:
+                stored = await _meeting_service(session).get(owner, meeting.meeting_id)
+            # Assert
+            assert (results, stored.folder_id) == (
+                ["moved", Failure.MEETING_MOVE_CONFLICT],
+                archive.folder_id,
+            )
+        finally:
+            await database.close()
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+@pytest.mark.usefixtures("committed_revision_id")
+def test_concurrent_regenerations_queue_one_notes_job(
+    database_settings: DatabaseSettings, owner_id: UUID, meeting_id: UUID
+) -> None:
+    # Arrange
+    async def scenario() -> tuple[int | None, int | None]:
+        database = Database(database_settings)
+        try:
+
+            async def regenerate() -> None:
+                async with database.transaction() as session:
+                    processing = processing_service(
+                        session, InMemoryObjectStorage(), BUILT_IN_LLM, 3
+                    )
+                    with contextlib.suppress(UseCaseError):
+                        await processing.queue_notes(
+                            meeting_id,
+                            owner_id,
+                            None,
+                            use_builtin_model=False,
+                            now=datetime.now(UTC),
+                        )
+
+            # Act
+            await asyncio.wait_for(asyncio.gather(regenerate(), regenerate()), timeout=10)
+            async with database.transaction() as session:
+                return (
+                    await session.scalar(
+                        select(func.count()).where(
+                            ProcessingJob.meeting_id == meeting_id,
+                            ProcessingJob.job_type == JobType.NOTES,
+                        )
+                    ),
+                    await session.scalar(
+                        select(Meeting.regeneration_count).where(Meeting.meeting_id == meeting_id)
+                    ),
+                )
+        finally:
+            await database.close()
+
+    counts = asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+    # Assert
+    assert counts == (1, 1)

@@ -55,6 +55,14 @@ class TermUpdate:
 
 
 @dataclass(frozen=True)
+class MeetingChanges:
+    name: str | None = None
+    folder_id: UUID | None = None
+    expected_folder_id: UUID | None = None
+    expected_folder_revision_id: UUID | None = None
+
+
+@dataclass(frozen=True)
 class RecordingInput:
     # None only for an extension capture, whose recording is attached once it is assembled.
     storage_key: str | None
@@ -115,6 +123,7 @@ class MeetingService:
         meeting = Meeting(
             meeting_id=uuid4(),
             folder_id=folder.folder_id,
+            folder_revision_id=uuid4(),
             created_by_user_id=actor_id,
             name=self._name(recording.name)
             if recording.name is not None
@@ -175,23 +184,32 @@ class MeetingService:
         actor_id: UUID,
         meeting_id: UUID,
         now: datetime,
-        *,
-        name: str | None = None,
-        folder_id: UUID | None = None,
+        changes: MeetingChanges | None = None,
     ) -> Meeting:
-        if name is None and folder_id is None:
+        if changes is None or (changes.name is None and changes.folder_id is None):
             raise UseCaseError(Failure.VALIDATION_ERROR)
         scope = await self._authorize(actor_id, meeting_id, lock=True)
         meeting = await self._repository.get(meeting_id)
-        if folder_id is not None and folder_id != meeting.folder_id:
+        if (
+            changes.expected_folder_id is not None
+            and meeting.folder_id != changes.expected_folder_id
+        ):
+            raise UseCaseError(Failure.MEETING_MOVE_CONFLICT)
+        if (
+            changes.expected_folder_revision_id is not None
+            and meeting.folder_revision_id != changes.expected_folder_revision_id
+        ):
+            raise UseCaseError(Failure.MEETING_MOVE_CONFLICT)
+        if changes.folder_id is not None and changes.folder_id != meeting.folder_id:
             try:
-                await self._repository.folder(scope.workspace_id, folder_id)
+                await self._repository.folder(scope.workspace_id, changes.folder_id)
             except UseCaseError as error:
                 if error.code == Failure.NOT_FOUND:
                     raise UseCaseError(Failure.VALIDATION_ERROR) from None
                 raise
             old_folder_id = meeting.folder_id
-            meeting.folder_id = folder_id
+            meeting.folder_id = changes.folder_id
+            meeting.folder_revision_id = uuid4()
             await self._repository.save(meeting)
             await self._audit.write(
                 ContentEvent(
@@ -201,11 +219,11 @@ class MeetingService:
                     AuditAction.MEETING_MOVED,
                     now,
                     from_folder_id=old_folder_id,
-                    to_folder_id=folder_id,
+                    to_folder_id=changes.folder_id,
                 )
             )
-        if name is not None:
-            meeting.name = self._name(name)
+        if changes.name is not None:
+            meeting.name = self._name(changes.name)
             meeting.name_is_generated = False
             await self._repository.save(meeting)
             await self._audit.write(
@@ -595,10 +613,10 @@ class MeetingService:
         await self._repository.save_initial(version)
         return version
 
-    async def processing_snapshot(self, actor_id: UUID, meeting_id: UUID) -> Meeting:
+    async def processing_snapshot(self, actor_id: UUID, meeting_id: UUID) -> PipelineMeeting:
         """Processing locks before deciding whether to reserve a job and enforce its limits."""
-        await self._authorize(actor_id, meeting_id, lock=True)
-        return await self._repository.get(meeting_id)
+        scope = await self._authorize(actor_id, meeting_id, lock=True)
+        return PipelineMeeting(await self._repository.get(meeting_id), scope.workspace_id)
 
     async def save_processing_state(self, meeting_id: UUID, update: ProcessingUpdate) -> None:
         """Persist Processing's decision without choosing transitions or enforcing job limits."""
@@ -651,11 +669,11 @@ class MeetingService:
             raise
 
     async def notes_context(self, meeting: Meeting, limit: int) -> list[ContextTranscript]:
-        """Processed meetings of the same folder; a restricted one never reaches another
+        """Transcribed meetings of the same folder; a restricted one never reaches another
         meeting's notes (FR-019)."""
         context: list[ContextTranscript] = []
         # One extra row makes up for the meeting itself.
-        for other in await self._repository.processed_in_folder(meeting.folder_id, limit + 1):
+        for other in await self._repository.transcribed_in_folder(meeting.folder_id, limit + 1):
             transcript = (
                 None
                 if other.meeting_id == meeting.meeting_id

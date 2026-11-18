@@ -8,6 +8,7 @@ from ..accounts.enums import LlmProvider, NotesTemplate
 from .contracts import EvictionNotice
 from .models import Meeting
 from .persistence import GeneratedNotes, MeetingPersistence, PersistenceDependencies
+from .services import MeetingChanges
 from .test_services_unit import NOW, Team, team
 
 
@@ -85,7 +86,14 @@ def test_notes_are_saved_when_their_proposed_name_is_refused(proposed_name: str)
 def test_name_a_member_gave_is_not_replaced_by_the_proposed_one() -> None:
     # Arrange
     unit = team()
-    asyncio.run(unit.meetings.update(unit.owner, unit.meeting, NOW, name="Design review"))
+    asyncio.run(
+        unit.meetings.update(
+            unit.owner,
+            unit.meeting,
+            NOW,
+            MeetingChanges(name="Design review"),
+        )
+    )
     # Act
     meeting = save_notes(unit, "Sprint planning")
     # Assert

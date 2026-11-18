@@ -268,6 +268,8 @@ entity "PROCESSING_JOB" as ProcessingJob {
   finished_at : datetime <<nullable>>
   published_at : datetime <<nullable>>
   sent_context : json <<S, nullable>>
+  template : enum (summary | detailed | interview) <<nullable>>
+  requested_by_user_id : UUID <<FK, nullable>>
 }
 
 entity "NOTIFICATION_OUTBOX" as NotificationOutbox {
@@ -342,6 +344,7 @@ Workspace ||--o| LLMConfig : configures
 
 User ||--o{ MCPKey : creates
 Meeting ||--o{ ProcessingJob : processed by
+User |o--o{ ProcessingJob : requests
 User ||--o{ AuditEvent : performs
 User ||--o{ NotificationOutbox : is notified
 

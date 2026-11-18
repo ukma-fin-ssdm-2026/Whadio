@@ -3,7 +3,7 @@ import hashlib
 import json
 import wave
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -31,6 +31,7 @@ from ..accounts.models import McpKey, Session, User, Workspace, WorkspaceMembers
 from ..accounts.repositories import MembershipRepository, WorkspaceSettingsRepository
 from ..accounts.services import WorkspaceMembershipService, WorkspaceSettingsService
 from ..audit.contracts import ContentEvent
+from ..audit.enums import AuditAction
 from ..audit.models import AuditEvent
 from ..audit.services import AuditWriter
 from ..capture.repositories import CaptureRepository
@@ -65,10 +66,11 @@ from ..meetings.persistence import (
     MeetingPersistence,
     PersistenceDependencies,
 )
+from ..meetings.processing import IMeetingProcessing
 from ..meetings.recordings import RecordingObjects
 from ..meetings.repositories import MeetingRepository
 from ..meetings.retention import IRetentionMeetings, RetentionMeetings
-from ..meetings.services import MeetingService, RecordingInput, TranscriptEdit
+from ..meetings.services import MeetingChanges, MeetingService, RecordingInput, TranscriptEdit
 from ..notifications.fakes import InMemoryNotificationOutbox
 from ..notifications.models import NotificationOutbox
 from ..notifications.repositories import NotificationOutboxRepository, notice_payload
@@ -78,11 +80,17 @@ from ..processing.consumer import WorkerUsers, handle_delivery
 from ..processing.enums import JobStatus, JobType, ProcessingOutcome
 from ..processing.models import ProcessingJob
 from ..processing.repositories import JobRepository
-from ..processing.services import ProcessingCollaborators, ProcessingNotice, ProcessingService
+from ..processing.services import (
+    JobRequest,
+    ProcessingCollaborators,
+    ProcessingNotice,
+    ProcessingService,
+)
 from ..retention.services import RetentionService, StorageUnavailableError
 from ..shared.database import Database, DatabaseSettings
 from ..shared.errors import Failure, UseCaseError
 from ..shared.fakes import InMemoryObjectStorage
+from .accounts.schemas import Preset
 from .app import create_app
 from .composition import (
     CompositionRoot,
@@ -99,9 +107,10 @@ from .composition import (
     transaction,
 )
 from .core.errors import ErrorCode, ErrorResponse
+from .core.schemas import Page
 from .mcp_server import build_mcp_server
 from .meetings import routes as meeting_routes
-from .meetings.schemas import MeetingRead
+from .meetings.schemas import MeetingRead, NoteRead, NotesJobRead
 
 pytestmark = pytest.mark.slow
 
@@ -149,7 +158,6 @@ class FailingContentAuditWriter:
 class ProcessingFixture:
     def __init__(self) -> None:
         self.transcriptions: list[UUID] = []
-        self.notes: list[tuple[UUID, UUID, NotesTemplate | None, bool]] = []
         self.unavailable: bool = False
 
     async def queue_transcription(self, meeting_id: UUID) -> None:
@@ -166,12 +174,7 @@ class ProcessingFixture:
         use_builtin_model: bool,
         now: datetime,
     ) -> QueuedNotes:
-        if self.unavailable:
-            raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
-        self.notes.append((meeting_id, requester_id, preset, use_builtin_model))
-        return QueuedNotes(
-            uuid4(), meeting_id, preset or NotesTemplate.SUMMARY, LlmProvider.WHADIO, now
-        )
+        raise NotImplementedError(meeting_id, requester_id, preset, use_builtin_model, now)
 
 
 class EvictionNotices:
@@ -303,7 +306,9 @@ def test_move_rejects_folder_from_another_workspace(database_settings: DatabaseS
             await unit.session.flush()
             # Act
             with pytest.raises(UseCaseError) as failure:
-                await unit.meetings.update(unit.owner, unit.meeting, now, folder_id=folder)
+                await unit.meetings.update(
+                    unit.owner, unit.meeting, now, MeetingChanges(folder_id=folder)
+                )
             # Assert
             assert failure.value.code == Failure.VALIDATION_ERROR
 
@@ -906,12 +911,12 @@ async def _browser_token(unit: Unit, user_id: UUID) -> str:
 async def client_fixture(
     unit: Unit,
     user_id: UUID | None,
-    processing: ProcessingFixture | None = None,
+    processing: IMeetingProcessing | None = None,
     storage: InMemoryObjectStorage | None = None,
 ) -> AsyncGenerator[AsyncClient]:
     app = create_app(unit.database)
 
-    def processing_dependency() -> ProcessingFixture:
+    def processing_dependency() -> IMeetingProcessing:
         if processing is None:
             raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
         return processing
@@ -1402,7 +1407,7 @@ async def _deliver(unit: Unit, body: bytes) -> None:
     async with unit.session.begin_nested():
         await handle_delivery(
             WorkerDelivery(body),
-            processing_service(unit.session, InMemoryObjectStorage()).handle,
+            processing_service(unit.session, InMemoryObjectStorage(), BUILT_IN_LLM, 3).handle,
             WorkerUsers(transcription="asr-worker", notes="notes-worker"),
         )
 
@@ -1486,7 +1491,12 @@ def test_replayed_processing_result_reserves_no_second_notice(
 
 async def _failed_update(unit: Unit) -> None:
     async with unit.session.begin_nested():
-        await unit.meetings.update(unit.member, unit.meeting, datetime.now(UTC), name="changed")
+        await unit.meetings.update(
+            unit.member,
+            unit.meeting,
+            datetime.now(UTC),
+            MeetingChanges(name="changed"),
+        )
         raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
 
 
@@ -1523,7 +1533,10 @@ def test_audit_failure_rolls_back_meeting_change(
             with pytest.raises(UseCaseError) as failure:
                 async with unit.session.begin_nested():
                     await service.update(
-                        unit.member, unit.meeting, datetime.now(UTC), name="changed"
+                        unit.member,
+                        unit.meeting,
+                        datetime.now(UTC),
+                        MeetingChanges(name="changed"),
                     )
             meeting = await repository.get(unit.meeting, lock=True)
             # Assert
@@ -1821,40 +1834,261 @@ def test_failed_upload_keeps_durable_cleanup_when_storage_is_unavailable(
     asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
 
 
-def test_http_regeneration_is_unavailable(database_settings: DatabaseSettings) -> None:
+# --- Regenerating notes ---
+
+
+@asynccontextmanager
+async def regeneration_client(unit: Unit, user_id: UUID) -> AsyncGenerator[AsyncClient]:
+    processing = processing_service(unit.session, InMemoryObjectStorage(), BUILT_IN_LLM, 3)
+    async with client_fixture(unit, user_id, processing) as client:
+        yield client
+
+
+@pytest.mark.parametrize(
+    ("body", "template"),
+    [
+        pytest.param({"preset": "interview"}, NotesTemplate.INTERVIEW, id="chosen-preset"),
+        pytest.param(None, NotesTemplate.SUMMARY, id="workspace-default"),
+    ],
+)
+def test_http_regeneration_queues_a_notes_job(
+    database_settings: DatabaseSettings,
+    body: dict[str, JsonValue] | None,
+    template: NotesTemplate,
+) -> None:
     # Arrange
     async def scenario() -> None:
-        processing = ProcessingFixture()
         async with (
             unit_fixture(database_settings) as unit,
-            client_fixture(unit, unit.member, processing) as client,
+            regeneration_client(unit, unit.member) as client,
         ):
             # Act
-            response = await client.post(f"/api/v1/meetings/{unit.meeting}/notes")
-            error = ErrorResponse.model_validate_json(response.content).error
+            response = await client.post(f"/api/v1/meetings/{unit.meeting}/notes", json=body)
+            job = await unit.session.execute(
+                select(
+                    ProcessingJob.job_type,
+                    ProcessingJob.status,
+                    ProcessingJob.template,
+                    ProcessingJob.requested_by_user_id,
+                ).where(ProcessingJob.meeting_id == unit.meeting)
+            )
             # Assert
-            assert (response.status_code, error.code, processing.notes) == (
-                503,
-                ErrorCode.INTEGRATION_UNAVAILABLE,
-                [],
+            assert (
+                response.status_code,
+                response.headers.get("Location"),
+                NotesJobRead.model_validate_json(response.content).preset,
+                [tuple(row) for row in job],
+            ) == (
+                202,
+                f"/api/v1/meetings/{unit.meeting}",
+                Preset(template),
+                [(JobType.NOTES, JobStatus.QUEUED, template, unit.member)],
             )
 
     asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
 
 
-def test_http_regeneration_hides_a_meeting_the_caller_cannot_read(
+async def _untranscribed_meeting(unit: Unit) -> UUID:
+    now = datetime.now(UTC)
+    recording = RecordingInput("recording/untranscribed", now, MeetingSource.UPLOAD)
+    return (await unit.meetings.create(unit.member, unit.workspace, recording, now)).meeting_id
+
+
+async def _meeting_with_a_notes_job(unit: Unit) -> UUID:
+    await JobRepository(unit.session).add(unit.meeting, JobType.NOTES)
+    return unit.meeting
+
+
+async def _meeting_out_of_regenerations(unit: Unit) -> UUID:
+    (await MeetingRepository(unit.session).get(unit.meeting)).regeneration_count = 3
+    await unit.session.flush()
+    return unit.meeting
+
+
+async def _the_meeting(unit: Unit) -> UUID:
+    return unit.meeting
+
+
+def _member_client(unit: Unit) -> AbstractAsyncContextManager[AsyncClient]:
+    return regeneration_client(unit, unit.member)
+
+
+def _outsider_client(unit: Unit) -> AbstractAsyncContextManager[AsyncClient]:
+    return regeneration_client(unit, unit.outsider)
+
+
+def _brokerless_client(unit: Unit) -> AbstractAsyncContextManager[AsyncClient]:
+    return client_fixture(unit, unit.member)
+
+
+@pytest.mark.parametrize(
+    ("caller", "meeting", "body", "refusal"),
+    [
+        pytest.param(
+            _member_client,
+            _untranscribed_meeting,
+            None,
+            (409, ErrorCode.NOT_TRANSCRIBED),
+            id="not-transcribed",
+        ),
+        pytest.param(
+            _member_client,
+            _meeting_with_a_notes_job,
+            None,
+            (409, ErrorCode.NOTES_IN_PROGRESS),
+            id="in-progress",
+        ),
+        pytest.param(
+            _member_client,
+            _meeting_out_of_regenerations,
+            None,
+            (409, ErrorCode.REGENERATION_LIMIT),
+            id="limit",
+        ),
+        pytest.param(
+            _member_client,
+            _the_meeting,
+            {"preset": "haiku"},
+            (422, ErrorCode.VALIDATION_ERROR),
+            id="unknown-preset",
+        ),
+        pytest.param(
+            _member_client,
+            _the_meeting,
+            {"use_builtin_model": True},
+            (422, ErrorCode.VALIDATION_ERROR),
+            id="unknown-field",
+        ),
+        pytest.param(
+            _outsider_client,
+            _the_meeting,
+            None,
+            (404, ErrorCode.NOT_FOUND),
+            id="unreadable-meeting",
+        ),
+        pytest.param(
+            _brokerless_client,
+            _the_meeting,
+            None,
+            (503, ErrorCode.INTEGRATION_UNAVAILABLE),
+            id="without-a-broker",
+        ),
+    ],
+)
+def test_http_regeneration_is_refused(
+    database_settings: DatabaseSettings,
+    caller: Callable[[Unit], AbstractAsyncContextManager[AsyncClient]],
+    meeting: Callable[[Unit], Awaitable[UUID]],
+    body: dict[str, JsonValue] | None,
+    refusal: tuple[int, ErrorCode],
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with unit_fixture(database_settings) as unit, caller(unit) as client:
+            meeting_id = await meeting(unit)
+            # Act
+            response = await client.post(f"/api/v1/meetings/{meeting_id}/notes", json=body)
+            error = ErrorResponse.model_validate_json(response.content).error
+            # Assert
+            assert (response.status_code, error.code) == refusal
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+class DiscardingPublisher:
+    async def publish(self, request: JobRequest) -> None:
+        del request
+
+
+def _started_result(job_id: UUID, meeting_id: UUID) -> bytes:
+    return json.dumps(
+        {
+            "type": "job_started",
+            "job_id": str(job_id),
+            "meeting_id": str(meeting_id),
+            "kind": "notes",
+            "started_at": datetime.now(UTC).isoformat(),
+        }
+    ).encode()
+
+
+async def _notes_after_a_regeneration(
+    unit: Unit, client: AsyncClient, *, failed: bool
+) -> Page[NoteRead]:
+    response = await client.post(f"/api/v1/meetings/{unit.meeting}/notes")
+    job_id = NotesJobRead.model_validate_json(response.content).id
+    async with unit.session.begin_nested():
+        await processing_service(
+            unit.session, InMemoryObjectStorage(), BUILT_IN_LLM, 3
+        ).publish_next(DiscardingPublisher(), datetime.now(UTC))
+    await _deliver(unit, _started_result(job_id, unit.meeting))
+    await _deliver(unit, _notes_result(job_id, unit.meeting, failed=failed))
+    notes = await client.get(f"/api/v1/meetings/{unit.meeting}/notes")
+    return Page[NoteRead].model_validate_json(notes.content)
+
+
+async def _regeneration_events(unit: Unit) -> list[tuple[UUID, AuditAction, JsonValue]]:
+    events = await unit.session.execute(
+        select(AuditEvent.actor_user_id, AuditEvent.action, AuditEvent.details).where(
+            AuditEvent.meeting_id == unit.meeting,
+            AuditEvent.action == AuditAction.NOTES_REGENERATED,
+        )
+    )
+    return [(actor, action, details) for actor, action, details in events]
+
+
+def test_regenerated_notes_become_current_and_audit_the_requester(
     database_settings: DatabaseSettings,
 ) -> None:
     # Arrange
     async def scenario() -> None:
         async with (
             unit_fixture(database_settings) as unit,
-            client_fixture(unit, unit.outsider) as client,
+            regeneration_client(unit, unit.member) as client,
         ):
             # Act
-            response = await client.post(f"/api/v1/meetings/{unit.meeting}/notes")
+            notes = await _notes_after_a_regeneration(unit, client, failed=False)
             # Assert
-            assert response.status_code == 404
+            assert (
+                [(note.content, note.created_by_user_id, note.is_current) for note in notes.items],
+                await _regeneration_events(unit),
+            ) == (
+                [
+                    ("## Summary", unit.member, True),
+                    ("Alice will send the report", None, False),
+                ],
+                [(unit.member, AuditAction.NOTES_REGENERATED, {"preset": "summary"})],
+            )
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+def test_failed_regeneration_keeps_the_previous_notes_and_audits_nothing(
+    database_settings: DatabaseSettings,
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        async with (
+            unit_fixture(database_settings) as unit,
+            regeneration_client(unit, unit.member) as client,
+        ):
+            # Act
+            notes = await _notes_after_a_regeneration(unit, client, failed=True)
+            meeting = await unit.session.execute(
+                select(Meeting.processing_state, Meeting.regeneration_count).where(
+                    Meeting.meeting_id == unit.meeting
+                )
+            )
+            # Assert
+            assert (
+                [note.content for note in notes.items if note.is_current],
+                await _regeneration_events(unit),
+                [tuple(row) for row in meeting],
+            ) == (
+                ["Alice will send the report"],
+                [],
+                [(ProcessingState.FAILED, 1)],
+            )
 
     asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
 
@@ -2042,7 +2276,9 @@ def test_upload_queues_a_transcription_job_to_publish(database_settings: Databas
                                 CaptureSpeakerTimeline(CaptureRepository(unit.session)),
                                 OutboxProcessingNotices(NotificationOutboxRepository(unit.session)),
                                 meeting_readers(unit),
-                            )
+                            ),
+                            notes_llm=BUILT_IN_LLM,
+                            regeneration_limit=3,
                         )
                     ),
                 )

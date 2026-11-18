@@ -50,6 +50,7 @@ export function meetingSummary(
     id: "meeting",
     workspace_id: "workspace",
     folder_id: "folder",
+    folder_revision_id: "folder-revision",
     name: "Weekly sync",
     name_is_generated: false,
     recorded_at: CREATED_AT,
@@ -87,6 +88,21 @@ export function noteRead(changes: Partial<Schemas["NoteRead"]> = {}): Schemas["N
     created_by_user_id: null,
     is_current: true,
     context_meetings: [],
+    ...changes,
+  };
+}
+
+export function notesJobRead(
+  changes: Partial<Schemas["NotesJobRead"]> = {},
+): Schemas["NotesJobRead"] {
+  return {
+    id: "job",
+    meeting_id: "meeting",
+    kind: "notes",
+    status: "queued",
+    preset: "summary",
+    provider: "whadio",
+    created_at: CREATED_AT,
     ...changes,
   };
 }

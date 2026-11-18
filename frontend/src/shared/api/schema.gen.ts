@@ -455,7 +455,7 @@ export interface paths {
         head?: never;
         /**
          * Rename or move a meeting
-         * @description Any member who can read the meeting. Renaming clears `name_is_generated`. Moving keeps the recording, transcript and notes; only folders of the same workspace are accepted, and later notes use the new folder as context. `recorded_at` cannot be changed.
+         * @description Any member who can read the meeting. Renaming clears `name_is_generated`. Moving keeps the recording, transcript and notes; only folders of the same workspace are accepted, and later notes use the new folder as context. Give `expected_folder_id` and `expected_folder_revision_id` to refuse the move if another member moved the meeting since it was read. `recorded_at` cannot be changed.
          */
         patch: operations["update_meeting_api_v1_meetings__meeting_id__patch"];
         trace?: never;
@@ -494,8 +494,8 @@ export interface paths {
         get: operations["list_notes_api_v1_meetings__meeting_id__notes_get"];
         put?: never;
         /**
-         * Regenerate the notes (not available yet)
-         * @description Regenerating notes is outside the MVP. After checking that the caller can read the meeting, this always answers `503 INTEGRATION_UNAVAILABLE`. The planned behaviour is in `docs/api/api-design.md`.
+         * Regenerate the notes
+         * @description Any member who can read the meeting. Queues a notes job written from the current transcript revision with `preset`, or the workspace's default without one; the transcript itself is never regenerated. The meeting is `processing` until the run ends, then `processed` with the new notes current, or `failed` with the previous ones still current. Each meeting can be regenerated a number of times the operator sets, and every request counts, failed runs included.
          */
         post: operations["regenerate_notes_api_v1_meetings__meeting_id__notes_post"];
         delete?: never;
@@ -677,7 +677,7 @@ export interface paths {
         };
         /**
          * List Shares
-         * @description List shares of a meeting the caller can read, newest first.
+         * @description List the caller's own shares of a meeting they can read, newest first.
          */
         get: operations["list_shares_api_v1_meetings__meeting_id__shares_get"];
         put?: never;
@@ -1218,7 +1218,7 @@ export interface components {
          * ErrorCode
          * @enum {string}
          */
-        ErrorCode: "EMAIL_MISMATCH" | "ACCOUNT_EXISTS" | "NO_NOTES" | "INTEGRATION_UNAVAILABLE" | "TRANSCRIPT_EXISTS" | "ALREADY_PROCESSED" | "FOLDER_RECOVERY_CONFLICT" | "DEFAULT_FOLDER" | "FOLDER_EXISTS" | "TERM_EXISTS" | "STALE_REVISION" | "LINK_INVALID" | "ACCESS_REQUEST_EXISTS" | "ALREADY_HAS_ACCESS" | "ACCESS_REQUEST_NOT_PENDING" | "SHARE_ALREADY_BOUND" | "SHARE_REVOKED" | "MALFORMED_REQUEST" | "VALIDATION_ERROR" | "UNAUTHENTICATED" | "INVALID_CREDENTIALS" | "INSUFFICIENT_ROLE" | "NOT_FOUND" | "METHOD_NOT_ALLOWED" | "PERSONAL_WORKSPACE" | "ALREADY_MEMBER" | "INVITATION_LIMIT" | "INVITATION_COOLDOWN" | "INVITATION_NOT_PENDING" | "OWNER_IMMUTABLE" | "RESTRICTED_MEETING_REQUIRES_RECIPIENT" | "NOT_TRANSCRIBED" | "NOTES_IN_PROGRESS" | "RECORDING_NOT_READY" | "RECORDING_DELETED" | "REGENERATION_LIMIT" | "CHUNK_MISMATCH" | "CAPTURE_CLOSED" | "MISSING_CHUNKS" | "EMPTY_CAPTURE" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "RATE_LIMITED" | "HTTP_ERROR" | "INTERNAL_ERROR";
+        ErrorCode: "EMAIL_MISMATCH" | "ACCOUNT_EXISTS" | "NO_NOTES" | "INTEGRATION_UNAVAILABLE" | "TRANSCRIPT_EXISTS" | "ALREADY_PROCESSED" | "FOLDER_RECOVERY_CONFLICT" | "DEFAULT_FOLDER" | "FOLDER_EXISTS" | "TERM_EXISTS" | "STALE_REVISION" | "MEETING_MOVE_CONFLICT" | "LINK_INVALID" | "ACCESS_REQUEST_EXISTS" | "ALREADY_HAS_ACCESS" | "ACCESS_REQUEST_NOT_PENDING" | "SHARE_ALREADY_BOUND" | "SHARE_REVOKED" | "MALFORMED_REQUEST" | "VALIDATION_ERROR" | "UNAUTHENTICATED" | "INVALID_CREDENTIALS" | "INSUFFICIENT_ROLE" | "NOT_FOUND" | "METHOD_NOT_ALLOWED" | "PERSONAL_WORKSPACE" | "ALREADY_MEMBER" | "INVITATION_LIMIT" | "INVITATION_COOLDOWN" | "INVITATION_NOT_PENDING" | "OWNER_IMMUTABLE" | "RESTRICTED_MEETING_REQUIRES_RECIPIENT" | "NOT_TRANSCRIBED" | "NOTES_IN_PROGRESS" | "RECORDING_NOT_READY" | "RECORDING_DELETED" | "REGENERATION_LIMIT" | "CHUNK_MISMATCH" | "CAPTURE_CLOSED" | "MISSING_CHUNKS" | "EMPTY_CAPTURE" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "RATE_LIMITED" | "HTTP_ERROR" | "INTERNAL_ERROR";
         /** ErrorDetail */
         ErrorDetail: {
             /**
@@ -1670,6 +1670,12 @@ export interface components {
              */
             folder_id: string;
             /**
+             * Folder Revision Id
+             * Format: uuid
+             * @description Changes whenever the meeting enters a folder; use it for conditional moves
+             */
+            folder_revision_id: string;
+            /**
              * Name
              * @description Meeting name
              * @example Sprint 12 review
@@ -1762,6 +1768,12 @@ export interface components {
              */
             folder_id: string;
             /**
+             * Folder Revision Id
+             * Format: uuid
+             * @description Changes whenever the meeting enters a folder; use it for conditional moves
+             */
+            folder_revision_id: string;
+            /**
              * Name
              * @description Meeting name
              * @example Sprint 12 review
@@ -1804,6 +1816,16 @@ export interface components {
              * @description Folder of the same workspace to move the meeting to
              */
             folder_id?: string | null;
+            /**
+             * Expected Folder Id
+             * @description Move only if the meeting is still in this folder
+             */
+            expected_folder_id?: string | null;
+            /**
+             * Expected Folder Revision Id
+             * @description Move only if the meeting still has this folder placement revision
+             */
+            expected_folder_revision_id?: string | null;
         };
         /** MemberRead */
         MemberRead: {
@@ -1927,6 +1949,40 @@ export interface components {
              * @description Meetings of the same folder used as context
              */
             context_meetings: components["schemas"]["ContextMeetingRead"][];
+        };
+        /** NotesJobRead */
+        NotesJobRead: {
+            /**
+             * Id
+             * Format: uuid
+             * @description Notes job identifier
+             */
+            id: string;
+            /**
+             * Meeting Id
+             * Format: uuid
+             * @description Meeting whose notes are being regenerated
+             */
+            meeting_id: string;
+            /** @description Kind of job, always `notes` */
+            kind: components["schemas"]["JobType"];
+            /** @description Job state when it was accepted, always `queued` */
+            status: components["schemas"]["JobStatus"];
+            /** @description Preset the new notes follow */
+            preset: components["schemas"]["Preset"];
+            /** @description Model provider configured to write them */
+            provider: components["schemas"]["Provider"];
+            /**
+             * Created At
+             * Format: date-time
+             * @description When the job was queued
+             */
+            created_at: string;
+        };
+        /** NotesRegeneration */
+        NotesRegeneration: {
+            /** @description Preset of the new notes; the workspace's default when omitted */
+            preset?: components["schemas"]["Preset"] | null;
         };
         /** PageInfo */
         PageInfo: {
@@ -2363,6 +2419,12 @@ export interface components {
              */
             revoked_at: string | null;
             /**
+             * Created At
+             * Format: date-time
+             * @description When the share was created
+             */
+            created_at: string;
+            /**
              * Link
              * @description Share link with one-time token disclosure in its fragment
              */
@@ -2400,6 +2462,12 @@ export interface components {
              * @description When access ended
              */
             revoked_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description When the share was created
+             */
+            created_at: string;
         };
         /** SignIn */
         SignIn: {
@@ -4479,6 +4547,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description `MEETING_MOVE_CONFLICT`: the meeting no longer has the expected folder placement */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each; `folder_id` must be a folder of the meeting's workspace */
             422: {
                 headers: {
@@ -4617,8 +4694,32 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["NotesRegeneration"] | null;
+            };
+        };
         responses: {
+            /** @description The queued notes job */
+            202: {
+                headers: {
+                    /** @description URL of the meeting */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotesJobRead"];
+                };
+            };
+            /** @description `MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description `UNAUTHENTICATED`: the session is missing, expired or ended */
             401: {
                 headers: {
@@ -4637,6 +4738,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description `NOT_TRANSCRIBED`: the meeting has no transcript yet; `NOTES_IN_PROGRESS`: a notes job of the meeting is queued or running; `REGENERATION_LIMIT`: the meeting used up its regenerations */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each */
             422: {
                 headers: {
@@ -4646,7 +4756,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `INTEGRATION_UNAVAILABLE`: regenerating notes is not available yet */
+            /** @description `INTEGRATION_UNAVAILABLE`: the server has no broker or object storage */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -7100,7 +7210,7 @@ type ReadonlyArray<T> = [
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
 export const accessModeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["AccessMode"]> = ["workspace", "restricted"];
 export const captureStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CaptureStatus"]> = ["recording", "idle", "assembled", "abandoned"];
-export const errorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorCode"]> = ["EMAIL_MISMATCH", "ACCOUNT_EXISTS", "NO_NOTES", "INTEGRATION_UNAVAILABLE", "TRANSCRIPT_EXISTS", "ALREADY_PROCESSED", "FOLDER_RECOVERY_CONFLICT", "DEFAULT_FOLDER", "FOLDER_EXISTS", "TERM_EXISTS", "STALE_REVISION", "LINK_INVALID", "ACCESS_REQUEST_EXISTS", "ALREADY_HAS_ACCESS", "ACCESS_REQUEST_NOT_PENDING", "SHARE_ALREADY_BOUND", "SHARE_REVOKED", "MALFORMED_REQUEST", "VALIDATION_ERROR", "UNAUTHENTICATED", "INVALID_CREDENTIALS", "INSUFFICIENT_ROLE", "NOT_FOUND", "METHOD_NOT_ALLOWED", "PERSONAL_WORKSPACE", "ALREADY_MEMBER", "INVITATION_LIMIT", "INVITATION_COOLDOWN", "INVITATION_NOT_PENDING", "OWNER_IMMUTABLE", "RESTRICTED_MEETING_REQUIRES_RECIPIENT", "NOT_TRANSCRIBED", "NOTES_IN_PROGRESS", "RECORDING_NOT_READY", "RECORDING_DELETED", "REGENERATION_LIMIT", "CHUNK_MISMATCH", "CAPTURE_CLOSED", "MISSING_CHUNKS", "EMPTY_CAPTURE", "PAYLOAD_TOO_LARGE", "UNSUPPORTED_MEDIA_TYPE", "RATE_LIMITED", "HTTP_ERROR", "INTERNAL_ERROR"];
+export const errorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorCode"]> = ["EMAIL_MISMATCH", "ACCOUNT_EXISTS", "NO_NOTES", "INTEGRATION_UNAVAILABLE", "TRANSCRIPT_EXISTS", "ALREADY_PROCESSED", "FOLDER_RECOVERY_CONFLICT", "DEFAULT_FOLDER", "FOLDER_EXISTS", "TERM_EXISTS", "STALE_REVISION", "MEETING_MOVE_CONFLICT", "LINK_INVALID", "ACCESS_REQUEST_EXISTS", "ALREADY_HAS_ACCESS", "ACCESS_REQUEST_NOT_PENDING", "SHARE_ALREADY_BOUND", "SHARE_REVOKED", "MALFORMED_REQUEST", "VALIDATION_ERROR", "UNAUTHENTICATED", "INVALID_CREDENTIALS", "INSUFFICIENT_ROLE", "NOT_FOUND", "METHOD_NOT_ALLOWED", "PERSONAL_WORKSPACE", "ALREADY_MEMBER", "INVITATION_LIMIT", "INVITATION_COOLDOWN", "INVITATION_NOT_PENDING", "OWNER_IMMUTABLE", "RESTRICTED_MEETING_REQUIRES_RECIPIENT", "NOT_TRANSCRIBED", "NOTES_IN_PROGRESS", "RECORDING_NOT_READY", "RECORDING_DELETED", "REGENERATION_LIMIT", "CHUNK_MISMATCH", "CAPTURE_CLOSED", "MISSING_CHUNKS", "EMPTY_CAPTURE", "PAYLOAD_TOO_LARGE", "UNSUPPORTED_MEDIA_TYPE", "RATE_LIMITED", "HTTP_ERROR", "INTERNAL_ERROR"];
 export const exportFormatValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ExportFormat"]> = ["markdown", "vtt"];
 export const exportVersionValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ExportVersion"]> = ["current", "original"];
 export const invitationStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["InvitationState"]> = ["pending", "accepted", "declined", "cancelled"];

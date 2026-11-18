@@ -35,3 +35,9 @@ class WebSettings(BaseSettings):
         description="Broker user the notes worker publishes as; notes results from any other "
         "user are rejected. The web's own broker user when unset",
     )
+    notes_regeneration_limit: int = Field(
+        default=3,
+        ge=0,
+        description="How many times a meeting's notes can be regenerated; every requested run "
+        "counts, failed ones included, and 0 turns regeneration off",
+    )

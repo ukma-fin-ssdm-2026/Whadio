@@ -34,8 +34,15 @@ class FakeAccessRepository:
             if share.recipient_user_id == user_id and share.revoked_at is None
         ][: page.limit]
 
-    async def shares(self, meeting_id: UUID, page: ListWindow | None = None) -> list[ExternalShare]:
-        found = [share for share in self.share_rows.values() if share.meeting_id == meeting_id]
+    async def shares(
+        self, meeting_id: UUID, page: ListWindow | None = None, *, created_by: UUID | None = None
+    ) -> list[ExternalShare]:
+        found = [
+            share
+            for share in self.share_rows.values()
+            if share.meeting_id == meeting_id
+            and (created_by is None or share.created_by_user_id == created_by)
+        ]
         return found if page is None else found[: page.limit]
 
     async def requests(

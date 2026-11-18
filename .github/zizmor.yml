@@ -3,6 +3,8 @@ rules:
     ignore:
       # Its workflow_run job checks out nothing and only merges the release app's own pull request.
       - release.yml
+      # This alert checks out only the default-branch commit to send a Telegram notification.
+      - main-ci-alert.yml
       # Checks out only the main commit and uses PR numbers from events to fetch live state.
       # The unprivileged review signal never checks out code or receives credentials.
       - review-processing.yml

@@ -25,8 +25,10 @@ export interface Meeting {
   id: string;
   workspaceId: string;
   folderId: string;
+  folderRevisionId: string;
   createdByUserId: string | null;
   title: string;
+  nameIsGenerated: boolean;
   date: string;
   state: ProcessingState;
   duration: string;
@@ -49,8 +51,10 @@ export function mapMeeting(item: MeetingFields): Meeting {
     id: item.id,
     workspaceId: item.workspace_id,
     folderId: item.folder_id,
+    folderRevisionId: item.folder_revision_id,
     createdByUserId: item.created_by_user_id ?? null,
     title: item.name,
+    nameIsGenerated: item.name_is_generated,
     date: item.recorded_at,
     state: item.processing_state,
     duration: formatDuration(item.duration_seconds),

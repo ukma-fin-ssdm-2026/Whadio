@@ -4,10 +4,16 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { apiClient } from "@/shared/api/client";
 import { ApiError } from "@/shared/api/errors";
-import type { MeetingUpdate, RevisionInput, Schemas } from "@/shared/api/types";
+import type {
+  MeetingUpdate,
+  NotesRegeneration,
+  Preset,
+  RevisionInput,
+  Schemas,
+} from "@/shared/api/types";
 import { expectNoContent, unwrap } from "@/shared/api/unwrap";
 import { isInProgress, type Meeting, mapMeeting } from "../model";
 import { detailKey, foldersKey, workspaceListsKey } from "./keys";
@@ -17,12 +23,18 @@ export const POLL_INTERVAL_MS = 10_000;
 export const TRANSCRIPT_PENDING = "pending" as const;
 const FIRST_PAGE = "";
 const CURRENT_NOTE_ONLY = { limit: 1 };
+const NOTE_VERSIONS_PER_PAGE = 20;
 
 // The server signs a playback link for 5 minutes (meetings/recordings.py).
 const RECORDING_LINK_LIFE_MS = 5 * 60_000;
 const RECORDING_LINK_FRESH_MS = 4 * 60_000;
 
 const transcriptsKey = (meetingId: string) => [...detailKey(meetingId), "transcript"] as const;
+const notesKey = (meetingId: string) => [...detailKey(meetingId), "notes"] as const;
+
+// Notes too: a regeneration keeps the previous ones current while `processing` and once `failed`.
+const hasTranscriptStage = (state: Meeting["state"]) =>
+  state === "processing" || state === "processed" || state === "failed";
 
 function fetchMeetingPage(
   workspaceId: string,
@@ -42,6 +54,19 @@ function fetchMeetingPage(
           name: name || null,
         },
       },
+      signal,
+    }),
+  );
+}
+
+function fetchNotes(
+  meetingId: string,
+  query: { limit: number; cursor?: string | null },
+  signal: AbortSignal,
+) {
+  return unwrap(
+    apiClient.GET("/api/v1/meetings/{meeting_id}/notes", {
+      params: { path: { meeting_id: meetingId }, query },
       signal,
     }),
   );
@@ -116,23 +141,28 @@ export const meetingQueries = {
     queryOptions({
       queryKey: [...transcriptsKey(id), { revisionId }],
       queryFn: ({ signal }) => fetchTranscript(id, meetingState, revisionId, signal),
-      // Not `processed`, unlike the notes: it is saved before them and outlives their failure.
-      enabled: meetingState !== "recording" && meetingState !== "queued",
+      enabled: hasTranscriptStage(meetingState),
       refetchInterval: ({ state }) =>
         state.data === TRANSCRIPT_PENDING ? POLL_INTERVAL_MS : false,
     }),
   notes: ({ id, state }: Pick<Meeting, "id" | "state">) =>
     queryOptions({
-      queryKey: [...detailKey(id), "notes"],
-      queryFn: ({ signal }) =>
-        unwrap(
-          apiClient.GET("/api/v1/meetings/{meeting_id}/notes", {
-            params: { path: { meeting_id: id }, query: CURRENT_NOTE_ONLY },
-            signal,
-          }),
-        ),
-      select: ({ items }) => items[0] ?? null,
-      enabled: state === "processed",
+      queryKey: notesKey(id),
+      queryFn: ({ signal }) => fetchNotes(id, CURRENT_NOTE_ONLY, signal),
+      select: ({ items, pagination }) => ({
+        current: items[0] ?? null,
+        hasEarlier: pagination.has_more,
+      }),
+      enabled: hasTranscriptStage(state),
+    }),
+  noteVersions: (meetingId: string) =>
+    infiniteQueryOptions({
+      queryKey: [...notesKey(meetingId), "versions"],
+      queryFn: ({ pageParam, signal }) =>
+        fetchNotes(meetingId, { limit: NOTE_VERSIONS_PER_PAGE, cursor: pageParam || null }, signal),
+      initialPageParam: FIRST_PAGE,
+      getNextPageParam: ({ pagination }) => (pagination.has_more ? pagination.next_cursor : null),
+      select: ({ pages }) => pages.flatMap((page) => page.items),
     }),
   recording: ({ id, recordingAvailable }: Pick<Meeting, "id" | "recordingAvailable">) =>
     queryOptions({
@@ -164,6 +194,19 @@ export function useForgetRecordingLink({
     const { queryKey } = meetingQueries.recording({ id, recordingAvailable });
     queryClient.removeQueries({ queryKey });
   }, [queryClient, id, recordingAvailable]);
+}
+
+export function useRefreshNotesWhenSettled({ id, state }: Pick<Meeting, "id" | "state">) {
+  const queryClient = useQueryClient();
+  const settled = !isInProgress(state);
+  const seen = useRef({ id, settled });
+  useEffect(() => {
+    const before = seen.current;
+    seen.current = { id, settled };
+    if (before.id === id && !before.settled && settled) {
+      void queryClient.invalidateQueries({ queryKey: notesKey(id) });
+    }
+  }, [queryClient, id, settled]);
 }
 
 interface RecordingUpload {
@@ -207,6 +250,36 @@ export function useEditTranscript(meeting: Pick<Meeting, "id" | "state">) {
     onError: (error) => {
       if (error.code !== "STALE_REVISION") return;
       return queryClient.invalidateQueries({ queryKey: transcriptsKey(meeting.id) });
+    },
+  });
+}
+
+export function useRegenerateNotes({ id, workspaceId }: Pick<Meeting, "id" | "workspaceId">) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (preset: Preset | null) => {
+      const body: NotesRegeneration = preset === null ? {} : { preset };
+      return unwrap(
+        apiClient.POST("/api/v1/meetings/{meeting_id}/notes", {
+          params: { path: { meeting_id: id } },
+          body,
+        }),
+      );
+    },
+    onSuccess: () => {
+      // The 202 means `processing`: polling starts now, and the settle hook sees a run that
+      // ends before the next poll.
+      queryClient.setQueryData(
+        meetingQueries.detail(id).queryKey,
+        (meeting): Schemas["MeetingRead"] | undefined =>
+          meeting && { ...meeting, processing_state: "processing", failure_reason: null },
+      );
+      return queryClient.invalidateQueries({ queryKey: workspaceListsKey(workspaceId) });
+    },
+    onError: (error) => {
+      if (error.code !== "NOTES_IN_PROGRESS" && error.code !== "NOT_TRANSCRIBED") return;
+      // Exact: refetching the recording link under it would restart playback.
+      return queryClient.invalidateQueries({ queryKey: detailKey(id), exact: true });
     },
   });
 }

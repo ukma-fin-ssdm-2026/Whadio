@@ -27,6 +27,7 @@ from ...audit.services import AuditWriter
 from ...meetings.enums import AccessMode
 from ...meetings.models import Folder, Meeting
 from ...meetings.repositories import MeetingRepository
+from ...meetings.services import MeetingChanges
 from ...shared.database import (
     Database,
     DatabaseSettings,
@@ -296,7 +297,7 @@ def test_membership_and_access_changes_wait_for_a_concurrent_move(
                             place.moderator,
                             place.meeting,
                             datetime.now(UTC),
-                            folder_id=place.archive,
+                            MeetingChanges(folder_id=place.archive),
                         )
                         held.set()
                         await attempted.wait()

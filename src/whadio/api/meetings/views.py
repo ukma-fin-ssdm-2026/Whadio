@@ -1,7 +1,8 @@
 from uuid import UUID
 
-from ...meetings.contracts import NoteVersion, TranscriptVersion
+from ...meetings.contracts import NoteVersion, QueuedNotes, TranscriptVersion
 from ...meetings.models import Meeting
+from ...processing.enums import JobStatus, JobType
 from ..accounts.schemas import Preset, Provider
 from .schemas import (
     AccessMode,
@@ -9,6 +10,7 @@ from .schemas import (
     MeetingRead,
     MeetingSummary,
     NoteRead,
+    NotesJobRead,
     ProcessingState,
     RecordingStatus,
     RevisionRead,
@@ -25,6 +27,7 @@ def meeting_summary(meeting: Meeting, workspace_id: UUID) -> MeetingSummary:
         id=meeting.meeting_id,
         workspace_id=workspace_id,
         folder_id=meeting.folder_id,
+        folder_revision_id=meeting.folder_revision_id,
         name=meeting.name,
         name_is_generated=meeting.name_is_generated,
         recorded_at=meeting.recorded_at,
@@ -41,6 +44,7 @@ def meeting_read(meeting: Meeting, workspace_id: UUID, *, is_edited: bool) -> Me
         id=meeting.meeting_id,
         workspace_id=workspace_id,
         folder_id=meeting.folder_id,
+        folder_revision_id=meeting.folder_revision_id,
         name=meeting.name,
         name_is_generated=meeting.name_is_generated,
         recorded_at=meeting.recorded_at,
@@ -117,3 +121,15 @@ def notes_read(versions: list[NoteVersion]) -> list[NoteRead]:
         )
         for version in versions
     ]
+
+
+def notes_job_read(queued: QueuedNotes) -> NotesJobRead:
+    return NotesJobRead(
+        id=queued.job_id,
+        meeting_id=queued.meeting_id,
+        kind=JobType.NOTES,
+        status=JobStatus.QUEUED,
+        preset=Preset(queued.preset),
+        provider=Provider(queued.provider.lower()),
+        created_at=queued.created_at,
+    )

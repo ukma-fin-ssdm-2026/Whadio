@@ -14,7 +14,7 @@ class IAccessRepository(Protocol):
     async def recipient_shares(self, user_id: UUID, page: ListWindow) -> list[ExternalShare]: ...
 
     async def shares(
-        self, meeting_id: UUID, page: ListWindow | None = None
+        self, meeting_id: UUID, page: ListWindow | None = None, *, created_by: UUID | None = None
     ) -> list[ExternalShare]: ...
 
     async def requests(
@@ -47,8 +47,12 @@ class IMemberGrantRepository(Protocol):
 
 
 class AccessRepository:
-    async def shares(self, meeting_id: UUID, page: ListWindow | None = None) -> list[ExternalShare]:
+    async def shares(
+        self, meeting_id: UUID, page: ListWindow | None = None, *, created_by: UUID | None = None
+    ) -> list[ExternalShare]:
         statement = select(ExternalShare).where(ExternalShare.meeting_id == meeting_id)
+        if created_by is not None:
+            statement = statement.where(ExternalShare.created_by_user_id == created_by)
         if page is not None:
             if page.after is not None:
                 timestamp = datetime.fromisoformat(page.after.key)

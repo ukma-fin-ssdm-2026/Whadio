@@ -15,7 +15,8 @@ The four DORA metrics for Whadio over three weeks, 20.10–09.11.2026, computed 
   requests count towards the next green run.
 - **Lead time:** for each of the 157 pull requests that reached a green run in the period, from its
   first commit to the end of that run. 27 of them were merged on 18–19.10, while `main` was red.
-- **Recovery:** from the end of each red run to the end of the next green run.
+- **Recovery:** from the end of each red run to the end of the next green run, even one after the
+  period; a red run with no green run after it yet counts as not yet recovered.
 
 ## Metrics
 
@@ -142,7 +143,41 @@ from outside our code.
 **Action for next week.** A daily message in the team chat listing the pull requests that wait for
 review.
 
+## What Pain Did These Metrics Reveal in Our Team?
+
+- **A red `main` stopped everyone.** Nothing could be deployed for 5.5 days, and the 27 pull
+  requests merged on 18–19.10 waited for a green run until 25.10. Waiting for a green `main` is 60%
+  of all lead time.
+- **We fixed what was not ours.** 14 of the 16 red runs came from GitHub billing and new
+  advisories, and two pull requests did nothing but upgrade flagged packages (#148, #223).
+- **Feedback comes slowly.** A pull request waits 5.8 h (median) for its first review, and 19
+  stayed open for over two days.
+- **Deadlines crowd the runners.** On the eve of the midterm our runs waited 15.6 h for runners in
+  total, and the midterm commit sat 4.4 h in the queue.
+- **CI itself did not hurt:** it adds about 10 minutes, 1% of the lead time.
+
+## Bonuses
+
+### 1. Metrics script
+
+A script computes the four metrics by the definitions above, with the queue and the run apart, for
+any period. `fetch` exports the run history from the GitHub API into [`evidence/`](evidence/), and
+`report` computes [`dora-metrics.md`](dora-metrics.md) from that export alone. `report` therefore
+needs an export from `fetch` that covers the requested dates, and that export may hold one green run
+after `--until`, the one that ends the recovery of a red run at the end of the period. The dates are
+Kyiv time, and `--until` is the day after the period's last day:
+
+```bash
+GITHUB_TOKEN=$(gh auth token) uv run python .github/scripts/dora_metrics.py fetch --since 2026-10-20 --until 2026-11-10
+uv run python .github/scripts/dora_metrics.py report --since 2026-10-20 --until 2026-11-10
+```
+
+**Discrepancies with Stage 2:** none in the data or the figures, since Stage 2 used a prototype of
+this script. On 17.11 `fetch` wrote the three evidence files byte for byte as committed, and every
+row of [`metrics-raw.md`](metrics-raw.md) matches the script's queue, run and end times. Only the
+rounding differs: 31 and 25 deployments a week above, 31.3 and 25.3 in the script's output.
+
 ## AI Usage
 
-The run data was collected with `gh` and analysed, and both documents were drafted, with Claude
-Code; Andrii Shalaiev reviewed them.
+The run data was collected with `gh` and analysed, and the documents, the exported data and the
+metrics script were drafted, with Claude Code; Andrii Shalaiev reviewed them.

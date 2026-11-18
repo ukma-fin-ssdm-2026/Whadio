@@ -1,10 +1,10 @@
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from psycopg.errors import UniqueViolation
-from sqlalchemy import Select, case, delete, func, or_, select, update
+from sqlalchemy import Select, case, delete, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -93,7 +93,7 @@ class IMeetingRepository(Protocol):
 
     async def remove_term(self, term_id: UUID) -> None: ...
 
-    async def processed_in_folder(self, folder_id: UUID, limit: int) -> list[Meeting]: ...
+    async def transcribed_in_folder(self, folder_id: UUID, limit: int) -> list[Meeting]: ...
 
     async def workspace_meetings(self, workspace_id: UUID) -> list[UUID]: ...
 
@@ -489,14 +489,14 @@ class MeetingRepository:
     async def remove_term(self, term_id: UUID) -> None:
         await self._session.execute(delete(GlossaryTerm).where(GlossaryTerm.term_id == term_id))
 
-    async def processed_in_folder(self, folder_id: UUID, limit: int) -> list[Meeting]:
+    async def transcribed_in_folder(self, folder_id: UUID, limit: int) -> list[Meeting]:
         return list(
             await self._session.scalars(
                 select(Meeting)
                 .where(
                     Meeting.folder_id == folder_id,
                     Meeting.access_mode == AccessMode.WORKSPACE,
-                    Meeting.processing_state == ProcessingState.PROCESSED,
+                    exists().where(Transcript.meeting_id == Meeting.meeting_id),
                 )
                 .order_by(Meeting.recorded_at.desc(), Meeting.meeting_id.desc())
                 .limit(limit)
@@ -548,7 +548,7 @@ class FolderRepository:
             await self._session.scalars(
                 update(Meeting)
                 .where(Meeting.folder_id == folder_id)
-                .values(folder_id=destination_id)
+                .values(folder_id=destination_id, folder_revision_id=func.gen_random_uuid())
                 .returning(Meeting.meeting_id)
             )
         )
@@ -603,6 +603,7 @@ class FolderRepository:
         await MeetingRepository(self._session).save_folder(folder)
         for row in rows:
             row.folder_id = folder_id
+            row.folder_revision_id = uuid4()
         await self._session.flush()
         await self._session.execute(
             delete(FolderRecovery).where(FolderRecovery.folder_id == folder_id)

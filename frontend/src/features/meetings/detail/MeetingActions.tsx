@@ -3,6 +3,7 @@ import DriveFileMoveOutlinedIcon from "@mui/icons-material/DriveFileMoveOutlined
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
+import ShareOutlinedIcon from "@mui/icons-material/ShareOutlined";
 import { IconButton, Menu, MenuItem, Tooltip } from "@mui/material";
 import { useState } from "react";
 import type { Schemas } from "@/shared/api/types";
@@ -14,6 +15,7 @@ import type { Meeting } from "../model";
 import { AccessDialog, type WorkspaceMembers } from "./AccessDialog";
 import { MoveMeetingDialog } from "./MoveMeetingDialog";
 import { RenameMeetingDialog } from "./RenameMeetingDialog";
+import { ShareDialog } from "./ShareDialog";
 
 type Folder = Schemas["FolderRead"];
 
@@ -28,7 +30,7 @@ interface MeetingActionsProps {
   onLeave: () => void;
 }
 
-type OpenDialog = "rename" | "move" | "access" | "delete" | null;
+type OpenDialog = "rename" | "move" | "share" | "access" | "delete" | null;
 
 export function MeetingActions({
   meeting,
@@ -85,6 +87,9 @@ export function MeetingActions({
         <MenuItem onClick={() => open("move")}>
           <DriveFileMoveOutlinedIcon fontSize="small" sx={{ mr: 1 }} /> Move
         </MenuItem>
+        <MenuItem onClick={() => open("share")}>
+          <ShareOutlinedIcon fontSize="small" sx={{ mr: 1 }} /> Share
+        </MenuItem>
         {canManage(role) && !personal && (
           <MenuItem onClick={() => open("access")}>
             <LockOutlinedIcon fontSize="small" sx={{ mr: 1 }} /> Access
@@ -101,6 +106,7 @@ export function MeetingActions({
       {dialog === "move" && (
         <MoveMeetingDialog meeting={meeting} folders={folders} onClose={close} />
       )}
+      {dialog === "share" && <ShareDialog meetingId={meeting.id} onClose={close} />}
       {dialog === "access" && (
         <AccessDialog
           meeting={meeting}

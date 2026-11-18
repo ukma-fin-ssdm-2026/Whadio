@@ -55,8 +55,8 @@ stored in PostgreSQL. Requests need a stored, unexpired session; MCP needs a sto
 An upload is stored in object storage and queued for transcription and notes, which the workers
 run.
 
-Notes regeneration is not built yet: it returns `503 INTEGRATION_UNAVAILABLE`, as does an upload
-on a server without a broker or object storage. A share access request reserves an email to the
+Regenerating notes, like an upload, returns `503 INTEGRATION_UNAVAILABLE` on a server without a
+broker or object storage. A share access request reserves an email to the
 share's creator with the request; the scheduler sends it when an SMTP relay is configured. The API
 contract is in `docs/api/api-design.md`.
 
