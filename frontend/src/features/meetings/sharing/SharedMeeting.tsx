@@ -1,6 +1,7 @@
 import { Box, Card, CircularProgress, Stack, TextField, Typography } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { z } from "zod";
 import { ApiError } from "@/shared/api/errors";
 import { ErrorBanner } from "@/shared/ui/ErrorBanner";
 import { Markdown } from "@/shared/ui/Markdown";
@@ -8,12 +9,14 @@ import { shareQueries } from "../api/shares";
 import { SegmentRow } from "../detail/SegmentRow";
 import { matchingSegments, NO_MATCH } from "../detail/segments";
 
+const validId = z.uuid();
+const NOT_OPEN =
+  "This share is not open to your account. If you are a member of the meeting's workspace, open it there.";
+
 function unreadable(error: Error | null) {
   if (!(error instanceof ApiError)) return null;
   if (error.code === "SHARE_REVOKED") return "The person who shared this meeting revoked it.";
-  if (error.status === 404) {
-    return "This share is not open to your account. If you are a member of the meeting's workspace, open it there.";
-  }
+  if (error.status === 404) return NOT_OPEN;
   return null;
 }
 
@@ -26,6 +29,11 @@ function Loading() {
 }
 
 export function SharedMeeting({ shareId }: { shareId: string }) {
+  if (!validId.safeParse(shareId).success) return <ErrorBanner>{NOT_OPEN}</ErrorBanner>;
+  return <SharedContent shareId={shareId} />;
+}
+
+function SharedContent({ shareId }: { shareId: string }) {
   const transcript = useQuery(shareQueries.transcript(shareId));
   const notes = useQuery(shareQueries.notes(shareId));
   const [query, setQuery] = useState("");
