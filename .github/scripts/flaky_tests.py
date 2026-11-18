@@ -5,6 +5,7 @@ from collections import Counter
 from collections.abc import Iterator
 from enum import StrEnum
 from pathlib import Path
+from typing import NamedTuple
 
 
 class Outcome(StrEnum):
@@ -12,6 +13,17 @@ class Outcome(StrEnum):
     FAILED = "failed"
     SKIPPED = "skipped"
     MISSING = "missing"
+
+
+class CaseId(NamedTuple):
+    classname: str
+    name: str
+    occurrence: int
+
+    @property
+    def label(self) -> str:
+        suffix = f" #{self.occurrence}" if self.occurrence > 1 else ""
+        return f"{self.classname}::{self.name}{suffix}"
 
 
 def _escape(text: str) -> str:
@@ -26,24 +38,23 @@ def _outcome(case: ET.Element) -> Outcome:
     return Outcome.PASSED
 
 
-def _cases(report: Path) -> Iterator[tuple[str, Outcome]]:
+def _cases(report: Path) -> Iterator[tuple[CaseId, Outcome]]:
     root = ET.parse(report).getroot()
     # Only pytest repeats an id for one test: a failed call, then its teardown error.
     from_pytest = any(suite.get("name") == "pytest" for suite in root.iter("testsuite"))
-    occurrences: Counter[str] = Counter()
+    occurrences: Counter[tuple[str, str]] = Counter()
     for case in root.iter("testcase"):
-        test_id = f"{case.get('classname', '')}::{case.get('name', '')}"
-        occurrences[test_id] += 1
-        if not from_pytest and occurrences[test_id] > 1:
-            test_id = f"{test_id} #{occurrences[test_id]}"
-        yield test_id, _outcome(case)
+        classname, name = case.get("classname", ""), case.get("name", "")
+        occurrences[classname, name] += 1
+        occurrence = 1 if from_pytest else occurrences[classname, name]
+        yield CaseId(classname, name, occurrence), _outcome(case)
 
 
-def read_repeat(directory: Path) -> dict[str, Outcome]:
+def read_repeat(directory: Path) -> dict[CaseId, Outcome]:
     reports = sorted(directory.glob("*.xml"))
     if not reports:
         raise FileNotFoundError(f"{directory} holds no JUnit report")
-    outcomes: dict[str, Outcome] = {}
+    outcomes: dict[CaseId, Outcome] = {}
     for report in reports:
         for test_id, outcome in _cases(report):
             if outcomes.get(test_id) is not Outcome.FAILED:
@@ -51,7 +62,7 @@ def read_repeat(directory: Path) -> dict[str, Outcome]:
     return outcomes
 
 
-def compare(directories: list[Path]) -> dict[str, Counter[Outcome]]:
+def compare(directories: list[Path]) -> dict[CaseId, Counter[Outcome]]:
     repeats = [read_repeat(directory) for directory in directories]
     test_ids = sorted({test_id for repeat in repeats for test_id in repeat})
     return {
@@ -60,15 +71,15 @@ def compare(directories: list[Path]) -> dict[str, Counter[Outcome]]:
     }
 
 
-def flaky(results: dict[str, Counter[Outcome]]) -> list[str]:
+def flaky(results: dict[CaseId, Counter[Outcome]]) -> list[CaseId]:
     return [test_id for test_id, counts in results.items() if len(counts) > 1]
 
 
-def always_failing(results: dict[str, Counter[Outcome]]) -> list[str]:
+def always_failing(results: dict[CaseId, Counter[Outcome]]) -> list[CaseId]:
     return [test_id for test_id, counts in results.items() if counts.keys() == {Outcome.FAILED}]
 
 
-def summary(results: dict[str, Counter[Outcome]], repeats: int) -> str:
+def summary(results: dict[CaseId, Counter[Outcome]], repeats: int) -> str:
     flaky_ids = flaky(results)
     failing_ids = always_failing(results)
     lines = ["### Flaky tests", ""]
@@ -78,7 +89,7 @@ def summary(results: dict[str, Counter[Outcome]], repeats: int) -> str:
             "| --- |" + " ---: |" * len(Outcome),
         ]
         lines += [
-            f"| {_escape(test_id)} | "
+            f"| {_escape(test_id.label)} | "
             + " | ".join(str(results[test_id][outcome]) for outcome in Outcome)
             + " |"
             for test_id in flaky_ids
@@ -86,7 +97,7 @@ def summary(results: dict[str, Counter[Outcome]], repeats: int) -> str:
     else:
         lines.append("No test changed its outcome between repeats.")
     lines += ["", "### Consistently failing tests", ""]
-    lines += [f"- {_escape(test_id)}" for test_id in failing_ids] or ["No test failed every time."]
+    lines += [f"- {_escape(case.label)}" for case in failing_ids] or ["No test failed every time."]
     lines += [
         "",
         (

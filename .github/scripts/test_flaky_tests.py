@@ -8,7 +8,7 @@ import pytest
 type Kind = Literal["passed", "failed", "error", "skipped"]
 type Run = list[tuple[str, Kind]]
 
-TEST_A = "app.test_x::test_a"
+TEST_A = ("app.test_x", "test_a", 1)
 ESCAPED_A = "app\\.test\\_x\\:\\:test\\_a"
 BODIES: dict[Kind, str] = {
     "passed": "",
@@ -95,7 +95,25 @@ def test_same_titled_vitest_cases_that_take_turns_failing_are_both_flaky(tmp_pat
     flaky = flaky_tests.flaky(flaky_tests.compare(directories))
 
     # Assert
-    assert flaky == [TEST_A, f"{TEST_A} #2"]
+    assert flaky == [TEST_A, ("app.test_x", "test_a", 2)]
+
+
+def test_repeated_vitest_title_stays_apart_from_a_title_ending_in_its_number(
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    directories = _repeats(
+        tmp_path,
+        [("test_a", "passed"), ("test_a", "failed"), ("test_a #2", "passed")],
+        [("test_a", "passed"), ("test_a", "passed"), ("test_a #2", "failed")],
+        suite="popup.test.js",
+    )
+
+    # Act
+    flaky = flaky_tests.flaky(flaky_tests.compare(directories))
+
+    # Assert
+    assert flaky == [("app.test_x", "test_a", 2), ("app.test_x", "test_a #2", 1)]
 
 
 def test_every_report_of_a_repeat_is_read(tmp_path: Path) -> None:
@@ -107,7 +125,7 @@ def test_every_report_of_a_repeat_is_read(tmp_path: Path) -> None:
     outcomes = flaky_tests.read_repeat(tmp_path)
 
     # Assert
-    assert sorted(outcomes) == [TEST_A, "app.test_x::test_b"]
+    assert sorted(outcomes) == [TEST_A, ("app.test_x", "test_b", 1)]
 
 
 def test_repeat_without_a_report_is_refused(tmp_path: Path) -> None:
@@ -199,6 +217,22 @@ def test_summary_counts_each_outcome_of_a_flaky_test(tmp_path: Path) -> None:
 
     # Assert
     assert f"| {ESCAPED_A} | 1 | 2 | 0 | 1 |" in summary.splitlines()
+
+
+def test_summary_shows_the_occurrence_of_a_repeated_vitest_title(tmp_path: Path) -> None:
+    # Arrange
+    directories = _repeats(
+        tmp_path,
+        [("test_a", "passed"), ("test_a", "failed")],
+        [("test_a", "passed"), ("test_a", "passed")],
+        suite="popup.test.js",
+    )
+
+    # Act
+    summary = flaky_tests.summary(flaky_tests.compare(directories), 2)
+
+    # Assert
+    assert f"| {ESCAPED_A} \\#2 | 1 | 1 | 0 | 0 |" in summary.splitlines()
 
 
 def test_summary_lists_a_consistently_failing_test(tmp_path: Path) -> None:
