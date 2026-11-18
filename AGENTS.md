@@ -127,11 +127,14 @@ the hooks only catch the cheap mistakes first, and stay within a time budget:
 |---|---|---|
 | `git commit` | 3 s | Branch name, file hygiene, gitleaks on the staged diff, `uv lock --check`, `ruff check --fix` and `ruff format` on the whole project, Biome on the frontend and the extension, the suppression ban, typos, schema and workflow checks, import-linter and ty. The commit message is checked last. |
 | `git push` | 12 s | Only what the push changes: `uv run task test:fast` for the backend; `tsc` and the Vitest tests the branch can affect for the frontend; the extension's Vitest tests for `extension/`; the OpenAPI drift check for `src/whadio/api/`; the API-types and route-tree drift checks for the frontend. |
-| CI | none | Everything below on `main`; a pull request runs only the fast backend suite and no reliability tests. |
+| CI | none | Everything below on `main`; a pull request runs only the fast backend suite and no reliability tests, and a change to documentation alone only the static checks. |
 
 CI runs these jobs in parallel, and every job and hook runs to the end, so one failure hides no
 other:
 
+- **Detect code changes** runs first, on a GitHub-hosted runner. When every changed file is under
+  `docs/`, `Labs/`, `.agents/` or `.github/ISSUE_TEMPLATE/`, or is a top-level Markdown file, the
+  frontend, backend, reliability and worker image jobs are skipped.
 - **Static checks and audit:** `uv run task check`, which runs the commit hooks on all files, then
   basedpyright, Bandit, deptry, the OpenAPI drift check and lint, and a gitleaks scan of the whole
   history; and `uv run task audit`, which runs uv audit and `npm audit` and only warns: a new
@@ -145,8 +148,9 @@ other:
   `reliability/` folders under `src/whadio/`, against a migrated PostgreSQL.
 - **Worker image:** `uv run task image` builds it and runs its entry point.
 - **CI passed** fails unless every job succeeded, apart from the reliability tests a pull request
-  skips. `main` requires it, "Reliability tests", "SonarCloud Code Analysis" and the check of the
-  pull request title and every commit message against the commit format.
+  skips and the jobs a change to documentation alone skips. `main` requires it, "SonarCloud Code
+  Analysis" and the check of the pull request title and every commit message against the commit
+  format.
 
 `uv run task ci` runs those jobs on your machine, in parallel and to the end, except the
 reliability tests, which `test:cov` already runs. It needs Docker, the services running and
