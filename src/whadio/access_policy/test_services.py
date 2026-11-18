@@ -660,7 +660,7 @@ def test_meeting_shares_list_newest_first(async_database: AsyncDatabase) -> None
         newer = await unit.access.create_share(
             unit.owner, unit.meeting, NOW + timedelta(minutes=1), redact=False
         )
-        shares = await unit.access.shares(unit.member, unit.meeting)
+        shares = await unit.access.shares(unit.owner, unit.meeting)
         return [share.share_id for share in shares] == [
             newer.share.share_id,
             older.share.share_id,
@@ -670,6 +670,21 @@ def test_meeting_shares_list_newest_first(async_database: AsyncDatabase) -> None
     ordered = async_database.run(scenario)
     # Assert
     assert ordered
+
+
+def test_meeting_shares_exclude_other_members_shares(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> bool:
+        unit = await world(session)
+        await unit.access.create_share(unit.owner, unit.meeting, NOW, redact=False)
+        own = await unit.access.create_share(unit.member, unit.meeting, NOW, redact=False)
+        shares = await unit.access.shares(unit.member, unit.meeting)
+        return [share.share_id for share in shares] == [own.share.share_id]
+
+    # Act
+    only_own = async_database.run(scenario)
+    # Assert
+    assert only_own
 
 
 def test_share_requests_are_listed_for_the_creator(async_database: AsyncDatabase) -> None:

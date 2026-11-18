@@ -194,7 +194,7 @@ sub-resource, such as `…/cancel`, `…/complete` or `…/approve`.
 - **Description:** a link to a meeting for someone outside the workspace. It grants nothing
   until its creator approves one account's request.
 - **Attributes:**
-  - share: `id`, `redact_speaker_names`, `recipient_user_id`, `revoked_at`
+  - share: `id`, `redact_speaker_names`, `recipient_user_id`, `created_at`, `revoked_at`
   - request: `id`, requester's `name` and `email`, `status`
 - **Relations:** a share belongs to a meeting and its creator; it has access requests and
   binds to at most one account.
@@ -785,7 +785,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 #### `GET`, `POST /meetings/{meeting_id}/shares` · List or create shares
 
 - **Status:** Implemented · **Caller:** any member who can read it · **Success:** `200`, a page
-  of shares, revoked ones included; `201`, the new share with its link, shown once
+  of the caller's own shares, revoked ones included; `201`, the new share with its link, shown once
 - **Rules:**
   - Opening the link grants nothing by itself. The recipient signs in and requests access,
     and the share's creator approves one account (FR-038).

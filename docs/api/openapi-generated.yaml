@@ -2917,7 +2917,8 @@ paths:
       tags:
       - access
       summary: List Shares
-      description: List shares of a meeting the caller can read, newest first.
+      description: List the caller's own shares of a meeting they can read, newest
+        first.
       operationId: list_shares_api_v1_meetings__meeting_id__shares_get
       security:
       - sessionCookie: []
@@ -6162,6 +6163,11 @@ components:
           - type: 'null'
           title: Revoked At
           description: When access ended
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: When the share was created
         link:
           type: string
           title: Link
@@ -6172,6 +6178,7 @@ components:
       - redact_speaker_names
       - recipient_user_id
       - revoked_at
+      - created_at
       - link
       title: ShareCreated
     ShareInput:
@@ -6209,12 +6216,18 @@ components:
           - type: 'null'
           title: Revoked At
           description: When access ended
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: When the share was created
       type: object
       required:
       - id
       - redact_speaker_names
       - recipient_user_id
       - revoked_at
+      - created_at
       title: ShareRead
     SignIn:
       properties:

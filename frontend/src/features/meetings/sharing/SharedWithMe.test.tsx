@@ -7,7 +7,13 @@ import { http, server } from "@/shared/testing/server";
 import { SharedWithMe } from "./SharedWithMe";
 
 function share(id: string): Schemas["ShareRead"] {
-  return { id, redact_speaker_names: false, recipient_user_id: "me", revoked_at: null };
+  return {
+    id,
+    redact_speaker_names: false,
+    recipient_user_id: "me",
+    revoked_at: null,
+    created_at: "2026-11-17T10:00:00Z",
+  };
 }
 
 function serveReceived(shares: Schemas["ShareRead"][]) {

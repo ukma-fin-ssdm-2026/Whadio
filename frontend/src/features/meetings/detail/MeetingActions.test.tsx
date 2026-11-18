@@ -287,12 +287,15 @@ async function openAccess(onLeave = () => {}) {
   return rendered;
 }
 
-test("a member is offered sharing the meeting", async () => {
+test("a member can open the share dialog", async () => {
+  // Arrange
+  const { user } = await openActions("member");
+
   // Act
-  await openActions("member");
+  await user.click(screen.getByRole("menuitem", { name: /Share/ }));
 
   // Assert
-  expect(screen.getByRole("menuitem", { name: /Share/ })).toBeInTheDocument();
+  expect(await screen.findByRole("dialog", { name: "Share meeting" })).toBeInTheDocument();
 });
 
 test("a member is not offered the meeting's access", async () => {
