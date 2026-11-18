@@ -15,7 +15,8 @@ The four DORA metrics for Whadio over three weeks, 20.10–09.11.2026, computed 
   requests count towards the next green run.
 - **Lead time:** for each of the 157 pull requests that reached a green run in the period, from its
   first commit to the end of that run. 27 of them were merged on 18–19.10, while `main` was red.
-- **Recovery:** from the end of each red run to the end of the next green run.
+- **Recovery:** from the end of each red run to the end of the next green run, even one after the
+  period; a red run with no green run after it yet counts as not yet recovered.
 
 ## Metrics
 
