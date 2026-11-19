@@ -17,11 +17,11 @@ from ..meetings.enums import MeetingSource
 from ..meetings.models import Folder, Meeting, RecordingDeletion
 from ..meetings.persistence import MeetingPersistence, PersistenceDependencies
 from ..meetings.repositories import MeetingRepository
-from ..meetings.services import MeetingService, RecordingInput
+from ..meetings.services import MeetingChanges, MeetingService, RecordingInput
 from ..processing.enums import JobType
 from ..processing.models import ProcessingJob
 from ..shared.database import Database, DatabaseSettings
-from ..shared.errors import UseCaseError
+from ..shared.errors import Failure, UseCaseError
 from ..shared.fakes import InMemoryObjectStorage
 from .composition import processing_service
 from .test_composition import EvictionNotices
@@ -32,6 +32,15 @@ pytestmark = pytest.mark.slow
 class AuditFixture:
     async def write(self, event: ContentEvent) -> None:
         del event
+
+
+def _meeting_service(session: AsyncSession) -> MeetingService:
+    repository, audit, memberships = (
+        MeetingRepository(session),
+        AuditFixture(),
+        MembershipRepository(session),
+    )
+    return MeetingService(repository, AccessPolicy(AccessRepository(session), memberships), audit)
 
 
 def _services(session: AsyncSession, *, hosted_limit: int | None = None) -> MeetingPersistence:
@@ -93,6 +102,95 @@ def test_concurrent_hosted_ingests_keep_the_owner_within_capacity(
                 await session.execute(
                     delete(RecordingDeletion).where(RecordingDeletion.storage_key.in_(keys))
                 )
+            await database.close()
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+def test_undo_waits_for_and_refuses_a_concurrent_move(
+    database_settings: DatabaseSettings,
+    committed_workspace: tuple[UUID, UUID],
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        owner, workspace = committed_workspace
+        database = Database(database_settings)
+        archive_locked = asyncio.Event()
+        undo_started = asyncio.Event()
+        try:
+            async with database.transaction() as session:
+                service = _meeting_service(session)
+                original = next(folder for folder in await service.folders(owner, workspace))
+                planning = await service.create_folder(
+                    owner, workspace, "Planning", datetime.now(UTC)
+                )
+                archive = await service.create_folder(
+                    owner, workspace, "Archive", datetime.now(UTC)
+                )
+                meeting = await service.create(
+                    owner,
+                    workspace,
+                    RecordingInput(
+                        f"concurrent/{uuid4()}", datetime.now(UTC), MeetingSource.UPLOAD
+                    ),
+                    datetime.now(UTC),
+                )
+                moved_to_planning = await service.update(
+                    owner,
+                    meeting.meeting_id,
+                    datetime.now(UTC),
+                    MeetingChanges(
+                        folder_id=planning.folder_id,
+                        expected_folder_id=original.folder_id,
+                        expected_folder_revision_id=meeting.folder_revision_id,
+                    ),
+                )
+
+            async def move_to_archive() -> str:
+                async with database.transaction() as session:
+                    await _meeting_service(session).update(
+                        owner,
+                        meeting.meeting_id,
+                        datetime.now(UTC),
+                        MeetingChanges(
+                            folder_id=archive.folder_id,
+                            expected_folder_id=planning.folder_id,
+                            expected_folder_revision_id=moved_to_planning.folder_revision_id,
+                        ),
+                    )
+                    archive_locked.set()
+                    await undo_started.wait()
+                return "moved"
+
+            async def undo() -> Failure | None:
+                await archive_locked.wait()
+                async with database.transaction() as session:
+                    undo_started.set()
+                    try:
+                        await _meeting_service(session).update(
+                            owner,
+                            meeting.meeting_id,
+                            datetime.now(UTC),
+                            MeetingChanges(
+                                folder_id=original.folder_id,
+                                expected_folder_id=planning.folder_id,
+                                expected_folder_revision_id=moved_to_planning.folder_revision_id,
+                            ),
+                        )
+                    except UseCaseError as error:
+                        return error.code
+                return None
+
+            # Act
+            results = await asyncio.wait_for(asyncio.gather(move_to_archive(), undo()), timeout=10)
+            async with database.transaction() as session:
+                stored = await _meeting_service(session).get(owner, meeting.meeting_id)
+            # Assert
+            assert (results, stored.folder_id) == (
+                ["moved", Failure.MEETING_MOVE_CONFLICT],
+                archive.folder_id,
+            )
+        finally:
             await database.close()
 
     asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)

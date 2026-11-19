@@ -1,9 +1,12 @@
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import type { Schemas } from "@/shared/api/types";
-import { errorBody, meetingRead, memberRead } from "@/shared/testing/fixtures";
+import { errorBody, meetingRead, memberRead, page } from "@/shared/testing/fixtures";
 import { renderWithProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
+import { folderQueries } from "../api/folders";
+import { meetingQueries } from "../api/meetings";
 import { mapMeeting } from "../model";
 import type { WorkspaceMembers } from "./AccessDialog";
 import { MeetingActions } from "./MeetingActions";
@@ -23,26 +26,46 @@ const MEMBERS = [
   }),
 ];
 
+function MoveState() {
+  const detail = useQuery(meetingQueries.detail("meeting"));
+  const meetings = useInfiniteQuery(meetingQueries.list("workspace"));
+  const folders = useQuery(folderQueries.list("workspace"));
+  return (
+    <output aria-label="Move state">
+      <span>Detail folder: {detail.data?.folderId}</span>
+      <span>Meeting row folder: {meetings.data?.[0]?.folderId}</span>
+      <span>
+        Folder counts:{" "}
+        {folders.data?.map(({ id, meeting_count }) => `${id}:${meeting_count}`).join(",")}
+      </span>
+    </output>
+  );
+}
+
 function renderActions(
   role: Schemas["Role"] = "member",
   createdByUserId = "member",
   onDeleted = () => {},
   personal = false,
   members: WorkspaceMembers = { data: MEMBERS, error: null },
+  showMoveState = false,
 ) {
   const meeting = mapMeeting(meetingRead({ created_by_user_id: createdByUserId }));
   return renderWithProviders(
-    <MeetingActions
-      meeting={meeting}
-      role={role}
-      userId="member"
-      personal={personal}
-      folders={FOLDERS}
-      members={members}
-      onAccessOpen={() => {}}
-      onLeave={onDeleted}
-      onOpenRequests={() => {}}
-    />,
+    <>
+      <MeetingActions
+        meeting={meeting}
+        role={role}
+        userId="member"
+        personal={personal}
+        folders={FOLDERS}
+        members={members}
+        onAccessOpen={() => {}}
+        onLeave={onDeleted}
+        onOpenRequests={() => {}}
+      />
+      {showMoveState && <MoveState />}
+    </>,
   );
 }
 
@@ -52,8 +75,16 @@ async function openActions(
   onDeleted = () => {},
   personal = false,
   members: WorkspaceMembers = { data: MEMBERS, error: null },
+  showMoveState = false,
 ) {
-  const rendered = renderActions(role, createdByUserId, onDeleted, personal, members);
+  const rendered = renderActions(
+    role,
+    createdByUserId,
+    onDeleted,
+    personal,
+    members,
+    showMoveState,
+  );
   await rendered.user.click(screen.getByRole("button", { name: "Meeting actions" }));
   return rendered;
 }
@@ -85,13 +116,59 @@ async function rename(name: string) {
   return user;
 }
 
-async function moveToPlanning() {
-  const { user } = await openActions();
+async function moveToPlanning(showMoveState = false) {
+  const rendered = await openActions("member", "member", () => {}, false, undefined, showMoveState);
+  const { user } = rendered;
   await user.click(screen.getByRole("menuitem", { name: /Move/ }));
   await user.click(screen.getByRole("combobox", { name: "Folder" }));
   await user.click(screen.getByRole("option", { name: "Planning" }));
   await user.click(screen.getByRole("button", { name: "Move" }));
-  return user;
+  return rendered;
+}
+
+function serveMoves(refuseUndo = false) {
+  const bodies: unknown[] = [];
+  let folderId = "folder";
+  let folderRevisionId = "folder-revision";
+  let revision = 0;
+  server.use(
+    http.get("/api/v1/meetings/{meeting_id}", ({ response }) =>
+      response(200).json(
+        meetingRead({ folder_id: folderId, folder_revision_id: folderRevisionId }),
+      ),
+    ),
+    http.get("/api/v1/workspaces/{workspace_id}/meetings", ({ response }) =>
+      response(200).json(
+        page([meetingRead({ folder_id: folderId, folder_revision_id: folderRevisionId })]),
+      ),
+    ),
+    http.get("/api/v1/workspaces/{workspace_id}/folders", ({ response }) =>
+      response(200).json(
+        page(
+          FOLDERS.map((folder) => ({
+            ...folder,
+            meeting_count: folder.id === folderId ? 1 : 0,
+          })),
+        ),
+      ),
+    ),
+    http.patch("/api/v1/meetings/{meeting_id}", async ({ request, response }) => {
+      const body = await request.json();
+      bodies.push(body);
+      if (refuseUndo && bodies.length === 2) {
+        return response(422).json(
+          errorBody("VALIDATION_ERROR", "The previous folder no longer exists"),
+        );
+      }
+      folderId =
+        typeof body === "object" && body && "folder_id" in body ? String(body.folder_id) : folderId;
+      folderRevisionId = `folder-revision-${++revision}`;
+      return response(200).json(
+        meetingRead({ folder_id: folderId, folder_revision_id: folderRevisionId }),
+      );
+    }),
+  );
+  return bodies;
 }
 
 test("a member can rename a meeting", async () => {
@@ -175,7 +252,88 @@ test("a member can move a meeting to a workspace folder", async () => {
   await moveToPlanning();
 
   // Assert
-  await waitFor(() => expect(bodies).toEqual([{ folder_id: "planning" }]));
+  await waitFor(() =>
+    expect(bodies).toEqual([
+      {
+        folder_id: "planning",
+        expected_folder_id: "folder",
+        expected_folder_revision_id: "folder-revision",
+      },
+    ]),
+  );
+});
+
+test("Undo moves the meeting back to its previous folder", async () => {
+  // Arrange
+  const bodies = serveMoves();
+  const { user } = await moveToPlanning();
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "Undo" }));
+
+  // Assert
+  await waitFor(() =>
+    expect(bodies).toEqual([
+      {
+        folder_id: "planning",
+        expected_folder_id: "folder",
+        expected_folder_revision_id: "folder-revision",
+      },
+      {
+        folder_id: "folder",
+        expected_folder_id: "planning",
+        expected_folder_revision_id: "folder-revision-1",
+      },
+    ]),
+  );
+});
+
+test("Undo refreshes the meeting detail, meeting rows and folder counts", async () => {
+  // Arrange
+  serveMoves();
+  const { user } = await moveToPlanning(true);
+  await waitFor(() =>
+    expect(screen.getByRole("status", { name: "Move state" })).toHaveTextContent(
+      "Detail folder: planningMeeting row folder: planningFolder counts: folder:0,planning:1",
+    ),
+  );
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "Undo" }));
+
+  // Assert
+  await waitFor(() =>
+    expect(screen.getByRole("status", { name: "Move state" })).toHaveTextContent(
+      "Detail folder: folderMeeting row folder: folderFolder counts: folder:1,planning:0",
+    ),
+  );
+});
+
+test("a refused Undo shows the error", async () => {
+  // Arrange
+  serveMoves(true);
+  const { user } = await moveToPlanning();
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "Undo" }));
+
+  // Assert
+  expect(await screen.findByText("The previous folder no longer exists")).toBeVisible();
+});
+
+test("a refused Undo keeps the meeting in its current folder", async () => {
+  // Arrange
+  serveMoves(true);
+  const { user, queryClient } = await moveToPlanning();
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "Undo" }));
+  await screen.findByText("The previous folder no longer exists");
+
+  // Assert
+  expect(queryClient.getQueryData(["meetings", "detail", "meeting"])).toMatchObject({
+    folder_id: "planning",
+  });
 });
 
 test("a failed move shows the server's message", async () => {

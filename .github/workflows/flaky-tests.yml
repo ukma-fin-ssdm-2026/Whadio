@@ -1,0 +1,118 @@
+name: Flaky tests
+
+# By hand only: the course's four self-hosted runners are shared, and one run holds a runner for
+# about an hour.
+on:
+  workflow_dispatch:
+    inputs:
+      repeats:
+        description: How many times to run the whole test suite on this commit, 5 to 10
+        type: number
+        required: true
+        default: 5
+
+permissions:
+  contents: read
+
+env:
+  # Every locked dependency ships a wheel, so no third-party build script runs in CI.
+  UV_NO_BUILD: "1"
+
+concurrency:
+  group: flaky-tests
+  cancel-in-progress: false
+
+jobs:
+  repeat:
+    name: Repeat the whole test suite
+    # One job, no matrix: a matrix would hold several of the shared runners at once.
+    runs-on: [self-hosted, linux]
+    # Ten repeats of about ten minutes each, with headroom.
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
+    env:
+      REPEATS: ${{ inputs.repeats }}
+      WHADIO_DB_HOST: 127.0.0.1
+    steps:
+      - name: Check the number of repeats
+        run: |
+          if ! [[ "$REPEATS" =~ ^[1-9][0-9]*$ ]] ||((REPEATS < 5 || REPEATS > 10)); then
+            echo "::error title=Repeats::Run the suite 5 to 10 times, not ${REPEATS}"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - name: Install dependencies
+        run: uv sync --locked --extra asr --extra cpu
+
+      - name: Install Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install the frontend dependencies
+        run: npm ci --prefix frontend --ignore-scripts
+
+      - name: Start the services and migrate the test database
+        run: |
+          cp .env.example .env
+          uv run --frozen task infra:up
+          uv run --frozen task db:upgrade
+
+      # The backend suite is the one CI runs: without the tests that need downloaded ML models.
+      - name: Run the whole test suite in a loop
+        id: repeats
+        run: |
+          WHADIO_TEST_DATABASE_URL="$(uv run --frozen python -I -c 'from whadio.shared.database import DatabaseSettings; print(DatabaseSettings().application_url().render_as_string(False))')"
+          export WHADIO_TEST_DATABASE_URL
+          incomplete=0
+          for repeat in $(seq "$REPEATS"); do
+            reports="$GITHUB_WORKSPACE/reports/flaky/$repeat"
+            mkdir -p "$reports"
+            echo "::group::Repeat $repeat of $REPEATS"
+            # 1 is failed tests; above 1, pytest did not run them all but may still write a report.
+            pytest_status=0
+            uv run --frozen pytest -m "not models" --junitxml="$reports/backend.xml" || pytest_status=$?
+            # Vitest exits 1 for its own errors too; they become failing testcases or leave no report.
+            npm --prefix frontend test -- \
+              --reporter=default --reporter=junit --outputFile.junit="$reports/frontend.xml" || true
+            npm --prefix frontend run test:extension -- \
+              --reporter=default --reporter=junit --outputFile.junit="$reports/extension.xml" || true
+            echo "::endgroup::"
+            if ((pytest_status > 1)); then
+              echo "::error title=pytest error::Repeat $repeat: pytest exited with status $pytest_status"
+              incomplete=1
+            fi
+            # Vitest that finds no test file still writes a report, one without testcases.
+            for suite in backend frontend extension; do
+              if ! grep -qs '<testcase' "$reports/$suite.xml"; then
+                echo "::error title=Missing tests::Repeat $repeat wrote no $suite report or one without tests"
+                incomplete=1
+              fi
+            done
+          done
+          exit "$incomplete"
+
+      - name: List the tests whose outcome differed
+        if: ${{ !cancelled() && steps.repeats.outcome != 'skipped' }}
+        run: |
+          uv run --frozen python -I .github/scripts/flaky_tests.py reports/flaky/*/ |
+            tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the test reports
+        if: ${{ !cancelled() && steps.repeats.outcome != 'skipped' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flaky-test-reports
+          path: reports/flaky/
+          retention-days: 7

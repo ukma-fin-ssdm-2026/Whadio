@@ -455,7 +455,7 @@ export interface paths {
         head?: never;
         /**
          * Rename or move a meeting
-         * @description Any member who can read the meeting. Renaming clears `name_is_generated`. Moving keeps the recording, transcript and notes; only folders of the same workspace are accepted, and later notes use the new folder as context. `recorded_at` cannot be changed.
+         * @description Any member who can read the meeting. Renaming clears `name_is_generated`. Moving keeps the recording, transcript and notes; only folders of the same workspace are accepted, and later notes use the new folder as context. Give `expected_folder_id` and `expected_folder_revision_id` to refuse the move if another member moved the meeting since it was read. `recorded_at` cannot be changed.
          */
         patch: operations["update_meeting_api_v1_meetings__meeting_id__patch"];
         trace?: never;
@@ -1218,7 +1218,7 @@ export interface components {
          * ErrorCode
          * @enum {string}
          */
-        ErrorCode: "EMAIL_MISMATCH" | "ACCOUNT_EXISTS" | "NO_NOTES" | "INTEGRATION_UNAVAILABLE" | "TRANSCRIPT_EXISTS" | "ALREADY_PROCESSED" | "FOLDER_RECOVERY_CONFLICT" | "DEFAULT_FOLDER" | "FOLDER_EXISTS" | "TERM_EXISTS" | "STALE_REVISION" | "LINK_INVALID" | "ACCESS_REQUEST_EXISTS" | "ALREADY_HAS_ACCESS" | "ACCESS_REQUEST_NOT_PENDING" | "SHARE_ALREADY_BOUND" | "SHARE_REVOKED" | "MALFORMED_REQUEST" | "VALIDATION_ERROR" | "UNAUTHENTICATED" | "INVALID_CREDENTIALS" | "INSUFFICIENT_ROLE" | "NOT_FOUND" | "METHOD_NOT_ALLOWED" | "PERSONAL_WORKSPACE" | "ALREADY_MEMBER" | "INVITATION_LIMIT" | "INVITATION_COOLDOWN" | "INVITATION_NOT_PENDING" | "OWNER_IMMUTABLE" | "RESTRICTED_MEETING_REQUIRES_RECIPIENT" | "NOT_TRANSCRIBED" | "NOTES_IN_PROGRESS" | "RECORDING_NOT_READY" | "RECORDING_DELETED" | "REGENERATION_LIMIT" | "CHUNK_MISMATCH" | "CAPTURE_CLOSED" | "MISSING_CHUNKS" | "EMPTY_CAPTURE" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "RATE_LIMITED" | "HTTP_ERROR" | "INTERNAL_ERROR";
+        ErrorCode: "EMAIL_MISMATCH" | "ACCOUNT_EXISTS" | "NO_NOTES" | "INTEGRATION_UNAVAILABLE" | "TRANSCRIPT_EXISTS" | "ALREADY_PROCESSED" | "FOLDER_RECOVERY_CONFLICT" | "DEFAULT_FOLDER" | "FOLDER_EXISTS" | "TERM_EXISTS" | "STALE_REVISION" | "MEETING_MOVE_CONFLICT" | "LINK_INVALID" | "ACCESS_REQUEST_EXISTS" | "ALREADY_HAS_ACCESS" | "ACCESS_REQUEST_NOT_PENDING" | "SHARE_ALREADY_BOUND" | "SHARE_REVOKED" | "MALFORMED_REQUEST" | "VALIDATION_ERROR" | "UNAUTHENTICATED" | "INVALID_CREDENTIALS" | "INSUFFICIENT_ROLE" | "NOT_FOUND" | "METHOD_NOT_ALLOWED" | "PERSONAL_WORKSPACE" | "ALREADY_MEMBER" | "INVITATION_LIMIT" | "INVITATION_COOLDOWN" | "INVITATION_NOT_PENDING" | "OWNER_IMMUTABLE" | "RESTRICTED_MEETING_REQUIRES_RECIPIENT" | "NOT_TRANSCRIBED" | "NOTES_IN_PROGRESS" | "RECORDING_NOT_READY" | "RECORDING_DELETED" | "REGENERATION_LIMIT" | "CHUNK_MISMATCH" | "CAPTURE_CLOSED" | "MISSING_CHUNKS" | "EMPTY_CAPTURE" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "RATE_LIMITED" | "HTTP_ERROR" | "INTERNAL_ERROR";
         /** ErrorDetail */
         ErrorDetail: {
             /**
@@ -1670,6 +1670,12 @@ export interface components {
              */
             folder_id: string;
             /**
+             * Folder Revision Id
+             * Format: uuid
+             * @description Changes whenever the meeting enters a folder; use it for conditional moves
+             */
+            folder_revision_id: string;
+            /**
              * Name
              * @description Meeting name
              * @example Sprint 12 review
@@ -1762,6 +1768,12 @@ export interface components {
              */
             folder_id: string;
             /**
+             * Folder Revision Id
+             * Format: uuid
+             * @description Changes whenever the meeting enters a folder; use it for conditional moves
+             */
+            folder_revision_id: string;
+            /**
              * Name
              * @description Meeting name
              * @example Sprint 12 review
@@ -1804,6 +1816,16 @@ export interface components {
              * @description Folder of the same workspace to move the meeting to
              */
             folder_id?: string | null;
+            /**
+             * Expected Folder Id
+             * @description Move only if the meeting is still in this folder
+             */
+            expected_folder_id?: string | null;
+            /**
+             * Expected Folder Revision Id
+             * @description Move only if the meeting still has this folder placement revision
+             */
+            expected_folder_revision_id?: string | null;
         };
         /** MemberRead */
         MemberRead: {
@@ -4525,6 +4547,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description `MEETING_MOVE_CONFLICT`: the meeting no longer has the expected folder placement */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each; `folder_id` must be a folder of the meeting's workspace */
             422: {
                 headers: {
@@ -7179,7 +7210,7 @@ type ReadonlyArray<T> = [
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
 export const accessModeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["AccessMode"]> = ["workspace", "restricted"];
 export const captureStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CaptureStatus"]> = ["recording", "idle", "assembled", "abandoned"];
-export const errorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorCode"]> = ["EMAIL_MISMATCH", "ACCOUNT_EXISTS", "NO_NOTES", "INTEGRATION_UNAVAILABLE", "TRANSCRIPT_EXISTS", "ALREADY_PROCESSED", "FOLDER_RECOVERY_CONFLICT", "DEFAULT_FOLDER", "FOLDER_EXISTS", "TERM_EXISTS", "STALE_REVISION", "LINK_INVALID", "ACCESS_REQUEST_EXISTS", "ALREADY_HAS_ACCESS", "ACCESS_REQUEST_NOT_PENDING", "SHARE_ALREADY_BOUND", "SHARE_REVOKED", "MALFORMED_REQUEST", "VALIDATION_ERROR", "UNAUTHENTICATED", "INVALID_CREDENTIALS", "INSUFFICIENT_ROLE", "NOT_FOUND", "METHOD_NOT_ALLOWED", "PERSONAL_WORKSPACE", "ALREADY_MEMBER", "INVITATION_LIMIT", "INVITATION_COOLDOWN", "INVITATION_NOT_PENDING", "OWNER_IMMUTABLE", "RESTRICTED_MEETING_REQUIRES_RECIPIENT", "NOT_TRANSCRIBED", "NOTES_IN_PROGRESS", "RECORDING_NOT_READY", "RECORDING_DELETED", "REGENERATION_LIMIT", "CHUNK_MISMATCH", "CAPTURE_CLOSED", "MISSING_CHUNKS", "EMPTY_CAPTURE", "PAYLOAD_TOO_LARGE", "UNSUPPORTED_MEDIA_TYPE", "RATE_LIMITED", "HTTP_ERROR", "INTERNAL_ERROR"];
+export const errorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorCode"]> = ["EMAIL_MISMATCH", "ACCOUNT_EXISTS", "NO_NOTES", "INTEGRATION_UNAVAILABLE", "TRANSCRIPT_EXISTS", "ALREADY_PROCESSED", "FOLDER_RECOVERY_CONFLICT", "DEFAULT_FOLDER", "FOLDER_EXISTS", "TERM_EXISTS", "STALE_REVISION", "MEETING_MOVE_CONFLICT", "LINK_INVALID", "ACCESS_REQUEST_EXISTS", "ALREADY_HAS_ACCESS", "ACCESS_REQUEST_NOT_PENDING", "SHARE_ALREADY_BOUND", "SHARE_REVOKED", "MALFORMED_REQUEST", "VALIDATION_ERROR", "UNAUTHENTICATED", "INVALID_CREDENTIALS", "INSUFFICIENT_ROLE", "NOT_FOUND", "METHOD_NOT_ALLOWED", "PERSONAL_WORKSPACE", "ALREADY_MEMBER", "INVITATION_LIMIT", "INVITATION_COOLDOWN", "INVITATION_NOT_PENDING", "OWNER_IMMUTABLE", "RESTRICTED_MEETING_REQUIRES_RECIPIENT", "NOT_TRANSCRIBED", "NOTES_IN_PROGRESS", "RECORDING_NOT_READY", "RECORDING_DELETED", "REGENERATION_LIMIT", "CHUNK_MISMATCH", "CAPTURE_CLOSED", "MISSING_CHUNKS", "EMPTY_CAPTURE", "PAYLOAD_TOO_LARGE", "UNSUPPORTED_MEDIA_TYPE", "RATE_LIMITED", "HTTP_ERROR", "INTERNAL_ERROR"];
 export const exportFormatValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ExportFormat"]> = ["markdown", "vtt"];
 export const exportVersionValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ExportVersion"]> = ["current", "original"];
 export const invitationStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["InvitationState"]> = ["pending", "accepted", "declined", "cancelled"];
