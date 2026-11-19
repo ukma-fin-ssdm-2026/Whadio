@@ -1,6 +1,7 @@
 from asyncio import Runner, SelectorEventLoop
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
@@ -12,6 +13,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from conftest import refused_fields
 
+from . import database
 from .database import ConnectionSettings, Database, DatabaseSettings, MigrationSettings
 
 
@@ -42,6 +44,28 @@ def test_application_uses_unprivileged_role() -> None:
     username = settings.application_url().username
     # Assert
     assert username == "whadio_app"
+
+
+def test_database_applies_pool_limits_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    monkeypatch.setenv("WHADIO_DB_APP_PASSWORD", "test-secret")
+    monkeypatch.setenv("WHADIO_DB_POOL_SIZE", "15")
+    monkeypatch.setenv("WHADIO_DB_MAX_OVERFLOW", "0")
+    settings = DatabaseSettings.model_validate({})
+
+    # Act
+    with patch.object(database, "create_async_engine") as create_engine:
+        Database(settings)
+
+    # Assert
+    create_engine.assert_called_once_with(
+        settings.application_url(),
+        pool_size=15,
+        max_overflow=0,
+        pool_pre_ping=True,
+        hide_parameters=True,
+        connect_args={"connect_timeout": 10},
+    )
 
 
 def test_migrations_use_owner_role() -> None:

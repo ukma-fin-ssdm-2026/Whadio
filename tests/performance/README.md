@@ -16,6 +16,8 @@ from the result. Use a dedicated local account and non-sensitive seed data.
 
 ## Prepare Whadio
 
+For the bundled database, use the PostgreSQL host and pool settings from `.env.example`.
+
 From the repository root, start the infrastructure, apply migrations and create a browser account:
 
 ```powershell
@@ -30,14 +32,21 @@ Docker bridge used by k6. Keep it running in its own terminal. The account alway
 workspace; add representative meetings before measuring if the result is intended to characterize
 a populated list rather than an empty one.
 
-## Run k6 from Docker
+## Compare native Windows and Docker k6
 
-In another PowerShell terminal, set credentials without placing the password in shell history:
+From the repository root, run [native k6 0.54.0](https://github.com/grafana/k6/releases/tag/v0.54.0)
+and the matching Docker image against the same Whadio process, account, and data.
 
 ```powershell
 $env:WHADIO_EMAIL = "performance@whadio.dev"
-$env:WHADIO_PASSWORD = Read-Host "Whadio password"
+$env:WHADIO_PASSWORD = [System.Net.NetworkCredential]::new(
+  "", (Read-Host "Whadio password" -AsSecureString)
+).Password
 $scriptDir = (Resolve-Path ".\tests\performance").Path
+$outputDir = (New-Item -ItemType Directory -Path (Join-Path $env:TEMP "whadio-perf-$(Get-Date -Format yyyyMMdd-HHmmss)")).FullName
+
+$env:BASE_URL = "http://127.0.0.1:3000"
+k6 run --out "json=$outputDir/windows.json" "$scriptDir/test_lists.js"
 
 docker run --rm `
   --add-host host.docker.internal:host-gateway `
@@ -45,30 +54,32 @@ docker run --rm `
   -e WHADIO_EMAIL `
   -e WHADIO_PASSWORD `
   --mount "type=bind,source=$scriptDir,target=/scripts,readonly" `
-  grafana/k6:0.54.0 run /scripts/test_lists.js
+  --mount "type=bind,source=$outputDir,target=/results" `
+  grafana/k6:0.54.0 run --out json=/results/docker.json /scripts/test_lists.js
 
-Remove-Item Env:WHADIO_PASSWORD
+Remove-Item Env:WHADIO_PASSWORD, Env:BASE_URL
 ```
 
-Run the command from the repository root. Resolving the directory before starting Docker makes a
-missing local script fail in PowerShell instead of appearing as a missing `/scripts/test_lists.js`
-module inside k6. `host.docker.internal` lets the container reach the API on the host;
-`--add-host` also supplies that name on Linux Docker Engine.
+## Classify failed requests
+
+In either JSON file, filter `http_req_failed` points with `data.value = 1` and endpoint
+`workspace-list` or `meeting-list`. The samples include a timestamp and the `status`,
+`error_code`, and `error` tags when present. Codes 1050 and 1211 indicate timeouts,
+statuses 400–599 indicate HTTP errors, and other failures with status 0 indicate transport errors.
+Keep raw output local because it includes workspace IDs.
 
 ## Record the result
 
-Preserve the terminal summary and record:
+Keep both k6 summaries and JSON files even if a threshold fails. Record:
 
-- date, Whadio commit and k6 image version;
-- operating system, CPU and RAM;
-- one-worker server command and database location;
-- number of workspaces and meetings visible to the account;
-- `http_req_duration` p95 and `http_req_failed` for each tagged endpoint;
-- pass/fail against 200 ms, plus any environmental limitation.
+- date, Whadio commit, k6 and Docker versions, and host and database configuration;
+- workspace and meeting counts in the test data;
+- per endpoint and run mode, p95, request count, failure rate, and failure categories.
 
-The result is valid only when both endpoint-specific duration thresholds and both error-rate
-thresholds pass. Setup traffic is intentionally not evidence for either endpoint.
+A completed run passes only when both endpoint-specific duration, error-rate and HTTP
+200 check thresholds pass.
 
 ## AI Usage
 
 This k6 scenario and runbook were prepared with OpenAI Codex 5.6 from TC-NFR-02, QA-1 and the current Whadio API contract. Zlata owns the test execution, environment record and interpretation.
+OpenAI Codex assisted with the diagnostic workflow for issue #162.
