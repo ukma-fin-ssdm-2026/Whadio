@@ -12,17 +12,22 @@ import {
   Typography,
 } from "@mui/material";
 import { type ReactNode, useState } from "react";
+import type { Preset } from "@/shared/api/types";
 import { useUploadMeeting } from "../api/meetings";
 
 interface UploadPanelProps {
   workspaceId: string;
-  presetField: ReactNode;
+  renderPresetField: (field: {
+    value: Preset | null;
+    onChange: (preset: Preset) => void;
+  }) => ReactNode;
   onUploaded: (meetingId: string) => void;
 }
 
-export function UploadPanel({ workspaceId, presetField, onUploaded }: UploadPanelProps) {
+export function UploadPanel({ workspaceId, renderPresetField, onUploaded }: UploadPanelProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const [preset, setPreset] = useState<Preset | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [fileMissing, setFileMissing] = useState(false);
   const upload = useUploadMeeting(workspaceId);
@@ -32,7 +37,7 @@ export function UploadPanel({ workspaceId, presetField, onUploaded }: UploadPane
     setFileMissing(!file);
     if (!file) return;
     upload.mutate(
-      { file, name },
+      { file, name, preset: preset ?? undefined },
       {
         onSuccess: (meeting) => {
           setOpen(false);
@@ -72,7 +77,10 @@ export function UploadPanel({ workspaceId, presetField, onUploaded }: UploadPane
         <Button
           variant="contained"
           startIcon={<CloudUploadOutlinedIcon />}
-          onClick={() => setOpen(true)}
+          onClick={() => {
+            setPreset(null);
+            setOpen(true);
+          }}
           sx={{ minHeight: "2.25rem", p: "0.45rem 0.8rem" }}
         >
           Upload
@@ -90,7 +98,7 @@ export function UploadPanel({ workspaceId, presetField, onUploaded }: UploadPane
               onChange={(event) => setName(event.target.value)}
               fullWidth
             />
-            {presetField}
+            {renderPresetField({ value: preset, onChange: setPreset })}
             <Button
               component="label"
               variant="outlined"

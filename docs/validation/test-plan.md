@@ -99,6 +99,7 @@ speakers, preset sections, time). A pass in one never stands in for the other.
 | TC-CTX-01 | Notes context from the folder | Integration | Positive | A notes job carries the folder's other transcribed meetings that are not restricted, including one whose notes failed, while a meeting without a transcript takes no place in it; the notes record the meetings they used, and a meeting alone in its folder still gets notes. | Valeriia | US-007 (Test-01 to Test-04) | CI, exists |
 | TC-PRE-01 | Notes presets: the prompt stays private | Unit | Negative | Creating or updating a workspace refuses a `prompt` field, and the import-linter contract "Runtimes are independent of each other" keeps the API from importing the notes worker, where the prompts live. | Andrii | US-006 (Test-03) | CI, exists |
 | TC-PRE-02 | Notes preset on upload | Unit, Integration | Positive, Negative | The upload API saves a Member's chosen preset. If the field is omitted, Processing sends the workspace default to the notes worker. If a preset was saved, Processing sends that preset. An unsupported, empty or repeated preset gets `422 VALIDATION_ERROR` and creates no meeting. | Valeriia | FR-018, US-006 (Test-01, Test-02, Test-04) | CI, exists |
+| TC-PRE-03 | Web app: notes preset on upload | Unit | Positive | Vitest with Testing Library and MSW checks that a Member's upload dialog starts at the workspace default. Picking another preset sends it with the recording. Leaving the default selected omits the field, and reopening a cancelled upload shows the default again. Switching workspaces closes the open upload dialog. | Valeriia | FR-018, US-006 (Test-01, Test-02) | CI, exists |
 | TC-GLO-01 | Meetings: workspace glossary | Integration | Positive | Terms are kept per workspace, a term differing only in case is refused, and the next transcription job hands the glossary to the recognizer. | Valeriia | US-012 (Test-01 to Test-03) | CI, exists |
 | TC-RET-01 | Retention: deleting a recording | Integration | Positive | Once retention deletes a recording, its transcript and notes stay readable. | Valeriia | US-011 (Test-02) | CI, exists |
 | TC-CAP-01 | Meetings: hosted capacity | Integration | Positive | A meeting queued past the hosted limit evicts the earliest meeting across the uploader's owned workspaces, audited and attributed to the uploader; a failed upload rolls the eviction back; an open capture does not count. | Valeriia | NFR-003 | CI, exists |
@@ -160,7 +161,7 @@ runs, and record each run in [Results](#results).
 
 ## AI Usage
 
-OpenAI Codex documented the upload preset tests (#362).
+OpenAI Codex documented the upload preset tests for the API and web app (#362).
 
 The #183 invitation SPA case was updated with OpenAI Codex.
 The TC-CAP-02 recovery case and its scope were drafted with OpenAI Codex for #287.
