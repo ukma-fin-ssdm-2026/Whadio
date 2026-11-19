@@ -1,11 +1,15 @@
 import { Button, Chip, CircularProgress, ListItem, ListItemText, Stack } from "@mui/material";
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { z } from "zod";
 import { ApiError } from "@/shared/api/errors";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { ErrorBanner } from "@/shared/ui/ErrorBanner";
 import { ListPanel } from "@/shared/ui/ListPanel";
 import { useNotify } from "@/shared/ui/NotifyProvider";
 import { shareQueries, useDecideRequest } from "../api/shares";
+
+const validId = z.uuid();
+const NOT_FOUND = "This share does not exist.";
 
 const STATUS_LABELS: Record<string, string> = {
   approved: "Approved",
@@ -16,11 +20,16 @@ function listError(error: Error) {
   if (error instanceof ApiError && error.code === "INSUFFICIENT_ROLE") {
     return "Only the person who created this share can see its requests.";
   }
-  if (error instanceof ApiError && error.status === 404) return "This share does not exist.";
+  if (error instanceof ApiError && error.status === 404) return NOT_FOUND;
   return error.message;
 }
 
 export function AccessRequests({ shareId }: { shareId: string }) {
+  if (!validId.safeParse(shareId).success) return <ErrorBanner>{NOT_FOUND}</ErrorBanner>;
+  return <RequestList shareId={shareId} />;
+}
+
+function RequestList({ shareId }: { shareId: string }) {
   const notify = useNotify();
   const requests = useInfiniteQuery(shareQueries.requests(shareId));
   const decide = useDecideRequest(shareId);

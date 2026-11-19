@@ -6,6 +6,8 @@ import { renderWithProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
 import { AccessRequests } from "./AccessRequests";
 
+const SHARE_ID = "11111111-1111-4111-8111-111111111111";
+
 function accessRequest(changes: Partial<Schemas["RequestRead"]> = {}): Schemas["RequestRead"] {
   return {
     id: "request",
@@ -53,7 +55,7 @@ test("each request shows who asked and what was decided", async () => {
   ]);
 
   // Act
-  renderWithProviders(<AccessRequests shareId="share" />);
+  renderWithProviders(<AccessRequests shareId={SHARE_ID} />);
 
   // Assert
   expect(
@@ -70,7 +72,7 @@ test("each request shows who asked and what was decided", async () => {
 test("approving a request approves that request", async () => {
   // Arrange
   const decided = serveRequests([accessRequest({ id: "first" })]);
-  const { user } = renderWithProviders(<AccessRequests shareId="share" />);
+  const { user } = renderWithProviders(<AccessRequests shareId={SHARE_ID} />);
 
   // Act
   await user.click(await screen.findByRole("button", { name: "Approve" }));
@@ -82,7 +84,7 @@ test("approving a request approves that request", async () => {
 test("an approved request reads Approved after the click", async () => {
   // Arrange
   serveRequests([accessRequest({ id: "first" })]);
-  const { user } = renderWithProviders(<AccessRequests shareId="share" />);
+  const { user } = renderWithProviders(<AccessRequests shareId={SHARE_ID} />);
 
   // Act
   await user.click(await screen.findByRole("button", { name: "Approve" }));
@@ -94,7 +96,7 @@ test("an approved request reads Approved after the click", async () => {
 test("pending requests can only be declined once one is approved", async () => {
   // Arrange
   serveRequests([accessRequest({ id: "first" }), accessRequest({ id: "second" })]);
-  const { user } = renderWithProviders(<AccessRequests shareId="share" />);
+  const { user } = renderWithProviders(<AccessRequests shareId={SHARE_ID} />);
 
   // Act
   await user.click((await screen.findAllByRole("button", { name: "Approve" }))[0] as HTMLElement);
@@ -114,7 +116,7 @@ test("a refused approval shows why", async () => {
       ),
     ),
   );
-  const { user } = renderWithProviders(<AccessRequests shareId="share" />);
+  const { user } = renderWithProviders(<AccessRequests shareId={SHARE_ID} />);
 
   // Act
   await user.click(await screen.findByRole("button", { name: "Approve" }));
@@ -128,7 +130,7 @@ test("a refused approval shows why", async () => {
 test("Show more loads the next page and disappears after the last", async () => {
   // Arrange
   serveRequests([accessRequest({ id: "first" }), accessRequest({ id: "second" })], 1);
-  const { user } = renderWithProviders(<AccessRequests shareId="share" />);
+  const { user } = renderWithProviders(<AccessRequests shareId={SHARE_ID} />);
 
   // Act
   await user.click(await screen.findByRole("button", { name: "Show more" }));
@@ -144,7 +146,7 @@ test("a request on the second page can be approved", async () => {
     [accessRequest({ id: "first" }), accessRequest({ id: "second" })],
     1,
   );
-  const { user } = renderWithProviders(<AccessRequests shareId="share" />);
+  const { user } = renderWithProviders(<AccessRequests shareId={SHARE_ID} />);
   await user.click(await screen.findByRole("button", { name: "Show more" }));
   await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(2));
 
@@ -158,7 +160,7 @@ test("a request on the second page can be approved", async () => {
 test("declining a request declines that request", async () => {
   // Arrange
   const decided = serveRequests([accessRequest({ id: "first" })]);
-  const { user } = renderWithProviders(<AccessRequests shareId="share" />);
+  const { user } = renderWithProviders(<AccessRequests shareId={SHARE_ID} />);
 
   // Act
   await user.click(await screen.findByRole("button", { name: "Decline" }));
@@ -176,7 +178,7 @@ test("someone who did not create the share is told so", async () => {
   );
 
   // Act
-  renderWithProviders(<AccessRequests shareId="share" />);
+  renderWithProviders(<AccessRequests shareId={SHARE_ID} />);
 
   // Assert
   expect(
@@ -193,10 +195,28 @@ test("a share that does not exist is told so", async () => {
   );
 
   // Act
-  renderWithProviders(<AccessRequests shareId="share" />);
+  renderWithProviders(<AccessRequests shareId={SHARE_ID} />);
 
   // Assert
   expect(await screen.findByText("This share does not exist.")).toBeInTheDocument();
+});
+
+test("a malformed share id is told it does not exist without asking the API", async () => {
+  // Arrange
+  const asked: string[] = [];
+  server.use(
+    http.get("/api/v1/shares/{share_id}/access-requests", ({ params, response }) => {
+      asked.push(params.share_id);
+      return response(200).json(page([]));
+    }),
+  );
+
+  // Act
+  renderWithProviders(<AccessRequests shareId="not-a-share" />);
+  await screen.findByText("This share does not exist.");
+
+  // Assert
+  expect(asked).toEqual([]);
 });
 
 test("a share nobody asked about says so", async () => {
@@ -204,7 +224,7 @@ test("a share nobody asked about says so", async () => {
   serveRequests([]);
 
   // Act
-  renderWithProviders(<AccessRequests shareId="share" />);
+  renderWithProviders(<AccessRequests shareId={SHARE_ID} />);
 
   // Assert
   expect(await screen.findByText("No requests yet")).toBeInTheDocument();
