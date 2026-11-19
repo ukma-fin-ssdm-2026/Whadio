@@ -881,20 +881,28 @@ def test_transcript_of_a_second_job_is_not_saved() -> None:
     )
 
 
-def test_ready_transcript_queues_notes_with_the_workspace_preset() -> None:
+@pytest.mark.parametrize(
+    ("template", "preset"),
+    [(NotesTemplate.INTERVIEW, NotesPreset.INTERVIEW), (None, NotesPreset.DETAILED)],
+)
+def test_ready_transcript_queues_notes_with_the_upload_preset_or_workspace_default(
+    template: NotesTemplate | None, preset: NotesPreset
+) -> None:
     # Arrange
     pipeline = make_pipeline()
+    pipeline.meetings.meeting.initial_notes_template = template
     job_id = add_job(pipeline, JobType.TRANSCRIPTION)
     handle(pipeline, transcript_ready(pipeline, job_id))
     # Act
     requests = publish_all(pipeline)
     # Assert
-    assert [request.preset for request in notes_requests(requests)] == [NotesPreset.DETAILED]
+    assert [request.preset for request in notes_requests(requests)] == [preset]
 
 
 def test_requested_notes_job_is_sent_with_its_template() -> None:
     # Arrange
     pipeline = make_pipeline()
+    pipeline.meetings.meeting.initial_notes_template = NotesTemplate.SUMMARY
     pipeline.meetings.transcript = stored_version()
     asyncio.run(
         pipeline.jobs.add(

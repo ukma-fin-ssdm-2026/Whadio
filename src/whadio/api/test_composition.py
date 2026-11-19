@@ -1792,6 +1792,81 @@ def test_upload_decodes_audio_before_creating_meeting(
     asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
 
 
+@pytest.mark.parametrize(
+    ("preset", "template"),
+    [("interview", NotesTemplate.INTERVIEW), (None, None)],
+)
+def test_upload_stores_only_an_explicit_notes_preset(
+    database_settings: DatabaseSettings, preset: str | None, template: NotesTemplate | None
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        storage, processing = InMemoryObjectStorage(), ProcessingFixture()
+        try:
+            async with (
+                unit_fixture(database_settings) as unit,
+                client_fixture(unit, unit.member, processing, storage) as client,
+            ):
+                # Act
+                response = await client.post(
+                    f"/api/v1/workspaces/{unit.workspace}/meetings",
+                    data={"preset": preset} if preset is not None else None,
+                    files={"file": ("audio.wav", _wav())},
+                )
+                meeting_id = MeetingRead.model_validate_json(response.content).id
+                stored = await unit.session.scalar(
+                    select(Meeting.initial_notes_template).where(Meeting.meeting_id == meeting_id)
+                )
+                # Assert
+                assert (response.status_code, stored) == (201, template)
+        finally:
+            await _clean_uploads(database_settings, storage)
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+@pytest.mark.parametrize(
+    "presets",
+    [
+        pytest.param(["custom"], id="unknown"),
+        pytest.param([""], id="empty"),
+        pytest.param(["custom", "interview"], id="repeated"),
+    ],
+)
+def test_upload_refuses_an_invalid_notes_preset_before_creating_a_meeting(
+    database_settings: DatabaseSettings, presets: list[str]
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        storage, processing = InMemoryObjectStorage(), ProcessingFixture()
+        try:
+            async with (
+                unit_fixture(database_settings) as unit,
+                client_fixture(unit, unit.member, processing, storage) as client,
+            ):
+                # Act
+                response = await client.post(
+                    f"/api/v1/workspaces/{unit.workspace}/meetings",
+                    data={"preset": presets},
+                    files={"file": ("audio.wav", _wav())},
+                )
+                error = ErrorResponse.model_validate_json(response.content).error
+                meetings = await MeetingRepository(unit.session).workspace_meetings(unit.workspace)
+                # Assert
+                assert (
+                    response.status_code,
+                    error.code,
+                    [detail.field for detail in error.details],
+                    meetings,
+                    storage.uploaded,
+                    processing.transcriptions,
+                ) == (422, ErrorCode.VALIDATION_ERROR, ["preset"], [unit.meeting], [], [])
+        finally:
+            await _clean_uploads(database_settings, storage)
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
 @pytest.mark.parametrize("cleanup_succeeds", [True, False])
 def test_failed_upload_keeps_durable_cleanup_when_storage_is_unavailable(
     database_settings: DatabaseSettings,

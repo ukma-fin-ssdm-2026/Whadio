@@ -428,7 +428,11 @@ class ProcessingService:
         transcript = await self._meetings.current_transcript(meeting.meeting_id)
         if transcript is None:
             raise UseCaseError(Failure.NOT_TRANSCRIBED)
-        template = job.template or await self._workspaces.default_template(found.workspace_id)
+        template = (
+            job.template
+            or meeting.initial_notes_template
+            or await self._workspaces.default_template(found.workspace_id)
+        )
         context = await self._meetings.notes_context(meeting, MAX_CONTEXT_MEETINGS)
         sent = tuple(
             ContextReference(other.meeting.meeting_id, other.meeting.name) for other in context

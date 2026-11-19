@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from ..access_policy.contracts import MeetingScope
 from ..access_policy.services import ContentPath, IMeetingPolicy
-from ..accounts.enums import WorkspaceRole
+from ..accounts.enums import NotesTemplate, WorkspaceRole
 from ..accounts.services import IWorkspaceMembership
 from ..audit.contracts import ContentEvent, IContentAuditWriter
 from ..audit.enums import AuditAction
@@ -72,6 +72,7 @@ class RecordingInput:
     name: str | None = None
     folder_id: UUID | None = None
     consent_confirmed_at: datetime | None = None
+    initial_notes_template: NotesTemplate | None = None
 
 
 class IRecordingIngestion(Protocol):
@@ -130,6 +131,7 @@ class MeetingService:
             else recording.recorded_at.isoformat(),
             name_is_generated=recording.name is None,
             source_type=recording.source,
+            initial_notes_template=recording.initial_notes_template,
             recording_status=RecordingStatus.COMPLETE,
             processing_state=ProcessingState.RECORDING
             if recording.storage_key is None
