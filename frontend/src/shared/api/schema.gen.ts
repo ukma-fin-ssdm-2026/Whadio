@@ -403,7 +403,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a recording
-         * @description Any member. Multipart with the audio `file`, an optional `folder_id` and `name`. Supported formats: WAV, MP3, AAC, FLAC, Ogg, WebM or MP4/M4A. The server decodes the file to check, whatever its name or declared type; any other file is refused and creates no meeting. Without `name`, the meeting is named after its date and time until it is renamed. The meeting is queued for processing at once; its speakers will be labelled `Speaker 1`, `Speaker 2` and so on.
+         * @description Any member. Multipart with the audio `file` and optional fields `folder_id`, `name`, and `preset`. Omit `preset` to use the workspace default for the first notes. Supported formats: WAV, MP3, AAC, FLAC, Ogg, WebM or MP4/M4A. The server decodes the file to check, whatever its name or declared type; any other file is refused and creates no meeting. Without `name`, the meeting is named after its date and time until it is renamed. The meeting is queued for processing at once; its speakers will be labelled `Speaker 1`, `Speaker 2` and so on.
          */
         post: operations["upload_recording_api_v1_workspaces__workspace_id__meetings_post"];
         delete?: never;
@@ -1096,6 +1096,8 @@ export interface components {
              * @description Meeting name
              */
             name?: string | null;
+            /** @description Preset for the first notes; omit to use the workspace default */
+            preset?: components["schemas"]["Preset"] | null;
         };
         /** CaptureComplete */
         CaptureComplete: {
@@ -4309,7 +4311,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each; `folder_id` must be a folder of this workspace */
+            /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each; `folder_id` must be a folder of this workspace and `preset` must appear at most once and be `summary`, `detailed`, or `interview` */
             422: {
                 headers: {
                     [name: string]: unknown;

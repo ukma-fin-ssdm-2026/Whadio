@@ -74,6 +74,9 @@ class Meeting(Base):
     failure_reason: Mapped[ProcessingFailure | None] = MappedColumn[ProcessingFailure | None](
         enum_type(ProcessingFailure, "processing_failure"),
     )
+    initial_notes_template: Mapped[NotesTemplate | None] = MappedColumn[NotesTemplate | None](
+        enum_type(NotesTemplate, "initial_notes_template")
+    )
     storage_path: Mapped[str | None] = MappedColumn[str | None](Text)
     duration_seconds: Mapped[int | None] = MappedColumn[int | None]()
     recorded_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))

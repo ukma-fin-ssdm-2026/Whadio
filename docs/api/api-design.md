@@ -608,7 +608,8 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 - **Status:** Implemented · **Caller:** any member, with a browser session or the extension token ·
   **Success:** `201`, the meeting in state `queued`; `Location` points to it
 - **Rules:**
-  - Multipart: an audio `file`, plus an optional `folder_id` and `name` (FR-013).
+  - Multipart: an audio `file` and the optional fields `folder_id`, `name` and `preset` (FR-013,
+    FR-018).
   - The file limit is 500 MiB. The HTTP boundary allows a total request of 501 MiB,
     including multipart overhead. Oversized declared bodies are rejected before parsing;
     incoming bytes are counted even without a length header or with an understated length.
@@ -616,6 +617,8 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - The meeting is queued for processing at once. Its speakers are labelled `Speaker 1`,
     `Speaker 2`, and so on (FR-016).
   - `folder_id` must be a folder of this workspace; without it, the default folder is used.
+  - `preset` accepts `summary`, `detailed`, or `interview` and applies to the meeting's first
+    notes. Without it, the workspace default is read when the notes job is published.
   - Supported formats are WAV, MP3, AAC, FLAC, Ogg, WebM and MP4/M4A. The server checks a file
     by decoding its first audio frame with FFmpeg, never by its name or declared type.
   - Without `name`, the meeting is named after its date and time until its notes propose a
@@ -627,6 +630,8 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
     exceeds 501 MiB.
   - `415 UNSUPPORTED_MEDIA_TYPE`: the content is not a supported audio format, so no meeting is
     created (FR-013).
+  - `422 VALIDATION_ERROR`: an invalid field, including an unsupported or repeated `preset`.
+    No meeting is created.
 
 #### `GET /meetings/{meeting_id}` · Get a meeting
 
@@ -1353,3 +1358,5 @@ Later revisions were assisted by OpenAI Codex and verified by author.
 OpenAI Codex implemented and verified the #180 dashboard and its API documentation update.
 
 The member endpoints (#184) were implemented with Claude Code and reviewed by the author.
+
+The upload preset contract (#362) was documented with OpenAI Codex.
