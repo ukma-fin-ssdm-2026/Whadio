@@ -90,36 +90,36 @@ export function ShareDialog({ meetingId, onOpenRequests, onClose }: ShareDialogP
             {shares.data && shares.data.length > 0 && (
               <List dense aria-label="Your shares">
                 {shares.data.map((share) => (
-                  <ListItem
-                    key={share.id}
-                    disableGutters
-                    secondaryAction={
-                      !share.revoked_at && (
-                        <Stack direction="row" sx={{ gap: 1 }}>
-                          {!share.recipient_user_id && (
-                            <Button size="small" onClick={() => onOpenRequests(share.id)}>
-                              Requests
-                            </Button>
-                          )}
-                          <Button
-                            color="error"
-                            size="small"
-                            disabled={pending}
-                            aria-label={`Revoke share created ${formatDate(share.created_at)}`}
-                            onClick={() => setShareToRevoke(share)}
-                          >
-                            Revoke
-                          </Button>
-                        </Stack>
-                      )
-                    }
-                  >
+                  <ListItem key={share.id} disableGutters sx={{ gap: 1, flexWrap: "wrap" }}>
                     <ListItemText
                       primary={shareState(share)}
                       secondary={`Created ${formatDate(share.created_at)} · ${
                         share.redact_speaker_names ? "Speaker names hidden" : "Speaker names shown"
                       }`}
+                      sx={{ flex: "1 1 12rem" }}
                     />
+                    {!share.revoked_at && (
+                      <Stack direction="row" sx={{ gap: 1 }}>
+                        {!share.recipient_user_id && (
+                          <Button
+                            size="small"
+                            aria-label={`Requests for share created ${formatDate(share.created_at)}`}
+                            onClick={() => onOpenRequests(share.id)}
+                          >
+                            Requests
+                          </Button>
+                        )}
+                        <Button
+                          color="error"
+                          size="small"
+                          disabled={pending}
+                          aria-label={`Revoke share created ${formatDate(share.created_at)}`}
+                          onClick={() => setShareToRevoke(share)}
+                        >
+                          Revoke
+                        </Button>
+                      </Stack>
+                    )}
                   </ListItem>
                 ))}
               </List>

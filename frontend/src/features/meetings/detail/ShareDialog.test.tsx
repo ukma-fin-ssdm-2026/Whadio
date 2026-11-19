@@ -92,10 +92,31 @@ test("Requests opens the access requests of that share", async () => {
   const { user } = renderDialog(onOpenRequests);
 
   // Act
-  await user.click(await screen.findByRole("button", { name: "Requests" }));
+  await user.click(await screen.findByRole("button", { name: /^Requests for share/ }));
 
   // Assert
   expect(onOpenRequests).toHaveBeenCalledWith("waiting");
+});
+
+test("each Requests button names the share it belongs to", async () => {
+  // Arrange
+  serveShares([
+    share({ id: "newer", created_at: "2026-11-11T09:00:00Z" }),
+    share({ id: "older", created_at: "2026-11-10T09:00:00Z" }),
+  ]);
+
+  // Act
+  renderDialog();
+
+  // Assert
+  expect(
+    (await screen.findAllByRole("button", { name: /^Requests for share/ })).map((button) =>
+      button.getAttribute("aria-label"),
+    ),
+  ).toEqual([
+    `Requests for share created ${formatDate("2026-11-11T09:00:00Z")}`,
+    `Requests for share created ${formatDate("2026-11-10T09:00:00Z")}`,
+  ]);
 });
 
 test("a share hides speaker names when asked to", async () => {
