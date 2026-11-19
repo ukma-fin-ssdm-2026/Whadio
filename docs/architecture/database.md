@@ -203,8 +203,16 @@ initialization does not change an existing PostgreSQL role's password. Applicati
 not require the owner password, and neither connection string is stored in `alembic.ini`.
 
 `WHADIO_DB_HOST`, `WHADIO_DB_PORT`, and `WHADIO_DB_NAME` select the database for host-side commands.
-The database port must match `POSTGRES_PORT` if the Compose port has been overridden. Use
-`127.0.0.1` for host-side connections when IPv6 resolution of `localhost` is unavailable.
+The database port must match `POSTGRES_PORT` if the Compose port has been overridden.
+For the bundled Compose database, set `WHADIO_DB_HOST=127.0.0.1` in `.env` for host-side
+connections. Compose publishes PostgreSQL on IPv4 loopback. On Windows, `localhost`
+can try `::1` first and wait for a connection timeout before trying the published address.
+
+The application pool opens connections as needed. `WHADIO_DB_POOL_SIZE` controls how many
+connections it retains per runtime and `WHADIO_DB_MAX_OVERFLOW` controls how many temporary
+connections it can open beyond that. The development template retains up to 15 connections
+and allows zero overflow, keeping the same cap as the application defaults of five retained
+and ten temporary connections. Migrations use a separate connection.
 
 From the repository root, with the intended database selected:
 
