@@ -11,10 +11,14 @@ import { Route as AuthedAdminRouteImport } from './routes/_authed/admin'
 import { Route as InvitationsInvitationIdRouteImport } from './routes/invitations/$invitationId'
 import { Route as PasswordResetsResetIdRouteImport } from './routes/password-resets/$resetId'
 import { Route as RegistrationsRegistrationIdRouteImport } from './routes/registrations/$registrationId'
+import { Route as SharesShareIdRouteImport } from './routes/shares/$shareId'
 import { Route as AuthedMeetingsIndexRouteImport } from './routes/_authed/meetings/index'
 import { Route as AuthedMeetingsMeetingIdRouteImport } from './routes/_authed/meetings/$meetingId'
 import { Route as AuthedSettingsAssistantRouteImport } from './routes/_authed/settings/assistant'
+import { Route as AuthedSharedIndexRouteImport } from './routes/_authed/shared/index'
+import { Route as AuthedSharedShareIdRouteImport } from './routes/_authed/shared/$shareId'
 import { Route as AuthedWorkspacesWorkspaceIdRouteRouteImport } from './routes/_authed/workspaces/$workspaceId/route'
+import { Route as AuthedSharesShareIdAccessRequestsRouteImport } from './routes/_authed/shares/$shareId.access-requests'
 import { Route as AuthedWorkspacesWorkspaceIdIndexRouteImport } from './routes/_authed/workspaces/$workspaceId/index'
 import { Route as AuthedWorkspacesWorkspaceIdMembersRouteImport } from './routes/_authed/workspaces/$workspaceId/members'
 import { Route as AuthedWorkspacesWorkspaceIdSettingsRouteImport } from './routes/_authed/workspaces/$workspaceId/settings'
@@ -59,6 +63,11 @@ const RegistrationsRegistrationIdRoute =
     path: '/registrations/$registrationId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const SharesShareIdRoute = SharesShareIdRouteImport.update({
+  id: '/shares/$shareId',
+  path: '/shares/$shareId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthedMeetingsIndexRoute = AuthedMeetingsIndexRouteImport.update({
   id: '/meetings/',
   path: '/meetings/',
@@ -74,10 +83,26 @@ const AuthedSettingsAssistantRoute = AuthedSettingsAssistantRouteImport.update({
   path: '/settings/assistant',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedSharedIndexRoute = AuthedSharedIndexRouteImport.update({
+  id: '/shared/',
+  path: '/shared/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedSharedShareIdRoute = AuthedSharedShareIdRouteImport.update({
+  id: '/shared/$shareId',
+  path: '/shared/$shareId',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedWorkspacesWorkspaceIdRouteRoute =
   AuthedWorkspacesWorkspaceIdRouteRouteImport.update({
     id: '/workspaces/$workspaceId',
     path: '/workspaces/$workspaceId',
+    getParentRoute: () => AuthedRoute,
+  } as any)
+const AuthedSharesShareIdAccessRequestsRoute =
+  AuthedSharesShareIdAccessRequestsRouteImport.update({
+    id: '/shares/$shareId/access-requests',
+    path: '/shares/$shareId/access-requests',
     getParentRoute: () => AuthedRoute,
   } as any)
 const AuthedWorkspacesWorkspaceIdIndexRoute =
@@ -107,10 +132,14 @@ export interface FileRoutesByFullPath {
   '/invitations/$invitationId': typeof InvitationsInvitationIdRoute
   '/password-resets/$resetId': typeof PasswordResetsResetIdRoute
   '/registrations/$registrationId': typeof RegistrationsRegistrationIdRoute
+  '/shares/$shareId': typeof SharesShareIdRoute
   '/workspaces/$workspaceId': typeof AuthedWorkspacesWorkspaceIdRouteRouteWithChildren
   '/meetings/$meetingId': typeof AuthedMeetingsMeetingIdRoute
   '/settings/assistant': typeof AuthedSettingsAssistantRoute
+  '/shared/$shareId': typeof AuthedSharedShareIdRoute
   '/meetings/': typeof AuthedMeetingsIndexRoute
+  '/shared/': typeof AuthedSharedIndexRoute
+  '/shares/$shareId/access-requests': typeof AuthedSharesShareIdAccessRequestsRoute
   '/workspaces/$workspaceId/members': typeof AuthedWorkspacesWorkspaceIdMembersRoute
   '/workspaces/$workspaceId/settings': typeof AuthedWorkspacesWorkspaceIdSettingsRoute
   '/workspaces/$workspaceId/': typeof AuthedWorkspacesWorkspaceIdIndexRoute
@@ -122,10 +151,14 @@ export interface FileRoutesByTo {
   '/invitations/$invitationId': typeof InvitationsInvitationIdRoute
   '/password-resets/$resetId': typeof PasswordResetsResetIdRoute
   '/registrations/$registrationId': typeof RegistrationsRegistrationIdRoute
+  '/shares/$shareId': typeof SharesShareIdRoute
   '/': typeof AuthedIndexRoute
   '/meetings/$meetingId': typeof AuthedMeetingsMeetingIdRoute
   '/settings/assistant': typeof AuthedSettingsAssistantRoute
+  '/shared/$shareId': typeof AuthedSharedShareIdRoute
   '/meetings': typeof AuthedMeetingsIndexRoute
+  '/shared': typeof AuthedSharedIndexRoute
+  '/shares/$shareId/access-requests': typeof AuthedSharesShareIdAccessRequestsRoute
   '/workspaces/$workspaceId/members': typeof AuthedWorkspacesWorkspaceIdMembersRoute
   '/workspaces/$workspaceId/settings': typeof AuthedWorkspacesWorkspaceIdSettingsRoute
   '/workspaces/$workspaceId': typeof AuthedWorkspacesWorkspaceIdIndexRoute
@@ -139,11 +172,15 @@ export interface FileRoutesById {
   '/invitations/$invitationId': typeof InvitationsInvitationIdRoute
   '/password-resets/$resetId': typeof PasswordResetsResetIdRoute
   '/registrations/$registrationId': typeof RegistrationsRegistrationIdRoute
+  '/shares/$shareId': typeof SharesShareIdRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/workspaces/$workspaceId': typeof AuthedWorkspacesWorkspaceIdRouteRouteWithChildren
   '/_authed/meetings/$meetingId': typeof AuthedMeetingsMeetingIdRoute
   '/_authed/settings/assistant': typeof AuthedSettingsAssistantRoute
+  '/_authed/shared/$shareId': typeof AuthedSharedShareIdRoute
   '/_authed/meetings/': typeof AuthedMeetingsIndexRoute
+  '/_authed/shared/': typeof AuthedSharedIndexRoute
+  '/_authed/shares/$shareId/access-requests': typeof AuthedSharesShareIdAccessRequestsRoute
   '/_authed/workspaces/$workspaceId/members': typeof AuthedWorkspacesWorkspaceIdMembersRoute
   '/_authed/workspaces/$workspaceId/settings': typeof AuthedWorkspacesWorkspaceIdSettingsRoute
   '/_authed/workspaces/$workspaceId/': typeof AuthedWorkspacesWorkspaceIdIndexRoute
@@ -158,10 +195,14 @@ export interface FileRouteTypes {
     | '/invitations/$invitationId'
     | '/password-resets/$resetId'
     | '/registrations/$registrationId'
+    | '/shares/$shareId'
     | '/workspaces/$workspaceId'
     | '/meetings/$meetingId'
     | '/settings/assistant'
+    | '/shared/$shareId'
     | '/meetings/'
+    | '/shared/'
+    | '/shares/$shareId/access-requests'
     | '/workspaces/$workspaceId/members'
     | '/workspaces/$workspaceId/settings'
     | '/workspaces/$workspaceId/'
@@ -173,10 +214,14 @@ export interface FileRouteTypes {
     | '/invitations/$invitationId'
     | '/password-resets/$resetId'
     | '/registrations/$registrationId'
+    | '/shares/$shareId'
     | '/'
     | '/meetings/$meetingId'
     | '/settings/assistant'
+    | '/shared/$shareId'
     | '/meetings'
+    | '/shared'
+    | '/shares/$shareId/access-requests'
     | '/workspaces/$workspaceId/members'
     | '/workspaces/$workspaceId/settings'
     | '/workspaces/$workspaceId'
@@ -189,11 +234,15 @@ export interface FileRouteTypes {
     | '/invitations/$invitationId'
     | '/password-resets/$resetId'
     | '/registrations/$registrationId'
+    | '/shares/$shareId'
     | '/_authed/'
     | '/_authed/workspaces/$workspaceId'
     | '/_authed/meetings/$meetingId'
     | '/_authed/settings/assistant'
+    | '/_authed/shared/$shareId'
     | '/_authed/meetings/'
+    | '/_authed/shared/'
+    | '/_authed/shares/$shareId/access-requests'
     | '/_authed/workspaces/$workspaceId/members'
     | '/_authed/workspaces/$workspaceId/settings'
     | '/_authed/workspaces/$workspaceId/'
@@ -206,6 +255,7 @@ export interface RootRouteChildren {
   InvitationsInvitationIdRoute: typeof InvitationsInvitationIdRoute
   PasswordResetsResetIdRoute: typeof PasswordResetsResetIdRoute
   RegistrationsRegistrationIdRoute: typeof RegistrationsRegistrationIdRoute
+  SharesShareIdRoute: typeof SharesShareIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -266,6 +316,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RegistrationsRegistrationIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/shares/$shareId': {
+      id: '/shares/$shareId'
+      path: '/shares/$shareId'
+      fullPath: '/shares/$shareId'
+      preLoaderRoute: typeof SharesShareIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authed/meetings/': {
       id: '/_authed/meetings/'
       path: '/meetings'
@@ -287,11 +344,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsAssistantRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/shared/': {
+      id: '/_authed/shared/'
+      path: '/shared'
+      fullPath: '/shared/'
+      preLoaderRoute: typeof AuthedSharedIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/shared/$shareId': {
+      id: '/_authed/shared/$shareId'
+      path: '/shared/$shareId'
+      fullPath: '/shared/$shareId'
+      preLoaderRoute: typeof AuthedSharedShareIdRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/workspaces/$workspaceId': {
       id: '/_authed/workspaces/$workspaceId'
       path: '/workspaces/$workspaceId'
       fullPath: '/workspaces/$workspaceId'
       preLoaderRoute: typeof AuthedWorkspacesWorkspaceIdRouteRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/shares/$shareId/access-requests': {
+      id: '/_authed/shares/$shareId/access-requests'
+      path: '/shares/$shareId/access-requests'
+      fullPath: '/shares/$shareId/access-requests'
+      preLoaderRoute: typeof AuthedSharesShareIdAccessRequestsRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/workspaces/$workspaceId/': {
@@ -345,7 +423,10 @@ interface AuthedRouteChildren {
   AuthedWorkspacesWorkspaceIdRouteRoute: typeof AuthedWorkspacesWorkspaceIdRouteRouteWithChildren
   AuthedMeetingsMeetingIdRoute: typeof AuthedMeetingsMeetingIdRoute
   AuthedSettingsAssistantRoute: typeof AuthedSettingsAssistantRoute
+  AuthedSharedShareIdRoute: typeof AuthedSharedShareIdRoute
   AuthedMeetingsIndexRoute: typeof AuthedMeetingsIndexRoute
+  AuthedSharedIndexRoute: typeof AuthedSharedIndexRoute
+  AuthedSharesShareIdAccessRequestsRoute: typeof AuthedSharesShareIdAccessRequestsRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
@@ -355,7 +436,11 @@ const AuthedRouteChildren: AuthedRouteChildren = {
     AuthedWorkspacesWorkspaceIdRouteRouteWithChildren,
   AuthedMeetingsMeetingIdRoute: AuthedMeetingsMeetingIdRoute,
   AuthedSettingsAssistantRoute: AuthedSettingsAssistantRoute,
+  AuthedSharedShareIdRoute: AuthedSharedShareIdRoute,
   AuthedMeetingsIndexRoute: AuthedMeetingsIndexRoute,
+  AuthedSharedIndexRoute: AuthedSharedIndexRoute,
+  AuthedSharesShareIdAccessRequestsRoute:
+    AuthedSharesShareIdAccessRequestsRoute,
 }
 
 const AuthedRouteWithChildren =
@@ -368,6 +453,7 @@ const rootRouteChildren: RootRouteChildren = {
   InvitationsInvitationIdRoute: InvitationsInvitationIdRoute,
   PasswordResetsResetIdRoute: PasswordResetsResetIdRoute,
   RegistrationsRegistrationIdRoute: RegistrationsRegistrationIdRoute,
+  SharesShareIdRoute: SharesShareIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

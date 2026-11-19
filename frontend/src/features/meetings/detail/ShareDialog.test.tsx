@@ -51,8 +51,10 @@ function serveShares(shares: Schemas["ShareRead"][] = [], pageSize = 100) {
   return { created, revoked };
 }
 
-function renderDialog() {
-  return renderWithProviders(<ShareDialog meetingId="meeting" onClose={() => {}} />);
+function renderDialog(onOpenRequests: (shareId: string) => void = () => {}) {
+  return renderWithProviders(
+    <ShareDialog meetingId="meeting" onOpenRequests={onOpenRequests} onClose={() => {}} />,
+  );
 }
 
 async function confirmRevoke(user: ReturnType<typeof renderDialog>["user"]) {
@@ -77,9 +79,43 @@ test("each share shows whether it waits, is approved or was revoked", async () =
       .getAllByRole("listitem")
       .map((item) => item.textContent),
   ).toEqual([
-    `No approved recipient yetCreated ${CREATED} · Speaker names shownRevoke`,
+    `No approved recipient yetCreated ${CREATED} · Speaker names shownRequestsRevoke`,
     `Shared with an approved recipientCreated ${CREATED} · Speaker names shownRevoke`,
     `RevokedCreated ${CREATED} · Speaker names shown`,
+  ]);
+});
+
+test("Requests opens the access requests of that share", async () => {
+  // Arrange
+  serveShares([share({ id: "first", revoked_at: REVOKED_AT }), share({ id: "waiting" })]);
+  const onOpenRequests = vi.fn();
+  const { user } = renderDialog(onOpenRequests);
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: /^Requests for share/ }));
+
+  // Assert
+  expect(onOpenRequests).toHaveBeenCalledWith("waiting");
+});
+
+test("each Requests button names the share it belongs to", async () => {
+  // Arrange
+  serveShares([
+    share({ id: "newer", created_at: "2026-11-11T09:00:00Z" }),
+    share({ id: "older", created_at: "2026-11-10T09:00:00Z" }),
+  ]);
+
+  // Act
+  renderDialog();
+
+  // Assert
+  expect(
+    (await screen.findAllByRole("button", { name: /^Requests for share/ })).map((button) =>
+      button.getAttribute("aria-label"),
+    ),
+  ).toEqual([
+    `Requests for share created ${formatDate("2026-11-11T09:00:00Z")}`,
+    `Requests for share created ${formatDate("2026-11-10T09:00:00Z")}`,
   ]);
 });
 
@@ -157,7 +193,7 @@ test("each Revoke button names the share by its creation date", async () => {
   // Assert
   expect(
     within(await screen.findByRole("list", { name: "Your shares" }))
-      .getAllByRole("button")
+      .getAllByRole("button", { name: /^Revoke share/ })
       .map((button) => button.getAttribute("aria-label")),
   ).toEqual([
     `Revoke share created ${formatDate("2026-11-11T09:00:00Z")}`,
@@ -368,7 +404,9 @@ test("escape keeps the dialog open while a share is being created", async () => 
     http.post("/api/v1/meetings/{meeting_id}/shares", () => new Promise<Response>(() => {})),
   );
   const onClose = vi.fn();
-  const { user } = renderWithProviders(<ShareDialog meetingId="meeting" onClose={onClose} />);
+  const { user } = renderWithProviders(
+    <ShareDialog meetingId="meeting" onOpenRequests={() => {}} onClose={onClose} />,
+  );
   await user.click(screen.getByRole("button", { name: "Create link" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Close" })).toBeDisabled());
   await user.click(screen.getByRole("checkbox", { name: "Hide speaker names" }));

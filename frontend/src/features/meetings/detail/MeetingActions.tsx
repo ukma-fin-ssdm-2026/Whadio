@@ -28,6 +28,7 @@ interface MeetingActionsProps {
   members: WorkspaceMembers;
   onAccessOpen: (open: boolean) => void;
   onLeave: () => void;
+  onOpenRequests: (shareId: string) => void;
 }
 
 type OpenDialog = "rename" | "move" | "share" | "access" | "delete" | null;
@@ -41,6 +42,7 @@ export function MeetingActions({
   members,
   onAccessOpen,
   onLeave,
+  onOpenRequests,
 }: MeetingActionsProps) {
   const notify = useNotify();
   const deleteMeeting = useDeleteMeeting(meeting.id, meeting.workspaceId);
@@ -106,7 +108,9 @@ export function MeetingActions({
       {dialog === "move" && (
         <MoveMeetingDialog meeting={meeting} folders={folders} onClose={close} />
       )}
-      {dialog === "share" && <ShareDialog meetingId={meeting.id} onClose={close} />}
+      {dialog === "share" && (
+        <ShareDialog meetingId={meeting.id} onOpenRequests={onOpenRequests} onClose={close} />
+      )}
       {dialog === "access" && (
         <AccessDialog
           meeting={meeting}

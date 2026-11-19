@@ -62,6 +62,7 @@ function renderActions(
         members={members}
         onAccessOpen={() => {}}
         onLeave={onDeleted}
+        onOpenRequests={() => {}}
       />
       {showMoveState && <MoveState />}
     </>,
