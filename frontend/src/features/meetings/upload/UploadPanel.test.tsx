@@ -11,7 +11,7 @@ async function openDialog(onUploaded: (id: string) => void = () => {}) {
   const view = renderWithProviders(
     <UploadPanel
       workspaceId="workspace"
-      presetField={<p>Preset slot</p>}
+      renderPresetField={() => <p>Preset slot</p>}
       onUploaded={onUploaded}
     />,
   );

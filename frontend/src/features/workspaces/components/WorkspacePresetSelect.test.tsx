@@ -1,8 +1,9 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { errorBody, workspaceRead } from "@/shared/testing/fixtures";
-import { renderWithProviders } from "@/shared/testing/render";
+import { createTestQueryClient, renderWithProviders } from "@/shared/testing/render";
 import { http, server } from "@/shared/testing/server";
+import { workspaceQueries } from "../api/workspaces";
 import { WorkspacePresetSelect } from "./WorkspacePresetSelect";
 
 function answerWorkspace(found: boolean) {
@@ -92,4 +93,24 @@ test("a failed load still offers every preset", async () => {
 
   // Assert
   expect(optionNames()).toEqual(["Summary", "Detailed", "Interview"]);
+});
+
+test("a failed refresh keeps showing the known workspace default", async () => {
+  // Arrange
+  answerWorkspace(false);
+  const queryClient = createTestQueryClient();
+  const { queryKey } = workspaceQueries.detail("workspace");
+  queryClient.setQueryData(queryKey, workspaceRead({ default_preset: "detailed" }));
+
+  // Act
+  renderWithProviders(
+    <WorkspacePresetSelect workspaceId="workspace" value={null} onChange={vi.fn()} />,
+    queryClient,
+  );
+  await waitFor(() => expect(queryClient.getQueryState(queryKey)?.status).toBe("error"));
+
+  // Assert
+  expect(screen.getByRole("combobox", { name: "Note preset" })).toHaveTextContent(
+    "Detailed (workspace default)",
+  );
 });

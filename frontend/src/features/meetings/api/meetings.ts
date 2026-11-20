@@ -212,16 +212,17 @@ export function useRefreshNotesWhenSettled({ id, state }: Pick<Meeting, "id" | "
 interface RecordingUpload {
   file: File;
   name: string;
+  preset?: Preset;
 }
 
 export function useUploadMeeting(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ file, name }: RecordingUpload) =>
+    mutationFn: ({ file, name, preset }: RecordingUpload) =>
       unwrap(
         apiClient.POST("/api/v1/workspaces/{workspace_id}/meetings", {
           params: { path: { workspace_id: workspaceId } },
-          body: { file, name: name.trim() || undefined },
+          body: { file, name: name.trim() || undefined, preset },
         }),
       ),
     onSuccess: () => {
