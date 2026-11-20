@@ -74,9 +74,9 @@ async def connect_to_a_broker_that_never_answers() -> tuple[bool, int]:
         listener.bind((host, 0))
         # The OS queues the TCP connection without an asyncio accept task or an AMQP reply.
         listener.listen()
-        port = listener.getsockname()[1]
+        address = f"{host}:{listener.getsockname()[1]}"
         settings = BrokerSettings(
-            url=SecretStr(f"amqp://whadio:p@{host}:{port}/whadio?fail_fast=0"),
+            url=SecretStr(f"amqp://whadio:p@{address}/whadio?fail_fast=0"),
             timeout=timedelta(milliseconds=10),
         )
         before = asyncio.all_tasks()
