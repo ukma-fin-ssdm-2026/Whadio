@@ -3,7 +3,7 @@ import logging
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Protocol
 from uuid import UUID
 
@@ -559,7 +559,10 @@ def password_reset_request_service(
     session: Session,
 ) -> PasswordResetRequestService:
     return PasswordResetRequestService(
-        PasswordResetRepository(session), SessionRepository(session), mail(session)
+        PasswordResetRepository(session),
+        SessionRepository(session),
+        mail(session),
+        lambda: datetime.now(UTC),
     )
 
 

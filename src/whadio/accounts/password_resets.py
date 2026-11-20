@@ -1,5 +1,6 @@
 import asyncio
 import secrets
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -38,7 +39,7 @@ class PasswordResetMailKind(StrEnum):
 class PasswordResetMail:
     user_id: UUID
     link: PasswordResetLink
-    queued_at: datetime
+    issued_at: datetime
     expires_at: datetime
     kind: PasswordResetMailKind
 
@@ -47,7 +48,7 @@ class IPasswordResetMailQueue(Protocol):
     async def reserve(self, mail: PasswordResetMail, /) -> None:
         """Queue in the caller's transaction. The link ID can be reused across issuances.
 
-        Use the link ID and queued time for deduplication. Protect the token at rest
+        Use the link ID and issuance time for deduplication. Protect the token at rest
         and keep it out of logs.
         """
         ...
@@ -67,15 +68,18 @@ class PasswordResetRequestService:
         resets: IPasswordResetRepository,
         sessions: ISessionRepository,
         mail: IPasswordResetMailQueue,
+        now: Callable[[], datetime],
     ) -> None:
         self._resets: IPasswordResetRepository = resets
         self._sessions: ISessionRepository = sessions
         self._mail: IPasswordResetMailQueue = mail
+        self._now: Callable[[], datetime] = now
 
-    async def request(self, email: str, now: datetime, *, kind: PasswordResetMailKind) -> None:
+    async def request(self, email: str, *, kind: PasswordResetMailKind) -> None:
         user = await self._sessions.account_for_update(email)
         if user is None:
             return
+        now = self._now()
         queued_at = user.password_reset_mail_queued_at
         if queued_at is not None and now < queued_at + RESET_MAIL_COOLDOWN:
             return
@@ -83,7 +87,7 @@ class PasswordResetRequestService:
         await self._mail.reserve(
             PasswordResetMail(user.user_id, link, now, now + RESET_LIFETIME, kind)
         )
-        user.password_reset_mail_queued_at = now
+        await self._resets.mark_mail_queued(user.user_id, self._now())
 
 
 class PasswordResetService:

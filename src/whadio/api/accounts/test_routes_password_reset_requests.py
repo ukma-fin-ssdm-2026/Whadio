@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from conftest import AsyncDatabase
 
 from ...accounts.enums import RegistrationMode
+from ...accounts.password_resets import PasswordResetMailKind
 from ...accounts.test_password_reset_requests import ResetMailQueue
 from ..app import create_app
 from ..composition import RuntimeIntegrations, transaction
@@ -60,7 +61,8 @@ def test_known_unknown_and_recently_queued_addresses_get_the_same_response(
             ]
 
     # Assert
-    assert (async_database.run(scenario), len(mail.messages)) == (
+    responses = async_database.run(scenario)
+    assert (responses, [notice.kind for notice in mail.messages]) == (
         [
             (
                 202,
@@ -69,7 +71,7 @@ def test_known_unknown_and_recently_queued_addresses_get_the_same_response(
             )
         ]
         * 3,
-        1,
+        [PasswordResetMailKind.RESET],
     )
 
 

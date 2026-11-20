@@ -41,7 +41,7 @@ router = APIRouter(tags=["accounts"])
 async def request_password_reset(
     payload: PasswordResetRequest, response: Response, service: PasswordResetRequests
 ) -> PasswordResetAccepted:
-    await service.request(payload.email, datetime.now(UTC), kind=PasswordResetMailKind.RESET)
+    await service.request(payload.email, kind=PasswordResetMailKind.RESET)
     response.headers["Cache-Control"] = "no-store"
     return PasswordResetAccepted(
         message="If an account exists for that email, we'll send a reset link."
