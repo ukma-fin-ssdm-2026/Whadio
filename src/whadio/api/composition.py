@@ -25,7 +25,11 @@ from ..accounts.contracts import UserProfile
 from ..accounts.enums import NotesTemplate, RegistrationMode
 from ..accounts.member_repository import MemberRepository
 from ..accounts.members import MemberService
-from ..accounts.password_resets import PasswordResetService
+from ..accounts.password_resets import (
+    IPasswordResetMailQueue,
+    PasswordResetRequestService,
+    PasswordResetService,
+)
 from ..accounts.passwords import Argon2PasswordHasher
 from ..accounts.redemption import RedemptionService
 from ..accounts.redemption_repository import RedemptionRepository
@@ -532,6 +536,38 @@ def password_reset_service(session: Session) -> PasswordResetService:
 PasswordResets = Annotated[PasswordResetService, Depends(password_reset_service)]
 
 
+type PasswordResetMailFactory = Callable[[AsyncSession], IPasswordResetMailQueue]
+
+
+def password_reset_mail() -> PasswordResetMailFactory | None:
+    return None
+
+
+def require_password_reset_mail(
+    mode: Annotated[RegistrationMode, Depends(registration_mode)],
+    factory: Annotated[PasswordResetMailFactory | None, Depends(password_reset_mail)],
+) -> PasswordResetMailFactory:
+    if mode is RegistrationMode.INVITE_ONLY:
+        raise UseCaseError(Failure.INVITE_ONLY_INSTANCE)
+    if factory is None:
+        raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+    return factory
+
+
+def password_reset_request_service(
+    mail: Annotated[PasswordResetMailFactory, Depends(require_password_reset_mail)],
+    session: Session,
+) -> PasswordResetRequestService:
+    return PasswordResetRequestService(
+        PasswordResetRepository(session), SessionRepository(session), mail(session)
+    )
+
+
+PasswordResetRequests = Annotated[
+    PasswordResetRequestService, Depends(password_reset_request_service)
+]
+
+
 def mcp_key_service(session: Session) -> McpKeyService:
     return McpKeyService(McpKeyRepository(session), AuditWriter(session))
 
@@ -622,6 +658,7 @@ Captures = Annotated[CaptureService, Depends(capture_service)]
 @dataclass(frozen=True)
 class RuntimeIntegrations:
     processing: Callable[[AsyncSession], IMeetingProcessing] | None = None
+    password_reset_mail: PasswordResetMailFactory | None = None
 
 
 def connect_integrations(app: FastAPI, integrations: RuntimeIntegrations) -> None:
@@ -630,6 +667,7 @@ def connect_integrations(app: FastAPI, integrations: RuntimeIntegrations) -> Non
         return UnavailableMeetingProcessing() if factory is None else factory(session)
 
     app.dependency_overrides[meeting_processing] = processing
+    app.dependency_overrides[password_reset_mail] = lambda: integrations.password_reset_mail
 
 
 def export_public_url() -> str:

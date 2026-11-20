@@ -124,6 +124,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/password-resets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request a password-reset link
+         * @description Public in verified mode. Returns a fixed confirmation for every valid email address. A known address can receive a single-use link valid for one hour, with a 20-minute window between email requests.
+         */
+        post: operations["request_password_reset_api_v1_password_resets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/password-resets/{reset_id}/complete": {
         parameters: {
             query?: never;
@@ -1218,7 +1238,7 @@ export interface components {
          * ErrorCode
          * @enum {string}
          */
-        ErrorCode: "EMAIL_MISMATCH" | "ACCOUNT_EXISTS" | "NO_NOTES" | "INTEGRATION_UNAVAILABLE" | "TRANSCRIPT_EXISTS" | "ALREADY_PROCESSED" | "FOLDER_RECOVERY_CONFLICT" | "DEFAULT_FOLDER" | "FOLDER_EXISTS" | "TERM_EXISTS" | "STALE_REVISION" | "MEETING_MOVE_CONFLICT" | "LINK_INVALID" | "ACCESS_REQUEST_EXISTS" | "ALREADY_HAS_ACCESS" | "ACCESS_REQUEST_NOT_PENDING" | "SHARE_ALREADY_BOUND" | "SHARE_REVOKED" | "MALFORMED_REQUEST" | "VALIDATION_ERROR" | "UNAUTHENTICATED" | "INVALID_CREDENTIALS" | "INSUFFICIENT_ROLE" | "NOT_FOUND" | "METHOD_NOT_ALLOWED" | "PERSONAL_WORKSPACE" | "ALREADY_MEMBER" | "INVITATION_LIMIT" | "INVITATION_COOLDOWN" | "INVITATION_NOT_PENDING" | "OWNER_IMMUTABLE" | "RESTRICTED_MEETING_REQUIRES_RECIPIENT" | "NOT_TRANSCRIBED" | "NOTES_IN_PROGRESS" | "RECORDING_NOT_READY" | "RECORDING_DELETED" | "REGENERATION_LIMIT" | "CHUNK_MISMATCH" | "CAPTURE_CLOSED" | "MISSING_CHUNKS" | "EMPTY_CAPTURE" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "RATE_LIMITED" | "HTTP_ERROR" | "INTERNAL_ERROR";
+        ErrorCode: "EMAIL_MISMATCH" | "ACCOUNT_EXISTS" | "NO_NOTES" | "INTEGRATION_UNAVAILABLE" | "INVITE_ONLY_INSTANCE" | "TRANSCRIPT_EXISTS" | "ALREADY_PROCESSED" | "FOLDER_RECOVERY_CONFLICT" | "DEFAULT_FOLDER" | "FOLDER_EXISTS" | "TERM_EXISTS" | "STALE_REVISION" | "MEETING_MOVE_CONFLICT" | "LINK_INVALID" | "ACCESS_REQUEST_EXISTS" | "ALREADY_HAS_ACCESS" | "ACCESS_REQUEST_NOT_PENDING" | "SHARE_ALREADY_BOUND" | "SHARE_REVOKED" | "MALFORMED_REQUEST" | "VALIDATION_ERROR" | "UNAUTHENTICATED" | "INVALID_CREDENTIALS" | "INSUFFICIENT_ROLE" | "NOT_FOUND" | "METHOD_NOT_ALLOWED" | "PERSONAL_WORKSPACE" | "ALREADY_MEMBER" | "INVITATION_LIMIT" | "INVITATION_COOLDOWN" | "INVITATION_NOT_PENDING" | "OWNER_IMMUTABLE" | "RESTRICTED_MEETING_REQUIRES_RECIPIENT" | "NOT_TRANSCRIBED" | "NOTES_IN_PROGRESS" | "RECORDING_NOT_READY" | "RECORDING_DELETED" | "REGENERATION_LIMIT" | "CHUNK_MISMATCH" | "CAPTURE_CLOSED" | "MISSING_CHUNKS" | "EMPTY_CAPTURE" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "RATE_LIMITED" | "HTTP_ERROR" | "INTERNAL_ERROR";
         /** ErrorDetail */
         ErrorDetail: {
             /**
@@ -2122,6 +2142,14 @@ export interface components {
             items: components["schemas"]["WorkspaceSummary"][];
             pagination: components["schemas"]["PageInfo"];
         };
+        /** PasswordResetAccepted */
+        PasswordResetAccepted: {
+            /**
+             * Message
+             * @description Fixed confirmation for every accepted reset request
+             */
+            message: string;
+        };
         /** PasswordResetComplete */
         PasswordResetComplete: {
             /**
@@ -2136,6 +2164,16 @@ export interface components {
              * @description 12 to 128 characters, a digit and an uppercase letter
              */
             password: string;
+        };
+        /** PasswordResetRequest */
+        PasswordResetRequest: {
+            /**
+             * Email
+             * Format: email
+             * @description Account email address
+             * @example alice@whadio.dev
+             */
+            email: string;
         };
         /** PlaybackLink */
         PlaybackLink: {
@@ -3132,6 +3170,66 @@ export interface operations {
             };
             /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    request_password_reset_api_v1_password_resets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Request accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetAccepted"];
+                };
+            };
+            /** @description `MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description INVITE_ONLY_INSTANCE: the operator runs the instance invite-only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description INTEGRATION_UNAVAILABLE: reset delivery or the database is unconfigured */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7210,7 +7308,7 @@ type ReadonlyArray<T> = [
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
 export const accessModeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["AccessMode"]> = ["workspace", "restricted"];
 export const captureStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CaptureStatus"]> = ["recording", "idle", "assembled", "abandoned"];
-export const errorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorCode"]> = ["EMAIL_MISMATCH", "ACCOUNT_EXISTS", "NO_NOTES", "INTEGRATION_UNAVAILABLE", "TRANSCRIPT_EXISTS", "ALREADY_PROCESSED", "FOLDER_RECOVERY_CONFLICT", "DEFAULT_FOLDER", "FOLDER_EXISTS", "TERM_EXISTS", "STALE_REVISION", "MEETING_MOVE_CONFLICT", "LINK_INVALID", "ACCESS_REQUEST_EXISTS", "ALREADY_HAS_ACCESS", "ACCESS_REQUEST_NOT_PENDING", "SHARE_ALREADY_BOUND", "SHARE_REVOKED", "MALFORMED_REQUEST", "VALIDATION_ERROR", "UNAUTHENTICATED", "INVALID_CREDENTIALS", "INSUFFICIENT_ROLE", "NOT_FOUND", "METHOD_NOT_ALLOWED", "PERSONAL_WORKSPACE", "ALREADY_MEMBER", "INVITATION_LIMIT", "INVITATION_COOLDOWN", "INVITATION_NOT_PENDING", "OWNER_IMMUTABLE", "RESTRICTED_MEETING_REQUIRES_RECIPIENT", "NOT_TRANSCRIBED", "NOTES_IN_PROGRESS", "RECORDING_NOT_READY", "RECORDING_DELETED", "REGENERATION_LIMIT", "CHUNK_MISMATCH", "CAPTURE_CLOSED", "MISSING_CHUNKS", "EMPTY_CAPTURE", "PAYLOAD_TOO_LARGE", "UNSUPPORTED_MEDIA_TYPE", "RATE_LIMITED", "HTTP_ERROR", "INTERNAL_ERROR"];
+export const errorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorCode"]> = ["EMAIL_MISMATCH", "ACCOUNT_EXISTS", "NO_NOTES", "INTEGRATION_UNAVAILABLE", "INVITE_ONLY_INSTANCE", "TRANSCRIPT_EXISTS", "ALREADY_PROCESSED", "FOLDER_RECOVERY_CONFLICT", "DEFAULT_FOLDER", "FOLDER_EXISTS", "TERM_EXISTS", "STALE_REVISION", "MEETING_MOVE_CONFLICT", "LINK_INVALID", "ACCESS_REQUEST_EXISTS", "ALREADY_HAS_ACCESS", "ACCESS_REQUEST_NOT_PENDING", "SHARE_ALREADY_BOUND", "SHARE_REVOKED", "MALFORMED_REQUEST", "VALIDATION_ERROR", "UNAUTHENTICATED", "INVALID_CREDENTIALS", "INSUFFICIENT_ROLE", "NOT_FOUND", "METHOD_NOT_ALLOWED", "PERSONAL_WORKSPACE", "ALREADY_MEMBER", "INVITATION_LIMIT", "INVITATION_COOLDOWN", "INVITATION_NOT_PENDING", "OWNER_IMMUTABLE", "RESTRICTED_MEETING_REQUIRES_RECIPIENT", "NOT_TRANSCRIBED", "NOTES_IN_PROGRESS", "RECORDING_NOT_READY", "RECORDING_DELETED", "REGENERATION_LIMIT", "CHUNK_MISMATCH", "CAPTURE_CLOSED", "MISSING_CHUNKS", "EMPTY_CAPTURE", "PAYLOAD_TOO_LARGE", "UNSUPPORTED_MEDIA_TYPE", "RATE_LIMITED", "HTTP_ERROR", "INTERNAL_ERROR"];
 export const exportFormatValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ExportFormat"]> = ["markdown", "vtt"];
 export const exportVersionValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ExportVersion"]> = ["current", "original"];
 export const invitationStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["InvitationState"]> = ["pending", "accepted", "declined", "cancelled"];

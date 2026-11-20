@@ -20,6 +20,7 @@ class ErrorCode(StrEnum):
     ACCOUNT_EXISTS = "ACCOUNT_EXISTS"
     NO_NOTES = "NO_NOTES"
     INTEGRATION_UNAVAILABLE = "INTEGRATION_UNAVAILABLE"
+    INVITE_ONLY_INSTANCE = "INVITE_ONLY_INSTANCE"
     TRANSCRIPT_EXISTS = "TRANSCRIPT_EXISTS"
     ALREADY_PROCESSED = "ALREADY_PROCESSED"
     FOLDER_RECOVERY_CONFLICT = "FOLDER_RECOVERY_CONFLICT"
@@ -142,6 +143,7 @@ _FAILURE_MESSAGES: Final[Mapping[Failure, str]] = {
     Failure.EMAIL_MISMATCH: "Sign in with the invited email address",
     Failure.ACCOUNT_EXISTS: "This address has an account; sign in and accept instead",
     Failure.INTEGRATION_UNAVAILABLE: "A service Whadio depends on is unavailable; try again later",
+    Failure.INVITE_ONLY_INSTANCE: "This instance is invite-only",
     Failure.NOT_FOUND: "Not found, or you have no access to it",
     Failure.INSUFFICIENT_ROLE: "Your role in this workspace does not allow this",
     Failure.VALIDATION_ERROR: "Request contains invalid fields",
@@ -230,6 +232,7 @@ def _describe(exc: Exception) -> tuple[int, ErrorCode, str, list[ErrorDetail]]:
                 Failure.INSUFFICIENT_ROLE: 403,
                 Failure.VALIDATION_ERROR: 422,
                 Failure.INTEGRATION_UNAVAILABLE: 503,
+                Failure.INVITE_ONLY_INSTANCE: 403,
                 Failure.RECORDING_DELETED: 410,
                 Failure.INVITATION_LIMIT: 429,
                 Failure.INVITATION_COOLDOWN: 429,
