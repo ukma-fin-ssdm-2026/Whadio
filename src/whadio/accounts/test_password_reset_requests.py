@@ -307,7 +307,7 @@ def test_parallel_requests_queue_only_one_email(database_settings: DatabaseSetti
                             await session.scalar(
                                 select(User.user_id)
                                 .where(User.user_id == user_id)
-                                .with_for_update(nowait=True, key_share=True)
+                                .with_for_update(nowait=True, read=True)
                             )
                     except OperationalError as error:
                         if not isinstance(error.orig, LockNotAvailable):
