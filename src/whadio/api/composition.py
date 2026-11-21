@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncGenerator, Callable
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated, Protocol
@@ -27,6 +27,7 @@ from ..accounts.member_repository import MemberRepository
 from ..accounts.members import MemberService
 from ..accounts.password_resets import (
     IPasswordResetMailQueue,
+    PasswordResetMailKind,
     PasswordResetRequestService,
     PasswordResetService,
 )
@@ -554,20 +555,36 @@ def require_password_reset_mail(
     return factory
 
 
+class PasswordResetEmailRequests:
+    def __init__(self, database: IUseCaseTransactions, mail: PasswordResetMailFactory) -> None:
+        self._database: IUseCaseTransactions = database
+        self._mail: PasswordResetMailFactory = mail
+
+    async def request(self, email: str, *, kind: PasswordResetMailKind) -> None:
+        # Recover after rollback, including a failed commit. An error response here can reveal
+        # that an account exists, and the exception may contain the address or reset token.
+        with suppress(Exception):
+            async with self._database.transaction() as session:
+                service = PasswordResetRequestService(
+                    PasswordResetRepository(session),
+                    SessionRepository(session),
+                    self._mail(session),
+                    lambda: datetime.now(UTC),
+                )
+                await service.request(email, kind=kind)
+            return
+        logger.error("Could not queue a password reset email")
+
+
 def password_reset_request_service(
     mail: Annotated[PasswordResetMailFactory, Depends(require_password_reset_mail)],
-    session: Session,
-) -> PasswordResetRequestService:
-    return PasswordResetRequestService(
-        PasswordResetRepository(session),
-        SessionRepository(session),
-        mail(session),
-        lambda: datetime.now(UTC),
-    )
+    database: Annotated[IUseCaseTransactions, Depends(runtime_database)],
+) -> PasswordResetEmailRequests:
+    return PasswordResetEmailRequests(database, mail)
 
 
 PasswordResetRequests = Annotated[
-    PasswordResetRequestService, Depends(password_reset_request_service)
+    PasswordResetEmailRequests, Depends(password_reset_request_service)
 ]
 
 

@@ -63,6 +63,8 @@ async def _issue_link(
 
 
 class PasswordResetRequestService:
+    """Issue and reserve mail in the caller's transaction, which must roll back on failure."""
+
     def __init__(
         self,
         resets: IPasswordResetRepository,
