@@ -177,10 +177,11 @@ def test_either_form_shares_the_cooldown_and_preserves_the_first_link(
 
 def test_replacing_a_reset_link_starts_a_new_cooldown(async_database: AsyncDatabase) -> None:
     # Arrange
-    async def scenario(session: AsyncSession) -> Failure:
+    async def scenario(session: AsyncSession) -> tuple[Failure, list[timedelta]]:
         user = await AsyncDatabase.add_account(session, PASSWORD)
         mail = ResetMailQueue()
         clock = ResetClock(datetime.now(UTC))
+        first_request = clock.now
         resets = requests(session, mail, clock)
         await resets.request(user.email, kind=PasswordResetMailKind.RESET)
         first = mail.messages[0].link
@@ -197,10 +198,13 @@ def test_replacing_a_reset_link_starts_a_new_cooldown(async_database: AsyncDatab
             await completion.complete(first.reset_id, first.token, PASSWORD, clock.now)
         link = replacement.link
         await completion.complete(link.reset_id, link.token, PASSWORD, clock.now)
-        return failure.value.code
+        return failure.value.code, [notice.issued_at - first_request for notice in mail.messages]
 
     # Assert
-    assert async_database.run(scenario) is Failure.LINK_INVALID
+    assert async_database.run(scenario) == (
+        Failure.LINK_INVALID,
+        [timedelta(), timedelta(minutes=20)],
+    )
 
 
 def test_cooldown_survives_using_the_link(async_database: AsyncDatabase) -> None:
