@@ -55,8 +55,12 @@ class FailingResetMailQueue(ResetMailQueue):
 async def client_with_reset_mail(
     session: AsyncSession, mail: ResetMailQueue, *, fail_at_commit: bool = False
 ) -> AsyncGenerator[AsyncClient]:
+    def mail_factory(transaction_session: AsyncSession) -> ResetMailQueue:
+        assert transaction_session is session
+        return mail
+
     app = create_app(
-        web_settings=VERIFIED, integrations=RuntimeIntegrations(password_reset_mail=lambda _: mail)
+        web_settings=VERIFIED, integrations=RuntimeIntegrations(password_reset_mail=mail_factory)
     )
 
     transactions = ResetRequestTransactions(session, fail_at_commit=fail_at_commit)
