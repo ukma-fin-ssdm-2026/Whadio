@@ -36,8 +36,9 @@ class PasswordResetRepository:
     async def issue(
         self, user_id: UUID, token_hash: str, now: datetime, expires_at: datetime
     ) -> UUID:
+        # The scheduler can delete expired resets without taking the account lock.
         pending = await self._session.scalar(
-            select(PasswordReset).where(PasswordReset.user_id == user_id)
+            select(PasswordReset).where(PasswordReset.user_id == user_id).with_for_update()
         )
         if pending is None:
             pending = PasswordReset(user_id=user_id)

@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from psycopg.errors import LockNotAvailable
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +18,7 @@ from ..shared.errors import Failure, UseCaseError
 from .models import PasswordReset, User
 from .password_resets import (
     IPasswordResetMailQueue,
+    PasswordResetCleanupService,
     PasswordResetMail,
     PasswordResetMailKind,
     PasswordResetRequestService,
@@ -347,3 +348,70 @@ def test_parallel_requests_queue_only_one_email(database_settings: DatabaseSetti
 
     # Assert
     assert asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop) == (1, True)
+
+
+def test_expired_reset_cleanup_cannot_erase_a_reissued_link(
+    database_settings: DatabaseSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange
+    async def scenario() -> int:
+        database = Database(database_settings)
+        selected, resume = asyncio.Event(), asyncio.Event()
+        mail = ResetMailQueue()
+        now = datetime.now(UTC)
+        user_id: UUID | None = None
+        try:
+            async with database.transaction() as session:
+                user = await AsyncDatabase.add_account(session, PASSWORD)
+                user_id, email = user.user_id, user.email
+                await operator_service(session).issue(email, now - timedelta(hours=2))
+
+            async def request() -> None:
+                async with database.transaction() as session:
+                    flush = session.flush
+
+                    async def paused_flush() -> None:
+                        selected.set()
+                        await resume.wait()
+                        await flush()
+
+                    with monkeypatch.context() as patch:
+                        patch.setattr(session, "flush", paused_flush)
+                        await requests(session, mail, ResetClock(now)).request(
+                            email, kind=PasswordResetMailKind.RESET
+                        )
+
+            async def overlap() -> None:
+                async with asyncio.TaskGroup() as group:
+                    group.create_task(request())
+                    await selected.wait()
+                    try:
+                        async with database.transaction() as session:
+                            await session.execute(text("SET LOCAL lock_timeout = '100ms'"))
+                            await PasswordResetCleanupService(
+                                PasswordResetRepository(session)
+                            ).remove_expired(now)
+                    except OperationalError as error:
+                        if not isinstance(error.orig, LockNotAvailable):
+                            raise
+                    finally:
+                        resume.set()
+
+            # Act
+            await asyncio.wait_for(overlap(), timeout=15)
+            async with database.transaction() as session:
+                await PasswordResetCleanupService(PasswordResetRepository(session)).remove_expired(
+                    now
+                )
+                (queued,) = mail.messages
+                await operator_service(session).complete(
+                    queued.link.reset_id, queued.link.token, PASSWORD, now
+                )
+            return len(mail.messages)
+        finally:
+            async with database.transaction() as session:
+                await session.execute(delete(User).where(User.user_id == user_id))
+            await database.close()
+
+    # Assert
+    assert asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop) == 1
