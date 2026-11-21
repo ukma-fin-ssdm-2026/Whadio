@@ -1,3 +1,4 @@
+from asyncio import CancelledError
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -7,7 +8,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient, Response
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from conftest import AsyncDatabase
@@ -36,16 +37,18 @@ VERIFIED = WebSettings.model_validate(
 
 
 class ResetRequestTransactions:
-    def __init__(self, session: AsyncSession, *, fail_at_commit: bool) -> None:
+    def __init__(self, session: AsyncSession, mail: ResetMailQueue, *, fail_on_exit: bool) -> None:
         self._session: AsyncSession = session
-        self._fail_at_commit: bool = fail_at_commit
+        self._mail: ResetMailQueue = mail
+        self._fail_on_exit: bool = fail_on_exit
 
     @asynccontextmanager
     async def transaction(self) -> AsyncGenerator[AsyncSession]:
         async with self._session.begin_nested():
+            reservations_before = len(self._mail.messages)
             yield self._session
-            if self._fail_at_commit:
-                raise RuntimeError("Synthetic commit failure")
+            if self._fail_on_exit and len(self._mail.messages) > reservations_before:
+                await self._session.execute(text("SELECT 1 / 0"))
 
 
 class FailingResetMailQueue(ResetMailQueue):
@@ -53,6 +56,12 @@ class FailingResetMailQueue(ResetMailQueue):
     async def reserve(self, mail: PasswordResetMail, /) -> None:
         await super().reserve(mail)
         raise RuntimeError(f"Synthetic reservation failure with token {mail.link.token}")
+
+
+class CancelledResetMailQueue(ResetMailQueue):
+    @override
+    async def reserve(self, mail: PasswordResetMail, /) -> None:
+        raise CancelledError
 
 
 class StoredResetMailQueue:
@@ -73,7 +82,7 @@ class StoredResetMailQueue:
 
 @asynccontextmanager
 async def client_with_reset_mail(
-    session: AsyncSession, mail: ResetMailQueue, *, fail_at_commit: bool = False
+    session: AsyncSession, mail: ResetMailQueue, *, fail_on_exit: bool = False
 ) -> AsyncGenerator[AsyncClient]:
     def mail_factory(transaction_session: AsyncSession) -> StoredResetMailQueue:
         assert transaction_session is session
@@ -83,7 +92,7 @@ async def client_with_reset_mail(
         web_settings=VERIFIED, integrations=RuntimeIntegrations(password_reset_mail=mail_factory)
     )
 
-    transactions = ResetRequestTransactions(session, fail_at_commit=fail_at_commit)
+    transactions = ResetRequestTransactions(session, mail, fail_on_exit=fail_on_exit)
     app.dependency_overrides[runtime_database] = lambda: transactions
     async with AsyncClient(transport=ASGITransport(app), base_url="https://example.com") as client:
         yield client
@@ -102,7 +111,7 @@ async def mail_reservation_count(session: AsyncSession, user_id: UUID) -> int:
 
 @pytest.mark.slow
 def test_known_unknown_and_recently_queued_addresses_get_the_same_response(
-    async_database: AsyncDatabase,
+    async_database: AsyncDatabase, caplog: pytest.LogCaptureFixture
 ) -> None:
     # Arrange
     mail = ResetMailQueue()
@@ -121,45 +130,76 @@ def test_known_unknown_and_recently_queued_addresses_get_the_same_response(
 
     # Assert
     responses, reservation_count = async_database.run(scenario)
-    assert (responses, reservation_count, [notice.kind for notice in mail.messages]) == (
+    logged_failures = [
+        record for record in caplog.records if record.name == "whadio.api.composition"
+    ]
+    assert (
+        responses,
+        reservation_count,
+        [notice.kind for notice in mail.messages],
+        logged_failures,
+    ) == (
         [ACCEPTED_RESPONSE] * 3,
         1,
         [PasswordResetMailKind.RESET],
+        [],
     )
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("fail_at_commit", [False, True], ids=["reserve", "commit"])
+@pytest.mark.parametrize("fail_on_exit", [False, True], ids=["reserve", "transaction-exit"])
 def test_reset_request_failure_preserves_the_link_and_fixed_response(
-    async_database: AsyncDatabase, caplog: pytest.LogCaptureFixture, *, fail_at_commit: bool
+    async_database: AsyncDatabase, caplog: pytest.LogCaptureFixture, *, fail_on_exit: bool
 ) -> None:
     # Arrange
-    mail = ResetMailQueue() if fail_at_commit else FailingResetMailQueue()
+    mail = ResetMailQueue() if fail_on_exit else FailingResetMailQueue()
 
     async def scenario(session: AsyncSession) -> tuple[bool, ...]:
         user = await AsyncDatabase.add_account(session, "OriginalPassword1")
         user_id, email = user.user_id, user.email
         previous = await password_reset_service(session).issue(email, datetime.now(UTC))
         previous_hash = (await session.get_one(PasswordReset, previous.reset_id)).token_hash
-        async with client_with_reset_mail(session, mail, fail_at_commit=fail_at_commit) as client:
+        async with client_with_reset_mail(session, mail, fail_on_exit=fail_on_exit) as client:
             # Act
             known = await client.post(RESET_PATH, json={"email": email})
             unknown = await client.post(RESET_PATH, json={"email": f"{uuid4()}@example.com"})
         pending = await session.get_one(PasswordReset, previous.reset_id, populate_existing=True)
         account = await session.get_one(User, user_id, populate_existing=True)
         (attempted_mail,) = mail.messages
-        logs = [record for record in caplog.records if record.name == "whadio.api.composition"]
+        logs = [
+            record.getMessage()
+            for record in caplog.records
+            if record.name == "whadio.api.composition"
+        ]
         return (
             public_response(known) == public_response(unknown) == ACCEPTED_RESPONSE,
             pending.token_hash == previous_hash,
             account.password_reset_mail_queued_at is None,
             await mail_reservation_count(session, user_id) == 0,
-            any(record.getMessage() == "Could not queue a password reset email" for record in logs),
+            logs == ["Could not queue a password reset email"],
             email not in caplog.text and attempted_mail.link.token not in caplog.text,
         )
 
     # Assert
     assert async_database.run(scenario) == (True, True, True, True, True, True)
+
+
+@pytest.mark.slow
+def test_cancelled_reset_request_rolls_back_the_mail_reservation(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> int:
+        user = await AsyncDatabase.add_account(session, "OriginalPassword1")
+        user_id, email = user.user_id, user.email
+        async with client_with_reset_mail(session, CancelledResetMailQueue()) as client:
+            # Act
+            with pytest.raises(CancelledError):
+                await client.post(RESET_PATH, json={"email": email})
+        return await mail_reservation_count(session, user_id)
+
+    # Assert
+    assert async_database.run(scenario) == 0
 
 
 @pytest.mark.parametrize(
