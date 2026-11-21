@@ -2,11 +2,12 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import override
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient, Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from conftest import AsyncDatabase
@@ -15,6 +16,9 @@ from ...accounts.enums import RegistrationMode
 from ...accounts.models import PasswordReset, User
 from ...accounts.password_resets import PasswordResetMail, PasswordResetMailKind
 from ...accounts.test_password_reset_requests import ResetMailQueue
+from ...notifications.models import NotificationOutbox
+from ...notifications.repositories import NotificationOutboxRepository
+from ...notifications.templates import ProcessingFinished
 from ..app import create_app
 from ..composition import RuntimeIntegrations, password_reset_service, runtime_database
 from ..core.errors import ErrorCode, ErrorResponse
@@ -51,13 +55,29 @@ class FailingResetMailQueue(ResetMailQueue):
         raise RuntimeError(f"Synthetic reservation failure with token {mail.link.token}")
 
 
+class StoredResetMailQueue:
+    """Persist a marker through the outbox and capture the reset request in memory."""
+
+    def __init__(self, session: AsyncSession, recorder: ResetMailQueue) -> None:
+        self._outbox: NotificationOutboxRepository = NotificationOutboxRepository(session)
+        self._recorder: ResetMailQueue = recorder
+
+    async def reserve(self, mail: PasswordResetMail, /) -> None:
+        await self._outbox.reserve(
+            mail.user_id,
+            f"reset-test:{mail.link.reset_id}",
+            ProcessingFinished(meeting_id=mail.link.reset_id, meeting_name="Reset test"),
+        )
+        await self._recorder.reserve(mail)
+
+
 @asynccontextmanager
 async def client_with_reset_mail(
     session: AsyncSession, mail: ResetMailQueue, *, fail_at_commit: bool = False
 ) -> AsyncGenerator[AsyncClient]:
-    def mail_factory(transaction_session: AsyncSession) -> ResetMailQueue:
+    def mail_factory(transaction_session: AsyncSession) -> StoredResetMailQueue:
         assert transaction_session is session
-        return mail
+        return StoredResetMailQueue(transaction_session, mail)
 
     app = create_app(
         web_settings=VERIFIED, integrations=RuntimeIntegrations(password_reset_mail=mail_factory)
@@ -73,6 +93,13 @@ def public_response(response: Response) -> tuple[int, bytes, str]:
     return response.status_code, response.content, response.headers["Cache-Control"]
 
 
+async def mail_reservation_count(session: AsyncSession, user_id: UUID) -> int:
+    rows = await session.scalars(
+        select(NotificationOutbox.notice_id).where(NotificationOutbox.recipient_user_id == user_id)
+    )
+    return len(rows.all())
+
+
 @pytest.mark.slow
 def test_known_unknown_and_recently_queued_addresses_get_the_same_response(
     async_database: AsyncDatabase,
@@ -80,7 +107,7 @@ def test_known_unknown_and_recently_queued_addresses_get_the_same_response(
     # Arrange
     mail = ResetMailQueue()
 
-    async def scenario(session: AsyncSession) -> list[tuple[int, bytes, str]]:
+    async def scenario(session: AsyncSession) -> tuple[list[tuple[int, bytes, str]], int]:
         user = await AsyncDatabase.add_account(session, "OriginalPassword1")
         async with client_with_reset_mail(session, mail) as client:
             # Act
@@ -88,12 +115,15 @@ def test_known_unknown_and_recently_queued_addresses_get_the_same_response(
                 await client.post(RESET_PATH, json={"email": email})
                 for email in (user.email, f"{uuid4()}@example.com", user.email.upper())
             ]
-            return [public_response(response) for response in responses]
+        return [public_response(response) for response in responses], await mail_reservation_count(
+            session, user.user_id
+        )
 
     # Assert
-    responses = async_database.run(scenario)
-    assert (responses, [notice.kind for notice in mail.messages]) == (
+    responses, reservation_count = async_database.run(scenario)
+    assert (responses, reservation_count, [notice.kind for notice in mail.messages]) == (
         [ACCEPTED_RESPONSE] * 3,
+        1,
         [PasswordResetMailKind.RESET],
     )
 
@@ -123,12 +153,13 @@ def test_reset_request_failure_preserves_the_link_and_fixed_response(
             public_response(known) == public_response(unknown) == ACCEPTED_RESPONSE,
             pending.token_hash == previous_hash,
             account.password_reset_mail_queued_at is None,
+            await mail_reservation_count(session, user_id) == 0,
             any(record.getMessage() == "Could not queue a password reset email" for record in logs),
             email not in caplog.text and attempted_mail.link.token not in caplog.text,
         )
 
     # Assert
-    assert async_database.run(scenario) == (True, True, True, True, True)
+    assert async_database.run(scenario) == (True, True, True, True, True, True)
 
 
 @pytest.mark.parametrize(
