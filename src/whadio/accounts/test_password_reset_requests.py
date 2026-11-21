@@ -130,6 +130,26 @@ def test_unknown_address_queues_nothing(async_database: AsyncDatabase) -> None:
     assert mail.messages == []
 
 
+def test_each_account_has_its_own_reset_link_and_cooldown(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> bool:
+        first = await AsyncDatabase.add_account(session, PASSWORD)
+        second = await AsyncDatabase.add_account(session, PASSWORD)
+        mail = ResetMailQueue()
+        resets = requests(session, mail, ResetClock(datetime.now(UTC)))
+        # Act
+        await resets.request(first.email, kind=PasswordResetMailKind.RESET)
+        await resets.request(second.email, kind=PasswordResetMailKind.SIGN_IN_REMINDER)
+        actual = [
+            (notice.user_id, (await session.get_one(PasswordReset, notice.link.reset_id)).user_id)
+            for notice in mail.messages
+        ]
+        return actual == [(first.user_id, first.user_id), (second.user_id, second.user_id)]
+
+    # Assert
+    assert async_database.run(scenario)
+
+
 @pytest.mark.parametrize("first_kind", list(PasswordResetMailKind))
 def test_either_form_shares_the_cooldown_and_preserves_the_first_link(
     async_database: AsyncDatabase, first_kind: PasswordResetMailKind
