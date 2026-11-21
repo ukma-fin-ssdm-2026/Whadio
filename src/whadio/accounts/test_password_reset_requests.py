@@ -175,7 +175,7 @@ def test_either_form_shares_the_cooldown_and_preserves_the_first_link(
     assert async_database.run(scenario) == 1
 
 
-def test_request_at_twenty_minutes_replaces_the_link(async_database: AsyncDatabase) -> None:
+def test_replacing_a_reset_link_starts_a_new_cooldown(async_database: AsyncDatabase) -> None:
     # Arrange
     async def scenario(session: AsyncSession) -> Failure:
         user = await AsyncDatabase.add_account(session, PASSWORD)
@@ -185,8 +185,12 @@ def test_request_at_twenty_minutes_replaces_the_link(async_database: AsyncDataba
         await resets.request(user.email, kind=PasswordResetMailKind.RESET)
         first = mail.messages[0].link
         # Act
-        clock.now += timedelta(minutes=20)
+        clock.now += timedelta(minutes=19)
         await resets.request(user.email, kind=PasswordResetMailKind.RESET)
+        clock.now += timedelta(minutes=1)
+        await resets.request(user.email, kind=PasswordResetMailKind.RESET)
+        clock.now += timedelta(minutes=1)
+        await resets.request(user.email, kind=PasswordResetMailKind.SIGN_IN_REMINDER)
         _, replacement = mail.messages
         completion = operator_service(session)
         with pytest.raises(UseCaseError) as failure:
