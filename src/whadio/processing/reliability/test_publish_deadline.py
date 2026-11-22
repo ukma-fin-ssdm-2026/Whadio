@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import socket
 from datetime import timedelta
 from unittest.mock import Mock
 from uuid import uuid4
@@ -68,28 +69,23 @@ async def serve_until_confirmed(exchange: SilentExchange) -> None:
 
 async def connect_to_a_broker_that_never_answers() -> tuple[bool, int]:
     """Returns whether `connect` timed out, and how many tasks it left running."""
-    # A stream writer nothing refers to closes its socket, which is a refusal and not a silence.
-    silent_clients: list[asyncio.StreamWriter] = []
-
-    def accept_and_stay_silent(_reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        silent_clients.append(writer)
-
-    server = await asyncio.start_server(accept_and_stay_silent, "127.0.0.1", 0)
-    # The Proactor event loop on Windows keeps a task of the server's own accepting.
-    before = asyncio.all_tasks()
-    address = f"127.0.0.1:{server.sockets[0].getsockname()[1]}"
-    settings = BrokerSettings(
-        url=SecretStr(f"amqp://whadio:p@{address}/whadio?fail_fast=0"),
-        timeout=timedelta(milliseconds=10),
-    )
-    connecting = asyncio.create_task(connect(settings, name="test"))
-    done, _ = await asyncio.wait({connecting}, timeout=LONG_ENOUGH_TO_NOTICE_A_HANG)
-    left_running = len(asyncio.all_tasks() - before - {connecting})
-    timed_out = connecting in done and isinstance(connecting.exception(), TimeoutError)
-    connecting.cancel()
-    await asyncio.gather(connecting, return_exceptions=True)
-    server.close()
-    server.close_clients()
+    host = "127.0.0.1"
+    # The OS queues the TCP connection without an asyncio accept task or an AMQP reply.
+    with socket.create_server((host, 0)) as listener:
+        address = f"{host}:{listener.getsockname()[1]}"
+        settings = BrokerSettings(
+            url=SecretStr(f"amqp://whadio:p@{address}/whadio?fail_fast=0"),
+            timeout=timedelta(milliseconds=10),
+        )
+        before = asyncio.all_tasks()
+        connecting = asyncio.create_task(connect(settings, name="test"))
+        try:
+            done, _ = await asyncio.wait({connecting}, timeout=LONG_ENOUGH_TO_NOTICE_A_HANG)
+            left_running = len(asyncio.all_tasks() - before - {connecting})
+            timed_out = connecting in done and isinstance(connecting.exception(), TimeoutError)
+        finally:
+            connecting.cancel()
+            await asyncio.gather(connecting, return_exceptions=True)
     return timed_out, left_running
 
 
