@@ -4,7 +4,7 @@
 
 Whadio is an open-source meeting recording and transcription service focused on high-quality Ukrainian and mixed Ukrainian–English speech. It records Google Meet meetings directly in the browser, generates speaker-labeled transcripts and AI notes, and provides workspaces, glossary, access control, Markdown and VTT export, and MCP integration, with privacy and self-hosting in mind.
 
-# Members
+## Members
 
 | **Name** | **GitHub** | **Role** |
 |----------|----------|----------|
@@ -13,7 +13,7 @@ Whadio is an open-source meeting recording and transcription service focused on 
 | Valeriia Missirova | @v-missirova | Documentation Lead, Integration Lead, Debugging Lead, AI Code Reviewer |
 | Zlata Tsepkalo | @t-zlata | Repository Maintainer, Quality Lead, Data & Threat Modeler, API Documentation Lead, Code Reviewer, Test Strategist, Review Manager, AI Code Reviewer |
 
-# Deploying
+## Deploying
 
 The production stack needs a Linux host with Docker Engine and Compose v2, a DNS name that points
 to the host, and a trusted TLS certificate for that name. Ports 80 and 443 must reach the host.
@@ -74,7 +74,7 @@ and leave `WHADIO_STORAGE__PUBLIC_ENDPOINT_URL` unset so presigned playback link
 to that HTTPS endpoint.
 
 
-# Development
+## Development
 
 [AGENTS.md](AGENTS.md) covers everything a contributor or their AI agent needs: the code layout,
 the architecture rules, the coding standards and the checks every change must pass. In short, with
@@ -108,13 +108,13 @@ Before playing a recording locally, map `seaweedfs` to `127.0.0.1` in the system
 (`/etc/hosts` on Linux and macOS, or `C:\Windows\System32\drivers\etc\hosts` on Windows). The
 browser then resolves the same storage host used to sign links for the Compose ASR worker.
 
-## Try Whadio
+### Try Whadio
 
 There is no public evaluation instance yet. To try the current product locally, follow the setup
 above. The [midterm demo video](Labs/midterm-presentation.txt) shows the product run locally; the
 per-lab walkthroughs are linked in the [labs index](#labs-index).
 
-## Running the API
+### Running the API
 
 Database setup, migrations and integration tests are documented in
 [Database implementation](docs/architecture/database.md).
@@ -135,7 +135,7 @@ including what each error means, is in [`docs/api/api-design.md`](docs/api/api-d
 - Starting the server writes the OpenAPI specification to `docs/api/openapi-generated.yaml`
   and `.json`; to regenerate it without a server, run `uv run whadio openapi`.
 
-## Running the web app
+### Running the web app
 
 The React app lives in [`frontend/`](frontend/). `uv run task setup` installs its dependencies;
 `uv run task frontend:install` reinstalls them from the lockfile. Start the API on port 3000 first,
@@ -238,7 +238,7 @@ uv run whadio dev-user --email margaret@whadio.dev
 The command asks for a password without storing it in the repository and also creates the
 account's personal workspace and default meeting folder.
 
-## Installing the Chrome extension
+### Installing the Chrome extension
 
 The extension in [`extension/`](extension/) records a Google Meet call, the other participants
 and your microphone, and uploads it to a Whadio server. You need desktop Chrome 116 or newer, a
@@ -270,7 +270,7 @@ Meet call with at least one other participant.
    If you permanently lose access to the original account or server, removing Whadio from Chrome
    clears its local data, including pending recordings for every account in that Chrome profile.
 
-## Running the workers
+### Running the workers
 
 The transcription and notes workers live in [`src/whadio/workers/`](src/whadio/workers/). They
 take jobs from RabbitMQ and publish their results to `processing.results`.
@@ -307,7 +307,7 @@ take jobs from RabbitMQ and publish their results to `processing.results`.
 - The ASR worker downloads recordings through presigned links signed for
   `http://seaweedfs:8333`, the name it reaches storage by in Compose.
 
-## Connecting an AI assistant (MCP)
+### Connecting an AI assistant (MCP)
 
 The server also exposes a read-only MCP endpoint at `http://localhost:3000/mcp/` with four tools:
 `list_meetings`, `search_meetings`, `get_transcript` and `get_notes`. They read the meetings the
@@ -320,12 +320,12 @@ only in the creation response and is stored only as a SHA-256 hash.
 - Claude Code: `claude mcp add --transport http whadio http://localhost:3000/mcp/ --header
   "Authorization: Bearer <key>"`.
 
-# Documentation
+## Documentation
 
 - [Team Charter](TeamCharter.md)
 - [Project Description](Project-Description.md)
 
-## Requirements Artifacts (Артефакти вимог)
+### Requirements Artifacts (Артефакти вимог)
 All requirements documentation is maintained in the [`/docs/requirements/`](docs/requirements/) directory.
 - [Proposal mini-specification](Project-Description.md#mini-technical-specification) — goal,
   functions, quality requirements and constraints from the proposal stage
@@ -333,7 +333,7 @@ All requirements documentation is maintained in the [`/docs/requirements/`](docs
 - [Requirements](docs/requirements/requirements.md)
 - [Requirements Traceability Matrix (RTM)](docs/requirements/rtm.md)
 
-## API Artifacts
+### API Artifacts
 All API documentation is maintained in the [`/docs/api/`](docs/api/) directory and published on
 [GitHub Pages](https://ukma-fin-ssdm-2026.github.io/Whadio/).
 - [API Design](docs/api/api-design.md) — resource model, conventions and design decisions
@@ -341,7 +341,7 @@ All API documentation is maintained in the [`/docs/api/`](docs/api/) directory a
 - [OpenAPI JSON](docs/api/openapi-generated.json) and its [browser viewer](docs/api/index.html)
 - [Quality Attributes](docs/api/quality-attributes.md) — measurable API quality targets with failure conditions
 
-## Architecture Artifacts
+### Architecture Artifacts
 All architecture documentation is maintained in the [`/docs/architecture/`](docs/architecture/) directory.
 - [High-Level Design](docs/architecture/high-level-design.md) — overall architecture: chosen style, components, and interfaces
 - [Traceability Matrix](docs/architecture/traceability-matrix.md) — requirements ↔ components, verification methods, and quality attribute scenarios
@@ -351,20 +351,20 @@ All architecture documentation is maintained in the [`/docs/architecture/`](docs
 - [UML Diagrams](docs/architecture/uml/) — in `.puml` format
 - [Architecture Decision Records (ADRs)](docs/architecture/decisions/) — key architectural decisions and rationale
 
-## Code Quality Artifacts
+### Code Quality Artifacts
 All code quality documentation is maintained in the [`/docs/code-quality/`](docs/code-quality/) directory.
 - [Code Review Report](docs/code-quality/review-report.md) — our review of another team's code, and the feedback on ours
 - [Static Analysis](docs/code-quality/static-analysis.md) — the tools, how they run, and the documented findings
 - [Implementation Progress](docs/code-quality/progress.md) — the MVP's scope, status and next steps
 
-## Refactoring Artifacts
+### Refactoring Artifacts
 
 Refactoring plans and evidence are maintained in [`/docs/refactoring/`](docs/refactoring/).
 
 - [SonarQube Cloud Refactoring Report](docs/refactoring/sonarcloud-report.md) — baseline metrics,
   refactoring contracts, test evidence and before/after analysis screenshots
 
-## Testing Artifacts
+### Testing Artifacts
 Testing policy and evidence are maintained in [`/docs/testing/`](docs/testing/).
 - [Testing Strategy](docs/testing/testing-strategy.md) — scope, quality goals, metrics and merge gates
 - [Unit Testing and Coverage](docs/testing/testing.md) — implemented tests, edge cases and coverage results
@@ -373,14 +373,14 @@ Testing policy and evidence are maintained in [`/docs/testing/`](docs/testing/).
 - [Test Doubles](docs/testing/test-doubles.md) — doubles used at each test boundary
 - [Coverage Report](https://github.com/ukma-fin-ssdm-2026/Whadio/actions/workflows/ci.yml?query=branch%3Amain) — browsable line and branch coverage, in the `test-reports` artifact of each CI run on `main`, kept for 14 days
 
-## Validation Artifacts
+### Validation Artifacts
 
 Validation evidence is maintained in [`/docs/validation/`](docs/validation/).
 
 - [Test Plan](docs/validation/test-plan.md) — planned and executed cases with measured results
 - [Review Log](docs/validation/review-log.md) — requirements and test-plan review findings
 
-## Labs Index
+### Labs Index
 
 | Lab | Artifacts | Video links |
 |---|---|---|
@@ -393,4 +393,5 @@ Validation evidence is maintained in [`/docs/validation/`](docs/validation/).
 | 7 — Test planning and peer review | [Test plan](docs/validation/test-plan.md), [review log](docs/validation/review-log.md) | [Andrii](Labs/Lab07/video_Andrii.txt), [Denys](Labs/Lab07/video_Denys.txt), [Valeriia](Labs/Lab07/video_Valeriia.txt), [Zlata](Labs/Lab07/video_Zlata.txt) |
 
 ## AI usage
+
 The document was prepared with the help of Claude Code (Claude Opus 5 model) and OpenAI Codex based on the team's decisions; the content was manually checked and edited, and the document is reviewed via a pull request before merging.
