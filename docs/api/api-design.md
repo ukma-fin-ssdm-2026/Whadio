@@ -240,17 +240,23 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /registrations` · Request a registration link
 
-- **Status:** Designed · **Caller:** public · **Success:** `202`, a fixed confirmation
+- **Status:** Implemented
+- **Caller:** public · **Success:** `202`, a fixed `message` with `Cache-Control: no-store`
+- **Body:** `email`, the address to register.
 - **Rules:**
-  - Emails a single-use link valid for 24 hours. The account is created only when the link is
+  - Queues a single-use link valid for 24 hours. The account is created only when the link is
     used (FR-001).
   - The response is identical in every case, so it reveals nothing about the address:
     - a new address gets a registration link;
     - an address that already has an account gets a sign-in reminder with a password-reset
       link;
-    - a repeat within 20 minutes changes nothing, and the earlier link keeps working.
+    - a repeat within 20 minutes changes nothing, and the earlier link keeps working;
+    - a later repeat queues a new link and invalidates the earlier one.
+  - If the transaction to queue the email fails, the response is still `202`. The failure is
+    logged without request or token data.
 - **Errors:**
   - `403 INVITE_ONLY_INSTANCE`: the operator runs the instance invite-only.
+  - `503 INTEGRATION_UNAVAILABLE`: a required integration is unconfigured.
 
 #### `POST /registrations/{registration_id}/complete` · Create the account from a link
 
