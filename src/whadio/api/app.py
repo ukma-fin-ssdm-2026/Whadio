@@ -32,6 +32,7 @@ from .composition import (
     export_public_url,
     invitation_public_url,
     notes_llm,
+    outbox_password_reset_mail,
     registration_mode,
     runtime_database,
     transaction,
@@ -148,7 +149,10 @@ def create_app(
     app.dependency_overrides[runtime_database] = composition.database
     connect_integrations(
         app,
-        RuntimeIntegrations(processing=composition.processing)
+        RuntimeIntegrations(
+            processing=composition.processing,
+            password_reset_mail=outbox_password_reset_mail,
+        )
         if integrations is None
         else integrations,
     )

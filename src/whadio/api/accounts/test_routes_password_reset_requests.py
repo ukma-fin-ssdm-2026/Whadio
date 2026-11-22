@@ -19,7 +19,7 @@ from ...accounts.password_resets import PasswordResetMail, PasswordResetMailKind
 from ...accounts.test_password_reset_requests import ResetMailQueue
 from ...notifications.models import NotificationOutbox
 from ...notifications.repositories import NotificationOutboxRepository
-from ...notifications.templates import ProcessingFinished
+from ...notifications.templates import NoticeKind, ProcessingFinished
 from ..app import create_app
 from ..composition import RuntimeIntegrations, password_reset_service, runtime_database
 from ..core.errors import ErrorCode, ErrorResponse
@@ -250,3 +250,27 @@ def test_invalid_email_is_rejected_without_echoing_the_value(async_database: Asy
 
     # Assert
     assert async_database.run(scenario) == (422, "email", False)
+
+
+@pytest.mark.slow
+def test_default_app_queues_the_reset_mail_in_the_outbox(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> list[NoticeKind]:
+        user = await AsyncDatabase.add_account(session, "OriginalPassword1")
+        app = create_app(web_settings=VERIFIED)
+        transactions = ResetRequestTransactions(session, ResetMailQueue(), fail_on_exit=False)
+        app.dependency_overrides[runtime_database] = lambda: transactions
+        async with AsyncClient(
+            transport=ASGITransport(app), base_url="https://example.com"
+        ) as client:
+            # Act
+            await client.post(RESET_PATH, json={"email": user.email})
+        kinds = await session.scalars(
+            select(NotificationOutbox.kind).where(
+                NotificationOutbox.recipient_user_id == user.user_id
+            )
+        )
+        return list(kinds)
+
+    # Assert
+    assert async_database.run(scenario) == [NoticeKind.RESET_LINK]

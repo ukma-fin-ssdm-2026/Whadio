@@ -27,6 +27,7 @@ from ..accounts.member_repository import MemberRepository
 from ..accounts.members import MemberService
 from ..accounts.password_resets import (
     IPasswordResetMailQueue,
+    PasswordResetMail,
     PasswordResetMailKind,
     PasswordResetRequestService,
     PasswordResetService,
@@ -77,9 +78,11 @@ from ..notifications.settings import NotificationSettings, load_notification_set
 from ..notifications.templates import (
     HostedEviction,
     NoticeKind,
+    PasswordResetNotice,
     ProcessingFailed,
     ProcessingFinished,
     ShareAccessRequest,
+    SignInReminderNotice,
 )
 from ..processing.consumer import (
     ProcessingTransactions,
@@ -538,6 +541,35 @@ PasswordResets = Annotated[PasswordResetService, Depends(password_reset_service)
 
 
 type PasswordResetMailFactory = Callable[[AsyncSession], IPasswordResetMailQueue]
+
+
+class OutboxPasswordResetMail:
+    """Accounts' `IPasswordResetMailQueue`, answered by the notification outbox.
+
+    Only the reset ID is kept: the scheduler gives the link a new token when it sends the mail.
+    """
+
+    def __init__(self, outbox: INotificationOutbox) -> None:
+        self._outbox: INotificationOutbox = outbox
+
+    async def reserve(self, mail: PasswordResetMail) -> None:
+        reset_id, issued_at = mail.link.reset_id, mail.issued_at
+        match mail.kind:
+            case PasswordResetMailKind.RESET:
+                notice = PasswordResetNotice(
+                    reset_id=reset_id, issued_at=issued_at, expires_at=mail.expires_at
+                )
+            case PasswordResetMailKind.SIGN_IN_REMINDER:
+                notice = SignInReminderNotice(
+                    reset_id=reset_id, issued_at=issued_at, expires_at=mail.expires_at
+                )
+        await self._outbox.reserve(
+            mail.user_id, f"{notice.kind}:{reset_id}:{issued_at.isoformat()}", notice
+        )
+
+
+def outbox_password_reset_mail(session: AsyncSession) -> IPasswordResetMailQueue:
+    return OutboxPasswordResetMail(NotificationOutboxRepository(session))
 
 
 def password_reset_mail() -> PasswordResetMailFactory | None:
