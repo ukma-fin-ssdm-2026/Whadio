@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import hashlib
+import time
 from collections.abc import AsyncGenerator, Awaitable, Callable, Generator, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -8,6 +9,7 @@ from decimal import Decimal
 from typing import ClassVar, Final
 from uuid import UUID, uuid4
 
+import httpx
 import hypothesis
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -23,8 +25,9 @@ from whadio.accounts.models import Session as SignInSession
 from whadio.accounts.models import User, Workspace, WorkspaceMembership
 from whadio.accounts.passwords import Argon2PasswordHasher
 from whadio.api.app import create_app
-from whadio.api.composition import notes_llm, transaction
+from whadio.api.composition import notes_llm, runtime_database, transaction
 from whadio.api.core.pagination import ListToken
+from whadio.api.settings import WebSettings
 from whadio.meetings.enums import (
     AccessMode,
     MeetingSource,
@@ -86,6 +89,71 @@ def database_settings() -> DatabaseSettings:
 
 
 BUILT_IN_LLM: Final = OllamaLlm(provider="ollama", model="test-model")
+
+
+class SavepointTransactions:
+    """Each transaction is a savepoint of `session`, which the test rolls back."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session: AsyncSession = session
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncGenerator[AsyncSession]:
+        async with self._session.begin_nested():
+            yield self._session
+
+
+# --- Mailpit, the Compose mail catcher ---
+
+
+class MailpitAddress(BaseModel):
+    address: str = Field(alias="Address", description="Email address")
+
+
+class MailpitMessage(BaseModel):
+    message_id: str = Field(alias="ID", description="Mailpit's identifier of the message")
+    subject: str = Field(alias="Subject", description="Subject header")
+    to: list[MailpitAddress] = Field(alias="To", description="Recipients")
+
+
+class _MailpitMessages(BaseModel):
+    messages: list[MailpitMessage] = Field(description="Most recent messages first")
+
+
+class _MailpitBody(BaseModel):
+    text: str = Field(alias="Text", description="Plain-text body")
+
+
+class Mailpit(BaseSettings):
+    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    mailpit_smtp_port: int = Field(
+        default=1025, ge=1, le=65535, description="Host port Compose publishes Mailpit's SMTP on"
+    )
+    mailpit_ui_port: int = Field(
+        default=8025, ge=1, le=65535, description="Host port Compose publishes Mailpit's API on"
+    )
+
+    def wait_for(self, matches: Callable[[MailpitMessage], bool]) -> MailpitMessage | None:
+        deadline = time.monotonic() + 5
+        with httpx.Client(base_url=self._api, timeout=2) as client:
+            while time.monotonic() < deadline:
+                response = client.get("/api/v1/messages")
+                response.raise_for_status()
+                for message in _MailpitMessages.model_validate_json(response.content).messages:
+                    if matches(message):
+                        return message
+                time.sleep(0.1)
+        return None
+
+    def text(self, message: MailpitMessage) -> str:
+        response = httpx.get(f"{self._api}/api/v1/message/{message.message_id}", timeout=2)
+        response.raise_for_status()
+        return _MailpitBody.model_validate_json(response.content).text
+
+    @property
+    def _api(self) -> str:
+        return f"http://127.0.0.1:{self.mailpit_ui_port}"
 
 
 def replace_cursor_key(cursor: str, key: str) -> str:
@@ -158,10 +226,13 @@ class AsyncDatabase:
     @staticmethod
     @asynccontextmanager
     async def api_client(
-        session: AsyncSession, llm: NotesLlm = BUILT_IN_LLM
+        session: AsyncSession,
+        llm: NotesLlm = BUILT_IN_LLM,
+        web_settings: WebSettings | None = None,
     ) -> AsyncGenerator[AsyncClient]:
         """The API, with each request in a savepoint of `session`."""
-        app = create_app()
+        app = create_app(web_settings=web_settings)
+        app.dependency_overrides[runtime_database] = lambda: SavepointTransactions(session)
 
         async def savepoint() -> AsyncGenerator[AsyncSession]:
             async with session.begin_nested():
