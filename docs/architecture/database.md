@@ -137,7 +137,12 @@ nullable: the preset and the requester of a notes job a member asked for. A CHEC
 neither, and neither on a transcription job; another limits `template` to the fixed presets, and the requester is a
 foreign key to `user` with `ON DELETE RESTRICT`, as `note.created_by_user_id` is. Downgrade
 refuses to discard jobs that hold either value.
-The current head is `0011`.
+Revision `0012` records a meeting's folder placement revision for conditional moves.
+
+Revision `0013` adds the optional `meeting.initial_notes_template` with a CHECK for the fixed
+presets. Downgrade refuses to discard a preset for a meeting still queued or processing.
+
+The current head is `0013`.
 
 Cleanup passes use UUID keyset windows and advance after each batch, including failed or locked
 items. Each pass attempts each selected item at most once; failed items remain durable for the
@@ -362,6 +367,8 @@ restoration refuses to overwrite subsequent moves and restores the surviving mee
 
 
 ## AI Usage
+
+OpenAI Codex documented the upload preset migration (#362).
 
 This implementation guide was prepared and clarified with OpenAI Codex using the requirements,
 architecture, models, migrations, and tests. The author reviewed and edited the content, and the document is reviewed through a pull request before merging.
