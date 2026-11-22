@@ -1,6 +1,9 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect, useLocation, useRouter } from "@tanstack/react-router";
 import { z } from "zod";
-import { safeReturnPath } from "@/app/navigation/return-to";
+import { TextLink } from "@/app/navigation/links";
+import { safeRedirectSearch, safeReturnPath } from "@/app/navigation/return-to";
+import { instanceQuery } from "@/features/accounts/api/instance";
 import { sessionQueries } from "@/features/accounts/api/session";
 import { SignInForm } from "@/features/accounts/components/SignInForm";
 
@@ -22,6 +25,7 @@ function SignInRoute() {
   const { redirect: target, passwordReset } = Route.useSearch();
   const { onSignedIn } = Route.useRouteContext();
   const refused = useLocation({ select: (location) => location.state.sessionRefused });
+  const instance = useQuery(instanceQuery());
 
   return (
     <SignInForm
@@ -29,6 +33,17 @@ function SignInRoute() {
         passwordReset
           ? "Your password has been changed. Sign in with your new password."
           : undefined
+      }
+      forgotPasswordLink={
+        instance.isSuccess && instance.data.registration_mode === "verified" ? (
+          <TextLink
+            to="/forgot-password"
+            search={safeRedirectSearch(target)}
+            sx={{ justifySelf: "start" }}
+          >
+            Forgot password?
+          </TextLink>
+        ) : undefined
       }
       sessionRefused={refused}
       onSignedIn={() => {

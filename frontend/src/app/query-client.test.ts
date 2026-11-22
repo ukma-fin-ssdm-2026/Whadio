@@ -56,6 +56,40 @@ test("a successful query reports loaded data", async () => {
   expect(onDataLoaded).toHaveBeenCalledOnce();
 });
 
+test("a public query does not confirm that sign-in worked", async () => {
+  // Arrange
+  const onDataLoaded = vi.fn();
+  const client = createQueryClient({ onUnauthorized: () => {}, onDataLoaded });
+
+  // Act
+  await client.query({
+    queryKey: ["public"],
+    queryFn: () => "data",
+    meta: { public: true },
+  });
+
+  // Assert
+  expect(onDataLoaded).not.toHaveBeenCalled();
+});
+
+test("a rejected public query does not end the session", async () => {
+  // Arrange
+  const onUnauthorized = vi.fn();
+  const client = createQueryClient({ onUnauthorized, onDataLoaded: () => {} });
+
+  // Act
+  await client
+    .query({
+      queryKey: ["public"],
+      queryFn: () => Promise.reject(SESSION_EXPIRED),
+      meta: { public: true },
+    })
+    .catch(() => undefined);
+
+  // Assert
+  expect(onUnauthorized).not.toHaveBeenCalled();
+});
+
 test.for([
   ["wrong credentials", apiError(401, "INVALID_CREDENTIALS")],
   ["a forbidden request", apiError(403, "INSUFFICIENT_ROLE")],

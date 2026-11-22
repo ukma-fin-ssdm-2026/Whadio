@@ -31,7 +31,14 @@ export function createQueryClient({
     if (endsSession(error)) onUnauthorized();
   };
   return new QueryClient({
-    queryCache: new QueryCache({ onError: handleError, onSuccess: onDataLoaded }),
+    queryCache: new QueryCache({
+      onError: (error, query) => {
+        if (query.meta?.public !== true) handleError(error);
+      },
+      onSuccess: (_data, query) => {
+        if (query.meta?.public !== true) onDataLoaded();
+      },
+    }),
     mutationCache: new MutationCache({ onError: handleError }),
     defaultOptions: {
       queries: { retry: retryUnlessClientError, staleTime: 30_000 },

@@ -1,5 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Alert, Box, Button, Card, Typography } from "@mui/material";
+import type { ReactNode } from "react";
 import { type UseFormSetError, useForm } from "react-hook-form";
 import { z } from "zod";
 import type { ApiError } from "@/shared/api/errors";
@@ -30,9 +31,15 @@ interface SignInFormProps {
   onSignedIn: (user: Schemas["UserRead"]) => void;
   sessionRefused?: boolean;
   confirmation?: string;
+  forgotPasswordLink?: ReactNode;
 }
 
-export function SignInForm({ onSignedIn, sessionRefused, confirmation }: SignInFormProps) {
+export function SignInForm({
+  onSignedIn,
+  sessionRefused,
+  confirmation,
+  forgotPasswordLink,
+}: SignInFormProps) {
   const signIn = useSignIn();
   const { control, handleSubmit, setError, formState } = useForm({
     resolver: zodResolver(credentials),
@@ -92,6 +99,7 @@ export function SignInForm({ onSignedIn, sessionRefused, confirmation }: SignInF
         <Button type="submit" variant="contained" disabled={signIn.isPending}>
           {signIn.isPending ? "Signing in..." : "Sign in"}
         </Button>
+        {forgotPasswordLink}
       </Card>
     </Box>
   );
