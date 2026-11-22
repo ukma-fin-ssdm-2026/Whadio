@@ -107,6 +107,12 @@ export function MeetingPage({
                     replace: true,
                   })
                 }
+                onOpenRequests={(shareId) =>
+                  void navigate({
+                    to: "/shares/$shareId/access-requests",
+                    params: { shareId },
+                  })
+                }
               />
             )
           }

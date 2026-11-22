@@ -24,6 +24,7 @@ import { type Share, shareQueries, useCreateShare, useRevokeShare } from "../api
 
 interface ShareDialogProps {
   meetingId: string;
+  onOpenRequests: (shareId: string) => void;
   onClose: () => void;
 }
 
@@ -33,7 +34,7 @@ function shareState(share: Share) {
   return "No approved recipient yet";
 }
 
-export function ShareDialog({ meetingId, onClose }: ShareDialogProps) {
+export function ShareDialog({ meetingId, onOpenRequests, onClose }: ShareDialogProps) {
   const notify = useNotify();
   const shares = useInfiniteQuery(shareQueries.list(meetingId));
   const createShare = useCreateShare(meetingId);
@@ -89,11 +90,25 @@ export function ShareDialog({ meetingId, onClose }: ShareDialogProps) {
             {shares.data && shares.data.length > 0 && (
               <List dense aria-label="Your shares">
                 {shares.data.map((share) => (
-                  <ListItem
-                    key={share.id}
-                    disableGutters
-                    secondaryAction={
-                      !share.revoked_at && (
+                  <ListItem key={share.id} disableGutters sx={{ gap: 1, flexWrap: "wrap" }}>
+                    <ListItemText
+                      primary={shareState(share)}
+                      secondary={`Created ${formatDate(share.created_at)} · ${
+                        share.redact_speaker_names ? "Speaker names hidden" : "Speaker names shown"
+                      }`}
+                      sx={{ flex: "1 1 12rem" }}
+                    />
+                    {!share.revoked_at && (
+                      <Stack direction="row" sx={{ gap: 1 }}>
+                        {!share.recipient_user_id && (
+                          <Button
+                            size="small"
+                            aria-label={`Requests for share created ${formatDate(share.created_at)}`}
+                            onClick={() => onOpenRequests(share.id)}
+                          >
+                            Requests
+                          </Button>
+                        )}
                         <Button
                           color="error"
                           size="small"
@@ -103,15 +118,8 @@ export function ShareDialog({ meetingId, onClose }: ShareDialogProps) {
                         >
                           Revoke
                         </Button>
-                      )
-                    }
-                  >
-                    <ListItemText
-                      primary={shareState(share)}
-                      secondary={`Created ${formatDate(share.created_at)} · ${
-                        share.redact_speaker_names ? "Speaker names hidden" : "Speaker names shown"
-                      }`}
-                    />
+                      </Stack>
+                    )}
                   </ListItem>
                 ))}
               </List>
