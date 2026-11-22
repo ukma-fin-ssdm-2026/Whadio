@@ -103,6 +103,8 @@ Overload -> notify in the primary channel -> brief discussion and selection of a
     - CI on `main`, after the merge: the same jobs, but the whole test suite instead of the fast tests, against the Compose services after the migrations and `alembic check`, failing below 85% line and branch coverage, and the reliability tests; a failure there turns `main` red and is fixed or reverted; a change to documentation alone skips the tests, the migrations, the frontend's build and the worker image, before and after the merge;
     - checks are never bypassed (`--no-verify`, `SKIP=`), and inline suppressions are refused: a false positive gets a scoped exception in `pyproject.toml` or `frontend/biome.jsonc` with a one-line reason, in its own pull request.
 - Code review rules:
+    - both manual and automatic merges wait for `Review processed` to inspect an approval of the current head commit. After pushing a new commit, request a fresh approval before merging;
+    - authors may enable native auto-merge. An approval with `Nit:` comments disables it for the reviewed commit and triggers a Telegram notification. The author may merge manually once the review is processed, or address the nits and re-enable auto-merge for a new commit with a clean approval;
     - each PR requires at least one approval, and the reviewer submits the review themselves;
     - AI-assisted review: the reviewer goes through the PR with an AI agent, discusses its findings, and posts only the comments they agree with and can justify. The agent, the depth of discussion, and how comments reach GitHub (inline, in the summary, drafted by the agent as a pending review) are the reviewer's choice. PRs that only add report links or signatures are exempt;
     - the reviewer answers for every posted comment as their own, and the review summary names the AI tool used and states that the reviewer verified each point.
@@ -118,4 +120,5 @@ Overload -> notify in the primary channel -> brief discussion and selection of a
     - every member reviews teammates' pull requests, and each module owner answers for the quality of their module.
 
 ## AI Usage
+The review-processing policy was drafted with Codex.
 This document was prepared with the assistance of AI (Gemini 3.1 Pro); the review rules were revised, and section 11 and the Lab 5 roles were drafted, with Claude Code (Claude Opus 5.5). Claude Code later split the CI checks of section 11 between pull requests and `main` for #350. The author reviewed and edited the content, and the document is reviewed through a pull request before merging.

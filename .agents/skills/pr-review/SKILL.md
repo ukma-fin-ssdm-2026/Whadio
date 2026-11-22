@@ -125,4 +125,4 @@ address.
 
 ## AI Usage
 
-This skill was written with Claude Code.
+This skill was written with Claude Code. Codex helped draft and update its review-processing guidance.

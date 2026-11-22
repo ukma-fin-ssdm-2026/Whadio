@@ -1,0 +1,17 @@
+name: Review signal
+
+on:
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
+
+permissions: {}
+
+jobs:
+  signal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Wake the trusted review processor
+        run: echo 'Review changed; the default-branch processor will fetch the current GitHub state.'
