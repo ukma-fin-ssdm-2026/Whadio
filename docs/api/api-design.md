@@ -277,12 +277,13 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - If the transaction to queue the email fails, the response is still `202`. Its rollback
     discards the mail reservation and preserves the earlier link and cooldown. The failure is
     logged without request or token data.
-  - A repeat within 20 minutes of queueing changes nothing. At 20 minutes or later a new
-    link is queued and the previous link is invalidated. The registration reminder for a
-    known account shares this window. Redeeming the link leaves the cooldown in place.
+  - A repeat changes nothing while the earlier email waits to be sent with a link that has not
+    expired, or within 20 minutes of when the relay accepted it, however late that was.
+    Otherwise a new link is queued and the previous link is invalidated. The registration
+    reminder for a known account follows the same rule. Redeeming the link leaves the cooldown
+    in place.
   - The scheduler sends the queued email and makes the link's token only then, so a link that
-    was used, issued again or expired while queued is not sent. The 20-minute window counts from
-    queueing, which is at most one scheduler pass before sending.
+    was used, issued again or expired while queued is not sent.
 - **Errors:**
   - `403 INVITE_ONLY_INSTANCE`: the operator runs the instance invite-only.
   - `503 INTEGRATION_UNAVAILABLE`: a required integration is unconfigured.

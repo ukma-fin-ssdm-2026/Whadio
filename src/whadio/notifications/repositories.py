@@ -1,4 +1,4 @@
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated, Final, Protocol
@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import NotificationOutbox
-from .templates import Notice, NoticeKind
+from .templates import Notice, NoticeKind, PasswordResetNotice, SignInReminderNotice
 
 _NOTICE: Final = TypeAdapter[Notice](Annotated[Notice, Field(discriminator="kind")])
 _PAYLOAD: Final = TypeAdapter(dict[str, JsonValue])
@@ -31,6 +31,42 @@ class OutboxEntry:
     def notice(self) -> Notice:
         """Raise ValidationError, whose text repeats the payload, when it no longer fits `kind`."""
         return _NOTICE.validate_python({**self.payload, "kind": self.kind})
+
+
+@dataclass(frozen=True, slots=True)
+class AccountLinkHistory:
+    waiting: bool
+    last_sent_at: datetime | None
+
+
+_RESET_KINDS: Final = (NoticeKind.RESET_LINK, NoticeKind.SIGN_IN_REMINDER)
+
+
+def account_link_history(
+    notices: Iterable[tuple[NoticeKind, Mapping[str, JsonValue], datetime | None]], now: datetime
+) -> AccountLinkHistory:
+    """Fold an account's reset and reminder notices, given as kind, payload and `sent_at`."""
+    waiting, last_sent_at = False, None
+    for kind, payload, sent_at in notices:
+        if sent_at is not None:
+            last_sent_at = sent_at if last_sent_at is None else max(last_sent_at, sent_at)
+            continue
+        notice = _NOTICE.validate_python({**payload, "kind": kind})
+        if isinstance(notice, PasswordResetNotice | SignInReminderNotice):
+            waiting = waiting or notice.expires_at > now
+    return AccountLinkHistory(waiting, last_sent_at)
+
+
+class IAccountLinkHistory(Protocol):
+    async def account_link_history(
+        self, recipient_id: UUID, now: datetime, /
+    ) -> AccountLinkHistory:
+        """The account's reset and reminder emails, read in the caller's transaction.
+
+        `waiting` covers unsent ones whose link has not expired at `now`, and `last_sent_at` is
+        when the relay last accepted one.
+        """
+        ...
 
 
 class INotificationOutbox(Protocol):
@@ -80,6 +116,17 @@ class NotificationOutboxRepository:
             )
             .on_conflict_do_nothing(index_elements=[NotificationOutbox.dedupe_key])
         )
+
+    async def account_link_history(self, recipient_id: UUID, now: datetime) -> AccountLinkHistory:
+        notices = await self._session.execute(
+            select(
+                NotificationOutbox.kind, NotificationOutbox.payload, NotificationOutbox.sent_at
+            ).where(
+                NotificationOutbox.recipient_user_id == recipient_id,
+                NotificationOutbox.kind.in_(_RESET_KINDS),
+            )
+        )
+        return account_link_history(notices, now)
 
     async def claim_due(self, now: datetime, max_attempts: int) -> OutboxEntry | None:
         found = await self._session.scalar(

@@ -44,11 +44,31 @@ class PasswordResetMail:
     kind: PasswordResetMailKind
 
 
+@dataclass(frozen=True, slots=True)
+class ResetMailHistory:
+    waiting: bool
+    last_sent_at: datetime | None
+
+    def allows_another(self, now: datetime) -> bool:
+        """FR-048: nothing waits to be sent, and the relay took the last one 20 minutes ago."""
+        return not self.waiting and (
+            self.last_sent_at is None or now >= self.last_sent_at + RESET_MAIL_COOLDOWN
+        )
+
+
 class IPasswordResetMailQueue(Protocol):
     async def reserve(self, mail: PasswordResetMail, /) -> None:
         """Queue in the caller's transaction; the link gets its token only when the mail is sent.
 
         The reset ID can be reused across issuances, so deduplicate by it and the issue time.
+        """
+        ...
+
+    async def history(self, user_id: UUID, now: datetime, /) -> ResetMailHistory:
+        """The account's reset and sign-in reminder emails, read in the caller's transaction.
+
+        `waiting` covers only emails whose link has not expired at `now`, and `last_sent_at` is
+        when the relay last accepted one.
         """
         ...
 
@@ -81,8 +101,7 @@ class PasswordResetRequestService:
         if user is None:
             return
         now = self._now()
-        queued_at = user.password_reset_mail_queued_at
-        if queued_at is not None and now < queued_at + RESET_MAIL_COOLDOWN:
+        if not (await self._mail.history(user.user_id, now)).allows_another(now):
             return
         expires_at = now + RESET_LIFETIME
         # Nobody learns this token: the mail gets a new one when it is sent.
@@ -91,7 +110,6 @@ class PasswordResetRequestService:
             user.user_id, generated_token_hash(unsent_token), now, expires_at
         )
         await self._mail.reserve(PasswordResetMail(user.user_id, reset_id, now, expires_at, kind))
-        await self._resets.mark_mail_queued(user.user_id, self._now())
 
 
 class PasswordResetService:

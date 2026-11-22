@@ -14,8 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from conftest import AsyncDatabase
 
 from ...accounts.enums import RegistrationMode
-from ...accounts.models import PasswordReset, User
-from ...accounts.password_resets import PasswordResetMail, PasswordResetMailKind
+from ...accounts.models import PasswordReset
+from ...accounts.password_resets import PasswordResetMail, PasswordResetMailKind, ResetMailHistory
 from ...accounts.test_password_reset_requests import ResetMailQueue
 from ...notifications.models import NotificationOutbox
 from ...notifications.repositories import NotificationOutboxRepository
@@ -78,6 +78,9 @@ class StoredResetMailQueue:
             ProcessingFinished(meeting_id=mail.reset_id, meeting_name="Reset test"),
         )
         await self._recorder.reserve(mail)
+
+    async def history(self, user_id: UUID, now: datetime, /) -> ResetMailHistory:
+        return await self._recorder.history(user_id, now)
 
 
 @asynccontextmanager
@@ -164,7 +167,6 @@ def test_reset_request_failure_preserves_the_link_and_fixed_response(
             known = await client.post(RESET_PATH, json={"email": email})
             unknown = await client.post(RESET_PATH, json={"email": f"{uuid4()}@example.com"})
         pending = await session.get_one(PasswordReset, previous.reset_id, populate_existing=True)
-        account = await session.get_one(User, user_id, populate_existing=True)
         (attempted_mail,) = mail.messages
         logs = [
             record.getMessage()
@@ -174,14 +176,13 @@ def test_reset_request_failure_preserves_the_link_and_fixed_response(
         return (
             public_response(known) == public_response(unknown) == ACCEPTED_RESPONSE,
             pending.token_hash == previous_hash,
-            account.password_reset_mail_queued_at is None,
             await mail_reservation_count(session, user_id) == 0,
             logs == ["Could not queue a password reset email"],
             email not in caplog.text and str(attempted_mail.reset_id) not in caplog.text,
         )
 
     # Assert
-    assert async_database.run(scenario) == (True, True, True, True, True, True)
+    assert async_database.run(scenario) == (True, True, True, True, True)
 
 
 @pytest.mark.slow
@@ -253,7 +254,7 @@ def test_invalid_email_is_rejected_without_echoing_the_value(async_database: Asy
 
 
 @pytest.mark.slow
-def test_default_app_queues_the_reset_mail_in_the_outbox(async_database: AsyncDatabase) -> None:
+def test_default_app_queues_one_reset_mail_while_it_waits(async_database: AsyncDatabase) -> None:
     # Arrange
     async def scenario(session: AsyncSession) -> list[NoticeKind]:
         user = await AsyncDatabase.add_account(session, "OriginalPassword1")
@@ -264,7 +265,8 @@ def test_default_app_queues_the_reset_mail_in_the_outbox(async_database: AsyncDa
             transport=ASGITransport(app), base_url="https://example.com"
         ) as client:
             # Act
-            await client.post(RESET_PATH, json={"email": user.email})
+            for _ in range(2):
+                await client.post(RESET_PATH, json={"email": user.email})
         kinds = await session.scalars(
             select(NotificationOutbox.kind).where(
                 NotificationOutbox.recipient_user_id == user.user_id

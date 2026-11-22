@@ -1871,7 +1871,7 @@ def test_reset_mail_is_reserved_for_its_account(
     outbox = InMemoryNotificationOutbox(lambda: datetime.now(UTC))
     mail = reset_mail(kind, datetime.now(UTC))
     # Act
-    asyncio.run(OutboxPasswordResetMail(outbox).reserve(mail))
+    asyncio.run(OutboxPasswordResetMail(outbox, outbox).reserve(mail))
     # Assert
     assert reserved(outbox) == [
         (
@@ -1889,11 +1889,13 @@ def test_reset_mail_issued_again_is_reserved_again() -> None:
     outbox = InMemoryNotificationOutbox(lambda: datetime.now(UTC))
     issued_at = datetime.now(UTC)
     asyncio.run(
-        OutboxPasswordResetMail(outbox).reserve(reset_mail(PasswordResetMailKind.RESET, issued_at))
+        OutboxPasswordResetMail(outbox, outbox).reserve(
+            reset_mail(PasswordResetMailKind.RESET, issued_at)
+        )
     )
     again = reset_mail(PasswordResetMailKind.RESET, issued_at + timedelta(minutes=20))
     # Act
-    asyncio.run(OutboxPasswordResetMail(outbox).reserve(again))
+    asyncio.run(OutboxPasswordResetMail(outbox, outbox).reserve(again))
     # Assert
     assert len(outbox.notices) == 2
 

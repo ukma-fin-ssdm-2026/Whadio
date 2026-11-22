@@ -8,7 +8,15 @@ from uuid import UUID, uuid4
 
 from pydantic import JsonValue
 
-from .repositories import INotificationOutbox, IOutboxDrain, OutboxEntry, notice_payload
+from .repositories import (
+    AccountLinkHistory,
+    IAccountLinkHistory,
+    INotificationOutbox,
+    IOutboxDrain,
+    OutboxEntry,
+    account_link_history,
+    notice_payload,
+)
 from .services import (
     AccountLinkMail,
     DeliveryUnit,
@@ -55,7 +63,7 @@ class StoredNotice:
     last_error: str | None = None
 
 
-class InMemoryNotificationOutbox(INotificationOutbox, IOutboxDrain):
+class InMemoryNotificationOutbox(INotificationOutbox, IOutboxDrain, IAccountLinkHistory):
     def __init__(self, now: Callable[[], datetime]) -> None:
         self.notices: dict[UUID, StoredNotice] = {}
         self._now: Callable[[], datetime] = now
@@ -77,6 +85,18 @@ class InMemoryNotificationOutbox(INotificationOutbox, IOutboxDrain):
         notice_id, now = uuid4(), self._now()
         self.notices[notice_id] = StoredNotice(
             notice_id, recipient_id, dedupe_key, kind, payload, now, now
+        )
+
+    @override
+    async def account_link_history(self, recipient_id: UUID, now: datetime) -> AccountLinkHistory:
+        return account_link_history(
+            (
+                (stored.kind, stored.payload, stored.sent_at)
+                for stored in self.notices.values()
+                if stored.recipient_id == recipient_id
+                and stored.kind in {NoticeKind.RESET_LINK, NoticeKind.SIGN_IN_REMINDER}
+            ),
+            now,
         )
 
     @override
