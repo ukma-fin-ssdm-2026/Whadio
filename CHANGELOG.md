@@ -4,6 +4,12 @@ All notable changes to Whadio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.0] - 2026-11-22
+
+### Added
+
+- Choose the preset for uploaded meetings ([#420](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/420))
+
 ## [0.21.0] - 2026-11-22
 
 ### Added
