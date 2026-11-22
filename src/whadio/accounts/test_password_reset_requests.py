@@ -267,22 +267,27 @@ def test_cooldown_starts_when_the_queue_reservation_finishes(async_database: Asy
     assert async_database.run(scenario) == 1
 
 
-def test_operator_link_does_not_start_the_email_cooldown(async_database: AsyncDatabase) -> None:
+def test_operator_links_leave_the_email_cooldown_unchanged(async_database: AsyncDatabase) -> None:
     # Arrange
-    mail = ResetMailQueue()
-
-    async def scenario(session: AsyncSession) -> None:
+    async def scenario(session: AsyncSession) -> tuple[int, bool]:
         user = await AsyncDatabase.add_account(session, PASSWORD)
         now = datetime.now(UTC)
-        await operator_service(session).issue(user.email, now)
+        clock = ResetClock(now)
+        mail = ResetMailQueue()
+        resets = requests(session, mail, clock)
+        operator = operator_service(session)
+        await operator.issue(user.email, now)
         # Act
-        await requests(session, mail, ResetClock(now)).request(
-            user.email, kind=PasswordResetMailKind.RESET
-        )
+        await resets.request(user.email, kind=PasswordResetMailKind.RESET)
+        clock.now += timedelta(minutes=1)
+        manual_link = await operator.issue(user.email, clock.now)
+        await resets.request(user.email, kind=PasswordResetMailKind.RESET)
+        await operator.complete(manual_link.reset_id, manual_link.token, PASSWORD, clock.now)
+        account = await session.get_one(User, user.user_id, populate_existing=True)
+        return len(mail.messages), account.password_reset_mail_queued_at == now
 
-    async_database.run(scenario)
     # Assert
-    assert len(mail.messages) == 1
+    assert async_database.run(scenario) == (1, True)
 
 
 def test_rollback_preserves_existing_link_and_email_cooldown(async_database: AsyncDatabase) -> None:
