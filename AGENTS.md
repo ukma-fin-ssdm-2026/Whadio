@@ -35,7 +35,7 @@ src/whadio/
 frontend/         the web SPA, with its own toolchain
   src/            app/ shell, features/ per area, routes/ file-based routes, shared/ API client and UI
 extension/        the Chrome extension: records a Meet call and uploads it to Capture in chunks
-infra/            configuration that compose.yaml mounts into the services
+infra/            configuration that compose.yaml mounts into the services; deploy/ deploys the public instance
 .agents/skills/   agent skills for Claude Code and Codex; `.claude/skills` links here
 ```
 

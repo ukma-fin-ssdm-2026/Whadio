@@ -367,6 +367,32 @@ jobs:
           docker push "$REGISTRY/whadio:$TAG"
           docker push "$REGISTRY/whadio-nginx:$TAG"
 
+  deploy-app:
+    name: Deploy the public instance
+    needs: publish
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
+    environment:
+      name: production
+      url: https://${{ vars.DEPLOY_HOST }}
+    concurrency:
+      group: production
+      cancel-in-progress: false
+    # An ephemeral runner, so the deploy key never stays on a disk.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy the commit through the deploy key's forced command
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          SHA: ${{ github.sha }}
+        run: |
+          install -m 700 -d ~/.ssh
+          (umask 077 && printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy)
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=30 "deploy@$DEPLOY_HOST" "$SHA"
+
   deploy:
     name: Deploy to GitHub Pages
     needs: ci-passed
