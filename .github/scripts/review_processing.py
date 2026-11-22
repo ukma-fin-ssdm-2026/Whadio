@@ -325,13 +325,10 @@ def memory_from(items: list[object], key: str, repository: str, number: int) -> 
                 if not hmac.compare_digest(signature.encode(), expected.encode()):
                     continue
                 match json.loads(payload.splitlines()[-1]):
-                    case {"notified": list(notified), **remaining}:
-                        # Legacy decisions had no commit SHA. Keep their delivery history.
-                        heads = remaining.get("manual_heads", [])
+                    case {"manual_heads": list(heads), "notified": list(notified), **remaining}:
                         pending = remaining.get("pending", [])
                         if (
-                            isinstance(heads, list)
-                            and all(isinstance(value, str) for value in heads)
+                            all(isinstance(value, str) for value in heads)
                             and isinstance(pending, list)
                             and all(isinstance(value, int) for value in notified)
                         ):

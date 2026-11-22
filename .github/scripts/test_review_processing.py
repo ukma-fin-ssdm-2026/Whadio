@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import sys
 import urllib.request
 from dataclasses import replace
 from email.message import Message
@@ -139,6 +140,22 @@ def github(monkeypatch: pytest.MonkeyPatch) -> FakeGitHub:
     fake = FakeGitHub()
     monkeypatch.setattr(processor, "notify", lambda *_: fake.events.append("notify"))
     return fake
+
+
+@pytest.fixture
+def workflow_environment(
+    github: FakeGitHub, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> Path:
+    event_file = tmp_path / "event.json"
+    monkeypatch.setattr(sys, "argv", ["review_processing.py"])
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_file))
+    monkeypatch.setenv("REVIEW_PROCESSING_STATE_KEY", STATE_KEY)
+    monkeypatch.delenv("REVIEW_PROCESSING_TARGET", raising=False)
+    monkeypatch.delenv("REVIEW_PROCESSING_TEST_PR", raising=False)
+    monkeypatch.setattr(processor, "GitHub", lambda *_, **__: github)
+    return event_file
 
 
 def test_clean_approval_leaves_authors_auto_merge_enabled(github: FakeGitHub) -> None:
@@ -550,6 +567,65 @@ def test_scheduled_inventory_includes_open_prs_and_closed_notification_retries(
     assert output.read_text(encoding="utf-8") == "pull_requests=[1, 3]\n"
 
 
+def test_matrix_target_takes_precedence_over_schedule(
+    github: FakeGitHub, monkeypatch: pytest.MonkeyPatch, workflow_environment: Path
+) -> None:
+    # Arrange
+    workflow_environment.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "schedule")
+    monkeypatch.setenv("REVIEW_PROCESSING_TARGET", "419")
+    monkeypatch.setattr(github, "open_numbers", lambda: {419, 420})
+    processed: list[int] = []
+
+    def pull(number: int) -> object:
+        processed.append(number)
+        return github.current
+
+    monkeypatch.setattr(github, "pull", pull)
+    # Act
+    processor.main()
+    # Assert
+    assert processed == [419]
+
+
+@pytest.mark.parametrize(
+    ("trigger", "expected"),
+    [
+        pytest.param(
+            ("workflow_run", {"workflow_run": {"pull_requests": [{"number": 420}]}}, ""),
+            [420],
+            id="review-event-only",
+        ),
+        pytest.param(
+            ("pull_request_target", {"pull_request": {"number": 420}}, "419"),
+            [],
+            id="out-of-scope-event",
+        ),
+        pytest.param(("schedule", {}, "419"), [419], id="scoped-sweep"),
+    ],
+)
+def test_inventory_writes_only_workflow_targets(
+    github: FakeGitHub,
+    monkeypatch: pytest.MonkeyPatch,
+    workflow_environment: Path,
+    trigger: tuple[str, dict[str, object], str],
+    expected: list[int],
+) -> None:
+    # Arrange
+    event_name, event, test_pr = trigger
+    workflow_environment.write_text(json.dumps(event), encoding="utf-8")
+    output = workflow_environment.with_name("output")
+    monkeypatch.setattr(sys, "argv", ["review_processing.py", "--inventory"])
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", event_name)
+    monkeypatch.setenv("REVIEW_PROCESSING_TEST_PR", test_pr)
+    monkeypatch.setattr(github, "open_numbers", lambda: {419, 420})
+    # Act
+    processor.main()
+    # Assert
+    assert output.read_text(encoding="utf-8") == f"pull_requests={json.dumps(expected)}\n"
+
+
 def test_reconciliation_ignores_closed_prs_without_pending_labels(github: FakeGitHub) -> None:
     # Arrange
     github.current = replace(github.current, eligible=False)
@@ -566,14 +642,26 @@ def test_existing_memory_without_pending_notifications_preserves_delivery_histor
             "id": 10,
             "user": {"login": "github-actions[bot]"},
             "body": processor.seal_state(
-                processor.MARKER + '\n{"manual": true, "notified": [1]}', STATE_KEY, REPOSITORY, 1
+                processor.MARKER + '\n{"manual_heads": ["head"], "notified": [1]}',
+                STATE_KEY,
+                REPOSITORY,
+                1,
             ),
         }
     ]
     # Act
     memory = processor.memory_from(comments, STATE_KEY, REPOSITORY, 1)
     # Assert
-    assert memory == processor.Memory(comment=10, notified={1})
+    assert memory == processor.Memory(comment=10, manual_heads={"head"}, notified={1})
+
+
+def test_signed_state_without_manual_heads_is_rejected() -> None:
+    # Arrange
+    body = processor.seal_state(processor.MARKER + '\n{"notified": [1]}', STATE_KEY, REPOSITORY, 1)
+    comments = [{"id": 10, "user": {"login": "github-actions[bot]"}, "body": body}]
+    # Act / Assert
+    with pytest.raises(ValueError, match="Invalid saved review state"):
+        processor.memory_from(comments, STATE_KEY, REPOSITORY, 1)
 
 
 def test_manual_decision_survives_deleted_nit(github: FakeGitHub) -> None:
@@ -590,18 +678,13 @@ def test_manual_decision_survives_deleted_nit(github: FakeGitHub) -> None:
 
 
 def test_main_processes_an_approval_with_nits_on_a_review_signal(
-    github: FakeGitHub, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    github: FakeGitHub, monkeypatch: pytest.MonkeyPatch, workflow_environment: Path
 ) -> None:
     # Arrange
-    path = tmp_path / "event.json"
-    path.write_text('{"workflow_run": {"pull_requests": [{"number": 1}]}}', encoding="utf-8")
-    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
-    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
-    monkeypatch.setenv("GITHUB_EVENT_PATH", str(path))
+    workflow_environment.write_text(
+        '{"workflow_run": {"pull_requests": [{"number": 1}]}}', encoding="utf-8"
+    )
     monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_run")
-    monkeypatch.setenv("REVIEW_PROCESSING_STATE_KEY", STATE_KEY)
-    monkeypatch.delenv("REVIEW_PROCESSING_TEST_PR", raising=False)
-    monkeypatch.setattr(processor, "GitHub", lambda *_, **__: github)
     github.reviews = [_review(body="Nit: rename")]
     # Act
     processor.main()
@@ -682,7 +765,7 @@ def test_human_comment_cannot_spoof_saved_state() -> None:
         {
             "id": 10,
             "user": {"login": "author"},
-            "body": processor.MARKER + '\n{"manual": true, "notified": [1]}',
+            "body": processor.MARKER + '\n{"manual_heads": ["head"], "notified": [1]}',
         }
     ]
     # Act
@@ -694,7 +777,7 @@ def test_human_comment_cannot_spoof_saved_state() -> None:
 @pytest.mark.parametrize("signed_number", [None, 2])
 def test_other_actions_state_cannot_spoof_or_replay_saved_state(signed_number: int | None) -> None:
     # Arrange
-    body = processor.MARKER + '\n{"manual": false, "notified": [1]}'
+    body = processor.MARKER + '\n{"manual_heads": [], "notified": [1]}'
     if signed_number is not None:
         body = processor.seal_state(body, STATE_KEY, REPOSITORY, signed_number)
     comments = [{"id": 10, "user": {"login": "github-actions[bot]"}, "body": body}]
