@@ -705,6 +705,8 @@ class IRegistrationRepository(Protocol):
 
     async def pending(self, registration_id: UUID, /) -> PendingRegistration | None: ...
 
+    async def pending_for(self, email: str, /) -> PendingRegistration | None: ...
+
     async def issue(
         self, email: str, token_hash: str, now: datetime, expires_at: datetime, /
     ) -> UUID: ...
@@ -736,12 +738,15 @@ class RegistrationRepository:
             .execution_options(populate_existing=True)
         )
 
-    async def issue(self, email: str, token_hash: str, now: datetime, expires_at: datetime) -> UUID:
-        pending = await self._session.scalar(
+    async def pending_for(self, email: str) -> PendingRegistration | None:
+        return await self._session.scalar(
             select(PendingRegistration).where(
                 func.lower(PendingRegistration.email) == email.lower()
             )
         )
+
+    async def issue(self, email: str, token_hash: str, now: datetime, expires_at: datetime) -> UUID:
+        pending = await self.pending_for(email)
         if pending is None:
             pending = PendingRegistration(email=email)
             self._session.add(pending)

@@ -111,6 +111,10 @@ class Accounts:
         del registration_id
         raise NotImplementedError
 
+    async def pending_for(self, email: str) -> PendingRegistration | None:
+        del email
+        raise NotImplementedError
+
     async def issue(self, email: str, token_hash: str, now: datetime, expires_at: datetime) -> UUID:
         del email, token_hash, now, expires_at
         raise NotImplementedError

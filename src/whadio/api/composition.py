@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -35,6 +35,11 @@ from ..accounts.password_resets import (
 from ..accounts.passwords import Argon2PasswordHasher
 from ..accounts.redemption import RedemptionService
 from ..accounts.redemption_repository import RedemptionRepository
+from ..accounts.registration_requests import (
+    IRegistrationMailQueue,
+    RegistrationMail,
+    RegistrationRequestService,
+)
 from ..accounts.repositories import (
     InvitationRepository,
     McpKeyRepository,
@@ -81,6 +86,7 @@ from ..notifications.templates import (
     PasswordResetNotice,
     ProcessingFailed,
     ProcessingFinished,
+    RegistrationLinkNotice,
     ShareAccessRequest,
     SignInReminderNotice,
 )
@@ -587,25 +593,39 @@ def require_password_reset_mail(
     return factory
 
 
+async def _queue_quietly(
+    database: IUseCaseTransactions, queue: Callable[[AsyncSession], Awaitable[None]], failure: str
+) -> None:
+    # Recover after rollback, including a failed commit. An error response here can reveal
+    # that an account exists, and the exception may contain the address or a token.
+    with suppress(Exception):
+        async with database.transaction() as session:
+            await queue(session)
+        return
+    logger.error(failure)
+
+
+def _password_reset_requests(
+    session: AsyncSession, mail: PasswordResetMailFactory
+) -> PasswordResetRequestService:
+    return PasswordResetRequestService(
+        PasswordResetRepository(session),
+        SessionRepository(session),
+        mail(session),
+        lambda: datetime.now(UTC),
+    )
+
+
 class PasswordResetEmailRequests:
     def __init__(self, database: IUseCaseTransactions, mail: PasswordResetMailFactory) -> None:
         self._database: IUseCaseTransactions = database
         self._mail: PasswordResetMailFactory = mail
 
     async def request(self, email: str, *, kind: PasswordResetMailKind) -> None:
-        # Recover after rollback, including a failed commit. An error response here can reveal
-        # that an account exists, and the exception may contain the address or reset token.
-        with suppress(Exception):
-            async with self._database.transaction() as session:
-                service = PasswordResetRequestService(
-                    PasswordResetRepository(session),
-                    SessionRepository(session),
-                    self._mail(session),
-                    lambda: datetime.now(UTC),
-                )
-                await service.request(email, kind=kind)
-            return
-        logger.error("Could not queue a password reset email")
+        async def queue(session: AsyncSession) -> None:
+            await _password_reset_requests(session, self._mail).request(email, kind=kind)
+
+        await _queue_quietly(self._database, queue, "Could not queue a password reset email")
 
 
 def password_reset_request_service(
@@ -618,6 +638,81 @@ def password_reset_request_service(
 PasswordResetRequests = Annotated[
     PasswordResetEmailRequests, Depends(password_reset_request_service)
 ]
+
+
+type RegistrationMailFactory = Callable[[AsyncSession], IRegistrationMailQueue]
+
+
+class OutboxRegistrationMail:
+    """Accounts' `IRegistrationMailQueue`, answered by the notification outbox.
+
+    Only the registration ID is kept, and no recipient account, which does not exist yet: the
+    scheduler takes the address from the pending registration when it sends the mail.
+    """
+
+    def __init__(self, outbox: INotificationOutbox) -> None:
+        self._outbox: INotificationOutbox = outbox
+
+    async def reserve(self, mail: RegistrationMail) -> None:
+        notice = RegistrationLinkNotice(
+            registration_id=mail.registration_id,
+            issued_at=mail.issued_at,
+            expires_at=mail.expires_at,
+        )
+        await self._outbox.reserve(
+            None, f"{notice.kind}:{mail.registration_id}:{mail.issued_at.isoformat()}", notice
+        )
+
+
+def outbox_registration_mail(session: AsyncSession) -> IRegistrationMailQueue:
+    return OutboxRegistrationMail(NotificationOutboxRepository(session))
+
+
+def registration_mail() -> RegistrationMailFactory | None:
+    return None
+
+
+def require_registration_mail(
+    factory: Annotated[RegistrationMailFactory | None, Depends(registration_mail)],
+) -> RegistrationMailFactory:
+    if factory is None:
+        raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+    return factory
+
+
+class RegistrationEmailRequests:
+    def __init__(
+        self,
+        database: IUseCaseTransactions,
+        resets: PasswordResetMailFactory,
+        mail: RegistrationMailFactory,
+    ) -> None:
+        self._database: IUseCaseTransactions = database
+        self._resets: PasswordResetMailFactory = resets
+        self._mail: RegistrationMailFactory = mail
+
+    async def request(self, email: str) -> None:
+        async def queue(session: AsyncSession) -> None:
+            await RegistrationRequestService(
+                RegistrationRepository(session),
+                SessionRepository(session),
+                _password_reset_requests(session, self._resets),
+                self._mail(session),
+                lambda: datetime.now(UTC),
+            ).request(email)
+
+        await _queue_quietly(self._database, queue, "Could not queue a registration email")
+
+
+def registration_request_service(
+    resets: Annotated[PasswordResetMailFactory, Depends(require_password_reset_mail)],
+    mail: Annotated[RegistrationMailFactory, Depends(require_registration_mail)],
+    database: Annotated[IUseCaseTransactions, Depends(runtime_database)],
+) -> RegistrationEmailRequests:
+    return RegistrationEmailRequests(database, resets, mail)
+
+
+RegistrationRequests = Annotated[RegistrationEmailRequests, Depends(registration_request_service)]
 
 
 def mcp_key_service(session: Session) -> McpKeyService:
@@ -711,6 +806,7 @@ Captures = Annotated[CaptureService, Depends(capture_service)]
 class RuntimeIntegrations:
     processing: Callable[[AsyncSession], IMeetingProcessing] | None = None
     password_reset_mail: PasswordResetMailFactory | None = None
+    registration_mail: RegistrationMailFactory | None = None
 
 
 def connect_integrations(app: FastAPI, integrations: RuntimeIntegrations) -> None:
@@ -720,6 +816,7 @@ def connect_integrations(app: FastAPI, integrations: RuntimeIntegrations) -> Non
 
     app.dependency_overrides[meeting_processing] = processing
     app.dependency_overrides[password_reset_mail] = lambda: integrations.password_reset_mail
+    app.dependency_overrides[registration_mail] = lambda: integrations.registration_mail
 
 
 def export_public_url() -> str:

@@ -33,6 +33,7 @@ from .composition import (
     invitation_public_url,
     notes_llm,
     outbox_password_reset_mail,
+    outbox_registration_mail,
     registration_mode,
     runtime_database,
     transaction,
@@ -152,6 +153,7 @@ def create_app(
         RuntimeIntegrations(
             processing=composition.processing,
             password_reset_mail=outbox_password_reset_mail,
+            registration_mail=outbox_registration_mail,
         )
         if integrations is None
         else integrations,

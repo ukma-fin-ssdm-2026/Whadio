@@ -217,6 +217,16 @@ class InstanceRead(Output):
     api_version: str = Field(description="Version of the Web API")
 
 
+class RegistrationRequest(Input):
+    email: EmailStr = Field(
+        max_length=254, description="Email address to register", examples=["alice@whadio.dev"]
+    )
+
+
+class RegistrationAccepted(Output):
+    message: str = Field(description="Fixed confirmation for every accepted registration request")
+
+
 class PasswordResetRequest(Input):
     email: EmailStr = Field(
         max_length=254, description="Account email address", examples=["alice@whadio.dev"]

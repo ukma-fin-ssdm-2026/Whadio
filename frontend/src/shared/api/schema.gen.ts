@@ -104,6 +104,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/registrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request a registration link
+         * @description Public in verified mode. Returns a fixed confirmation for every valid email address. A new address can receive a single-use link valid for 24 hours, and an address with an account a sign-in reminder with a password-reset link instead. A repeat within 20 minutes of the last email changes nothing.
+         */
+        post: operations["request_registration_api_v1_registrations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/registrations/{registration_id}/complete": {
         parameters: {
             query?: never;
@@ -2242,6 +2262,14 @@ export interface components {
             /** @description Membership created through the invitation */
             membership: components["schemas"]["MembershipRead"];
         };
+        /** RegistrationAccepted */
+        RegistrationAccepted: {
+            /**
+             * Message
+             * @description Fixed confirmation for every accepted registration request
+             */
+            message: string;
+        };
         /** RegistrationComplete */
         RegistrationComplete: {
             /**
@@ -2272,6 +2300,16 @@ export interface components {
          * @enum {string}
          */
         RegistrationMode: "invite-only" | "verified";
+        /** RegistrationRequest */
+        RegistrationRequest: {
+            /**
+             * Email
+             * Format: email
+             * @description Email address to register
+             * @example alice@whadio.dev
+             */
+            email: string;
+        };
         /** RequestInput */
         RequestInput: {
             /**
@@ -3121,6 +3159,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InstanceRead"];
+                };
+            };
+        };
+    };
+    request_registration_api_v1_registrations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegistrationRequest"];
+            };
+        };
+        responses: {
+            /** @description Request accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationAccepted"];
+                };
+            };
+            /** @description `MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description INVITE_ONLY_INSTANCE: the operator runs the instance invite-only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `VALIDATION_ERROR`: a parameter or field is invalid; `details` names each */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description INTEGRATION_UNAVAILABLE: email delivery or the database is unconfigured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
