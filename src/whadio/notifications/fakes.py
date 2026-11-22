@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 from pydantic import JsonValue
 
 from .repositories import (
+    ACCOUNT_LINK_KINDS,
     AccountLinkHistory,
     IAccountLinkHistory,
     INotificationOutbox,
@@ -88,13 +89,13 @@ class InMemoryNotificationOutbox(INotificationOutbox, IOutboxDrain, IAccountLink
         )
 
     @override
-    async def account_link_history(self, recipient_id: UUID, now: datetime) -> AccountLinkHistory:
+    async def account_link_history(self, address_key: str, now: datetime) -> AccountLinkHistory:
         return account_link_history(
             (
                 (stored.kind, stored.payload, stored.sent_at)
                 for stored in self.notices.values()
-                if stored.recipient_id == recipient_id
-                and stored.kind in {NoticeKind.RESET_LINK, NoticeKind.SIGN_IN_REMINDER}
+                if stored.kind in ACCOUNT_LINK_KINDS
+                and stored.payload.get("address_key") == address_key
             ),
             now,
         )

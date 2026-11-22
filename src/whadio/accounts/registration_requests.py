@@ -1,21 +1,20 @@
 import secrets
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Final, Protocol
+from typing import Protocol
 from uuid import UUID
 
-from .password_resets import RESET_MAIL_COOLDOWN, PasswordResetMailKind
+from .password_resets import AddressMailHistory, PasswordResetMailKind
 from .repositories import IRegistrationRepository, ISessionRepository
 from .services import REGISTRATION_LIFETIME
 from .tokens import generated_token_hash
-
-REGISTRATION_MAIL_COOLDOWN: Final = RESET_MAIL_COOLDOWN
 
 
 @dataclass(frozen=True, slots=True)
 class RegistrationMail:
     registration_id: UUID
+    email: str = field(repr=False)
     issued_at: datetime
     expires_at: datetime
 
@@ -23,6 +22,10 @@ class RegistrationMail:
 class IRegistrationMailQueue(Protocol):
     async def reserve(self, mail: RegistrationMail, /) -> None:
         """Queue in the caller's transaction; the link gets its token only when the mail is sent."""
+        ...
+
+    async def history(self, email: str, now: datetime, /) -> AddressMailHistory:
+        """The address's registration, reset and reminder emails, as `IPasswordResetMailQueue`."""
         ...
 
 
@@ -53,8 +56,7 @@ class RegistrationRequestService:
             await self._resets.request(email, kind=PasswordResetMailKind.SIGN_IN_REMINDER)
             return
         now = self._now()
-        pending = await self._registrations.pending_for(email)
-        if pending is not None and now < pending.created_at + REGISTRATION_MAIL_COOLDOWN:
+        if not (await self._mail.history(email, now)).allows_another(now):
             return
         expires_at = now + REGISTRATION_LIFETIME
         # Nobody learns this token: the mail gets a new one when it is sent.
@@ -62,4 +64,4 @@ class RegistrationRequestService:
         registration_id = await self._registrations.issue(
             email, generated_token_hash(unsent_token), now, expires_at
         )
-        await self._mail.reserve(RegistrationMail(registration_id, now, expires_at))
+        await self._mail.reserve(RegistrationMail(registration_id, email, now, expires_at))

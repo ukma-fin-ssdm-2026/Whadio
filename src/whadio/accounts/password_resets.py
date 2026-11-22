@@ -38,6 +38,7 @@ class PasswordResetMailKind(StrEnum):
 @dataclass(frozen=True, slots=True)
 class PasswordResetMail:
     user_id: UUID
+    email: str = field(repr=False)
     reset_id: UUID
     issued_at: datetime
     expires_at: datetime
@@ -45,12 +46,12 @@ class PasswordResetMail:
 
 
 @dataclass(frozen=True, slots=True)
-class ResetMailHistory:
+class AddressMailHistory:
     waiting: bool
     last_sent_at: datetime | None
 
     def allows_another(self, now: datetime) -> bool:
-        """FR-048: nothing waits to be sent, and the relay took the last one 20 minutes ago."""
+        """NFR-018: nothing waits to be sent, and the relay took the last one 20 minutes ago."""
         return not self.waiting and (
             self.last_sent_at is None or now >= self.last_sent_at + RESET_MAIL_COOLDOWN
         )
@@ -64,8 +65,8 @@ class IPasswordResetMailQueue(Protocol):
         """
         ...
 
-    async def history(self, user_id: UUID, now: datetime, /) -> ResetMailHistory:
-        """The account's reset and sign-in reminder emails, read in the caller's transaction.
+    async def history(self, email: str, now: datetime, /) -> AddressMailHistory:
+        """The address's registration, reset and reminder emails, read in the caller's transaction.
 
         `waiting` covers only emails whose link has not expired at `now`, and `last_sent_at` is
         when the relay last accepted one.
@@ -101,7 +102,7 @@ class PasswordResetRequestService:
         if user is None:
             return
         now = self._now()
-        if not (await self._mail.history(user.user_id, now)).allows_another(now):
+        if not (await self._mail.history(user.email, now)).allows_another(now):
             return
         expires_at = now + RESET_LIFETIME
         # Nobody learns this token: the mail gets a new one when it is sent.
@@ -109,7 +110,9 @@ class PasswordResetRequestService:
         reset_id = await self._resets.issue(
             user.user_id, generated_token_hash(unsent_token), now, expires_at
         )
-        await self._mail.reserve(PasswordResetMail(user.user_id, reset_id, now, expires_at, kind))
+        await self._mail.reserve(
+            PasswordResetMail(user.user_id, user.email, reset_id, now, expires_at, kind)
+        )
 
 
 class PasswordResetService:

@@ -1,3 +1,4 @@
+import hashlib
 from dataclasses import dataclass
 from datetime import UTC
 from enum import StrEnum
@@ -89,6 +90,16 @@ class _IssuedLink(BaseModel):
         description="When the link was issued; once it is issued again, this notice is stale"
     )
     expires_at: AwareDatetime = Field(description="When the link stops working")
+    address_key: str = Field(
+        pattern=r"^[0-9a-f]{64}$",
+        description="Key of the address the mail goes to, from `address_key`; NFR-018 limits "
+        "registration and reset email per address with it",
+    )
+
+
+def address_key(email: str) -> str:
+    """Look up an address's account-link email by this, without storing the address."""
+    return hashlib.sha256(email.lower().encode()).hexdigest()
 
 
 class RegistrationLinkNotice(_IssuedLink):

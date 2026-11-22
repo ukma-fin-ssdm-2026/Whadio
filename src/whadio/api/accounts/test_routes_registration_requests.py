@@ -1,21 +1,25 @@
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from conftest import AsyncDatabase, SavepointTransactions
 
 from ...accounts.enums import RegistrationMode
+from ...accounts.password_resets import AddressMailHistory
 from ...accounts.registration_requests import IRegistrationMailQueue, RegistrationMail
-from ...accounts.repositories import RegistrationRepository
+from ...accounts.repositories import RegistrationRepository, SessionRepository
+from ...accounts.services import RegistrationIssuer
 from ...notifications.models import NotificationOutbox
 from ...notifications.templates import NoticeKind
 from ..app import create_app
 from ..composition import RuntimeIntegrations, outbox_password_reset_mail, runtime_database
 from ..core.errors import ErrorCode, ErrorResponse
 from ..settings import WebSettings
+from .schemas import UserRead
 from .test_routes_password_reset_requests import public_response
 
 pytestmark = pytest.mark.slow
@@ -115,22 +119,30 @@ def test_registration_request_refuses_an_invalid_address(async_database: AsyncDa
 
 
 class FailingRegistrationMail:
+    """Fails after the pending registration exists, naming the address as a driver might."""
+
+    def __init__(self, email: str) -> None:
+        self._email: str = email
+
+    async def history(self, email: str, now: datetime, /) -> AddressMailHistory:
+        del email, now
+        return AddressMailHistory(waiting=False, last_sent_at=None)
+
     async def reserve(self, mail: RegistrationMail, /) -> None:
-        raise RuntimeError(f"cannot queue {mail}")
+        raise RuntimeError(f"cannot queue registration {mail.registration_id} for {self._email}")
 
 
-def failing_registration_mail(session: AsyncSession) -> IRegistrationMailQueue:
-    del session
-    return FailingRegistrationMail()
-
-
-def test_failed_queueing_answers_the_same_and_logs_no_address(
+def test_failed_queueing_answers_the_same_rolls_back_and_logs_no_address(
     async_database: AsyncDatabase, caplog: pytest.LogCaptureFixture
 ) -> None:
     # Arrange
     email = f"{uuid4()}@example.com"
 
-    async def scenario(session: AsyncSession) -> tuple[int, bytes, str]:
+    def failing_registration_mail(session: AsyncSession) -> IRegistrationMailQueue:
+        del session
+        return FailingRegistrationMail(email)
+
+    async def scenario(session: AsyncSession) -> tuple[tuple[int, bytes, str], bool]:
         app = create_app(
             web_settings=settings(RegistrationMode.VERIFIED),
             integrations=RuntimeIntegrations(
@@ -144,10 +156,61 @@ def test_failed_queueing_answers_the_same_and_logs_no_address(
         ) as client:
             # Act
             response = await client.post(REGISTRATION_PATH, json={"email": email})
-        return public_response(response)
+        rolled_back = await RegistrationRepository(session).pending_for(email) is None
+        return public_response(response), rolled_back
 
     # Assert
-    assert (async_database.run(scenario), email in caplog.text) == (ACCEPTED, False)
+    assert (async_database.run(scenario), email in caplog.text) == ((ACCEPTED, True), False)
+
+
+def test_reset_request_soon_after_an_emailed_registration_sends_nothing(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> list[NoticeKind]:
+        email = f"{uuid4()}@example.com"
+        async with AsyncDatabase.api_client(
+            session, web_settings=settings(RegistrationMode.VERIFIED)
+        ) as client:
+            await client.post(REGISTRATION_PATH, json={"email": email})
+            pending = await RegistrationRepository(session).pending_for(email)
+            if pending is None:
+                raise AssertionError("no registration was issued")
+            await session.execute(
+                update(NotificationOutbox)
+                .where(
+                    NotificationOutbox.dedupe_key.startswith(
+                        f"{NoticeKind.REGISTRATION_LINK}:{pending.pending_registration_id}:"
+                    )
+                )
+                .values(sent_at=datetime.now(UTC))
+            )
+            renewed = await RegistrationIssuer(
+                RegistrationRepository(session), SessionRepository(session)
+            ).renew(pending.pending_registration_id, pending.created_at, datetime.now(UTC))
+            if renewed is None:
+                raise AssertionError("the emailed link is not current")
+            created = await client.post(
+                f"{REGISTRATION_PATH}/{pending.pending_registration_id}/complete",
+                json={
+                    "token": renewed.link.token,
+                    "name": "Alice",
+                    "password": f"A1{uuid4().hex}",
+                    "accept_terms": True,
+                },
+            )
+            # Act
+            await client.post("/api/v1/password-resets", json={"email": email})
+        kinds = await session.scalars(
+            select(NotificationOutbox.kind).where(
+                NotificationOutbox.recipient_user_id
+                == UserRead.model_validate_json(created.content).id
+            )
+        )
+        return list(kinds)
+
+    # Assert
+    assert async_database.run(scenario) == []
 
 
 def test_registration_request_refuses_a_non_ascii_name_before_the_at(

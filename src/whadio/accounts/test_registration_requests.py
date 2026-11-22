@@ -13,18 +13,15 @@ from .password_resets import PasswordResetMailKind, PasswordResetRequestService
 from .registration_requests import RegistrationMail, RegistrationRequestService
 from .repositories import RegistrationRepository, SessionRepository
 from .reset_repository import PasswordResetRepository
-from .test_password_reset_requests import ResetMailQueue
+from .services import RegistrationIssuer
+from .test_password_reset_requests import MailQueue, ResetMailQueue
 from .test_password_resets import PASSWORD
 
 pytestmark = pytest.mark.slow
 
 
-class RegistrationMailQueue:
-    def __init__(self) -> None:
-        self.messages: list[RegistrationMail] = []
-
-    async def reserve(self, mail: RegistrationMail, /) -> None:
-        self.messages.append(mail)
+class RegistrationMailQueue(MailQueue[RegistrationMail]):
+    pass
 
 
 @dataclass
@@ -58,7 +55,7 @@ def test_new_address_gets_a_24_hour_registration_link(async_database: AsyncDatab
         await request(session, email, now, mailbox)
         pending = await RegistrationRepository(session).pending_for(email)
         return pending is not None and mailbox.registrations.messages == [
-            RegistrationMail(pending.pending_registration_id, now, now + timedelta(hours=24))
+            RegistrationMail(pending.pending_registration_id, email, now, now + timedelta(hours=24))
         ]
 
     # Assert
@@ -96,7 +93,7 @@ def test_address_with_an_account_gets_a_sign_in_reminder_instead(
     ) == ([PasswordResetMailKind.SIGN_IN_REMINDER], [])
 
 
-def test_repeat_within_20_minutes_queues_nothing_and_keeps_the_earlier_link(
+def test_repeat_within_20_minutes_of_delivery_queues_nothing_and_keeps_the_link(
     async_database: AsyncDatabase,
 ) -> None:
     # Arrange
@@ -105,6 +102,7 @@ def test_repeat_within_20_minutes_queues_nothing_and_keeps_the_earlier_link(
     async def scenario(session: AsyncSession) -> tuple[int, bool]:
         email, now = f"{uuid4()}@example.com", datetime.now(UTC)
         await request(session, email, now, mailbox)
+        mailbox.registrations.deliver(now)
         earlier = await stored_token_hash(session, email)
         # Act
         await request(session, email, now + timedelta(minutes=20, microseconds=-1), mailbox)
@@ -116,7 +114,7 @@ def test_repeat_within_20_minutes_queues_nothing_and_keeps_the_earlier_link(
     assert async_database.run(scenario) == (1, True)
 
 
-def test_repeat_after_20_minutes_queues_a_link_that_replaces_the_earlier_one(
+def test_repeat_20_minutes_after_delivery_queues_a_link_that_replaces_the_earlier_one(
     async_database: AsyncDatabase,
 ) -> None:
     # Arrange
@@ -125,6 +123,7 @@ def test_repeat_after_20_minutes_queues_a_link_that_replaces_the_earlier_one(
     async def scenario(session: AsyncSession) -> tuple[int, bool]:
         email, now = f"{uuid4()}@example.com", datetime.now(UTC)
         await request(session, email, now, mailbox)
+        mailbox.registrations.deliver(now)
         earlier = await stored_token_hash(session, email)
         # Act
         await request(session, email, now + timedelta(minutes=20), mailbox)
@@ -134,3 +133,37 @@ def test_repeat_after_20_minutes_queues_a_link_that_replaces_the_earlier_one(
 
     # Assert
     assert async_database.run(scenario) == (2, True)
+
+
+def test_operator_link_does_not_use_up_the_email_window(async_database: AsyncDatabase) -> None:
+    # Arrange
+    mailbox = Mailbox()
+
+    async def scenario(session: AsyncSession) -> None:
+        email, now = f"{uuid4()}@example.com", datetime.now(UTC)
+        await RegistrationIssuer(RegistrationRepository(session), SessionRepository(session)).issue(
+            email, now
+        )
+        # Act
+        await request(session, email, now + timedelta(minutes=1), mailbox)
+
+    async_database.run(scenario)
+    # Assert
+    assert len(mailbox.registrations.messages) == 1
+
+
+def test_repeat_while_the_registration_email_waits_queues_nothing(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    mailbox = Mailbox()
+
+    async def scenario(session: AsyncSession) -> None:
+        email, now = f"{uuid4()}@example.com", datetime.now(UTC)
+        await request(session, email, now, mailbox)
+        # Act
+        await request(session, email, now + timedelta(hours=1), mailbox)
+
+    async_database.run(scenario)
+    # Assert
+    assert len(mailbox.registrations.messages) == 1

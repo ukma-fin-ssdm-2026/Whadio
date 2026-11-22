@@ -54,7 +54,7 @@ The model covers the data required for these key project functions:
 | `LLM_PROVIDER_CONFIG` | `provider_config_id` | Workspace notes-provider configuration, either built-in `Whadio` or an external BYOK provider. | `api_key_encrypted` is secret credential material when an external provider is used. |
 | `MCP_KEY` | `mcp_key_id` | Personal access key for MCP clients. | `key_hash` is sensitive authentication material. |
 | `PROCESSING_JOB` | `processing_job_id` | Tracks transcription and notes jobs for monitoring. Diarization is part of the transcription job. A notes job a member requested also keeps the preset and the requester of that regeneration. | Failure reasons can include sensitive operational or content-derived details. `requested_by_user_id` links a member to the regeneration they asked for. |
-| `NOTIFICATION_OUTBOX` | `notice_id` | A notification mail reserved in the transaction of the change it reports, waiting for the scheduler to send it. | `recipient_user_id` is personal data. `payload` holds metadata only: meeting and share IDs, meeting names, and for a share access request the requester's name and email, which are personal. `last_error` is sanitised and names no address. |
+| `NOTIFICATION_OUTBOX` | `notice_id` | A notification mail reserved in the transaction of the change it reports, waiting for the scheduler to send it. | `recipient_user_id` is personal data. `payload` holds metadata only: meeting and share IDs, meeting names, for a share access request the requester's name and email, which are personal, and for an account link a hash of the address it goes to. `last_error` is sanitised and names no address. |
 | `AUDIT_EVENT` | `audit_event_id` | Append-only record of who changed a meeting's content or access (`NFR-010`), kept after the meeting or workspace it refers to is deleted. | `actor_user_id` links a person to their actions. `subject_id` and `details` hold user IDs for membership, access-grant and share-request events. No content or names. |
 
 ## Relationships and Cardinality
@@ -113,18 +113,18 @@ The model covers the data required for these key project functions:
 - `PENDING_REGISTRATION` is unique by `email`, and none exists for an email that already has a `USER`. A registration request for an email that has a `USER` is handled as a password-reset request for that `USER`.
 - Completing a `PENDING_REGISTRATION` deletes it in the same transaction that creates the `USER`, its personal workspace and its default folder, which makes its link single-use.
 - `PASSWORD_RESET` is unique by `user_id`, and using the link deletes the row.
-- An emailed reset request reads the clock after locking the `USER` row. It changes nothing
-  while a reset or sign-in reminder email for that account waits in `NOTIFICATION_OUTBOX` with a
-  link that has not expired, or within 20 minutes of the latest such email's `sent_at`, when the
-  relay accepted it. Operator-issued links, and using or deleting a pending reset, leave this
-  rule unchanged.
+- An emailed reset request reads the clock after locking the `USER` row, and a registration
+  request after locking the address. Either changes nothing while a registration, reset or
+  sign-in reminder email to the same address waits in `NOTIFICATION_OUTBOX` with a link that has
+  not expired, or within 20 minutes of the latest such email's `sent_at`, when the relay accepted
+  it. So the window carries over when a registration becomes an account. Operator-issued links
+  queue no email and leave this rule unchanged, as does using or deleting a pending link.
 - Reissuing a link locks the pending reset row before replacing it, so an expired-row cleanup
   cannot remove the row between reading and updating it.
 - Visitors can request registrations and password resets only in `verified` mode; the operator issues them in either mode. Rows created before a mode switch keep working until they expire.
-- A repeated registration for a new address within 20 minutes of the pending registration's
-  `created_at` changes nothing. For an existing account, either request form follows the reset
-  rule above. Otherwise a new request replaces the pending token and its timestamps, which
-  invalidates any earlier link.
+- Outside that window, a registration request replaces the pending token and its timestamps,
+  which invalidates any earlier link. For an address with an account, it is handled as a reset
+  request and follows the same rule.
 - At most one `INVITATION` per `(workspace_id, invited_email)` has `status = pending`. Inviting an address that already has a pending invitation in the workspace updates that invitation, keeping its `invitation_id`: it replaces `token_hash`, `role`, `invited_by_user_id`, `created_at` and `expires_at`, so earlier links stop working, and writes another `member_invited` event.
 - In `verified` mode, inviting an address is refused within a day of the `created_at` of its latest invitation to the workspace, whatever that invitation's status, so cancelling and inviting again sends no extra email. Invitation rows are kept until they expire, so the latest one is still there to compare with.
 - A `USER` invites at most 20 addresses a day, counted as the `INVITATION` rows whose `invited_by_user_id` is that user and whose `created_at` falls within the last 24 hours. A replaced invitation stays one row and counts once, for whoever replaced it last. That undercounts nothing the limit protects: in `verified` mode an invitation is replaced only after it has left the count, so every invitation email is counted, and in `invite-only` mode repeated replacements send no email and can create at most one account.
@@ -195,7 +195,7 @@ The model covers the data required for these key project functions:
 - Recording files are deleted 90 days after the meeting, at the date stored in `recording_delete_after`; accessible members are warned 7 days beforehand. Transcripts and notes remain after `recording_deleted_at` is set.
 - LLM provider API keys and MCP keys must never be stored in plaintext.
 - `NOTIFICATION_OUTBOX.dedupe_key` is unique: reserving a notice whose key is already reserved changes nothing, so a retried use case mails once. Callers build the key from what makes the notice unique, such as the meeting and the recipient.
-- `NOTIFICATION_OUTBOX.payload` is a JSON object validated per `kind`; it holds metadata for the mail template, never transcript, note or recording content, and links are built when the mail is sent.
+- `NOTIFICATION_OUTBOX.payload` is a JSON object validated per `kind`; it holds metadata for the mail template, never transcript, note or recording content, and links are built when the mail is sent. Account-link payloads also hold `address_key`, the SHA-256 of the lowercased address, which the template ignores: it lets the 20-minute email rule find one address's emails without storing the address.
 - `NOTIFICATION_OUTBOX.recipient_user_id` is null exactly for a registration link, whose address has no account yet; the scheduler takes the address from the `PENDING_REGISTRATION` when it sends the mail.
 - A registration link, password-reset or sign-in reminder notice holds the link's ID and issue time, never its token. When the mail is sent, the scheduler gives the link a new token and stores only its hash, which invalidates earlier links for it. A notice whose link was used, issued again or expired is not sent.
 - Each send attempt makes its own token. If the relay accepted an attempt that the scheduler could not record as sent, the retried email works and the earlier email's link does not. This is accepted: an older emailed link that stops working fails safe, and the case needs a database failure right after the relay accepted the email.

@@ -53,6 +53,7 @@ from ..notifications.templates import (
     PasswordResetNotice,
     RecordingDeletionWarning,
     RegistrationLinkNotice,
+    address_key,
 )
 from ..processing.enums import JobStatus, JobType
 from ..processing.models import ProcessingJob
@@ -69,6 +70,8 @@ from .composition import (
     RetentionTransactions,
     notification_drainer,
 )
+
+ADDRESS_KEY = address_key("alice@example.com")
 
 DEADLINE = datetime(2026, 5, 4, 9, 30, tzinfo=UTC)
 PUBLIC_URL = "https://whadio.example.com"
@@ -157,10 +160,16 @@ def renewed(
 
 
 REGISTRATION_NOTICE = RegistrationLinkNotice(
-    registration_id=LINK_ID, issued_at=ISSUED_AT, expires_at=ISSUED_AT + timedelta(hours=24)
+    registration_id=LINK_ID,
+    issued_at=ISSUED_AT,
+    expires_at=ISSUED_AT + timedelta(hours=24),
+    address_key=ADDRESS_KEY,
 )
 RESET_NOTICE = PasswordResetNotice(
-    reset_id=LINK_ID, issued_at=ISSUED_AT, expires_at=ISSUED_AT + timedelta(hours=1)
+    reset_id=LINK_ID,
+    issued_at=ISSUED_AT,
+    expires_at=ISSUED_AT + timedelta(hours=1),
+    address_key=ADDRESS_KEY,
 )
 
 
@@ -532,6 +541,7 @@ def test_mailed_registration_link_carries_the_only_valid_token(
             registration_id=issued.registration_id,
             issued_at=now,
             expires_at=now + timedelta(hours=24),
+            address_key=ADDRESS_KEY,
         )
         # Act
         mail = await mailed_link(session, None, notice)
@@ -561,7 +571,10 @@ def test_mailed_reset_link_completes_the_reset(async_database: AsyncDatabase) ->
         )
         issued = await resets.issue(user.email, now)
         notice = PasswordResetNotice(
-            reset_id=issued.reset_id, issued_at=now, expires_at=now + timedelta(hours=1)
+            reset_id=issued.reset_id,
+            issued_at=now,
+            expires_at=now + timedelta(hours=1),
+            address_key=ADDRESS_KEY,
         )
         # Act
         mail = await mailed_link(session, user.user_id, notice)

@@ -26,12 +26,12 @@ from ..accounts.enums import NotesTemplate, RegistrationMode
 from ..accounts.member_repository import MemberRepository
 from ..accounts.members import MemberService
 from ..accounts.password_resets import (
+    AddressMailHistory,
     IPasswordResetMailQueue,
     PasswordResetMail,
     PasswordResetMailKind,
     PasswordResetRequestService,
     PasswordResetService,
-    ResetMailHistory,
 )
 from ..accounts.passwords import Argon2PasswordHasher
 from ..accounts.redemption import RedemptionService
@@ -94,6 +94,7 @@ from ..notifications.templates import (
     RegistrationLinkNotice,
     ShareAccessRequest,
     SignInReminderNotice,
+    address_key,
 )
 from ..processing.consumer import (
     ProcessingTransactions,
@@ -554,6 +555,13 @@ PasswordResets = Annotated[PasswordResetService, Depends(password_reset_service)
 type PasswordResetMailFactory = Callable[[AsyncSession], IPasswordResetMailQueue]
 
 
+async def _address_history(
+    sent: IAccountLinkHistory, email: str, now: datetime
+) -> AddressMailHistory:
+    found = await sent.account_link_history(address_key(email), now)
+    return AddressMailHistory(found.waiting, found.last_sent_at)
+
+
 class OutboxPasswordResetMail:
     """Accounts' `IPasswordResetMailQueue`, answered by the notification outbox.
 
@@ -565,20 +573,25 @@ class OutboxPasswordResetMail:
         self._outbox: INotificationOutbox = outbox
         self._sent: IAccountLinkHistory = sent
 
-    async def history(self, user_id: UUID, now: datetime) -> ResetMailHistory:
-        found = await self._sent.account_link_history(user_id, now)
-        return ResetMailHistory(found.waiting, found.last_sent_at)
+    async def history(self, email: str, now: datetime) -> AddressMailHistory:
+        return await _address_history(self._sent, email, now)
 
     async def reserve(self, mail: PasswordResetMail) -> None:
-        reset_id, issued_at = mail.reset_id, mail.issued_at
+        reset_id, issued_at, key = mail.reset_id, mail.issued_at, address_key(mail.email)
         match mail.kind:
             case PasswordResetMailKind.RESET:
                 notice = PasswordResetNotice(
-                    reset_id=reset_id, issued_at=issued_at, expires_at=mail.expires_at
+                    reset_id=reset_id,
+                    issued_at=issued_at,
+                    expires_at=mail.expires_at,
+                    address_key=key,
                 )
             case PasswordResetMailKind.SIGN_IN_REMINDER:
                 notice = SignInReminderNotice(
-                    reset_id=reset_id, issued_at=issued_at, expires_at=mail.expires_at
+                    reset_id=reset_id,
+                    issued_at=issued_at,
+                    expires_at=mail.expires_at,
+                    address_key=key,
                 )
         await self._outbox.reserve(
             mail.user_id, f"{notice.kind}:{reset_id}:{issued_at.isoformat()}", notice
@@ -662,14 +675,19 @@ class OutboxRegistrationMail:
     scheduler takes the address from the pending registration when it sends the mail.
     """
 
-    def __init__(self, outbox: INotificationOutbox) -> None:
+    def __init__(self, outbox: INotificationOutbox, sent: IAccountLinkHistory) -> None:
         self._outbox: INotificationOutbox = outbox
+        self._sent: IAccountLinkHistory = sent
+
+    async def history(self, email: str, now: datetime) -> AddressMailHistory:
+        return await _address_history(self._sent, email, now)
 
     async def reserve(self, mail: RegistrationMail) -> None:
         notice = RegistrationLinkNotice(
             registration_id=mail.registration_id,
             issued_at=mail.issued_at,
             expires_at=mail.expires_at,
+            address_key=address_key(mail.email),
         )
         await self._outbox.reserve(
             None, f"{notice.kind}:{mail.registration_id}:{mail.issued_at.isoformat()}", notice
@@ -677,7 +695,8 @@ class OutboxRegistrationMail:
 
 
 def outbox_registration_mail(session: AsyncSession) -> IRegistrationMailQueue:
-    return OutboxRegistrationMail(NotificationOutboxRepository(session))
+    outbox = NotificationOutboxRepository(session)
+    return OutboxRegistrationMail(outbox, outbox)
 
 
 def registration_mail() -> RegistrationMailFactory | None:

@@ -26,8 +26,11 @@ from .templates import (
     NoticeKind,
     ProcessingFinished,
     RegistrationLinkNotice,
+    address_key,
     render,
 )
+
+ADDRESS_KEY = address_key("alice@example.com")
 
 NOW = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
 RECIPIENT_ID = UUID("3c9d1a52-7b8e-4f61-9a0d-5e2f4b6c8d10")
@@ -40,7 +43,10 @@ UNRENDERABLE = ProcessingFinished(
     meeting_id=UUID("5d7c3b19-8a2e-4f60-b1c4-2e9f0a7d6c85"), meeting_name="Weekly sync"
 )
 REGISTRATION = RegistrationLinkNotice(
-    registration_id=uuid4(), issued_at=NOW, expires_at=NOW + timedelta(hours=24)
+    registration_id=uuid4(),
+    issued_at=NOW,
+    expires_at=NOW + timedelta(hours=24),
+    address_key=ADDRESS_KEY,
 )
 RENEWED_REGISTRATION = AccountLinkMail(
     Recipient("", "new@example.com"), "https://whadio.example.com/registrations/1#token=fresh"
