@@ -130,6 +130,34 @@ class PasswordResetService:
         await self._resets.complete(pending.user_id, reset_id, password_hash)
 
 
+@dataclass(frozen=True, slots=True)
+class RenewedPasswordReset:
+    user_id: UUID
+    link: PasswordResetLink
+
+
+class PasswordResetRenewal:
+    def __init__(self, resets: IPasswordResetRepository, sessions: ISessionRepository) -> None:
+        self._resets: IPasswordResetRepository = resets
+        self._sessions: ISessionRepository = sessions
+
+    async def renew(
+        self, reset_id: UUID, issued_at: datetime, now: datetime
+    ) -> RenewedPasswordReset | None:
+        """Give the link issued at `issued_at` a new token; None once used, reissued or expired."""
+        pending = await self._resets.pending(reset_id)
+        if pending is None:
+            return None
+        await self._sessions.lock_account(pending.user_id)
+        # Completion and reissue lock the same account; re-read after waiting for that lock.
+        pending = await self._resets.pending(reset_id)
+        if pending is None or pending.created_at != issued_at or pending.expires_at <= now:
+            return None
+        token = secrets.token_urlsafe(32)
+        await self._resets.replace_token(reset_id, generated_token_hash(token))
+        return RenewedPasswordReset(pending.user_id, PasswordResetLink(reset_id, token))
+
+
 class PasswordResetCleanupService:
     def __init__(self, resets: IPasswordResetRepository) -> None:
         self._resets: IPasswordResetRepository = resets

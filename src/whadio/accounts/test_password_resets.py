@@ -11,7 +11,12 @@ from conftest import AsyncDatabase
 from ..shared.errors import Failure, UseCaseError
 from .enums import SessionKind
 from .models import PasswordReset, Session
-from .password_resets import PasswordResetService, PasswordResetValidationError
+from .password_resets import (
+    PasswordResetRenewal,
+    PasswordResetService,
+    PasswordResetValidationError,
+    RenewedPasswordReset,
+)
 from .passwords import Argon2PasswordHasher
 from .repositories import SessionRepository
 from .reset_repository import PasswordResetRepository
@@ -24,6 +29,10 @@ def service(session: AsyncSession) -> PasswordResetService:
     return PasswordResetService(
         PasswordResetRepository(session), SessionRepository(session), Argon2PasswordHasher()
     )
+
+
+def renewal(session: AsyncSession) -> PasswordResetRenewal:
+    return PasswordResetRenewal(PasswordResetRepository(session), SessionRepository(session))
 
 
 def test_issuance_stores_only_a_hash_with_one_hour_lifetime(async_database: AsyncDatabase) -> None:
@@ -189,3 +198,60 @@ def test_transaction_failure_rolls_back_password_sessions_and_link(
 
     # Assert
     assert async_database.run(scenario)
+
+
+def test_renewed_reset_link_is_for_its_account_and_completes_it(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> bool:
+        user = await AsyncDatabase.add_account(session, PASSWORD)
+        now = datetime.now(UTC)
+        issued = await service(session).issue(user.email, now)
+        # Act
+        renewed = await renewal(session).renew(issued.reset_id, now, now)
+        if renewed is None:
+            raise AssertionError("the current link was not renewed")
+        await service(session).complete(issued.reset_id, renewed.link.token, PASSWORD, now)
+        return (
+            renewed.user_id == user.user_id
+            and await session.get(PasswordReset, issued.reset_id) is None
+        )
+
+    # Assert
+    assert async_database.run(scenario)
+
+
+def test_renewal_stops_the_earlier_reset_link(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> Failure:
+        user = await AsyncDatabase.add_account(session, PASSWORD)
+        now = datetime.now(UTC)
+        issued = await service(session).issue(user.email, now)
+        # Act
+        await renewal(session).renew(issued.reset_id, now, now)
+        with pytest.raises(UseCaseError) as error:
+            await service(session).complete(issued.reset_id, issued.token, PASSWORD, now)
+        return error.value.code
+
+    # Assert
+    assert async_database.run(scenario) is Failure.LINK_INVALID
+
+
+@pytest.mark.parametrize("stale", ["issued again", "expired", "used"])
+def test_reset_renewal_refuses_a_stale_link(async_database: AsyncDatabase, stale: str) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> RenewedPasswordReset | None:
+        user = await AsyncDatabase.add_account(session, PASSWORD)
+        now = datetime.now(UTC)
+        issued = await service(session).issue(user.email, now)
+        renewed_at = now + timedelta(hours=1) if stale == "expired" else now
+        if stale == "issued again":
+            await service(session).issue(user.email, now + timedelta(minutes=30))
+        if stale == "used":
+            await service(session).complete(issued.reset_id, issued.token, PASSWORD, now)
+        # Act
+        return await renewal(session).renew(issued.reset_id, now, renewed_at)
+
+    # Assert
+    assert async_database.run(scenario) is None

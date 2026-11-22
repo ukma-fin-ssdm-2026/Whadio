@@ -115,6 +115,10 @@ class Accounts:
         del email, token_hash, now, expires_at
         raise NotImplementedError
 
+    async def replace_token(self, registration_id: UUID, token_hash: str) -> None:
+        del registration_id, token_hash
+        raise NotImplementedError
+
     async def create_account(
         self, email: str, name: str, password_hash: str, now: datetime
     ) -> User:

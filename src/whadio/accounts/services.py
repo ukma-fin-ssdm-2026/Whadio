@@ -415,6 +415,12 @@ class RegistrationLink:
         return f"{public_url.rstrip('/')}/registrations/{self.registration_id}#token={self.token}"
 
 
+@dataclass(frozen=True, slots=True)
+class RenewedRegistration:
+    email: str
+    link: RegistrationLink
+
+
 class RegistrationIssuer:
     def __init__(
         self, registrations: IRegistrationRepository, sessions: ISessionRepository
@@ -432,6 +438,22 @@ class RegistrationIssuer:
             email, token_hash, now, now + REGISTRATION_LIFETIME
         )
         return RegistrationLink(registration_id, token)
+
+    async def renew(
+        self, registration_id: UUID, issued_at: datetime, now: datetime
+    ) -> RenewedRegistration | None:
+        """Give the link issued at `issued_at` a new token; None once used, reissued or expired."""
+        pending = await self._registrations.pending(registration_id)
+        if pending is None:
+            return None
+        await self._registrations.lock_email(pending.email)
+        # Completion and reissue take the same lock; re-read after waiting for it.
+        pending = await self._registrations.pending(registration_id)
+        if pending is None or pending.created_at != issued_at or pending.expires_at <= now:
+            return None
+        token = secrets.token_urlsafe(32)
+        await self._registrations.replace_token(registration_id, generated_token_hash(token))
+        return RenewedRegistration(pending.email, RegistrationLink(registration_id, token))
 
 
 class RegistrationService:
