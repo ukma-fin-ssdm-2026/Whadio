@@ -298,7 +298,7 @@ def test_recording_is_not_attached_for_an_account_outside_the_workspace(
 
 
 class UnavailableOutbox:
-    async def reserve(self, recipient_id: UUID, dedupe_key: str, notice: Notice) -> None:
+    async def reserve(self, recipient_id: UUID | None, dedupe_key: str, notice: Notice) -> None:
         del recipient_id, dedupe_key, notice
         raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
 

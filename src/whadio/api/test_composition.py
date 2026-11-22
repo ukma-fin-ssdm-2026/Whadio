@@ -1093,7 +1093,7 @@ def test_core_features_answer_95_percent_of_requests_without_processing(
     asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
 
 
-type ReservedNotice = tuple[UUID, str, NoticeKind, dict[str, JsonValue]]
+type ReservedNotice = tuple[UUID | None, str, NoticeKind, dict[str, JsonValue]]
 
 
 async def reserved_notices(unit: Unit, *recipients: UUID) -> list[ReservedNotice]:
@@ -1229,7 +1229,7 @@ def meeting_readers(unit: Unit) -> PolicyMeetingReaders:
 
 def reserved(
     outbox: InMemoryNotificationOutbox,
-) -> list[tuple[UUID, NoticeKind, Mapping[str, JsonValue]]]:
+) -> list[tuple[UUID | None, NoticeKind, Mapping[str, JsonValue]]]:
     return [
         (stored.recipient_id, stored.kind, stored.payload) for stored in outbox.notices.values()
     ]

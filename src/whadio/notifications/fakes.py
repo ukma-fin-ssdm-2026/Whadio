@@ -9,9 +9,16 @@ from uuid import UUID, uuid4
 from pydantic import JsonValue
 
 from .repositories import INotificationOutbox, IOutboxDrain, OutboxEntry, notice_payload
-from .services import DeliveryUnit, IDeliveryTransactions, IRecipientDirectory, Recipient
+from .services import (
+    AccountLinkMail,
+    DeliveryUnit,
+    IAccountLinks,
+    IDeliveryTransactions,
+    IRecipientDirectory,
+    Recipient,
+)
 from .smtp import IMailSender, OutgoingMail
-from .templates import Notice, NoticeKind
+from .templates import AccountLinkNotice, Notice, NoticeKind
 
 
 class RecordingMailSender(IMailSender):
@@ -37,7 +44,7 @@ class RecordingMailSender(IMailSender):
 @dataclass(frozen=True, slots=True)
 class StoredNotice:
     notice_id: UUID
-    recipient_id: UUID
+    recipient_id: UUID | None
     dedupe_key: str
     kind: NoticeKind
     payload: Mapping[str, JsonValue]
@@ -54,12 +61,12 @@ class InMemoryNotificationOutbox(INotificationOutbox, IOutboxDrain):
         self._now: Callable[[], datetime] = now
 
     @override
-    async def reserve(self, recipient_id: UUID, dedupe_key: str, notice: Notice) -> None:
+    async def reserve(self, recipient_id: UUID | None, dedupe_key: str, notice: Notice) -> None:
         self.store(recipient_id, dedupe_key, notice.kind, notice_payload(notice))
 
     def store(
         self,
-        recipient_id: UUID,
+        recipient_id: UUID | None,
         dedupe_key: str,
         kind: NoticeKind,
         payload: Mapping[str, JsonValue],
@@ -142,12 +149,32 @@ class FixedRecipientDirectory(IRecipientDirectory):
         return self._recipients.get(user_id)
 
 
+class FixedAccountLinks(IAccountLinks):
+    """Answers every renewal with `mail`; None stands for a used, reissued or expired link."""
+
+    def __init__(self, mail: AccountLinkMail | None = None) -> None:
+        self.mail: AccountLinkMail | None = mail
+        self.renewed: list[AccountLinkNotice] = []
+
+    @override
+    async def renew(self, notice: AccountLinkNotice) -> AccountLinkMail | None:
+        self.renewed.append(notice)
+        return self.mail
+
+
 class InMemoryDeliveryTransactions(IDeliveryTransactions):
     """Restores the outbox when a transaction raises, as the database rolls it back."""
 
-    def __init__(self, outbox: InMemoryNotificationOutbox, recipients: IRecipientDirectory) -> None:
+    def __init__(
+        self,
+        outbox: InMemoryNotificationOutbox,
+        recipients: IRecipientDirectory,
+        account_links: IAccountLinks | None = None,
+    ) -> None:
         self._outbox: InMemoryNotificationOutbox = outbox
-        self._unit: DeliveryUnit = DeliveryUnit(outbox, recipients)
+        self._unit: DeliveryUnit = DeliveryUnit(
+            outbox, recipients, FixedAccountLinks() if account_links is None else account_links
+        )
 
     @override
     @asynccontextmanager

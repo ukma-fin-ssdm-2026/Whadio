@@ -23,7 +23,7 @@ def notice_payload(notice: Notice) -> dict[str, JsonValue]:
 @dataclass(frozen=True, slots=True)
 class OutboxEntry:
     notice_id: UUID
-    recipient_id: UUID
+    recipient_id: UUID | None
     kind: NoticeKind
     payload: Mapping[str, JsonValue]
     attempts: int
@@ -34,8 +34,11 @@ class OutboxEntry:
 
 
 class INotificationOutbox(Protocol):
-    async def reserve(self, recipient_id: UUID, dedupe_key: str, notice: Notice, /) -> None:
-        """Add the notice in the caller's transaction; a second one with `dedupe_key` is dropped."""
+    async def reserve(self, recipient_id: UUID | None, dedupe_key: str, notice: Notice, /) -> None:
+        """Add the notice in the caller's transaction; a second one with `dedupe_key` is dropped.
+
+        `recipient_id` is None exactly for a registration link, whose address has no account yet.
+        """
         ...
 
 
@@ -65,7 +68,7 @@ class NotificationOutboxRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session: AsyncSession = session
 
-    async def reserve(self, recipient_id: UUID, dedupe_key: str, notice: Notice) -> None:
+    async def reserve(self, recipient_id: UUID | None, dedupe_key: str, notice: Notice) -> None:
         await self._session.execute(
             insert(NotificationOutbox)
             .values(

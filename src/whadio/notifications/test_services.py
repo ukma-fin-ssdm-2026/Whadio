@@ -10,15 +10,24 @@ from pydantic import HttpUrl
 
 from ..shared.fakes import FixedClock
 from .fakes import (
+    FixedAccountLinks,
     FixedRecipientDirectory,
     InMemoryDeliveryTransactions,
     InMemoryNotificationOutbox,
     RecordingMailSender,
 )
-from .services import DrainResult, NotificationDrainer, Recipient
+from .services import AccountLinkMail, DrainResult, NotificationDrainer, Recipient
 from .settings import OutboxSettings
 from .smtp import IMailSender, MailDeliveryError, OutgoingMail
-from .templates import AppLinks, Locale, NoticeKind, ProcessingFinished, render
+from .templates import (
+    AppLinks,
+    Locale,
+    Notice,
+    NoticeKind,
+    ProcessingFinished,
+    RegistrationLinkNotice,
+    render,
+)
 
 NOW = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
 RECIPIENT_ID = UUID("3c9d1a52-7b8e-4f61-9a0d-5e2f4b6c8d10")
@@ -29,6 +38,12 @@ LONGEST_SEND = timedelta(minutes=8)
 UNREADABLE_RECIPIENT_ID = UUID("9e4f2a61-0c3b-4d7e-8f15-6a2b9c0d1e23")
 UNRENDERABLE = ProcessingFinished(
     meeting_id=UUID("5d7c3b19-8a2e-4f60-b1c4-2e9f0a7d6c85"), meeting_name="Weekly sync"
+)
+REGISTRATION = RegistrationLinkNotice(
+    registration_id=uuid4(), issued_at=NOW, expires_at=NOW + timedelta(hours=24)
+)
+RENEWED_REGISTRATION = AccountLinkMail(
+    Recipient("", "new@example.com"), "https://whadio.example.com/registrations/1#token=fresh"
 )
 
 
@@ -72,8 +87,8 @@ class Delivery:
     def reserve(
         self,
         dedupe_key: str = "finished",
-        recipient_id: UUID = RECIPIENT_ID,
-        notice: ProcessingFinished = FINISHED,
+        recipient_id: UUID | None = RECIPIENT_ID,
+        notice: Notice = FINISHED,
     ) -> UUID:
         asyncio.run(self.outbox.reserve(recipient_id, dedupe_key, notice))
         return self.notice_id(dedupe_key)
@@ -91,6 +106,7 @@ def delivery(
     settings: OutboxSettings | None = None,
     failure: Exception | None = None,
     recipient: Recipient | None = OLENA,
+    account_links: FixedAccountLinks | None = None,
 ) -> Delivery:
     clock = FixedClock(NOW)
     outbox = InMemoryNotificationOutbox(clock)
@@ -100,7 +116,7 @@ def delivery(
         {UNREADABLE_RECIPIENT_ID: RuntimeError("directory bug")},
     )
     drainer = NotificationDrainer(
-        InMemoryDeliveryTransactions(outbox, directory),
+        InMemoryDeliveryTransactions(outbox, directory, account_links),
         sender,
         LinksFailingFor(LINKS.public_url, UNRENDERABLE.meeting_id),
         settings or OutboxSettings(),
@@ -120,6 +136,46 @@ def test_due_notice_is_mailed_to_its_recipient_rendered_from_its_payload() -> No
     assert subject.sender.sent == [
         OutgoingMail("Olena Koval <olena@example.com>", content.subject, content.body)
     ]
+
+
+def test_activity_notice_without_a_recipient_is_not_mailed() -> None:
+    # Arrange
+    subject = delivery()
+    subject.reserve(recipient_id=None)
+    # Act
+    result = subject.drain()
+    # Assert
+    assert result == DrainResult(sent=0, failed=1)
+
+
+def test_account_link_is_mailed_to_the_address_its_renewal_names() -> None:
+    # Arrange
+    subject = delivery(account_links=FixedAccountLinks(RENEWED_REGISTRATION))
+    subject.reserve("registration", None, REGISTRATION)
+    # Act
+    subject.drain()
+    # Assert
+    assert [mail.recipient for mail in subject.sender.sent] == ["new@example.com"]
+
+
+def test_account_link_mail_carries_the_renewed_link() -> None:
+    # Arrange
+    subject = delivery(account_links=FixedAccountLinks(RENEWED_REGISTRATION))
+    subject.reserve("registration", None, REGISTRATION)
+    # Act
+    subject.drain()
+    # Assert
+    assert RENEWED_REGISTRATION.url in subject.sender.sent[0].body
+
+
+def test_account_link_that_cannot_be_renewed_is_not_mailed() -> None:
+    # Arrange
+    subject = delivery(account_links=FixedAccountLinks(None))
+    subject.reserve("registration", None, REGISTRATION)
+    # Act
+    result = subject.drain()
+    # Assert
+    assert result == DrainResult(sent=0, failed=1)
 
 
 def test_recipient_name_with_a_comma_is_quoted_in_the_address() -> None:

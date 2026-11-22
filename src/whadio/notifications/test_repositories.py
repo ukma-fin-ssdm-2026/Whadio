@@ -13,11 +13,14 @@ from conftest import AsyncDatabase
 from ..shared.database import DatabaseSettings
 from .models import NotificationOutbox
 from .repositories import NotificationOutboxRepository, OutboxEntry, notice_payload
-from .templates import HostedEviction, ProcessingFinished
+from .templates import HostedEviction, Notice, ProcessingFinished, RegistrationLinkNotice
 
 LONG_AGO = datetime(2000, 1, 1, tzinfo=UTC)
 FINISHED = ProcessingFinished(meeting_id=uuid4(), meeting_name="Weekly sync")
 EVICTION = HostedEviction(meeting_name=None)
+REGISTRATION = RegistrationLinkNotice(
+    registration_id=uuid4(), issued_at=LONG_AGO, expires_at=LONG_AGO + timedelta(hours=24)
+)
 
 
 def soon() -> datetime:
@@ -275,6 +278,30 @@ def test_payload_that_is_not_an_object_is_refused(async_database: AsyncDatabase)
 
     # Assert
     with pytest.raises(IntegrityError, match="ck_notification_outbox_payload"):
+        async_database.run(scenario)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    ("notice", "addressed"),
+    [
+        pytest.param(FINISHED, False, id="activity-notice-without-recipient"),
+        pytest.param(REGISTRATION, True, id="registration-link-with-recipient"),
+    ],
+)
+def test_only_a_registration_link_goes_without_a_recipient_account(
+    async_database: AsyncDatabase, notice: Notice, *, addressed: bool
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> None:
+        recipient, _ = await AsyncDatabase.add_workspace(session)
+        # Act
+        await NotificationOutboxRepository(session).reserve(
+            recipient if addressed else None, f"test:{uuid4()}", notice
+        )
+
+    # Assert
+    with pytest.raises(IntegrityError, match="ck_notification_outbox_recipient"):
         async_database.run(scenario)
 
 

@@ -3,7 +3,7 @@ import logging
 import re
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from email.errors import HeaderParseError
 from email.headerregistry import Address
@@ -16,7 +16,17 @@ from .models import LAST_ERROR_LENGTH
 from .repositories import IOutboxDrain, OutboxEntry
 from .settings import OutboxSettings
 from .smtp import IMailSender, MailDeliveryError, OutgoingMail
-from .templates import AppLinks, Locale, render
+from .templates import (
+    AccountLinkNotice,
+    AppLinks,
+    Locale,
+    MailContent,
+    PasswordResetNotice,
+    RegistrationLinkNotice,
+    SignInReminderNotice,
+    render,
+    render_account_link,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +44,25 @@ class IRecipientDirectory(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class AccountLinkMail:
+    recipient: Recipient
+    url: str = field(repr=False)
+
+
+class IAccountLinks(Protocol):
+    async def renew(self, notice: AccountLinkNotice, /) -> AccountLinkMail | None:
+        """Give the link a new token in the caller's transaction, which invalidates earlier ones.
+
+        None once the link was used, issued again or expired.
+        """
+        ...
+
+
+@dataclass(frozen=True, slots=True)
 class DeliveryUnit:
     outbox: IOutboxDrain
     recipients: IRecipientDirectory
+    account_links: IAccountLinks
 
 
 class IDeliveryTransactions(Protocol):
@@ -87,7 +113,7 @@ class NotificationDrainer:
             if entry is None:
                 break
             async with self._transactions.transaction() as unit:
-                mail = await self._compose(entry, unit.recipients)
+                mail = await self._compose(entry, unit)
             error = mail if isinstance(mail, str) else await self._send(mail)
             async with self._transactions.transaction() as unit:
                 if error is None:
@@ -123,23 +149,30 @@ class NotificationDrainer:
                 )
             return entry
 
-    async def _compose(
-        self, entry: OutboxEntry, recipients: IRecipientDirectory
-    ) -> OutgoingMail | str:
+    async def _compose(self, entry: OutboxEntry, unit: DeliveryUnit) -> OutgoingMail | str:
         """The mail, or why there is none, naming no address and quoting no content."""
         try:
             notice = entry.notice()
         except ValidationError:
             return "The stored payload does not fit its kind"
-        recipient = await recipients.recipient(entry.recipient_id)
-        if recipient is None:
-            return "The recipient has no account"
-        try:
-            to = Address(display_name=" ".join(recipient.name.split()), addr_spec=recipient.email)
-        except (HeaderParseError, ValueError):
-            return "The recipient's address is not valid"
-        content = render(notice, self._links, Locale.ENGLISH)
-        return OutgoingMail(str(to), content.subject, content.body)
+        match notice:
+            case RegistrationLinkNotice() | PasswordResetNotice() | SignInReminderNotice():
+                link = await unit.account_links.renew(notice)
+                if link is None:
+                    return "The link was used, issued again or has expired"
+                recipient = link.recipient
+                content = render_account_link(notice, link.url, self._links, Locale.ENGLISH)
+            case _:
+                found = (
+                    None
+                    if entry.recipient_id is None
+                    else await unit.recipients.recipient(entry.recipient_id)
+                )
+                if found is None:
+                    return "The recipient has no account"
+                recipient = found
+                content = render(notice, self._links, Locale.ENGLISH)
+        return _addressed(recipient, content)
 
     async def _send(self, mail: OutgoingMail) -> str | None:
         try:
@@ -153,3 +186,11 @@ class NotificationDrainer:
         for _ in range(failures_before):
             delay = min(delay * 2, self._settings.max_retry_backoff)
         return delay
+
+
+def _addressed(recipient: Recipient, content: MailContent) -> OutgoingMail | str:
+    try:
+        to = Address(display_name=" ".join(recipient.name.split()), addr_spec=recipient.email)
+    except (HeaderParseError, ValueError):
+        return "The recipient's address is not valid"
+    return OutgoingMail(str(to), content.subject, content.body)
