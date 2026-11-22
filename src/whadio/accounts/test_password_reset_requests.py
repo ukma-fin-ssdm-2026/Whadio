@@ -19,8 +19,10 @@ from .models import PasswordReset, User
 from .password_resets import (
     IPasswordResetMailQueue,
     PasswordResetCleanupService,
+    PasswordResetLink,
     PasswordResetMail,
     PasswordResetMailKind,
+    PasswordResetRenewal,
     PasswordResetRequestService,
 )
 from .repositories import SessionRepository
@@ -91,29 +93,38 @@ def requests(
     )
 
 
+async def sent_link(session: AsyncSession, mail: PasswordResetMail) -> PasswordResetLink:
+    """The link the scheduler would mail, with the token it makes at sending."""
+    renewed = await PasswordResetRenewal(
+        PasswordResetRepository(session), SessionRepository(session)
+    ).renew(mail.reset_id, mail.issued_at, mail.issued_at)
+    if renewed is None:
+        raise AssertionError("the queued link is no longer current")
+    return renewed.link
+
+
 @pytest.mark.parametrize("kind", list(PasswordResetMailKind))
 def test_known_address_queues_a_one_hour_link(
     async_database: AsyncDatabase, kind: PasswordResetMailKind
 ) -> None:
     # Arrange
-    async def scenario(session: AsyncSession) -> tuple[UUID, PasswordResetMail, datetime, str]:
+    async def scenario(session: AsyncSession) -> tuple[UUID, PasswordResetMail, datetime]:
         user = await AsyncDatabase.add_account(session, PASSWORD)
         mail = ResetMailQueue()
         now = datetime.now(UTC)
         # Act
         await requests(session, mail, ResetClock(now)).request(user.email.upper(), kind=kind)
         (queued,) = mail.messages
-        pending = await session.get_one(PasswordReset, queued.link.reset_id)
-        return user.user_id, queued, pending.expires_at, pending.token_hash
+        pending = await session.get_one(PasswordReset, queued.reset_id)
+        return user.user_id, queued, pending.expires_at
 
-    user_id, queued, expires_at, token_hash = async_database.run(scenario)
+    user_id, queued, expires_at = async_database.run(scenario)
     # Assert
-    assert (queued.user_id, queued.kind, queued.expires_at, expires_at, token_hash) == (
+    assert (queued.user_id, queued.kind, queued.expires_at, expires_at) == (
         user_id,
         kind,
         queued.issued_at + timedelta(hours=1),
         queued.issued_at + timedelta(hours=1),
-        hashlib.sha256(queued.link.token.encode()).hexdigest(),
     )
 
 
@@ -142,7 +153,7 @@ def test_each_account_has_its_own_reset_link_and_cooldown(async_database: AsyncD
         await resets.request(first.email, kind=PasswordResetMailKind.RESET)
         await resets.request(second.email, kind=PasswordResetMailKind.SIGN_IN_REMINDER)
         actual = [
-            (notice.user_id, (await session.get_one(PasswordReset, notice.link.reset_id)).user_id)
+            (notice.user_id, (await session.get_one(PasswordReset, notice.reset_id)).user_id)
             for notice in mail.messages
         ]
         return actual == [(first.user_id, first.user_id), (second.user_id, second.user_id)]
@@ -164,10 +175,10 @@ def test_either_form_shares_the_cooldown_and_preserves_the_first_link(
         resets = requests(session, mail, clock)
         second_kind = next(kind for kind in PasswordResetMailKind if kind != first_kind)
         await resets.request(user.email, kind=first_kind)
-        first = mail.messages[0].link
         # Act
         clock.now += timedelta(minutes=20, microseconds=-1)
         await resets.request(user.email.upper(), kind=second_kind)
+        first = await sent_link(session, mail.messages[0])
         await operator_service(session).complete(first.reset_id, first.token, PASSWORD, clock.now)
         return len(mail.messages)
 
@@ -184,7 +195,7 @@ def test_replacing_a_reset_link_starts_a_new_cooldown(async_database: AsyncDatab
         first_request = clock.now
         resets = requests(session, mail, clock)
         await resets.request(user.email, kind=PasswordResetMailKind.RESET)
-        first = mail.messages[0].link
+        first = await sent_link(session, mail.messages[0])
         # Act
         clock.now += timedelta(minutes=19)
         await resets.request(user.email, kind=PasswordResetMailKind.RESET)
@@ -196,7 +207,7 @@ def test_replacing_a_reset_link_starts_a_new_cooldown(async_database: AsyncDatab
         completion = operator_service(session)
         with pytest.raises(UseCaseError) as failure:
             await completion.complete(first.reset_id, first.token, PASSWORD, clock.now)
-        link = replacement.link
+        link = await sent_link(session, replacement)
         await completion.complete(link.reset_id, link.token, PASSWORD, clock.now)
         return failure.value.code, [notice.issued_at - first_request for notice in mail.messages]
 
@@ -217,9 +228,8 @@ def test_cooldown_survives_using_the_link(async_database: AsyncDatabase) -> None
         resets = requests(session, mail, clock)
         await resets.request(user.email, kind=PasswordResetMailKind.RESET)
         await session.flush()
-        await operator_service(session).complete(
-            mail.messages[0].link.reset_id, mail.messages[0].link.token, PASSWORD, clock.now
-        )
+        link = await sent_link(session, mail.messages[0])
+        await operator_service(session).complete(link.reset_id, link.token, PASSWORD, clock.now)
         # Act
         clock.now += timedelta(minutes=1)
         await resets.request(user.email, kind=PasswordResetMailKind.RESET)
@@ -417,9 +427,8 @@ def test_expired_reset_cleanup_cannot_erase_a_reissued_link(
                     now
                 )
                 (queued,) = mail.messages
-                await operator_service(session).complete(
-                    queued.link.reset_id, queued.link.token, PASSWORD, now
-                )
+                link = await sent_link(session, queued)
+                await operator_service(session).complete(link.reset_id, link.token, PASSWORD, now)
             return len(mail.messages)
         finally:
             async with database.transaction() as session:

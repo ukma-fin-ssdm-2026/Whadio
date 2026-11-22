@@ -28,7 +28,7 @@ from ..access_policy.services import AccessCollaborators, AccessPolicy, AccessSe
 from ..accounts.contracts import UserProfile
 from ..accounts.enums import LlmProvider, NotesTemplate, SessionKind, WorkspaceRole
 from ..accounts.models import McpKey, Session, User, Workspace, WorkspaceMembership
-from ..accounts.password_resets import PasswordResetLink, PasswordResetMail, PasswordResetMailKind
+from ..accounts.password_resets import PasswordResetMail, PasswordResetMailKind
 from ..accounts.repositories import MembershipRepository, WorkspaceSettingsRepository
 from ..accounts.services import WorkspaceMembershipService, WorkspaceSettingsService
 from ..audit.contracts import ContentEvent
@@ -1848,13 +1848,7 @@ RECIPIENT, RESET_ID = uuid4(), uuid4()
 
 
 def reset_mail(kind: PasswordResetMailKind, issued_at: datetime) -> PasswordResetMail:
-    return PasswordResetMail(
-        RECIPIENT,
-        PasswordResetLink(RESET_ID, "token"),
-        issued_at,
-        issued_at + timedelta(hours=1),
-        kind,
-    )
+    return PasswordResetMail(RECIPIENT, RESET_ID, issued_at, issued_at + timedelta(hours=1), kind)
 
 
 @pytest.mark.parametrize(
@@ -1868,7 +1862,7 @@ def reset_mail(kind: PasswordResetMailKind, issued_at: datetime) -> PasswordRese
         ),
     ],
 )
-def test_reset_mail_is_reserved_for_its_account_without_the_token(
+def test_reset_mail_is_reserved_for_its_account(
     kind: PasswordResetMailKind,
     notice: type[PasswordResetNotice | SignInReminderNotice],
     notice_kind: NoticeKind,

@@ -553,7 +553,7 @@ class OutboxPasswordResetMail:
         self._outbox: INotificationOutbox = outbox
 
     async def reserve(self, mail: PasswordResetMail) -> None:
-        reset_id, issued_at = mail.link.reset_id, mail.issued_at
+        reset_id, issued_at = mail.reset_id, mail.issued_at
         match mail.kind:
             case PasswordResetMailKind.RESET:
                 notice = PasswordResetNotice(

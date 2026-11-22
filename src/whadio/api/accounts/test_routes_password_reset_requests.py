@@ -55,7 +55,7 @@ class FailingResetMailQueue(ResetMailQueue):
     @override
     async def reserve(self, mail: PasswordResetMail, /) -> None:
         await super().reserve(mail)
-        raise RuntimeError(f"Synthetic reservation failure with token {mail.link.token}")
+        raise RuntimeError(f"Synthetic reservation failure for reset {mail.reset_id}")
 
 
 class CancelledResetMailQueue(ResetMailQueue):
@@ -74,8 +74,8 @@ class StoredResetMailQueue:
     async def reserve(self, mail: PasswordResetMail, /) -> None:
         await self._outbox.reserve(
             mail.user_id,
-            f"reset-test:{mail.link.reset_id}",
-            ProcessingFinished(meeting_id=mail.link.reset_id, meeting_name="Reset test"),
+            f"reset-test:{mail.reset_id}",
+            ProcessingFinished(meeting_id=mail.reset_id, meeting_name="Reset test"),
         )
         await self._recorder.reserve(mail)
 
@@ -177,7 +177,7 @@ def test_reset_request_failure_preserves_the_link_and_fixed_response(
             account.password_reset_mail_queued_at is None,
             await mail_reservation_count(session, user_id) == 0,
             logs == ["Could not queue a password reset email"],
-            email not in caplog.text and attempted_mail.link.token not in caplog.text,
+            email not in caplog.text and str(attempted_mail.reset_id) not in caplog.text,
         )
 
     # Assert
