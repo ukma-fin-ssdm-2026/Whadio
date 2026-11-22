@@ -336,6 +336,37 @@ jobs:
           expect "Worker image" "$IMAGE" "$CODE"
           exit "$failed"
 
+  publish:
+    name: Publish images
+    needs: [changes, ci-passed]
+    # Without a status function, a job skipped upstream by design would skip this one too;
+    # `CI passed` already judges those skips.
+    if: ${{ !cancelled() && needs.ci-passed.result == 'success' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.changes.outputs.code == 'true' }}
+    permissions:
+      contents: read
+      packages: write
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build and push the images tagged with the commit
+        env:
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+          SOURCE: ${{ github.server_url }}/${{ github.repository }}
+          TAG: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # A self-hosted runner keeps Docker credentials and images between jobs.
+          trap 'docker logout ghcr.io; docker image rm --force "$REGISTRY/whadio:$TAG" "$REGISTRY/whadio-nginx:$TAG" > /dev/null' EXIT
+          echo "$GITHUB_TOKEN" | docker login ghcr.io --username "$ACTOR" --password-stdin
+          docker build --label "org.opencontainers.image.source=$SOURCE" --tag "$REGISTRY/whadio:$TAG" .
+          docker build --file Dockerfile.nginx --label "org.opencontainers.image.source=$SOURCE" --tag "$REGISTRY/whadio-nginx:$TAG" .
+          docker push "$REGISTRY/whadio:$TAG"
+          docker push "$REGISTRY/whadio-nginx:$TAG"
+
   deploy:
     name: Deploy to GitHub Pages
     needs: ci-passed

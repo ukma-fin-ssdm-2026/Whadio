@@ -17,7 +17,7 @@ x-logging: &logging
 
 x-worker: &worker
   build: .
-  image: whadio:dev
+  image: ${IMAGE_REPOSITORY:-whadio}:${IMAGE_TAG:-dev}
   init: true
   logging: *logging
   # A worker exits with an error when it can no longer take jobs, and starts again here.
@@ -38,7 +38,7 @@ x-worker: &worker
 
 x-runtime: &runtime
   build: .
-  image: whadio:dev
+  image: ${IMAGE_REPOSITORY:-whadio}:${IMAGE_TAG:-dev}
   init: true
   logging: *logging
   restart: unless-stopped
@@ -132,7 +132,7 @@ services:
 
   migrate:
     build: .
-    image: whadio:dev
+    image: ${IMAGE_REPOSITORY:-whadio}:${IMAGE_TAG:-dev}
     profiles: [core]
     logging: *logging
     command: [db-upgrade]
@@ -255,7 +255,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.nginx
-    image: whadio-nginx:dev
+    image: ${NGINX_IMAGE_REPOSITORY:-whadio-nginx}:${IMAGE_TAG:-dev}
     profiles: [core]
     logging: *logging
     restart: unless-stopped
