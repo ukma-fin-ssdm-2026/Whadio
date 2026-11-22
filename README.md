@@ -380,6 +380,11 @@ Validation evidence is maintained in [`/docs/validation/`](docs/validation/).
 - [Test Plan](docs/validation/test-plan.md) — planned and executed cases with measured results
 - [Review Log](docs/validation/review-log.md) — requirements and test-plan review findings
 
+### Operations Artifacts
+
+- [Public instance on Google Cloud](docs/operations/public-instance.md) — how the instance at
+  app.whadio.com is built from scratch, updated, backed up and renewed
+
 ### Labs Index
 
 | Lab | Artifacts | Video links |
