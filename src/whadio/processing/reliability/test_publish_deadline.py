@@ -70,10 +70,8 @@ async def serve_until_confirmed(exchange: SilentExchange) -> None:
 async def connect_to_a_broker_that_never_answers() -> tuple[bool, int]:
     """Returns whether `connect` timed out, and how many tasks it left running."""
     host = "127.0.0.1"
-    with socket.socket() as listener:
-        listener.bind((host, 0))
-        # The OS queues the TCP connection without an asyncio accept task or an AMQP reply.
-        listener.listen()
+    # The OS queues the TCP connection without an asyncio accept task or an AMQP reply.
+    with socket.create_server((host, 0)) as listener:
         address = f"{host}:{listener.getsockname()[1]}"
         settings = BrokerSettings(
             url=SecretStr(f"amqp://whadio:p@{address}/whadio?fail_fast=0"),
