@@ -370,7 +370,9 @@ jobs:
   deploy-app:
     name: Deploy the public instance
     needs: publish
-    if: ${{ !cancelled() && needs.publish.result == 'success' }}
+    # DEPLOY_HOST must stay a repository variable: a job's `if` cannot read environment variables,
+    # and without it the job is skipped, which keeps a repository without a host from failing.
+    if: ${{ !cancelled() && needs.publish.result == 'success' && vars.DEPLOY_HOST != '' }}
     environment:
       name: production
       url: https://${{ vars.DEPLOY_HOST }}
