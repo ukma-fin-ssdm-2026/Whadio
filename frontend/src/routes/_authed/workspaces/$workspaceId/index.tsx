@@ -7,7 +7,7 @@ import { useOpenMeeting } from "@/app/navigation/useOpenMeeting";
 import { WorkspaceMeetings } from "@/features/meetings/library/WorkspaceMeetings";
 import { UploadPanel } from "@/features/meetings/upload/UploadPanel";
 import { workspaceQueries } from "@/features/workspaces/api/workspaces";
-import { WorkspacePresetField } from "@/features/workspaces/components/WorkspacePresetField";
+import { WorkspacePresetSelect } from "@/features/workspaces/components/WorkspacePresetSelect";
 
 export const Route = createFileRoute("/_authed/workspaces/$workspaceId/")({
   validateSearch: librarySearch.extend({ folder: z.string().optional().catch(undefined) }),
@@ -30,8 +30,11 @@ function WorkspaceMeetingsRoute() {
   return (
     <>
       <UploadPanel
+        key={`upload-${workspaceId}`}
         workspaceId={workspaceId}
-        presetField={<WorkspacePresetField workspaceId={workspaceId} />}
+        renderPresetField={(field) => (
+          <WorkspacePresetSelect workspaceId={workspaceId} {...field} />
+        )}
         onUploaded={openMeeting}
       />
       <WorkspaceMeetings
