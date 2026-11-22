@@ -17,6 +17,7 @@ entity "USER" as User {
   * password_hash : string <<S>>
   * is_administrator : boolean
   * terms_accepted_at : datetime
+  password_reset_mail_queued_at : datetime <<P>>
   * created_at : datetime
 }
 

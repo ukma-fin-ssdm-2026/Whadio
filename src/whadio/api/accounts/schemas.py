@@ -217,6 +217,16 @@ class InstanceRead(Output):
     api_version: str = Field(description="Version of the Web API")
 
 
+class PasswordResetRequest(Input):
+    email: EmailStr = Field(
+        max_length=254, description="Account email address", examples=["alice@whadio.dev"]
+    )
+
+
+class PasswordResetAccepted(Output):
+    message: str = Field(description="Fixed confirmation for every accepted reset request")
+
+
 class PasswordResetComplete(Input):
     # Per-field StringConstraints cannot preserve whitespace on SecretStr in both validation modes.
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", str_strip_whitespace=False)

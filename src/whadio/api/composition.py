@@ -1,9 +1,9 @@
 import asyncio
 import logging
 from collections.abc import AsyncGenerator, Callable
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Protocol
 from uuid import UUID
 
@@ -25,7 +25,12 @@ from ..accounts.contracts import UserProfile
 from ..accounts.enums import NotesTemplate, RegistrationMode
 from ..accounts.member_repository import MemberRepository
 from ..accounts.members import MemberService
-from ..accounts.password_resets import PasswordResetService
+from ..accounts.password_resets import (
+    IPasswordResetMailQueue,
+    PasswordResetMailKind,
+    PasswordResetRequestService,
+    PasswordResetService,
+)
 from ..accounts.passwords import Argon2PasswordHasher
 from ..accounts.redemption import RedemptionService
 from ..accounts.redemption_repository import RedemptionRepository
@@ -532,6 +537,57 @@ def password_reset_service(session: Session) -> PasswordResetService:
 PasswordResets = Annotated[PasswordResetService, Depends(password_reset_service)]
 
 
+type PasswordResetMailFactory = Callable[[AsyncSession], IPasswordResetMailQueue]
+
+
+def password_reset_mail() -> PasswordResetMailFactory | None:
+    return None
+
+
+def require_password_reset_mail(
+    mode: Annotated[RegistrationMode, Depends(registration_mode)],
+    factory: Annotated[PasswordResetMailFactory | None, Depends(password_reset_mail)],
+) -> PasswordResetMailFactory:
+    if mode is RegistrationMode.INVITE_ONLY:
+        raise UseCaseError(Failure.INVITE_ONLY_INSTANCE)
+    if factory is None:
+        raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
+    return factory
+
+
+class PasswordResetEmailRequests:
+    def __init__(self, database: IUseCaseTransactions, mail: PasswordResetMailFactory) -> None:
+        self._database: IUseCaseTransactions = database
+        self._mail: PasswordResetMailFactory = mail
+
+    async def request(self, email: str, *, kind: PasswordResetMailKind) -> None:
+        # Recover after rollback, including a failed commit. An error response here can reveal
+        # that an account exists, and the exception may contain the address or reset token.
+        with suppress(Exception):
+            async with self._database.transaction() as session:
+                service = PasswordResetRequestService(
+                    PasswordResetRepository(session),
+                    SessionRepository(session),
+                    self._mail(session),
+                    lambda: datetime.now(UTC),
+                )
+                await service.request(email, kind=kind)
+            return
+        logger.error("Could not queue a password reset email")
+
+
+def password_reset_request_service(
+    mail: Annotated[PasswordResetMailFactory, Depends(require_password_reset_mail)],
+    database: Annotated[IUseCaseTransactions, Depends(runtime_database)],
+) -> PasswordResetEmailRequests:
+    return PasswordResetEmailRequests(database, mail)
+
+
+PasswordResetRequests = Annotated[
+    PasswordResetEmailRequests, Depends(password_reset_request_service)
+]
+
+
 def mcp_key_service(session: Session) -> McpKeyService:
     return McpKeyService(McpKeyRepository(session), AuditWriter(session))
 
@@ -622,6 +678,7 @@ Captures = Annotated[CaptureService, Depends(capture_service)]
 @dataclass(frozen=True)
 class RuntimeIntegrations:
     processing: Callable[[AsyncSession], IMeetingProcessing] | None = None
+    password_reset_mail: PasswordResetMailFactory | None = None
 
 
 def connect_integrations(app: FastAPI, integrations: RuntimeIntegrations) -> None:
@@ -630,6 +687,7 @@ def connect_integrations(app: FastAPI, integrations: RuntimeIntegrations) -> Non
         return UnavailableMeetingProcessing() if factory is None else factory(session)
 
     app.dependency_overrides[meeting_processing] = processing
+    app.dependency_overrides[password_reset_mail] = lambda: integrations.password_reset_mail
 
 
 def export_public_url() -> str:

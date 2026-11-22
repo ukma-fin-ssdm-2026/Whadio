@@ -332,6 +332,56 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
       security: []
+  /api/v1/password-resets:
+    post:
+      tags:
+      - accounts
+      summary: Request a password-reset link
+      description: Public in verified mode. Returns a fixed confirmation for every
+        valid email address. A known address can receive a single-use link valid for
+        one hour, with a 20-minute window between email requests.
+      operationId: request_password_reset_api_v1_password_resets_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequest'
+        required: true
+      responses:
+        '202':
+          description: Request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordResetAccepted'
+        '400':
+          description: '`MALFORMED_REQUEST`: the body, or a JSON field in it, is not
+            valid JSON'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'INVITE_ONLY_INSTANCE: the operator runs the instance invite-only'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`VALIDATION_ERROR`: a parameter or field is invalid; `details`
+            names each'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: 'INTEGRATION_UNAVAILABLE: reset delivery or the database is
+            unconfigured'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security: []
   /api/v1/password-resets/{reset_id}/complete:
     post:
       tags:
@@ -4645,6 +4695,7 @@ components:
       - ACCOUNT_EXISTS
       - NO_NOTES
       - INTEGRATION_UNAVAILABLE
+      - INVITE_ONLY_INSTANCE
       - TRANSCRIPT_EXISTS
       - ALREADY_PROCESSED
       - FOLDER_RECOVERY_CONFLICT
@@ -5906,6 +5957,16 @@ components:
       - items
       - pagination
       title: Page[WorkspaceSummary]
+    PasswordResetAccepted:
+      properties:
+        message:
+          type: string
+          title: Message
+          description: Fixed confirmation for every accepted reset request
+      type: object
+      required:
+      - message
+      title: PasswordResetAccepted
     PasswordResetComplete:
       properties:
         token:
@@ -5928,6 +5989,21 @@ components:
       - token
       - password
       title: PasswordResetComplete
+    PasswordResetRequest:
+      properties:
+        email:
+          type: string
+          maxLength: 254
+          format: email
+          title: Email
+          description: Account email address
+          examples:
+          - alice@whadio.dev
+      additionalProperties: false
+      type: object
+      required:
+      - email
+      title: PasswordResetRequest
     PlaybackLink:
       properties:
         url:

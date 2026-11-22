@@ -267,14 +267,24 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /password-resets` · Request a password-reset link
 
-- **Status:** Designed · **Caller:** public · **Success:** `202`, a fixed confirmation
+- **Status:** Implemented with an injected mail queue. Production delivery is pending #188.
+- **Caller:** public · **Success:** `202`, a fixed `message` with `Cache-Control: no-store`
+- **Body:** `email`, the account address.
 - **Rules:**
-  - Emails a single-use link valid for 1 hour (FR-048).
+  - Queues a single-use link valid for one hour from issuance (FR-048).
   - The response is the same whether or not the address has an account. An unknown address
     receives nothing.
-  - A repeat within 20 minutes changes nothing.
+  - If the transaction to queue the email fails, the response is still `202`. Its rollback
+    discards the mail reservation and preserves the earlier link and cooldown. The failure is
+    logged without request or token data.
+  - A repeat within 20 minutes of queueing changes nothing. At 20 minutes or later a new
+    link is queued and the previous link is invalidated. The registration reminder for a
+    known account shares this window. Redeeming the link leaves the cooldown in place.
+  - The integrated mail path in #188 still needs to enforce the interval from actual sending
+    and prevent delivery of links that expired or were replaced while queued.
 - **Errors:**
   - `403 INVITE_ONLY_INSTANCE`: the operator runs the instance invite-only.
+  - `503 INTEGRATION_UNAVAILABLE`: a required integration is unconfigured.
 
 #### `POST /password-resets/{reset_id}/complete` · Set a new password from a link
 
@@ -289,7 +299,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - Password change, session revocation and link consumption share one transaction. Failed
     validation leaves all three unchanged. Sign-in and reset serialize on the account row so
     a sign-in using the old password cannot leave an active session after reset commits.
-  - The SPA completes operator-issued links at `/password-resets/{reset_id}` and then opens sign-in. The self-service request endpoint remains separate work (#189).
+  - The SPA completes links at `/password-resets/{reset_id}` and then opens sign-in.
 - **Errors:**
   - `404 LINK_INVALID`: the link cannot be used (section 6.3).
   - `422 VALIDATION_ERROR` on `password`: the password breaks the rule above.
@@ -1353,3 +1363,5 @@ Later revisions were assisted by OpenAI Codex and verified by author.
 OpenAI Codex implemented and verified the #180 dashboard and its API documentation update.
 
 The member endpoints (#184) were implemented with Claude Code and reviewed by the author.
+
+OpenAI Codex assisted with the #189 reset request endpoint and documentation.
