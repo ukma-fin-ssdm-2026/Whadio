@@ -2,6 +2,10 @@ import { apiClient } from "@/shared/api/client";
 import type { Schemas } from "@/shared/api/types";
 import { expectNoContent, unwrap } from "@/shared/api/unwrap";
 
+export function requestPasswordReset(body: Schemas["PasswordResetRequest"]) {
+  return unwrap(apiClient.POST("/api/v1/password-resets", { body }));
+}
+
 // Completion bodies contain secrets, so they must not become cached Query mutation variables.
 export function completeRegistration(id: string, body: Schemas["RegistrationComplete"]) {
   return unwrap(

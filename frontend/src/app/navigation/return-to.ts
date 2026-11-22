@@ -10,6 +10,11 @@ export function safeReturnPath(target: string | undefined): string {
   return origin === PROBE_ORIGIN ? pathname + search : HOME;
 }
 
+export function safeRedirectSearch(target: string | undefined): { redirect?: string } {
+  const redirect = safeReturnPath(target);
+  return redirect === HOME ? {} : { redirect };
+}
+
 interface PageLocation {
   pathname: string;
   searchStr: string;
