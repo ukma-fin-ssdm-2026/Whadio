@@ -9156,7 +9156,7 @@
             "maxLength": 254,
             "format": "email",
             "title": "Email",
-            "description": "Email address to register",
+            "description": "Email address to register; the part before the @ must be ASCII",
             "examples": [
               "alice@whadio.dev"
             ]

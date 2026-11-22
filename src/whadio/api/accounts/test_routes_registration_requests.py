@@ -148,3 +148,20 @@ def test_failed_queueing_answers_the_same_and_logs_no_address(
 
     # Assert
     assert (async_database.run(scenario), email in caplog.text) == (ACCEPTED, False)
+
+
+def test_registration_request_refuses_a_non_ascii_name_before_the_at(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> tuple[int, list[str | None]]:
+        async with AsyncDatabase.api_client(
+            session, web_settings=settings(RegistrationMode.VERIFIED)
+        ) as client:
+            # Act
+            response = await client.post(REGISTRATION_PATH, json={"email": "josé@example.com"})
+        details = ErrorResponse.model_validate_json(response.content).error.details
+        return response.status_code, [detail.field for detail in details]
+
+    # Assert
+    assert async_database.run(scenario) == (422, ["email"])

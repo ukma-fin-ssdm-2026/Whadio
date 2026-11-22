@@ -242,7 +242,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 - **Status:** Implemented
 - **Caller:** public · **Success:** `202`, a fixed `message` with `Cache-Control: no-store`
-- **Body:** `email`, the address to register.
+- **Body:** `email`, the address to register. Its part before the `@` must be ASCII.
 - **Rules:**
   - Queues a single-use link valid for 24 hours. The account is created only when the link is
     used (FR-001).

@@ -2305,7 +2305,7 @@ export interface components {
             /**
              * Email
              * Format: email
-             * @description Email address to register
+             * @description Email address to register; the part before the @ must be ASCII
              * @example alice@whadio.dev
              */
             email: string;
