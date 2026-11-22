@@ -267,7 +267,7 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /password-resets` · Request a password-reset link
 
-- **Status:** Implemented with an injected mail queue. Production delivery is pending #188.
+- **Status:** Implemented
 - **Caller:** public · **Success:** `202`, a fixed `message` with `Cache-Control: no-store`
 - **Body:** `email`, the account address.
 - **Rules:**
@@ -280,8 +280,9 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
   - A repeat within 20 minutes of queueing changes nothing. At 20 minutes or later a new
     link is queued and the previous link is invalidated. The registration reminder for a
     known account shares this window. Redeeming the link leaves the cooldown in place.
-  - The integrated mail path in #188 still needs to enforce the interval from actual sending
-    and prevent delivery of links that expired or were replaced while queued.
+  - The scheduler sends the queued email and makes the link's token only then, so a link that
+    was used, issued again or expired while queued is not sent. The 20-minute window counts from
+    queueing, which is at most one scheduler pass before sending.
 - **Errors:**
   - `403 INVITE_ONLY_INSTANCE`: the operator runs the instance invite-only.
   - `503 INTEGRATION_UNAVAILABLE`: a required integration is unconfigured.
