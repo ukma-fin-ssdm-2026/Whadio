@@ -53,7 +53,9 @@ class IAccountLinks(Protocol):
     async def renew(self, notice: AccountLinkNotice, /) -> AccountLinkMail | None:
         """Give the link a new token in the caller's transaction, which invalidates earlier ones.
 
-        None once the link was used, issued again or expired.
+        None once the link was used, issued again or expired. A retried send gets a new token
+        too, so an attempt the relay accepted but the outbox never recorded stops working: an
+        accepted limit, since a stale link failing is the safe side.
         """
         ...
 

@@ -1,13 +1,13 @@
 """Mail registration links, password resets and sign-in reminders through the outbox.
 
-Revision ID: 0014
-Revises: 0013
+Revision ID: 0013
+Revises: 0012
 """
 
 from alembic import op
 
-revision: str = "0014"
-down_revision: str | None = "0013"
+revision: str = "0013"
+down_revision: str | None = "0012"
 branch_labels: tuple[str, ...] | None = None
 depends_on: str | None = None
 

@@ -15,8 +15,6 @@ class IPasswordResetRepository(Protocol):
         self, user_id: UUID, token_hash: str, now: datetime, expires_at: datetime, /
     ) -> UUID: ...
 
-    async def mark_mail_queued(self, user_id: UUID, now: datetime, /) -> None: ...
-
     async def replace_token(self, reset_id: UUID, token_hash: str, /) -> None: ...
 
     async def complete(self, user_id: UUID, reset_id: UUID, password_hash: str, /) -> None: ...
@@ -50,11 +48,6 @@ class PasswordResetRepository:
         pending.expires_at = expires_at
         await self._session.flush()
         return pending.password_reset_id
-
-    async def mark_mail_queued(self, user_id: UUID, now: datetime) -> None:
-        await self._session.execute(
-            update(User).where(User.user_id == user_id).values(password_reset_mail_queued_at=now)
-        )
 
     async def replace_token(self, reset_id: UUID, token_hash: str) -> None:
         await self._session.execute(
