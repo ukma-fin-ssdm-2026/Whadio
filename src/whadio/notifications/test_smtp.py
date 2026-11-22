@@ -1,16 +1,15 @@
 import smtplib
 import ssl
-import time
 import traceback
 from datetime import timedelta
 from email.message import EmailMessage
-from typing import ClassVar, override
+from typing import override
 from uuid import uuid4
 
-import httpx
 import pytest
-from pydantic import BaseModel, Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import SecretStr
+
+from conftest import Mailpit
 
 from .settings import SmtpSettings
 from .smtp import ISmtpConnector, ISmtpSession, MailDeliveryError, OutgoingMail, SmtpMailSender
@@ -254,53 +253,15 @@ def test_failed_quit_after_an_accepted_mail_is_not_a_delivery_error() -> None:
 # --- Delivery through Mailpit ---
 
 
-class _MailpitAddress(BaseModel):
-    address: str = Field(alias="Address", description="Email address")
-
-
-class _MailpitMessage(BaseModel):
-    subject: str = Field(alias="Subject", description="Subject header")
-    to: list[_MailpitAddress] = Field(alias="To", description="Recipients")
-
-
-class _MailpitMessages(BaseModel):
-    messages: list[_MailpitMessage] = Field(description="Most recent messages first")
-
-
-class _MailpitPorts(BaseSettings):
-    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_file=".env", extra="ignore")
-
-    mailpit_smtp_port: int = Field(
-        default=1025, ge=1, le=65535, description="Host port Compose publishes Mailpit's SMTP on"
-    )
-    mailpit_ui_port: int = Field(
-        default=8025, ge=1, le=65535, description="Host port Compose publishes Mailpit's API on"
-    )
-
-
-def _wait_for_mailpit_message(subject: str, ui_port: int) -> _MailpitMessage | None:
-    deadline = time.monotonic() + 5
-    with httpx.Client(base_url=f"http://127.0.0.1:{ui_port}", timeout=2) as client:
-        while time.monotonic() < deadline:
-            response = client.get("/api/v1/messages")
-            response.raise_for_status()
-            listing = _MailpitMessages.model_validate_json(response.content)
-            for message in listing.messages:
-                if message.subject == subject:
-                    return message
-            time.sleep(0.1)
-    return None
-
-
 @pytest.mark.slow
 def test_mail_sent_through_the_relay_reaches_mailpit() -> None:
     # Arrange
     subject = f"Whadio test {uuid4()}"
     recipient = f"{uuid4()}@example.com"
-    ports = _MailpitPorts()
+    mailpit = Mailpit()
     settings = SmtpSettings(
         host="127.0.0.1",
-        port=ports.mailpit_smtp_port,
+        port=mailpit.mailpit_smtp_port,
         starttls=False,
         from_address="whadio@localhost",
     )
@@ -309,6 +270,6 @@ def test_mail_sent_through_the_relay_reaches_mailpit() -> None:
     SmtpMailSender(settings).send(OutgoingMail(recipient=recipient, subject=subject, body="Hi.\n"))
 
     # Assert
-    received = _wait_for_mailpit_message(subject, ports.mailpit_ui_port)
+    received = mailpit.wait_for(lambda message: message.subject == subject)
     assert received is not None
     assert [to.address for to in received.to] == [recipient]

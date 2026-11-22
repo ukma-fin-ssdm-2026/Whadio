@@ -81,6 +81,7 @@ from ..notifications.templates import (
     ProcessingFailed,
     ProcessingFinished,
     SignInReminderNotice,
+    address_key,
 )
 from ..notifications.templates import ShareAccessRequest as ShareAccessNotice
 from ..processing.consumer import WorkerUsers, handle_delivery
@@ -1848,7 +1849,9 @@ RECIPIENT, RESET_ID = uuid4(), uuid4()
 
 
 def reset_mail(kind: PasswordResetMailKind, issued_at: datetime) -> PasswordResetMail:
-    return PasswordResetMail(RECIPIENT, RESET_ID, issued_at, issued_at + timedelta(hours=1), kind)
+    return PasswordResetMail(
+        RECIPIENT, "Alice@example.com", RESET_ID, issued_at, issued_at + timedelta(hours=1), kind
+    )
 
 
 @pytest.mark.parametrize(
@@ -1878,7 +1881,12 @@ def test_reset_mail_is_reserved_for_its_account(
             RECIPIENT,
             notice_kind,
             notice_payload(
-                notice(reset_id=RESET_ID, issued_at=mail.issued_at, expires_at=mail.expires_at)
+                notice(
+                    reset_id=RESET_ID,
+                    issued_at=mail.issued_at,
+                    expires_at=mail.expires_at,
+                    address_key=address_key("alice@example.com"),
+                )
             ),
         )
     ]

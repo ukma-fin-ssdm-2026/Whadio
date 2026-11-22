@@ -19,9 +19,12 @@ from .templates import (
     RegistrationLinkNotice,
     ShareAccessRequest,
     SignInReminderNotice,
+    address_key,
     render,
     render_account_link,
 )
+
+ADDRESS_KEY = address_key("alice@example.com")
 
 MEETING_ID = UUID("6f1c2b1e-4d1a-4c4e-9a59-2f7d0c3b8e11")
 SHARE_ID = UUID("0b8f4e6a-2c3d-4e5f-8a9b-1c2d3e4f5a6b")
@@ -46,13 +49,13 @@ ISSUED_AT = datetime(2026, 11, 22, 14, 5, tzinfo=UTC)
 EXPIRES_AT = datetime(2026, 11, 23, 14, 5, tzinfo=UTC)
 ACCOUNT_LINK_URL = "https://whadio.example.com/password-resets/0b8f#token=fresh"
 REGISTRATION_LINK = RegistrationLinkNotice(
-    registration_id=MEETING_ID, issued_at=ISSUED_AT, expires_at=EXPIRES_AT
+    registration_id=MEETING_ID, issued_at=ISSUED_AT, expires_at=EXPIRES_AT, address_key=ADDRESS_KEY
 )
 PASSWORD_RESET = PasswordResetNotice(
-    reset_id=MEETING_ID, issued_at=ISSUED_AT, expires_at=EXPIRES_AT
+    reset_id=MEETING_ID, issued_at=ISSUED_AT, expires_at=EXPIRES_AT, address_key=ADDRESS_KEY
 )
 SIGN_IN_REMINDER = SignInReminderNotice(
-    reset_id=MEETING_ID, issued_at=ISSUED_AT, expires_at=EXPIRES_AT
+    reset_id=MEETING_ID, issued_at=ISSUED_AT, expires_at=EXPIRES_AT, address_key=ADDRESS_KEY
 )
 ACCOUNT_LINKS = [
     pytest.param(REGISTRATION_LINK, id="registration-link"),

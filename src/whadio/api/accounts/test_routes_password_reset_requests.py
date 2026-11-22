@@ -15,7 +15,7 @@ from conftest import AsyncDatabase
 
 from ...accounts.enums import RegistrationMode
 from ...accounts.models import PasswordReset
-from ...accounts.password_resets import PasswordResetMail, PasswordResetMailKind, ResetMailHistory
+from ...accounts.password_resets import AddressMailHistory, PasswordResetMail, PasswordResetMailKind
 from ...accounts.test_password_reset_requests import ResetMailQueue
 from ...notifications.models import NotificationOutbox
 from ...notifications.repositories import NotificationOutboxRepository
@@ -79,8 +79,8 @@ class StoredResetMailQueue:
         )
         await self._recorder.reserve(mail)
 
-    async def history(self, user_id: UUID, now: datetime, /) -> ResetMailHistory:
-        return await self._recorder.history(user_id, now)
+    async def history(self, email: str, now: datetime, /) -> AddressMailHistory:
+        return await self._recorder.history(email, now)
 
 
 @asynccontextmanager

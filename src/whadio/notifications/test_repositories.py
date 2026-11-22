@@ -25,14 +25,19 @@ from .templates import (
     PasswordResetNotice,
     ProcessingFinished,
     RegistrationLinkNotice,
-    SignInReminderNotice,
+    address_key,
 )
+
+ADDRESS_KEY = address_key("alice@example.com")
 
 LONG_AGO = datetime(2000, 1, 1, tzinfo=UTC)
 FINISHED = ProcessingFinished(meeting_id=uuid4(), meeting_name="Weekly sync")
 EVICTION = HostedEviction(meeting_name=None)
 REGISTRATION = RegistrationLinkNotice(
-    registration_id=uuid4(), issued_at=LONG_AGO, expires_at=LONG_AGO + timedelta(hours=24)
+    registration_id=uuid4(),
+    issued_at=LONG_AGO,
+    expires_at=LONG_AGO + timedelta(hours=24),
+    address_key=ADDRESS_KEY,
 )
 
 
@@ -400,24 +405,31 @@ def test_notice_claimed_by_one_transaction_is_skipped_by_another(
     assert (held, other == reserved) == (reserved, False)
 
 
-def reset_notice(issued_at: datetime) -> PasswordResetNotice:
+def reset_notice(issued_at: datetime, key: str = ADDRESS_KEY) -> PasswordResetNotice:
     return PasswordResetNotice(
-        reset_id=uuid4(), issued_at=issued_at, expires_at=issued_at + timedelta(hours=1)
+        reset_id=uuid4(),
+        issued_at=issued_at,
+        expires_at=issued_at + timedelta(hours=1),
+        address_key=key,
     )
+
+
+def unique_key() -> str:
+    return address_key(f"{uuid4()}@example.com")
 
 
 @pytest.mark.slow
 def test_unsent_reset_mail_waits_until_its_link_expires(async_database: AsyncDatabase) -> None:
     # Arrange
-    now = datetime.now(UTC)
+    now, key = datetime.now(UTC), unique_key()
 
     async def scenario(session: AsyncSession) -> tuple[bool, bool]:
         recipient, _ = await AsyncDatabase.add_workspace(session)
         outbox = NotificationOutboxRepository(session)
-        await outbox.reserve(recipient, f"test:{uuid4()}", reset_notice(now))
+        await outbox.reserve(recipient, f"test:{uuid4()}", reset_notice(now, key))
         # Act
-        before = await outbox.account_link_history(recipient, now + timedelta(minutes=59))
-        after = await outbox.account_link_history(recipient, now + timedelta(hours=1))
+        before = await outbox.account_link_history(key, now + timedelta(minutes=59))
+        after = await outbox.account_link_history(key, now + timedelta(hours=1))
         return before.waiting, after.waiting
 
     # Assert
@@ -425,29 +437,33 @@ def test_unsent_reset_mail_waits_until_its_link_expires(async_database: AsyncDat
 
 
 @pytest.mark.slow
-def test_last_sent_is_the_latest_reset_or_reminder_the_relay_accepted(
+def test_last_sent_is_the_latest_link_email_the_relay_accepted_for_the_address(
     async_database: AsyncDatabase,
 ) -> None:
     # Arrange
-    now = datetime.now(UTC)
+    now, key = datetime.now(UTC), unique_key()
 
     async def scenario(session: AsyncSession) -> datetime | None:
         recipient, _ = await AsyncDatabase.add_workspace(session)
         outbox = NotificationOutboxRepository(session)
-        reminder = SignInReminderNotice(
-            reset_id=uuid4(), issued_at=now, expires_at=now + timedelta(hours=1)
+        registration = RegistrationLinkNotice(
+            registration_id=uuid4(),
+            issued_at=now,
+            expires_at=now + timedelta(hours=24),
+            address_key=key,
         )
-        sent = [
-            (reset_notice(now), now + timedelta(minutes=1)),
-            (reminder, now + timedelta(minutes=2)),
-            (FINISHED, now + timedelta(minutes=3)),
+        sent: list[tuple[UUID | None, Notice, datetime]] = [
+            (recipient, reset_notice(now, key), now + timedelta(minutes=1)),
+            (None, registration, now + timedelta(minutes=2)),
+            (recipient, FINISHED, now + timedelta(minutes=3)),
+            (recipient, reset_notice(now, unique_key()), now + timedelta(minutes=4)),
         ]
-        for notice, sent_at in sent:
-            key = f"test:{uuid4()}"
-            await outbox.reserve(recipient, key, notice)
-            await outbox.mark_sent(await notice_id(session, key), sent_at)
+        for addressee, notice, sent_at in sent:
+            dedupe_key = f"test:{uuid4()}"
+            await outbox.reserve(addressee, dedupe_key, notice)
+            await outbox.mark_sent(await notice_id(session, dedupe_key), sent_at)
         # Act
-        return (await outbox.account_link_history(recipient, now)).last_sent_at
+        return (await outbox.account_link_history(key, now)).last_sent_at
 
     # Assert
     assert async_database.run(scenario) == now + timedelta(minutes=2)

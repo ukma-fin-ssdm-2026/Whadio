@@ -240,17 +240,26 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
 
 #### `POST /registrations` · Request a registration link
 
-- **Status:** Designed · **Caller:** public · **Success:** `202`, a fixed confirmation
+- **Status:** Implemented
+- **Caller:** public · **Success:** `202`, a fixed `message` with `Cache-Control: no-store`
+- **Body:** `email`, the address to register. Its part before the `@` must be ASCII.
 - **Rules:**
-  - Emails a single-use link valid for 24 hours. The account is created only when the link is
+  - Queues a single-use link valid for 24 hours. The account is created only when the link is
     used (FR-001).
   - The response is identical in every case, so it reveals nothing about the address:
     - a new address gets a registration link;
     - an address that already has an account gets a sign-in reminder with a password-reset
       link;
-    - a repeat within 20 minutes changes nothing, and the earlier link keeps working.
+    - a repeat changes nothing, and the earlier link keeps working, while the earlier email
+      waits to be sent or within 20 minutes of when the relay accepted the last registration or
+      reset email to that address;
+    - a later repeat queues a new link and invalidates the earlier one. An operator-issued link
+      sends no email, so it does not count.
+  - If the transaction to queue the email fails, the response is still `202`. The failure is
+    logged without request or token data.
 - **Errors:**
   - `403 INVITE_ONLY_INSTANCE`: the operator runs the instance invite-only.
+  - `503 INTEGRATION_UNAVAILABLE`: a required integration is unconfigured.
 
 #### `POST /registrations/{registration_id}/complete` · Create the account from a link
 
@@ -279,9 +288,9 @@ Paths are relative to `/api/v1` unless they start with `/health`. Each operation
     logged without request or token data.
   - A repeat changes nothing while the earlier email waits to be sent with a link that has not
     expired, or within 20 minutes of when the relay accepted it, however late that was.
-    Otherwise a new link is queued and the previous link is invalidated. The registration
-    reminder for a known account follows the same rule. Redeeming the link leaves the cooldown
-    in place.
+    Otherwise a new link is queued and the previous link is invalidated. Registration, reset and
+    reminder emails to one address share this rule, so it carries over when a registration
+    becomes an account. Redeeming the link leaves the cooldown in place.
   - The scheduler sends the queued email and makes the link's token only then, so a link that
     was used, issued again or expired while queued is not sent.
 - **Errors:**

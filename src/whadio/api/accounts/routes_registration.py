@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Path, Response
 
 from ...accounts.services import RegistrationDetails, RegistrationValidationError
-from ..composition import Registrations
+from ..composition import RegistrationRequests, Registrations
 from ..core.errors import (
     DOC_INVALID,
     DOC_MALFORMED,
@@ -15,9 +15,39 @@ from ..core.errors import (
     error_responses,
 )
 from .auth import set_session_cookie, user_read
-from .schemas import RegistrationComplete, UserRead
+from .schemas import RegistrationAccepted, RegistrationComplete, RegistrationRequest, UserRead
 
 router = APIRouter(tags=["accounts"])
+
+
+@router.post(
+    "/registrations",
+    status_code=202,
+    summary="Request a registration link",
+    description="Public in verified mode. Returns a fixed confirmation for every valid email "
+    "address. A new address can receive a single-use link valid for 24 hours, and an address "
+    "with an account a sign-in reminder with a password-reset link instead. A repeat within 20 "
+    "minutes of the last email changes nothing.",
+    response_description="Request accepted",
+    openapi_extra={"security": []},
+    responses=error_responses(
+        {
+            400: DOC_MALFORMED,
+            403: "INVITE_ONLY_INSTANCE: the operator runs the instance invite-only",
+            422: DOC_INVALID,
+            503: "INTEGRATION_UNAVAILABLE: email delivery or the database is unconfigured",
+        }
+    ),
+)
+async def request_registration(
+    payload: RegistrationRequest, response: Response, service: RegistrationRequests
+) -> RegistrationAccepted:
+    await service.request(payload.email)
+    response.headers["Cache-Control"] = "no-store"
+    return RegistrationAccepted(
+        message="We'll email that address a link to continue, unless we sent one in the last "
+        "20 minutes."
+    )
 
 
 @router.post(

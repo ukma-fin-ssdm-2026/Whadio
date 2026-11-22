@@ -2,7 +2,7 @@ import asyncio
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import override
+from typing import Protocol, override
 from uuid import UUID, uuid4
 
 import pytest
@@ -17,6 +17,7 @@ from ..shared.database import Database, DatabaseSettings
 from ..shared.errors import Failure, UseCaseError
 from .models import PasswordReset, User
 from .password_resets import (
+    AddressMailHistory,
     IPasswordResetMailQueue,
     PasswordResetCleanupService,
     PasswordResetLink,
@@ -24,7 +25,6 @@ from .password_resets import (
     PasswordResetMailKind,
     PasswordResetRenewal,
     PasswordResetRequestService,
-    ResetMailHistory,
 )
 from .repositories import SessionRepository
 from .reset_repository import PasswordResetRepository
@@ -34,17 +34,31 @@ from .test_password_resets import service as operator_service
 pytestmark = pytest.mark.slow
 
 
-class ResetMailQueue:
+class AddressedMail(Protocol):
+    @property
+    def email(self) -> str: ...
+
+    @property
+    def expires_at(self) -> datetime: ...
+
+
+class MailQueue[M: AddressedMail]:
+    """An outbox of one mail kind: queued mail waits until `deliver` has the relay accept it."""
+
     def __init__(self) -> None:
-        self.messages: list[PasswordResetMail] = []
+        self.messages: list[M] = []
         self.sent_at: dict[int, datetime] = {}
 
-    async def reserve(self, mail: PasswordResetMail, /) -> None:
+    async def reserve(self, mail: M, /) -> None:
         self.messages.append(mail)
 
-    async def history(self, user_id: UUID, now: datetime, /) -> ResetMailHistory:
-        own = [(index, mail) for index, mail in enumerate(self.messages) if mail.user_id == user_id]
-        return ResetMailHistory(
+    async def history(self, email: str, now: datetime, /) -> AddressMailHistory:
+        own = [
+            (index, mail)
+            for index, mail in enumerate(self.messages)
+            if mail.email.lower() == email.lower()
+        ]
+        return AddressMailHistory(
             waiting=any(index not in self.sent_at and mail.expires_at > now for index, mail in own),
             last_sent_at=max(
                 (self.sent_at[index] for index, _ in own if index in self.sent_at), default=None
@@ -55,6 +69,10 @@ class ResetMailQueue:
         """The relay accepts every waiting email at `at`."""
         for index in range(len(self.messages)):
             self.sent_at.setdefault(index, at)
+
+
+class ResetMailQueue(MailQueue[PasswordResetMail]):
+    pass
 
 
 @dataclass

@@ -4,7 +4,15 @@ from typing import Annotated, ClassVar, Self
 from uuid import UUID
 
 from fastapi import Path
-from pydantic import ConfigDict, EmailStr, Field, SecretStr, StringConstraints, model_validator
+from pydantic import (
+    AfterValidator,
+    ConfigDict,
+    EmailStr,
+    Field,
+    SecretStr,
+    StringConstraints,
+    model_validator,
+)
 
 from ...accounts.enums import RegistrationMode
 from ..core.schemas import DisplayText, Input, Output
@@ -215,6 +223,25 @@ class RegistrationComplete(Input):
 class InstanceRead(Output):
     registration_mode: RegistrationMode = Field(description="How this instance admits accounts")
     api_version: str = Field(description="Version of the Web API")
+
+
+def _ascii_local_part(email: str) -> str:
+    # Without SMTPUTF8 support the mail composer refuses such an address after the 202.
+    if not email.rpartition("@")[0].isascii():
+        raise ValueError("Use an address with only ASCII characters before the @")
+    return email
+
+
+class RegistrationRequest(Input):
+    email: Annotated[EmailStr, AfterValidator(_ascii_local_part)] = Field(
+        max_length=254,
+        description="Email address to register; the part before the @ must be ASCII",
+        examples=["alice@whadio.dev"],
+    )
+
+
+class RegistrationAccepted(Output):
+    message: str = Field(description="Fixed confirmation for every accepted registration request")
 
 
 class PasswordResetRequest(Input):

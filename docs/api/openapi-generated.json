@@ -381,6 +381,79 @@
         "security": []
       }
     },
+    "/api/v1/registrations": {
+      "post": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Request a registration link",
+        "description": "Public in verified mode. Returns a fixed confirmation for every valid email address. A new address can receive a single-use link valid for 24 hours, and an address with an account a sign-in reminder with a password-reset link instead. A repeat within 20 minutes of the last email changes nothing.",
+        "operationId": "request_registration_api_v1_registrations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Request accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`MALFORMED_REQUEST`: the body, or a JSON field in it, is not valid JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "INVITE_ONLY_INSTANCE: the operator runs the instance invite-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "INTEGRATION_UNAVAILABLE: email delivery or the database is unconfigured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
     "/api/v1/registrations/{registration_id}/complete": {
       "post": {
         "tags": [
@@ -9013,6 +9086,20 @@
         ],
         "title": "RegisteredRead"
       },
+      "RegistrationAccepted": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Fixed confirmation for every accepted registration request"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "RegistrationAccepted"
+      },
       "RegistrationComplete": {
         "properties": {
           "token": {
@@ -9061,6 +9148,26 @@
           "verified"
         ],
         "title": "RegistrationMode"
+      },
+      "RegistrationRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 254,
+            "format": "email",
+            "title": "Email",
+            "description": "Email address to register; the part before the @ must be ASCII",
+            "examples": [
+              "alice@whadio.dev"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "title": "RegistrationRequest"
       },
       "RequestInput": {
         "properties": {
