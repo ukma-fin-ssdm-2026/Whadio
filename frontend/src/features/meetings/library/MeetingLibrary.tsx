@@ -1,6 +1,7 @@
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import {
   Alert,
+  Button,
   CircularProgress,
   FormControl,
   InputLabel,
@@ -17,6 +18,7 @@ import { formatDate } from "@/shared/lib/format";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { ListPanel } from "@/shared/ui/ListPanel";
 import { SectionHeader } from "@/shared/ui/SectionHeader";
+import { RANGE_ORDER_MESSAGE } from "../dateRange";
 import { MeetingStateChip } from "../MeetingStateChip";
 import {
   IN_PROGRESS_LABELS,
@@ -43,8 +45,14 @@ interface MeetingLibraryProps {
   error?: string;
   query: string;
   stateFilter: StateFilter;
+  from: string;
+  to: string;
+  rangeUnordered: boolean;
   onQuery: (query: string) => void;
   onStateFilter: (filter: StateFilter) => void;
+  onFrom: (day: string) => void;
+  onTo: (day: string) => void;
+  onClear: () => void;
   onMeeting: (id: string) => void;
   selectedMeetingId: string;
   footer?: ReactNode;
@@ -57,14 +65,20 @@ export function MeetingLibrary({
   error,
   query,
   stateFilter,
+  from,
+  to,
+  rangeUnordered,
   onQuery,
   onStateFilter,
+  onFrom,
+  onTo,
+  onClear,
   onMeeting,
   selectedMeetingId,
   footer,
 }: MeetingLibraryProps) {
   const visible = meetings.filter((meeting) => matchesStateFilter(meeting, stateFilter));
-  const filtered = query.trim() !== "" || stateFilter !== "all";
+  const filtered = query.trim() !== "" || stateFilter !== "all" || from !== "" || to !== "";
 
   const chooseState = (value: string) => {
     const option = STATE_OPTIONS.find((item) => item.value === value);
@@ -101,20 +115,39 @@ export function MeetingLibrary({
                 ))}
               </Select>
             </FormControl>
+            <TextField
+              size="small"
+              type="date"
+              label="From"
+              value={from}
+              onChange={(event) => onFrom(event.target.value)}
+              slotProps={{ inputLabel: { shrink: true } }}
+            />
+            <TextField
+              size="small"
+              type="date"
+              label="To"
+              value={to}
+              onChange={(event) => onTo(event.target.value)}
+              error={rangeUnordered}
+              helperText={rangeUnordered ? RANGE_ORDER_MESSAGE : undefined}
+              slotProps={{ inputLabel: { shrink: true } }}
+            />
           </>
         }
       />
 
       {error && <Alert severity="error">{error}</Alert>}
       {loading && <CircularProgress aria-label="Loading meetings" sx={{ alignSelf: "center" }} />}
-      {!loading && !error && visible.length === 0 && (
+      {!loading && !error && !rangeUnordered && visible.length === 0 && (
         <EmptyState
           title={filtered ? "No meetings match these filters" : "No meetings yet"}
           hint={
             filtered
-              ? "Try another name or state."
+              ? "Try another name, state or dates."
               : "Upload a recording in a workspace to see it here."
           }
+          action={filtered && <Button onClick={onClear}>Clear filters</Button>}
         />
       )}
       {visible.length > 0 && (

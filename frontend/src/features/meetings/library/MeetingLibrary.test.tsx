@@ -21,8 +21,14 @@ function renderLibrary(
       meetings={[item]}
       query=""
       stateFilter="all"
+      from=""
+      to=""
+      rangeUnordered={false}
       onQuery={() => {}}
       onStateFilter={() => {}}
+      onFrom={() => {}}
+      onTo={() => {}}
+      onClear={() => {}}
       onMeeting={() => {}}
       selectedMeetingId=""
       {...changes}
@@ -162,6 +168,28 @@ test("a state filter with no match among loaded meetings blames the filters", ()
 
   // Assert
   expect(screen.getByText("No meetings match these filters")).toBeInTheDocument();
+});
+
+test("the empty result offers to clear the filters", async () => {
+  // Arrange
+  const onClear = vi.fn();
+  renderLibrary(meeting(), { meetings: [], from: "2026-10-01", onClear });
+
+  // Act
+  await userEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+
+  // Assert
+  expect(onClear).toHaveBeenCalledOnce();
+});
+
+test("an unordered range is refused beside the end date", () => {
+  // Act
+  renderLibrary(meeting(), { from: "2026-10-05", to: "2026-10-04", rangeUnordered: true });
+
+  // Assert
+  expect(screen.getByLabelText("To")).toHaveAccessibleDescription(
+    "End date is before the start date",
+  );
 });
 
 test("a state filter keeps only meetings in that state", () => {

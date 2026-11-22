@@ -31,8 +31,16 @@ function serveWorkspaces(nextCursor: string | null = null) {
   return requests;
 }
 
-function Library({ workspaceIds }: { workspaceIds: string[] }) {
+function Library({
+  workspaceIds,
+  initialRange = { from: "", to: "" },
+}: {
+  workspaceIds: string[];
+  initialRange?: { from: string; to: string };
+}) {
   const [name, setName] = useState("");
+  const [from, setFrom] = useState(initialRange.from);
+  const [to, setTo] = useState(initialRange.to);
   return (
     <AllMeetings
       workspaceIds={workspaceIds}
@@ -40,15 +48,32 @@ function Library({ workspaceIds }: { workspaceIds: string[] }) {
       onMeeting={() => {}}
       name={name}
       stateFilter="all"
+      from={from}
+      to={to}
       onName={setName}
       onStateFilter={() => {}}
+      onFrom={setFrom}
+      onTo={setTo}
+      onClear={() => {
+        setName("");
+        setFrom("");
+        setTo("");
+      }}
     />
   );
 }
 
-function renderAll() {
-  return renderWithProviders(<Library workspaceIds={["alpha", "beta"]} />);
+function renderAll(initialRange?: { from: string; to: string }) {
+  return renderWithProviders(
+    <Library workspaceIds={["alpha", "beta"]} initialRange={initialRange} />,
+  );
 }
+
+const recorded = (range: Record<string, Date>) =>
+  new URLSearchParams({
+    limit: "100",
+    ...Object.fromEntries(Object.entries(range).map(([key, day]) => [key, day.toISOString()])),
+  });
 
 test("merges the workspaces with the newest recording first", async () => {
   // Arrange
@@ -88,6 +113,75 @@ test("the name filter reaches every workspace", async () => {
 
   // Assert
   expect(requests.toSorted()).toEqual(["alpha?limit=100&name=retro", "beta?limit=100&name=retro"]);
+});
+
+test("the date range reaches every workspace in local time with the end day included", async () => {
+  // Arrange
+  const requests = serveWorkspaces();
+  const { user } = renderAll();
+  await screen.findByText("Alpha retro");
+  requests.length = 0;
+
+  // Act
+  await user.type(screen.getByLabelText("From"), "2026-10-05");
+  await user.type(screen.getByLabelText("To"), "2026-10-31");
+  await expect.poll(() => requests.length).toBeGreaterThanOrEqual(2);
+
+  // Assert
+  const search = recorded({
+    recorded_from: new Date(2026, 9, 5),
+    recorded_to: new Date(2026, 10, 1),
+  });
+  expect(requests.slice(-2).toSorted()).toEqual([`alpha?${search}`, `beta?${search}`]);
+});
+
+test.for([
+  ["From", { recorded_from: new Date(2026, 9, 5) }],
+  ["To", { recorded_to: new Date(2026, 9, 6) }],
+] as const)("only the %s date narrows the list to that bound", async ([label, bound]) => {
+  // Arrange
+  const requests = serveWorkspaces();
+  const { user } = renderAll();
+  await screen.findByText("Alpha retro");
+  requests.length = 0;
+
+  // Act
+  await user.type(screen.getByLabelText(label), "2026-10-05");
+  await expect.poll(() => requests.length).toBe(2);
+
+  // Assert
+  expect(requests.toSorted()).toEqual([`alpha?${recorded(bound)}`, `beta?${recorded(bound)}`]);
+});
+
+test("an end before the start is refused and nothing is requested", async () => {
+  // Arrange
+  const requests = serveWorkspaces();
+
+  // Act
+  renderAll({ from: "2026-10-05", to: "2026-10-04" });
+
+  // Assert
+  expect(await screen.findByText("End date is before the start date")).toBeInTheDocument();
+  expect(requests).toEqual([]);
+});
+
+test("a range that matches nothing says so and clearing the filters brings the list back", async () => {
+  // Arrange
+  server.use(
+    http.get("/api/v1/workspaces/{workspace_id}/meetings", ({ request, response }) =>
+      response(200).json(
+        page(new URL(request.url).searchParams.has("recorded_from") ? [] : [ALPHA]),
+      ),
+    ),
+  );
+  const { user } = renderAll({ from: "2026-01-01", to: "" });
+  await screen.findByText("No meetings match these filters");
+
+  // Act
+  await user.click(screen.getByRole("button", { name: "Clear filters" }));
+
+  // Assert
+  expect(await screen.findAllByText("Alpha retro")).toHaveLength(2);
 });
 
 test("a workspace with more meetings is pointed at", async () => {
