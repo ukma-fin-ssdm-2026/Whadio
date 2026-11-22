@@ -27,9 +27,11 @@ from ..accounts.member_repository import MemberRepository
 from ..accounts.members import MemberService
 from ..accounts.password_resets import (
     IPasswordResetMailQueue,
+    PasswordResetMail,
     PasswordResetMailKind,
     PasswordResetRequestService,
     PasswordResetService,
+    ResetMailHistory,
 )
 from ..accounts.passwords import Argon2PasswordHasher
 from ..accounts.redemption import RedemptionService
@@ -72,14 +74,20 @@ from ..meetings.recordings import RecordingObjects
 from ..meetings.repositories import FolderRepository, MeetingRepository
 from ..meetings.services import FolderService, MeetingService, WorkspaceContent
 from ..meetings.settings import MeetingSettings
-from ..notifications.repositories import INotificationOutbox, NotificationOutboxRepository
+from ..notifications.repositories import (
+    IAccountLinkHistory,
+    INotificationOutbox,
+    NotificationOutboxRepository,
+)
 from ..notifications.settings import NotificationSettings, load_notification_settings
 from ..notifications.templates import (
     HostedEviction,
     NoticeKind,
+    PasswordResetNotice,
     ProcessingFailed,
     ProcessingFinished,
     ShareAccessRequest,
+    SignInReminderNotice,
 )
 from ..processing.consumer import (
     ProcessingTransactions,
@@ -538,6 +546,42 @@ PasswordResets = Annotated[PasswordResetService, Depends(password_reset_service)
 
 
 type PasswordResetMailFactory = Callable[[AsyncSession], IPasswordResetMailQueue]
+
+
+class OutboxPasswordResetMail:
+    """Accounts' `IPasswordResetMailQueue`, answered by the notification outbox.
+
+    Only the reset ID is kept: the scheduler gives the link a new token when it sends the mail.
+    The outbox is also the record of what was sent, and when the relay accepted it.
+    """
+
+    def __init__(self, outbox: INotificationOutbox, sent: IAccountLinkHistory) -> None:
+        self._outbox: INotificationOutbox = outbox
+        self._sent: IAccountLinkHistory = sent
+
+    async def history(self, user_id: UUID, now: datetime) -> ResetMailHistory:
+        found = await self._sent.account_link_history(user_id, now)
+        return ResetMailHistory(found.waiting, found.last_sent_at)
+
+    async def reserve(self, mail: PasswordResetMail) -> None:
+        reset_id, issued_at = mail.reset_id, mail.issued_at
+        match mail.kind:
+            case PasswordResetMailKind.RESET:
+                notice = PasswordResetNotice(
+                    reset_id=reset_id, issued_at=issued_at, expires_at=mail.expires_at
+                )
+            case PasswordResetMailKind.SIGN_IN_REMINDER:
+                notice = SignInReminderNotice(
+                    reset_id=reset_id, issued_at=issued_at, expires_at=mail.expires_at
+                )
+        await self._outbox.reserve(
+            mail.user_id, f"{notice.kind}:{reset_id}:{issued_at.isoformat()}", notice
+        )
+
+
+def outbox_password_reset_mail(session: AsyncSession) -> IPasswordResetMailQueue:
+    outbox = NotificationOutboxRepository(session)
+    return OutboxPasswordResetMail(outbox, outbox)
 
 
 def password_reset_mail() -> PasswordResetMailFactory | None:

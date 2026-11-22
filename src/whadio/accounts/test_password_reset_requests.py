@@ -19,9 +19,12 @@ from .models import PasswordReset, User
 from .password_resets import (
     IPasswordResetMailQueue,
     PasswordResetCleanupService,
+    PasswordResetLink,
     PasswordResetMail,
     PasswordResetMailKind,
+    PasswordResetRenewal,
     PasswordResetRequestService,
+    ResetMailHistory,
 )
 from .repositories import SessionRepository
 from .reset_repository import PasswordResetRepository
@@ -34,9 +37,24 @@ pytestmark = pytest.mark.slow
 class ResetMailQueue:
     def __init__(self) -> None:
         self.messages: list[PasswordResetMail] = []
+        self.sent_at: dict[int, datetime] = {}
 
     async def reserve(self, mail: PasswordResetMail, /) -> None:
         self.messages.append(mail)
+
+    async def history(self, user_id: UUID, now: datetime, /) -> ResetMailHistory:
+        own = [(index, mail) for index, mail in enumerate(self.messages) if mail.user_id == user_id]
+        return ResetMailHistory(
+            waiting=any(index not in self.sent_at and mail.expires_at > now for index, mail in own),
+            last_sent_at=max(
+                (self.sent_at[index] for index, _ in own if index in self.sent_at), default=None
+            ),
+        )
+
+    def deliver(self, at: datetime) -> None:
+        """The relay accepts every waiting email at `at`."""
+        for index in range(len(self.messages)):
+            self.sent_at.setdefault(index, at)
 
 
 @dataclass
@@ -45,17 +63,6 @@ class ResetClock:
 
     def __call__(self) -> datetime:
         return self.now
-
-
-class DelayedMailQueue(ResetMailQueue):
-    def __init__(self, clock: ResetClock) -> None:
-        super().__init__()
-        self._clock: ResetClock = clock
-
-    @override
-    async def reserve(self, mail: PasswordResetMail, /) -> None:
-        self._clock.now += timedelta(minutes=1)
-        await super().reserve(mail)
 
 
 class PausedMailQueue(ResetMailQueue):
@@ -91,29 +98,38 @@ def requests(
     )
 
 
+async def sent_link(session: AsyncSession, mail: PasswordResetMail) -> PasswordResetLink:
+    """The link the scheduler would mail, with the token it makes at sending."""
+    renewed = await PasswordResetRenewal(
+        PasswordResetRepository(session), SessionRepository(session)
+    ).renew(mail.reset_id, mail.issued_at, mail.issued_at)
+    if renewed is None:
+        raise AssertionError("the queued link is no longer current")
+    return renewed.link
+
+
 @pytest.mark.parametrize("kind", list(PasswordResetMailKind))
 def test_known_address_queues_a_one_hour_link(
     async_database: AsyncDatabase, kind: PasswordResetMailKind
 ) -> None:
     # Arrange
-    async def scenario(session: AsyncSession) -> tuple[UUID, PasswordResetMail, datetime, str]:
+    async def scenario(session: AsyncSession) -> tuple[UUID, PasswordResetMail, datetime]:
         user = await AsyncDatabase.add_account(session, PASSWORD)
         mail = ResetMailQueue()
         now = datetime.now(UTC)
         # Act
         await requests(session, mail, ResetClock(now)).request(user.email.upper(), kind=kind)
         (queued,) = mail.messages
-        pending = await session.get_one(PasswordReset, queued.link.reset_id)
-        return user.user_id, queued, pending.expires_at, pending.token_hash
+        pending = await session.get_one(PasswordReset, queued.reset_id)
+        return user.user_id, queued, pending.expires_at
 
-    user_id, queued, expires_at, token_hash = async_database.run(scenario)
+    user_id, queued, expires_at = async_database.run(scenario)
     # Assert
-    assert (queued.user_id, queued.kind, queued.expires_at, expires_at, token_hash) == (
+    assert (queued.user_id, queued.kind, queued.expires_at, expires_at) == (
         user_id,
         kind,
         queued.issued_at + timedelta(hours=1),
         queued.issued_at + timedelta(hours=1),
-        hashlib.sha256(queued.link.token.encode()).hexdigest(),
     )
 
 
@@ -142,7 +158,7 @@ def test_each_account_has_its_own_reset_link_and_cooldown(async_database: AsyncD
         await resets.request(first.email, kind=PasswordResetMailKind.RESET)
         await resets.request(second.email, kind=PasswordResetMailKind.SIGN_IN_REMINDER)
         actual = [
-            (notice.user_id, (await session.get_one(PasswordReset, notice.link.reset_id)).user_id)
+            (notice.user_id, (await session.get_one(PasswordReset, notice.reset_id)).user_id)
             for notice in mail.messages
         ]
         return actual == [(first.user_id, first.user_id), (second.user_id, second.user_id)]
@@ -164,10 +180,11 @@ def test_either_form_shares_the_cooldown_and_preserves_the_first_link(
         resets = requests(session, mail, clock)
         second_kind = next(kind for kind in PasswordResetMailKind if kind != first_kind)
         await resets.request(user.email, kind=first_kind)
-        first = mail.messages[0].link
+        mail.deliver(now)
         # Act
         clock.now += timedelta(minutes=20, microseconds=-1)
         await resets.request(user.email.upper(), kind=second_kind)
+        first = await sent_link(session, mail.messages[0])
         await operator_service(session).complete(first.reset_id, first.token, PASSWORD, clock.now)
         return len(mail.messages)
 
@@ -184,19 +201,21 @@ def test_replacing_a_reset_link_starts_a_new_cooldown(async_database: AsyncDatab
         first_request = clock.now
         resets = requests(session, mail, clock)
         await resets.request(user.email, kind=PasswordResetMailKind.RESET)
-        first = mail.messages[0].link
+        first = await sent_link(session, mail.messages[0])
+        mail.deliver(clock.now)
         # Act
         clock.now += timedelta(minutes=19)
         await resets.request(user.email, kind=PasswordResetMailKind.RESET)
         clock.now += timedelta(minutes=1)
         await resets.request(user.email, kind=PasswordResetMailKind.RESET)
+        mail.deliver(clock.now)
         clock.now += timedelta(minutes=1)
         await resets.request(user.email, kind=PasswordResetMailKind.SIGN_IN_REMINDER)
         _, replacement = mail.messages
         completion = operator_service(session)
         with pytest.raises(UseCaseError) as failure:
             await completion.complete(first.reset_id, first.token, PASSWORD, clock.now)
-        link = replacement.link
+        link = await sent_link(session, replacement)
         await completion.complete(link.reset_id, link.token, PASSWORD, clock.now)
         return failure.value.code, [notice.issued_at - first_request for notice in mail.messages]
 
@@ -217,9 +236,9 @@ def test_cooldown_survives_using_the_link(async_database: AsyncDatabase) -> None
         resets = requests(session, mail, clock)
         await resets.request(user.email, kind=PasswordResetMailKind.RESET)
         await session.flush()
-        await operator_service(session).complete(
-            mail.messages[0].link.reset_id, mail.messages[0].link.token, PASSWORD, clock.now
-        )
+        link = await sent_link(session, mail.messages[0])
+        mail.deliver(clock.now)
+        await operator_service(session).complete(link.reset_id, link.token, PASSWORD, clock.now)
         # Act
         clock.now += timedelta(minutes=1)
         await resets.request(user.email, kind=PasswordResetMailKind.RESET)
@@ -229,7 +248,9 @@ def test_cooldown_survives_using_the_link(async_database: AsyncDatabase) -> None
     assert len(mail.messages) == 1
 
 
-def test_cooldown_starts_after_waiting_for_the_account_lock(async_database: AsyncDatabase) -> None:
+def test_request_reads_the_clock_after_waiting_for_the_account_lock(
+    async_database: AsyncDatabase,
+) -> None:
     # Arrange
     async def scenario(session: AsyncSession) -> list[timedelta]:
         user = await AsyncDatabase.add_account(session, PASSWORD)
@@ -239,80 +260,52 @@ def test_cooldown_starts_after_waiting_for_the_account_lock(async_database: Asyn
         blocked = PasswordResetRequestService(
             PasswordResetRepository(session), DelayedAccountLock(session, clock), mail, clock
         )
-        await blocked.request(user.email, kind=PasswordResetMailKind.RESET)
         # Act
-        clock.now = request_start + timedelta(minutes=20)
-        await requests(session, mail, clock).request(user.email, kind=PasswordResetMailKind.RESET)
+        await blocked.request(user.email, kind=PasswordResetMailKind.RESET)
         return [notice.issued_at - request_start for notice in mail.messages]
 
     # Assert
     assert async_database.run(scenario) == [timedelta(minutes=1)]
 
 
-def test_cooldown_starts_when_the_queue_reservation_finishes(async_database: AsyncDatabase) -> None:
+def test_operator_links_leave_the_email_cooldown_unchanged(async_database: AsyncDatabase) -> None:
     # Arrange
     async def scenario(session: AsyncSession) -> int:
         user = await AsyncDatabase.add_account(session, PASSWORD)
-        request_start = datetime.now(UTC)
-        clock = ResetClock(request_start)
-        mail = DelayedMailQueue(clock)
+        clock = ResetClock(datetime.now(UTC))
+        mail = ResetMailQueue()
         resets = requests(session, mail, clock)
+        operator = operator_service(session)
         await resets.request(user.email, kind=PasswordResetMailKind.RESET)
+        mail.deliver(clock.now)
         # Act
-        clock.now = request_start + timedelta(minutes=20)
+        clock.now += timedelta(minutes=1)
+        manual_link = await operator.issue(user.email, clock.now)
         await resets.request(user.email, kind=PasswordResetMailKind.RESET)
+        await operator.complete(manual_link.reset_id, manual_link.token, PASSWORD, clock.now)
         return len(mail.messages)
 
     # Assert
     assert async_database.run(scenario) == 1
 
 
-def test_operator_links_leave_the_email_cooldown_unchanged(async_database: AsyncDatabase) -> None:
+def test_rollback_preserves_the_existing_link(async_database: AsyncDatabase) -> None:
     # Arrange
-    async def scenario(session: AsyncSession) -> tuple[int, bool]:
+    async def scenario(session: AsyncSession) -> bool:
         user = await AsyncDatabase.add_account(session, PASSWORD)
         now = datetime.now(UTC)
-        clock = ResetClock(now)
-        mail = ResetMailQueue()
-        resets = requests(session, mail, clock)
-        operator = operator_service(session)
-        await operator.issue(user.email, now)
-        # Act
-        await resets.request(user.email, kind=PasswordResetMailKind.RESET)
-        clock.now += timedelta(minutes=1)
-        manual_link = await operator.issue(user.email, clock.now)
-        await resets.request(user.email, kind=PasswordResetMailKind.RESET)
-        await operator.complete(manual_link.reset_id, manual_link.token, PASSWORD, clock.now)
-        account = await session.get_one(User, user.user_id, populate_existing=True)
-        return len(mail.messages), account.password_reset_mail_queued_at == now
-
-    # Assert
-    assert async_database.run(scenario) == (1, True)
-
-
-def test_rollback_preserves_existing_link_and_email_cooldown(async_database: AsyncDatabase) -> None:
-    # Arrange
-    async def scenario(session: AsyncSession) -> tuple[int, bool]:
-        user = await AsyncDatabase.add_account(session, PASSWORD)
-        email = user.email
-        now = datetime.now(UTC)
-        existing = await operator_service(session).issue(email, now)
-        mail = ResetMailQueue()
-        resets = requests(session, mail, ResetClock(now))
+        existing = await operator_service(session).issue(user.email, now)
+        resets = requests(session, ResetMailQueue(), ResetClock(now))
         # Act
         async with session.begin_nested() as savepoint:
-            await resets.request(email, kind=PasswordResetMailKind.RESET)
+            await resets.request(user.email, kind=PasswordResetMailKind.RESET)
             await session.flush()
             await savepoint.rollback()
         pending = await session.get_one(PasswordReset, existing.reset_id, populate_existing=True)
-        restored_hash = pending.token_hash
-        await resets.request(email, kind=PasswordResetMailKind.RESET)
-        return len(mail.messages), restored_hash == hashlib.sha256(
-            existing.token.encode()
-        ).hexdigest()
+        return pending.token_hash == hashlib.sha256(existing.token.encode()).hexdigest()
 
     # Assert
-    assert async_database.run(scenario) == (2, True)
+    assert async_database.run(scenario)
 
 
 def test_parallel_requests_queue_only_one_email(database_settings: DatabaseSettings) -> None:
@@ -417,9 +410,8 @@ def test_expired_reset_cleanup_cannot_erase_a_reissued_link(
                     now
                 )
                 (queued,) = mail.messages
-                await operator_service(session).complete(
-                    queued.link.reset_id, queued.link.token, PASSWORD, now
-                )
+                link = await sent_link(session, queued)
+                await operator_service(session).complete(link.reset_id, link.token, PASSWORD, now)
             return len(mail.messages)
         finally:
             async with database.transaction() as session:
@@ -428,3 +420,60 @@ def test_expired_reset_cleanup_cannot_erase_a_reissued_link(
 
     # Assert
     assert asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop) == 1
+
+
+def test_repeat_soon_after_a_late_delivery_changes_nothing(async_database: AsyncDatabase) -> None:
+    # Arrange
+    mail = ResetMailQueue()
+
+    async def scenario(session: AsyncSession) -> None:
+        user = await AsyncDatabase.add_account(session, PASSWORD)
+        clock = ResetClock(datetime.now(UTC))
+        resets = requests(session, mail, clock)
+        await resets.request(user.email, kind=PasswordResetMailKind.RESET)
+        mail.deliver(clock.now + timedelta(minutes=25))
+        # Act
+        clock.now += timedelta(minutes=26)
+        await resets.request(user.email, kind=PasswordResetMailKind.RESET)
+
+    async_database.run(scenario)
+    # Assert
+    assert len(mail.messages) == 1
+
+
+def test_repeat_while_the_email_waits_changes_nothing(async_database: AsyncDatabase) -> None:
+    # Arrange
+    mail = ResetMailQueue()
+
+    async def scenario(session: AsyncSession) -> None:
+        user = await AsyncDatabase.add_account(session, PASSWORD)
+        clock = ResetClock(datetime.now(UTC))
+        resets = requests(session, mail, clock)
+        await resets.request(user.email, kind=PasswordResetMailKind.RESET)
+        # Act
+        clock.now += timedelta(minutes=59)
+        await resets.request(user.email, kind=PasswordResetMailKind.SIGN_IN_REMINDER)
+
+    async_database.run(scenario)
+    # Assert
+    assert len(mail.messages) == 1
+
+
+def test_waiting_email_with_an_expired_link_does_not_stop_a_new_one(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    mail = ResetMailQueue()
+
+    async def scenario(session: AsyncSession) -> None:
+        user = await AsyncDatabase.add_account(session, PASSWORD)
+        clock = ResetClock(datetime.now(UTC))
+        resets = requests(session, mail, clock)
+        await resets.request(user.email, kind=PasswordResetMailKind.RESET)
+        # Act
+        clock.now += timedelta(hours=1)
+        await resets.request(user.email, kind=PasswordResetMailKind.RESET)
+
+    async_database.run(scenario)
+    # Assert
+    assert len(mail.messages) == 2

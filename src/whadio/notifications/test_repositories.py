@@ -12,12 +12,28 @@ from conftest import AsyncDatabase
 
 from ..shared.database import DatabaseSettings
 from .models import NotificationOutbox
-from .repositories import NotificationOutboxRepository, OutboxEntry, notice_payload
-from .templates import HostedEviction, ProcessingFinished
+from .repositories import (
+    NotificationOutboxRepository,
+    OutboxEntry,
+    account_link_history,
+    notice_payload,
+)
+from .templates import (
+    HostedEviction,
+    Notice,
+    NoticeKind,
+    PasswordResetNotice,
+    ProcessingFinished,
+    RegistrationLinkNotice,
+    SignInReminderNotice,
+)
 
 LONG_AGO = datetime(2000, 1, 1, tzinfo=UTC)
 FINISHED = ProcessingFinished(meeting_id=uuid4(), meeting_name="Weekly sync")
 EVICTION = HostedEviction(meeting_name=None)
+REGISTRATION = RegistrationLinkNotice(
+    registration_id=uuid4(), issued_at=LONG_AGO, expires_at=LONG_AGO + timedelta(hours=24)
+)
 
 
 def soon() -> datetime:
@@ -278,6 +294,30 @@ def test_payload_that_is_not_an_object_is_refused(async_database: AsyncDatabase)
         async_database.run(scenario)
 
 
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    ("notice", "addressed"),
+    [
+        pytest.param(FINISHED, False, id="activity-notice-without-recipient"),
+        pytest.param(REGISTRATION, True, id="registration-link-with-recipient"),
+    ],
+)
+def test_only_a_registration_link_goes_without_a_recipient_account(
+    async_database: AsyncDatabase, notice: Notice, *, addressed: bool
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> None:
+        recipient, _ = await AsyncDatabase.add_workspace(session)
+        # Act
+        await NotificationOutboxRepository(session).reserve(
+            recipient if addressed else None, f"test:{uuid4()}", notice
+        )
+
+    # Assert
+    with pytest.raises(IntegrityError, match="ck_notification_outbox_recipient"):
+        async_database.run(scenario)
+
+
 async def has_outbox_privilege(session: AsyncSession, privilege: str) -> bool | None:
     return await session.scalar(
         select(
@@ -358,3 +398,67 @@ def test_notice_claimed_by_one_transaction_is_skipped_by_another(
     )
     # Assert
     assert (held, other == reserved) == (reserved, False)
+
+
+def reset_notice(issued_at: datetime) -> PasswordResetNotice:
+    return PasswordResetNotice(
+        reset_id=uuid4(), issued_at=issued_at, expires_at=issued_at + timedelta(hours=1)
+    )
+
+
+@pytest.mark.slow
+def test_unsent_reset_mail_waits_until_its_link_expires(async_database: AsyncDatabase) -> None:
+    # Arrange
+    now = datetime.now(UTC)
+
+    async def scenario(session: AsyncSession) -> tuple[bool, bool]:
+        recipient, _ = await AsyncDatabase.add_workspace(session)
+        outbox = NotificationOutboxRepository(session)
+        await outbox.reserve(recipient, f"test:{uuid4()}", reset_notice(now))
+        # Act
+        before = await outbox.account_link_history(recipient, now + timedelta(minutes=59))
+        after = await outbox.account_link_history(recipient, now + timedelta(hours=1))
+        return before.waiting, after.waiting
+
+    # Assert
+    assert async_database.run(scenario) == (True, False)
+
+
+@pytest.mark.slow
+def test_last_sent_is_the_latest_reset_or_reminder_the_relay_accepted(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    now = datetime.now(UTC)
+
+    async def scenario(session: AsyncSession) -> datetime | None:
+        recipient, _ = await AsyncDatabase.add_workspace(session)
+        outbox = NotificationOutboxRepository(session)
+        reminder = SignInReminderNotice(
+            reset_id=uuid4(), issued_at=now, expires_at=now + timedelta(hours=1)
+        )
+        sent = [
+            (reset_notice(now), now + timedelta(minutes=1)),
+            (reminder, now + timedelta(minutes=2)),
+            (FINISHED, now + timedelta(minutes=3)),
+        ]
+        for notice, sent_at in sent:
+            key = f"test:{uuid4()}"
+            await outbox.reserve(recipient, key, notice)
+            await outbox.mark_sent(await notice_id(session, key), sent_at)
+        # Act
+        return (await outbox.account_link_history(recipient, now)).last_sent_at
+
+    # Assert
+    assert async_database.run(scenario) == now + timedelta(minutes=2)
+
+
+def test_last_sent_is_the_latest_acceptance_whatever_the_order() -> None:
+    # Arrange
+    now = datetime.now(UTC)
+    payload = notice_payload(reset_notice(now))
+    sent = [now + timedelta(minutes=2), now + timedelta(minutes=1)]
+    # Act
+    history = account_link_history(((NoticeKind.RESET_LINK, payload, at) for at in sent), now)
+    # Assert
+    assert history.last_sent_at == now + timedelta(minutes=2)

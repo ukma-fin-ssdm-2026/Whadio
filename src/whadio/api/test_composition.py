@@ -28,6 +28,7 @@ from ..access_policy.services import AccessCollaborators, AccessPolicy, AccessSe
 from ..accounts.contracts import UserProfile
 from ..accounts.enums import LlmProvider, NotesTemplate, SessionKind, WorkspaceRole
 from ..accounts.models import McpKey, Session, User, Workspace, WorkspaceMembership
+from ..accounts.password_resets import PasswordResetMail, PasswordResetMailKind
 from ..accounts.repositories import MembershipRepository, WorkspaceSettingsRepository
 from ..accounts.services import WorkspaceMembershipService, WorkspaceSettingsService
 from ..audit.contracts import ContentEvent
@@ -74,7 +75,13 @@ from ..meetings.services import MeetingChanges, MeetingService, RecordingInput, 
 from ..notifications.fakes import InMemoryNotificationOutbox
 from ..notifications.models import NotificationOutbox
 from ..notifications.repositories import NotificationOutboxRepository, notice_payload
-from ..notifications.templates import NoticeKind, ProcessingFailed, ProcessingFinished
+from ..notifications.templates import (
+    NoticeKind,
+    PasswordResetNotice,
+    ProcessingFailed,
+    ProcessingFinished,
+    SignInReminderNotice,
+)
 from ..notifications.templates import ShareAccessRequest as ShareAccessNotice
 from ..processing.consumer import WorkerUsers, handle_delivery
 from ..processing.enums import JobStatus, JobType, ProcessingOutcome
@@ -94,6 +101,7 @@ from .accounts.schemas import Preset
 from .app import create_app
 from .composition import (
     CompositionRoot,
+    OutboxPasswordResetMail,
     OutboxProcessingNotices,
     OutboxShareNotices,
     PolicyMeetingReaders,
@@ -1093,7 +1101,7 @@ def test_core_features_answer_95_percent_of_requests_without_processing(
     asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
 
 
-type ReservedNotice = tuple[UUID, str, NoticeKind, dict[str, JsonValue]]
+type ReservedNotice = tuple[UUID | None, str, NoticeKind, dict[str, JsonValue]]
 
 
 async def reserved_notices(unit: Unit, *recipients: UUID) -> list[ReservedNotice]:
@@ -1229,7 +1237,7 @@ def meeting_readers(unit: Unit) -> PolicyMeetingReaders:
 
 def reserved(
     outbox: InMemoryNotificationOutbox,
-) -> list[tuple[UUID, NoticeKind, Mapping[str, JsonValue]]]:
+) -> list[tuple[UUID | None, NoticeKind, Mapping[str, JsonValue]]]:
     return [
         (stored.recipient_id, stored.kind, stored.payload) for stored in outbox.notices.values()
     ]
@@ -1832,6 +1840,64 @@ def test_failed_upload_keeps_durable_cleanup_when_storage_is_unavailable(
             await _clean_uploads(database_settings, storage)
 
     asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+# --- Password reset mail ---
+
+RECIPIENT, RESET_ID = uuid4(), uuid4()
+
+
+def reset_mail(kind: PasswordResetMailKind, issued_at: datetime) -> PasswordResetMail:
+    return PasswordResetMail(RECIPIENT, RESET_ID, issued_at, issued_at + timedelta(hours=1), kind)
+
+
+@pytest.mark.parametrize(
+    ("kind", "notice", "notice_kind"),
+    [
+        (PasswordResetMailKind.RESET, PasswordResetNotice, NoticeKind.RESET_LINK),
+        (
+            PasswordResetMailKind.SIGN_IN_REMINDER,
+            SignInReminderNotice,
+            NoticeKind.SIGN_IN_REMINDER,
+        ),
+    ],
+)
+def test_reset_mail_is_reserved_for_its_account(
+    kind: PasswordResetMailKind,
+    notice: type[PasswordResetNotice | SignInReminderNotice],
+    notice_kind: NoticeKind,
+) -> None:
+    # Arrange
+    outbox = InMemoryNotificationOutbox(lambda: datetime.now(UTC))
+    mail = reset_mail(kind, datetime.now(UTC))
+    # Act
+    asyncio.run(OutboxPasswordResetMail(outbox, outbox).reserve(mail))
+    # Assert
+    assert reserved(outbox) == [
+        (
+            RECIPIENT,
+            notice_kind,
+            notice_payload(
+                notice(reset_id=RESET_ID, issued_at=mail.issued_at, expires_at=mail.expires_at)
+            ),
+        )
+    ]
+
+
+def test_reset_mail_issued_again_is_reserved_again() -> None:
+    # Arrange
+    outbox = InMemoryNotificationOutbox(lambda: datetime.now(UTC))
+    issued_at = datetime.now(UTC)
+    asyncio.run(
+        OutboxPasswordResetMail(outbox, outbox).reserve(
+            reset_mail(PasswordResetMailKind.RESET, issued_at)
+        )
+    )
+    again = reset_mail(PasswordResetMailKind.RESET, issued_at + timedelta(minutes=20))
+    # Act
+    asyncio.run(OutboxPasswordResetMail(outbox, outbox).reserve(again))
+    # Assert
+    assert len(outbox.notices) == 2
 
 
 # --- Regenerating notes ---

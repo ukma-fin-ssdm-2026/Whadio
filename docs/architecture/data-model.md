@@ -30,7 +30,7 @@ The model covers the data required for these key project functions:
 
 | Entity | Primary key | Purpose | Personal or sensitive data |
 | --- | --- | --- | --- |
-| `USER` | `user_id` | Registered account that can create workspaces, meetings, exports, shares, and MCP keys; `is_administrator` marks system administrators, and `terms_accepted_at` records when the Terms and Conditions were accepted. `password_reset_mail_queued_at` drives the shared 20-minute cooldown for reset and sign-in reminder emails. | `email`, `name` and the last reset email queue time are personal. `password_hash` is sensitive. |
+| `USER` | `user_id` | Registered account that can create workspaces, meetings, exports, shares, and MCP keys; `is_administrator` marks system administrators, and `terms_accepted_at` records when the Terms and Conditions were accepted. | `email`, `name` are personal. `password_hash` is sensitive. |
 | `WORKSPACE` | `workspace_id` | Collaboration boundary for members, folders, glossary terms, meetings, the default notes template, and LLM configuration. `is_personal` marks the personal workspace created during registration. | Usually not personal, but the workspace name may reveal an organization or project. |
 | `WORKSPACE_MEMBERSHIP` | `workspace_membership_id` | Connects users to workspaces and stores their cumulative role: `Member`, `Moderator`, or `Owner`. | Membership and role data can be sensitive organizational metadata. |
 | `INVITATION` | `invitation_id` | Pending, accepted, declined, or cancelled workspace invitation for an email address with a chosen role, reached through a single-use link that expires. | `invited_email` is personal data. `token_hash` is sensitive. Invitation metadata can reveal team membership. |
@@ -113,17 +113,18 @@ The model covers the data required for these key project functions:
 - `PENDING_REGISTRATION` is unique by `email`, and none exists for an email that already has a `USER`. A registration request for an email that has a `USER` is handled as a password-reset request for that `USER`.
 - Completing a `PENDING_REGISTRATION` deletes it in the same transaction that creates the `USER`, its personal workspace and its default folder, which makes its link single-use.
 - `PASSWORD_RESET` is unique by `user_id`, and using the link deletes the row.
-- An emailed reset request reads the clock after locking the `USER` row. It records
-  `password_reset_mail_queued_at` after reserving the mail, in the transaction that changes the
-  pending reset. Operator-issued links leave this timestamp alone. Deleting a pending reset
-  leaves its email cooldown in effect.
+- An emailed reset request reads the clock after locking the `USER` row. It changes nothing
+  while a reset or sign-in reminder email for that account waits in `NOTIFICATION_OUTBOX` with a
+  link that has not expired, or within 20 minutes of the latest such email's `sent_at`, when the
+  relay accepted it. Operator-issued links, and using or deleting a pending reset, leave this
+  rule unchanged.
 - Reissuing a link locks the pending reset row before replacing it, so an expired-row cleanup
   cannot remove the row between reading and updating it.
 - Visitors can request registrations and password resets only in `verified` mode; the operator issues them in either mode. Rows created before a mode switch keep working until they expire.
 - A repeated registration for a new address within 20 minutes of the pending registration's
-  `created_at` changes nothing. For an existing account, either request form uses
-  `USER.password_reset_mail_queued_at` for the same check. At 20 minutes or later, a new
-  request replaces the pending token and its timestamps, invalidating any earlier link.
+  `created_at` changes nothing. For an existing account, either request form follows the reset
+  rule above. Otherwise a new request replaces the pending token and its timestamps, which
+  invalidates any earlier link.
 - At most one `INVITATION` per `(workspace_id, invited_email)` has `status = pending`. Inviting an address that already has a pending invitation in the workspace updates that invitation, keeping its `invitation_id`: it replaces `token_hash`, `role`, `invited_by_user_id`, `created_at` and `expires_at`, so earlier links stop working, and writes another `member_invited` event.
 - In `verified` mode, inviting an address is refused within a day of the `created_at` of its latest invitation to the workspace, whatever that invitation's status, so cancelling and inviting again sends no extra email. Invitation rows are kept until they expire, so the latest one is still there to compare with.
 - A `USER` invites at most 20 addresses a day, counted as the `INVITATION` rows whose `invited_by_user_id` is that user and whose `created_at` falls within the last 24 hours. A replaced invitation stays one row and counts once, for whoever replaced it last. That undercounts nothing the limit protects: in `verified` mode an invitation is replaced only after it has left the count, so every invitation email is counted, and in `invite-only` mode repeated replacements send no email and can create at most one account.
@@ -195,6 +196,9 @@ The model covers the data required for these key project functions:
 - LLM provider API keys and MCP keys must never be stored in plaintext.
 - `NOTIFICATION_OUTBOX.dedupe_key` is unique: reserving a notice whose key is already reserved changes nothing, so a retried use case mails once. Callers build the key from what makes the notice unique, such as the meeting and the recipient.
 - `NOTIFICATION_OUTBOX.payload` is a JSON object validated per `kind`; it holds metadata for the mail template, never transcript, note or recording content, and links are built when the mail is sent.
+- `NOTIFICATION_OUTBOX.recipient_user_id` is null exactly for a registration link, whose address has no account yet; the scheduler takes the address from the `PENDING_REGISTRATION` when it sends the mail.
+- A registration link, password-reset or sign-in reminder notice holds the link's ID and issue time, never its token. When the mail is sent, the scheduler gives the link a new token and stores only its hash, which invalidates earlier links for it. A notice whose link was used, issued again or expired is not sent.
+- Each send attempt makes its own token. If the relay accepted an attempt that the scheduler could not record as sent, the retried email works and the earlier email's link does not. This is accepted: an older emailed link that stops working fails safe, and the case needs a database failure right after the relay accepted the email.
 - The scheduler sends a notice when `sent_at` is null, `next_attempt_at` has passed and `attempts` is below the configured maximum. Each attempt increments `attempts` and moves `next_attempt_at` past the longest a send can take before the mail is sent; a failed delivery stores a sanitised `last_error` of at most 200 characters and moves `next_attempt_at` by a backoff that doubles up to a cap, and after the last attempt the notice is given up. Without an SMTP relay, notices are reserved and never sent.
 - The scheduler deletes notices sent longer ago than the outbox retention (7 days by default), and given-up notices reserved longer ago than it.
 - `AUDIT_EVENT` is append-only: the table is owned by the migration role, and the application's database role holds only `INSERT` and `SELECT` on it.
@@ -266,3 +270,5 @@ This document and the accompanying data model diagram were prepared and revised 
 The audit rules for member role changes and removal (#184) were added with Claude Code and reviewed by the author.
 
 OpenAI Codex assisted with the #189 reset email cooldown documentation.
+
+The outbox-based email rules for #188 were written with Claude Code.

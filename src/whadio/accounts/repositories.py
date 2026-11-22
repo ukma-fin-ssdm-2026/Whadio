@@ -6,7 +6,7 @@ from enum import StrEnum
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, or_, select, text
+from sqlalchemy import and_, delete, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -709,6 +709,8 @@ class IRegistrationRepository(Protocol):
         self, email: str, token_hash: str, now: datetime, expires_at: datetime, /
     ) -> UUID: ...
 
+    async def replace_token(self, registration_id: UUID, token_hash: str, /) -> None: ...
+
     async def create_account(
         self, email: str, name: str, password_hash: str, now: datetime, /
     ) -> User: ...
@@ -748,6 +750,13 @@ class RegistrationRepository:
         pending.expires_at = expires_at
         await self._session.flush()
         return pending.pending_registration_id
+
+    async def replace_token(self, registration_id: UUID, token_hash: str) -> None:
+        await self._session.execute(
+            update(PendingRegistration)
+            .where(PendingRegistration.pending_registration_id == registration_id)
+            .values(token_hash=token_hash)
+        )
 
     async def create_account(
         self, email: str, name: str, password_hash: str, now: datetime

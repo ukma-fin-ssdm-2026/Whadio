@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from pydantic import HttpUrl
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from conftest import AsyncDatabase
@@ -20,21 +20,49 @@ from ..accounts.models import (
     Session,
     WorkspaceMembership,
 )
-from ..accounts.repositories import InvitationIssue, InvitationRepository, RegistrationRepository
+from ..accounts.password_resets import (
+    PasswordResetLink,
+    PasswordResetService,
+    RenewedPasswordReset,
+)
+from ..accounts.passwords import Argon2PasswordHasher
+from ..accounts.repositories import (
+    InvitationIssue,
+    InvitationRepository,
+    RegistrationRepository,
+    SessionRepository,
+)
 from ..accounts.reset_repository import PasswordResetRepository
+from ..accounts.services import (
+    RegistrationIssuer,
+    RegistrationLink,
+    RenewedRegistration,
+)
+from ..accounts.tokens import generated_token_hash
 from ..meetings.models import Meeting
-from ..notifications.fakes import InMemoryNotificationOutbox
+from ..notifications.fakes import InMemoryNotificationOutbox, RecordingMailSender
 from ..notifications.models import NotificationOutbox
-from ..notifications.services import NotificationDrainer, Recipient
-from ..notifications.settings import NotificationSettings, SmtpSettings
-from ..notifications.templates import NoticeKind, RecordingDeletionWarning
+from ..notifications.repositories import NotificationOutboxRepository
+from ..notifications.services import AccountLinkMail, NotificationDrainer, Recipient
+from ..notifications.settings import NotificationSettings, OutboxSettings, SmtpSettings
+from ..notifications.smtp import OutgoingMail
+from ..notifications.templates import (
+    AccountLinkNotice,
+    AppLinks,
+    NoticeKind,
+    PasswordResetNotice,
+    RecordingDeletionWarning,
+    RegistrationLinkNotice,
+)
 from ..processing.enums import JobStatus, JobType
 from ..processing.models import ProcessingJob
 from ..processing.repositories import JobRepository
 from ..processing.settings import JobRecoverySettings
 from ..retention.services import RetentionService
 from .composition import (
+    AccountLinkRenewal,
     AccountRecipients,
+    DeliveryTransactions,
     JobRecoveryJobs,
     OutboxRetentionNotices,
     RegistrationCleanupJobs,
@@ -43,6 +71,9 @@ from .composition import (
 )
 
 DEADLINE = datetime(2026, 5, 4, 9, 30, tzinfo=UTC)
+PUBLIC_URL = "https://whadio.example.com"
+ISSUED_AT = datetime(2026, 11, 22, 12, 0, tzinfo=UTC)
+LINK_ID = UUID("7a1e5c3b-2f4d-4e6a-9b8c-0d1e2f3a4b5c")
 
 
 class UnusedDatabase:
@@ -97,6 +128,74 @@ def test_recipient_without_an_account_is_missing() -> None:
     found = asyncio.run(recipients.recipient(uuid4()))
     # Assert
     assert found is None
+
+
+class FixedRenewal[T]:
+    def __init__(self, renewed: T | None) -> None:
+        self._renewed: T | None = renewed
+
+    async def renew(self, link_id: UUID, issued_at: datetime, now: datetime) -> T | None:
+        del link_id, issued_at, now
+        return self._renewed
+
+
+def renewed(
+    notice: AccountLinkNotice,
+    *,
+    registration: RenewedRegistration | None = None,
+    reset: RenewedPasswordReset | None = None,
+    profiles: dict[UUID, UserProfile] | None = None,
+) -> AccountLinkMail | None:
+    links = AccountLinkRenewal(
+        FixedRenewal[RenewedRegistration](registration),
+        FixedRenewal[RenewedPasswordReset](reset),
+        AccountRecipients(Profiles(profiles or {})),
+        PUBLIC_URL,
+        lambda: ISSUED_AT,
+    )
+    return asyncio.run(links.renew(notice))
+
+
+REGISTRATION_NOTICE = RegistrationLinkNotice(
+    registration_id=LINK_ID, issued_at=ISSUED_AT, expires_at=ISSUED_AT + timedelta(hours=24)
+)
+RESET_NOTICE = PasswordResetNotice(
+    reset_id=LINK_ID, issued_at=ISSUED_AT, expires_at=ISSUED_AT + timedelta(hours=1)
+)
+
+
+def test_registration_link_is_mailed_to_its_pending_address() -> None:
+    # Arrange
+    registration = RenewedRegistration("new@example.com", RegistrationLink(LINK_ID, "fresh"))
+    # Act
+    mail = renewed(REGISTRATION_NOTICE, registration=registration)
+    # Assert
+    assert mail == AccountLinkMail(
+        Recipient("", "new@example.com"), f"{PUBLIC_URL}/registrations/{LINK_ID}#token=fresh"
+    )
+
+
+def test_reset_link_is_mailed_to_its_account() -> None:
+    # Arrange
+    user_id = uuid4()
+    reset = RenewedPasswordReset(user_id, PasswordResetLink(LINK_ID, "fresh"))
+    profiles = {user_id: UserProfile("Olena Koval", "olena@example.com")}
+    # Act
+    mail = renewed(RESET_NOTICE, reset=reset, profiles=profiles)
+    # Assert
+    assert mail == AccountLinkMail(
+        Recipient("Olena Koval", "olena@example.com"),
+        f"{PUBLIC_URL}/password-resets/{LINK_ID}#token=fresh",
+    )
+
+
+def test_reset_link_of_a_deleted_account_is_not_mailed() -> None:
+    # Arrange
+    reset = RenewedPasswordReset(uuid4(), PasswordResetLink(LINK_ID, "fresh"))
+    # Act
+    mail = renewed(RESET_NOTICE, reset=reset)
+    # Assert
+    assert mail is None
 
 
 class MeetingRecords:
@@ -392,3 +491,82 @@ def test_job_recovery_returns_a_lost_job_to_the_queue_in_its_own_transaction(
     found = async_database.run(scenario)
     # Assert
     assert found == (JobStatus.QUEUED, None)
+
+
+async def mailed_link(
+    session: AsyncSession, recipient_id: UUID | None, notice: AccountLinkNotice
+) -> OutgoingMail:
+    # The test database may hold unsent notices; the rollback restores them.
+    await session.execute(
+        update(NotificationOutbox)
+        .where(NotificationOutbox.sent_at.is_(None))
+        .values(sent_at=DEADLINE)
+    )
+    await NotificationOutboxRepository(session).reserve(recipient_id, f"test:{uuid4()}", notice)
+    sender = RecordingMailSender(timedelta(minutes=1))
+    drainer = NotificationDrainer(
+        DeliveryTransactions(SavepointTransactions(session), PUBLIC_URL),
+        sender,
+        AppLinks(HttpUrl(PUBLIC_URL)),
+        OutboxSettings(),
+    )
+    await drainer.drain()
+    return sender.sent[0]
+
+
+def mailed_token(mail: OutgoingMail) -> str:
+    return mail.body.split("#token=")[1].split()[0]
+
+
+@pytest.mark.slow
+def test_mailed_registration_link_carries_the_only_valid_token(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> bool:
+        email, now = f"{uuid4()}@example.com", datetime.now(UTC)
+        issued = await RegistrationIssuer(
+            RegistrationRepository(session), SessionRepository(session)
+        ).issue(email, now)
+        notice = RegistrationLinkNotice(
+            registration_id=issued.registration_id,
+            issued_at=now,
+            expires_at=now + timedelta(hours=24),
+        )
+        # Act
+        mail = await mailed_link(session, None, notice)
+        pending = await session.get(
+            PendingRegistration, issued.registration_id, populate_existing=True
+        )
+        return (
+            mail.recipient == email
+            and pending is not None
+            and pending.token_hash == generated_token_hash(mailed_token(mail))
+        )
+
+    # Assert
+    assert async_database.run(scenario)
+
+
+@pytest.mark.slow
+def test_mailed_reset_link_completes_the_reset(async_database: AsyncDatabase) -> None:
+    # Arrange
+    password = f"A1{uuid4().hex}"
+
+    async def scenario(session: AsyncSession) -> bool:
+        user = await AsyncDatabase.add_account(session, password)
+        now = datetime.now(UTC)
+        resets = PasswordResetService(
+            PasswordResetRepository(session), SessionRepository(session), Argon2PasswordHasher()
+        )
+        issued = await resets.issue(user.email, now)
+        notice = PasswordResetNotice(
+            reset_id=issued.reset_id, issued_at=now, expires_at=now + timedelta(hours=1)
+        )
+        # Act
+        mail = await mailed_link(session, user.user_id, notice)
+        await resets.complete(issued.reset_id, mailed_token(mail), password, now)
+        return await session.get(PasswordReset, issued.reset_id) is None
+
+    # Assert
+    assert async_database.run(scenario)

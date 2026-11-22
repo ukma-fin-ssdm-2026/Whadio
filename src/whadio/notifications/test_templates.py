@@ -1,20 +1,26 @@
 from datetime import UTC, datetime, timedelta, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import HttpUrl, ValidationError
 
 from .templates import (
+    AccountLinkNotice,
+    ActivityNotice,
     AppLinks,
     HostedEviction,
     Locale,
     MailContent,
     Notice,
+    PasswordResetNotice,
     ProcessingFailed,
     ProcessingFinished,
     RecordingDeletionWarning,
+    RegistrationLinkNotice,
     ShareAccessRequest,
+    SignInReminderNotice,
     render,
+    render_account_link,
 )
 
 MEETING_ID = UUID("6f1c2b1e-4d1a-4c4e-9a59-2f7d0c3b8e11")
@@ -36,8 +42,31 @@ FINISHED = ProcessingFinished(meeting_id=MEETING_ID, meeting_name="Weekly sync")
 FAILED = ProcessingFailed(meeting_id=MEETING_ID, meeting_name="Weekly sync")
 
 
-def _english(notice: Notice) -> MailContent:
+ISSUED_AT = datetime(2026, 11, 22, 14, 5, tzinfo=UTC)
+EXPIRES_AT = datetime(2026, 11, 23, 14, 5, tzinfo=UTC)
+ACCOUNT_LINK_URL = "https://whadio.example.com/password-resets/0b8f#token=fresh"
+REGISTRATION_LINK = RegistrationLinkNotice(
+    registration_id=MEETING_ID, issued_at=ISSUED_AT, expires_at=EXPIRES_AT
+)
+PASSWORD_RESET = PasswordResetNotice(
+    reset_id=MEETING_ID, issued_at=ISSUED_AT, expires_at=EXPIRES_AT
+)
+SIGN_IN_REMINDER = SignInReminderNotice(
+    reset_id=MEETING_ID, issued_at=ISSUED_AT, expires_at=EXPIRES_AT
+)
+ACCOUNT_LINKS = [
+    pytest.param(REGISTRATION_LINK, id="registration-link"),
+    pytest.param(PASSWORD_RESET, id="password-reset"),
+    pytest.param(SIGN_IN_REMINDER, id="sign-in-reminder"),
+]
+
+
+def _english(notice: ActivityNotice) -> MailContent:
     return render(notice, LINKS, Locale.ENGLISH)
+
+
+def _english_account_link(notice: AccountLinkNotice) -> MailContent:
+    return render_account_link(notice, ACCOUNT_LINK_URL, LINKS, Locale.ENGLISH)
 
 
 @pytest.mark.parametrize(
@@ -57,7 +86,7 @@ def _english(notice: Notice) -> MailContent:
         pytest.param(FAILED, MEETING_LINK, id="processing-failed"),
     ],
 )
-def test_mail_body_carries_the_link_of_its_notice(notice: Notice, link: str) -> None:
+def test_mail_body_carries_the_link_of_its_notice(notice: ActivityNotice, link: str) -> None:
     # Act
     mail = _english(notice)
 
@@ -212,3 +241,47 @@ def test_links_keep_the_path_of_the_public_url() -> None:
 
     # Assert
     assert link == f"https://example.com/whadio/meetings/{MEETING_ID}"
+
+
+@pytest.mark.parametrize("notice", ACCOUNT_LINKS)
+def test_account_link_mail_carries_the_link_it_was_given(notice: AccountLinkNotice) -> None:
+    # Act
+    mail = _english_account_link(notice)
+
+    # Assert
+    assert f"\n\n{ACCOUNT_LINK_URL}\n\n" in mail.body
+
+
+@pytest.mark.parametrize("notice", ACCOUNT_LINKS)
+def test_account_link_mail_states_when_the_link_stops_working(notice: AccountLinkNotice) -> None:
+    # Act
+    mail = _english_account_link(notice)
+
+    # Assert
+    assert "by 2026-11-23 at 14:05 UTC" in mail.body
+
+
+def test_sign_in_reminder_points_to_the_sign_in_page() -> None:
+    # Act
+    mail = _english_account_link(SIGN_IN_REMINDER)
+
+    # Assert
+    assert "Sign in: https://whadio.example.com/sign-in\n" in mail.body
+
+
+@pytest.mark.parametrize(
+    "notice", [RegistrationLinkNotice, PasswordResetNotice, SignInReminderNotice]
+)
+def test_account_link_notice_refuses_to_hold_a_token(notice: type[AccountLinkNotice]) -> None:
+    # Arrange
+    payload = {
+        "registration_id": str(MEETING_ID),
+        "reset_id": str(MEETING_ID),
+        "issued_at": ISSUED_AT.isoformat(),
+        "expires_at": EXPIRES_AT.isoformat(),
+        "token": uuid4().hex,
+    }
+
+    # Act / Assert
+    with pytest.raises(ValidationError, match="token"):
+        notice.model_validate(payload)

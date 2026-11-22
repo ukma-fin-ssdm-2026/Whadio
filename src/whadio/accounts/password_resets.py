@@ -38,18 +38,37 @@ class PasswordResetMailKind(StrEnum):
 @dataclass(frozen=True, slots=True)
 class PasswordResetMail:
     user_id: UUID
-    link: PasswordResetLink
+    reset_id: UUID
     issued_at: datetime
     expires_at: datetime
     kind: PasswordResetMailKind
 
 
+@dataclass(frozen=True, slots=True)
+class ResetMailHistory:
+    waiting: bool
+    last_sent_at: datetime | None
+
+    def allows_another(self, now: datetime) -> bool:
+        """FR-048: nothing waits to be sent, and the relay took the last one 20 minutes ago."""
+        return not self.waiting and (
+            self.last_sent_at is None or now >= self.last_sent_at + RESET_MAIL_COOLDOWN
+        )
+
+
 class IPasswordResetMailQueue(Protocol):
     async def reserve(self, mail: PasswordResetMail, /) -> None:
-        """Queue in the caller's transaction. The link ID can be reused across issuances.
+        """Queue in the caller's transaction; the link gets its token only when the mail is sent.
 
-        Use the link ID and issuance time for deduplication. Protect the token at rest
-        and keep it out of logs.
+        The reset ID can be reused across issuances, so deduplicate by it and the issue time.
+        """
+        ...
+
+    async def history(self, user_id: UUID, now: datetime, /) -> ResetMailHistory:
+        """The account's reset and sign-in reminder emails, read in the caller's transaction.
+
+        `waiting` covers only emails whose link has not expired at `now`, and `last_sent_at` is
+        when the relay last accepted one.
         """
         ...
 
@@ -82,14 +101,15 @@ class PasswordResetRequestService:
         if user is None:
             return
         now = self._now()
-        queued_at = user.password_reset_mail_queued_at
-        if queued_at is not None and now < queued_at + RESET_MAIL_COOLDOWN:
+        if not (await self._mail.history(user.user_id, now)).allows_another(now):
             return
-        link = await _issue_link(self._resets, user.user_id, now)
-        await self._mail.reserve(
-            PasswordResetMail(user.user_id, link, now, now + RESET_LIFETIME, kind)
+        expires_at = now + RESET_LIFETIME
+        # Nobody learns this token: the mail gets a new one when it is sent.
+        unsent_token = secrets.token_urlsafe(32)
+        reset_id = await self._resets.issue(
+            user.user_id, generated_token_hash(unsent_token), now, expires_at
         )
-        await self._resets.mark_mail_queued(user.user_id, self._now())
+        await self._mail.reserve(PasswordResetMail(user.user_id, reset_id, now, expires_at, kind))
 
 
 class PasswordResetService:
@@ -128,6 +148,34 @@ class PasswordResetService:
             raise PasswordResetValidationError(password_rule_message())
         password_hash = await asyncio.to_thread(self._passwords.hash, password)
         await self._resets.complete(pending.user_id, reset_id, password_hash)
+
+
+@dataclass(frozen=True, slots=True)
+class RenewedPasswordReset:
+    user_id: UUID
+    link: PasswordResetLink
+
+
+class PasswordResetRenewal:
+    def __init__(self, resets: IPasswordResetRepository, sessions: ISessionRepository) -> None:
+        self._resets: IPasswordResetRepository = resets
+        self._sessions: ISessionRepository = sessions
+
+    async def renew(
+        self, reset_id: UUID, issued_at: datetime, now: datetime
+    ) -> RenewedPasswordReset | None:
+        """Give the link issued at `issued_at` a new token; None once used, reissued or expired."""
+        pending = await self._resets.pending(reset_id)
+        if pending is None:
+            return None
+        await self._sessions.lock_account(pending.user_id)
+        # Completion and reissue lock the same account; re-read after waiting for that lock.
+        pending = await self._resets.pending(reset_id)
+        if pending is None or pending.created_at != issued_at or pending.expires_at <= now:
+            return None
+        token = secrets.token_urlsafe(32)
+        await self._resets.replace_token(reset_id, generated_token_hash(token))
+        return RenewedPasswordReset(pending.user_id, PasswordResetLink(reset_id, token))
 
 
 class PasswordResetCleanupService:

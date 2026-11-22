@@ -30,6 +30,7 @@ from .services import (
     RegistrationLink,
     RegistrationService,
     RegistrationValidationError,
+    RenewedRegistration,
     SignInService,
     WorkspaceMembershipService,
     WorkspaceService,
@@ -475,10 +476,12 @@ def registrations(session: AsyncSession, content: FakeContent | None = None) -> 
     )
 
 
+def issuer(session: AsyncSession) -> RegistrationIssuer:
+    return RegistrationIssuer(RegistrationRepository(session), SessionRepository(session))
+
+
 async def issue_registration(session: AsyncSession, email: str, now: datetime) -> RegistrationLink:
-    return await RegistrationIssuer(
-        RegistrationRepository(session), SessionRepository(session)
-    ).issue(email, now)
+    return await issuer(session).issue(email, now)
 
 
 @pytest.mark.parametrize("offset", [timedelta(hours=24), timedelta(hours=25)])
@@ -569,3 +572,62 @@ def test_failed_folder_creation_rolls_back_registration(
 
     # Assert
     assert async_database.run(scenario) == (True, True)
+
+
+def test_renewed_registration_link_is_for_its_address_and_completes_it(
+    async_database: AsyncDatabase,
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> bool:
+        email, now = f"{uuid4()}@example.com", datetime.now(UTC)
+        issued = await issue_registration(session, email, now)
+        # Act
+        renewed = await issuer(session).renew(issued.registration_id, now, now)
+        if renewed is None:
+            raise AssertionError("the current link was not renewed")
+        signed = await registrations(session).complete(
+            issued.registration_id, renewed.link.token, REGISTRATION_DETAILS, now
+        )
+        return renewed.email == email and signed.user.email == email
+
+    # Assert
+    assert async_database.run(scenario)
+
+
+def test_renewal_stops_the_earlier_registration_link(async_database: AsyncDatabase) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> Failure:
+        now = datetime.now(UTC)
+        issued = await issue_registration(session, f"{uuid4()}@example.com", now)
+        # Act
+        await issuer(session).renew(issued.registration_id, now, now)
+        with pytest.raises(UseCaseError) as failure:
+            await registrations(session).complete(
+                issued.registration_id, issued.token, REGISTRATION_DETAILS, now
+            )
+        return failure.value.code
+
+    # Assert
+    assert async_database.run(scenario) is Failure.LINK_INVALID
+
+
+@pytest.mark.parametrize("stale", ["issued again", "expired", "used"])
+def test_registration_renewal_refuses_a_stale_link(
+    async_database: AsyncDatabase, stale: str
+) -> None:
+    # Arrange
+    async def scenario(session: AsyncSession) -> RenewedRegistration | None:
+        email, now = f"{uuid4()}@example.com", datetime.now(UTC)
+        issued = await issue_registration(session, email, now)
+        renewed_at = now + timedelta(hours=24) if stale == "expired" else now
+        if stale == "issued again":
+            await issue_registration(session, email, now + timedelta(minutes=30))
+        if stale == "used":
+            await registrations(session).complete(
+                issued.registration_id, issued.token, REGISTRATION_DETAILS, now
+            )
+        # Act
+        return await issuer(session).renew(issued.registration_id, now, renewed_at)
+
+    # Assert
+    assert async_database.run(scenario) is None

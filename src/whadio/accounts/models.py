@@ -35,9 +35,6 @@ class User(Base):
     password_hash: Mapped[str] = MappedColumn[str](Text)
     is_administrator: Mapped[bool] = MappedColumn[bool](server_default=false())
     terms_accepted_at: Mapped[datetime] = MappedColumn[datetime](DateTime(timezone=True))
-    password_reset_mail_queued_at: Mapped[datetime | None] = MappedColumn[datetime | None](
-        DateTime(timezone=True)
-    )
     created_at: Mapped[datetime] = MappedColumn[datetime](
         DateTime(timezone=True), server_default=func.now()
     )

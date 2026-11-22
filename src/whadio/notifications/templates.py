@@ -13,6 +13,9 @@ class NoticeKind(StrEnum):
     HOSTED_EVICTION = "hosted_eviction"
     PROCESSING_FINISHED = "processing_finished"
     PROCESSING_FAILED = "processing_failed"
+    REGISTRATION_LINK = "registration_link"
+    RESET_LINK = "password_reset"
+    SIGN_IN_REMINDER = "sign_in_reminder"
 
 
 class Locale(StrEnum):
@@ -77,13 +80,47 @@ class ProcessingFailed(BaseModel):
     meeting_name: str = Field(min_length=1, description="Name of the meeting")
 
 
-type Notice = (
+class _IssuedLink(BaseModel):
+    """A link whose token is created only when the mail is sent, so no token waits in the outbox."""
+
+    model_config: ClassVar[ConfigDict] = _NOTICE_CONFIG
+
+    issued_at: AwareDatetime = Field(
+        description="When the link was issued; once it is issued again, this notice is stale"
+    )
+    expires_at: AwareDatetime = Field(description="When the link stops working")
+
+
+class RegistrationLinkNotice(_IssuedLink):
+    kind: Literal[NoticeKind.REGISTRATION_LINK] = Field(
+        default=NoticeKind.REGISTRATION_LINK, description="Kind of the notice"
+    )
+    registration_id: UUID = Field(description="Pending registration the link completes")
+
+
+class PasswordResetNotice(_IssuedLink):
+    kind: Literal[NoticeKind.RESET_LINK] = Field(
+        default=NoticeKind.RESET_LINK, description="Kind of the notice"
+    )
+    reset_id: UUID = Field(description="Pending password reset the link completes")
+
+
+class SignInReminderNotice(_IssuedLink):
+    kind: Literal[NoticeKind.SIGN_IN_REMINDER] = Field(
+        default=NoticeKind.SIGN_IN_REMINDER, description="Kind of the notice"
+    )
+    reset_id: UUID = Field(description="Pending password reset the reminder offers")
+
+
+type ActivityNotice = (
     ShareAccessRequest
     | RecordingDeletionWarning
     | HostedEviction
     | ProcessingFinished
     | ProcessingFailed
 )
+type AccountLinkNotice = RegistrationLinkNotice | PasswordResetNotice | SignInReminderNotice
+type Notice = ActivityNotice | AccountLinkNotice
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,12 +142,15 @@ class AppLinks:
     def share_access_requests(self, share_id: UUID) -> str:
         return f"{self._base}/shares/{share_id}/access-requests"
 
+    def sign_in(self) -> str:
+        return f"{self._base}/sign-in"
+
     @property
     def _base(self) -> str:
         return str(self.public_url).rstrip("/")
 
 
-def render(notice: Notice, links: AppLinks, locale: Locale) -> MailContent:
+def render(notice: ActivityNotice, links: AppLinks, locale: Locale) -> MailContent:
     match locale:
         case Locale.ENGLISH:
             return _render_english(notice, links)
@@ -118,7 +158,58 @@ def render(notice: Notice, links: AppLinks, locale: Locale) -> MailContent:
             assert_never(locale)
 
 
-def _render_english(notice: Notice, links: AppLinks) -> MailContent:
+def render_account_link(
+    notice: AccountLinkNotice, url: str, links: AppLinks, locale: Locale
+) -> MailContent:
+    match locale:
+        case Locale.ENGLISH:
+            return _render_english_account_link(notice, url, links)
+        case _:
+            assert_never(locale)
+
+
+def _render_english_account_link(
+    notice: AccountLinkNotice, url: str, links: AppLinks
+) -> MailContent:
+    expires_at = notice.expires_at.astimezone(UTC)
+    until = f"{expires_at:%Y-%m-%d} at {expires_at:%H:%M} UTC"
+    match notice:
+        case RegistrationLinkNotice():
+            return MailContent(
+                subject="Finish creating your Whadio account",
+                body=(
+                    "Someone asked to create a Whadio account for this address. To create it, "
+                    f"open this link by {until} and choose your name and password:\n\n{url}\n\n"
+                    "If it was not you, ignore this email: no account exists until the link is "
+                    "opened.\n"
+                ),
+            )
+        case PasswordResetNotice():
+            return MailContent(
+                subject="Reset your Whadio password",
+                body=(
+                    "Someone asked to reset the password of your Whadio account. To choose a new "
+                    f"one, open this link by {until}:\n\n{url}\n\n"
+                    "A new password signs you out everywhere. If it was not you, ignore this "
+                    "email: your password stays the same.\n"
+                ),
+            )
+        case SignInReminderNotice():
+            return MailContent(
+                subject="You already have a Whadio account",
+                body=(
+                    "Someone asked to create a Whadio account for this address, but it already "
+                    f"has one. Sign in: {links.sign_in()}\n\n"
+                    f"If you forgot your password, open this link by {until} to choose a new "
+                    f"one:\n\n{url}\n\n"
+                    "If it was not you, ignore this email: nothing changes.\n"
+                ),
+            )
+        case _:
+            assert_never(notice)
+
+
+def _render_english(notice: ActivityNotice, links: AppLinks) -> MailContent:
     match notice:
         case ShareAccessRequest():
             return MailContent(

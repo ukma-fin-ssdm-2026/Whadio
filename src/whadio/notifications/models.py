@@ -28,7 +28,7 @@ class NotificationOutbox(Base):
 
     notice_id: Mapped[UUID] = MappedColumn[UUID](primary_key=True, default=uuid4)
     kind: Mapped[NoticeKind] = MappedColumn[NoticeKind](enum_type(NoticeKind, "kind"))
-    recipient_user_id: Mapped[UUID] = MappedColumn[UUID](
+    recipient_user_id: Mapped[UUID | None] = MappedColumn[UUID | None](
         ForeignKey("user.user_id", ondelete="CASCADE")
     )
     dedupe_key: Mapped[str] = MappedColumn[str](Text)
@@ -46,6 +46,10 @@ class NotificationOutbox(Base):
     __table_args__: tuple[Constraint | Index, ...] = (
         UniqueConstraint("dedupe_key"),
         CheckConstraint("attempts >= 0", name="attempts"),
+        CheckConstraint(
+            f"(recipient_user_id IS NULL) = (kind = '{NoticeKind.REGISTRATION_LINK}')",
+            name="recipient",
+        ),
         CheckConstraint("jsonb_typeof(payload) = 'object'", name="payload"),
         Index("ix_notification_outbox_recipient_user_id", "recipient_user_id"),
         Index(

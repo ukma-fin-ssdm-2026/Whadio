@@ -1,13 +1,17 @@
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID
 
 from ..access_policy.repositories import AccessRepository
 from ..access_policy.services import AccessPolicy
 from ..accounts.contracts import UserProfile
-from ..accounts.password_resets import PasswordResetCleanupService
+from ..accounts.password_resets import (
+    PasswordResetCleanupService,
+    PasswordResetRenewal,
+    RenewedPasswordReset,
+)
 from ..accounts.repositories import (
     InvitationRepository,
     MembershipRepository,
@@ -18,6 +22,8 @@ from ..accounts.reset_repository import PasswordResetRepository
 from ..accounts.services import (
     InvitationCleanupService,
     RegistrationCleanupService,
+    RegistrationIssuer,
+    RenewedRegistration,
     SessionCleanupService,
     WorkspaceMembershipService,
 )
@@ -25,10 +31,24 @@ from ..meetings.models import Meeting
 from ..meetings.repositories import MeetingRepository
 from ..meetings.retention import IRetentionMeetings, RetentionMeetings
 from ..notifications.repositories import INotificationOutbox, NotificationOutboxRepository
-from ..notifications.services import DeliveryUnit, NotificationDrainer, Recipient
+from ..notifications.services import (
+    AccountLinkMail,
+    DeliveryUnit,
+    IRecipientDirectory,
+    NotificationDrainer,
+    Recipient,
+)
 from ..notifications.settings import NotificationSettings
 from ..notifications.smtp import SmtpMailSender
-from ..notifications.templates import AppLinks, NoticeKind, RecordingDeletionWarning
+from ..notifications.templates import (
+    AccountLinkNotice,
+    AppLinks,
+    NoticeKind,
+    PasswordResetNotice,
+    RecordingDeletionWarning,
+    RegistrationLinkNotice,
+    SignInReminderNotice,
+)
 from ..processing.recovery import JobRecovery
 from ..processing.repositories import JobRepository
 from ..processing.settings import JobRecoverySettings
@@ -91,16 +111,78 @@ class AccountRecipients:
         return None if profile is None else Recipient(profile.name, profile.email)
 
 
+class IRegistrationRenewal(Protocol):
+    async def renew(
+        self, registration_id: UUID, issued_at: datetime, now: datetime, /
+    ) -> RenewedRegistration | None: ...
+
+
+class IPasswordResetRenewal(Protocol):
+    async def renew(
+        self, reset_id: UUID, issued_at: datetime, now: datetime, /
+    ) -> RenewedPasswordReset | None: ...
+
+
+class AccountLinkRenewal:
+    """Notifications' `IAccountLinks`, answered by Accounts."""
+
+    def __init__(
+        self,
+        registrations: IRegistrationRenewal,
+        resets: IPasswordResetRenewal,
+        recipients: IRecipientDirectory,
+        public_url: str,
+        now: Callable[[], datetime],
+    ) -> None:
+        self._registrations: IRegistrationRenewal = registrations
+        self._resets: IPasswordResetRenewal = resets
+        self._recipients: IRecipientDirectory = recipients
+        self._public_url: str = public_url
+        self._now: Callable[[], datetime] = now
+
+    async def renew(self, notice: AccountLinkNotice) -> AccountLinkMail | None:
+        match notice:
+            case RegistrationLinkNotice():
+                registration = await self._registrations.renew(
+                    notice.registration_id, notice.issued_at, self._now()
+                )
+                if registration is None:
+                    return None
+                return AccountLinkMail(
+                    Recipient("", registration.email), registration.link.url(self._public_url)
+                )
+            case PasswordResetNotice() | SignInReminderNotice():
+                reset = await self._resets.renew(notice.reset_id, notice.issued_at, self._now())
+                if reset is None:
+                    return None
+                recipient = await self._recipients.recipient(reset.user_id)
+                if recipient is None:
+                    return None
+                return AccountLinkMail(recipient, reset.link.url(self._public_url))
+
+
 class DeliveryTransactions:
-    def __init__(self, database: IUseCaseTransactions) -> None:
+    def __init__(self, database: IUseCaseTransactions, public_url: str) -> None:
         self._database: IUseCaseTransactions = database
+        self._public_url: str = public_url
 
     @asynccontextmanager
     async def transaction(self) -> AsyncGenerator[DeliveryUnit]:
         async with self._database.transaction() as session:
+            recipients = AccountRecipients(
+                WorkspaceMembershipService(MembershipRepository(session))
+            )
+            sessions = SessionRepository(session)
             yield DeliveryUnit(
                 NotificationOutboxRepository(session),
-                AccountRecipients(WorkspaceMembershipService(MembershipRepository(session))),
+                recipients,
+                AccountLinkRenewal(
+                    RegistrationIssuer(RegistrationRepository(session), sessions),
+                    PasswordResetRenewal(PasswordResetRepository(session), sessions),
+                    recipients,
+                    self._public_url,
+                    lambda: datetime.now(UTC),
+                ),
             )
 
 
@@ -137,7 +219,7 @@ def notification_drainer(
     if delivery is None:
         return None
     return NotificationDrainer(
-        DeliveryTransactions(database),
+        DeliveryTransactions(database, str(delivery.public_url)),
         SmtpMailSender(delivery.smtp),
         AppLinks(delivery.public_url),
         settings.outbox,
