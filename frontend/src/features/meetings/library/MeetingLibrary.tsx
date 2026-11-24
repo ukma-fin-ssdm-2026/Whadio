@@ -1,6 +1,7 @@
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import {
   Alert,
+  Button,
   CircularProgress,
   FormControl,
   InputLabel,
@@ -12,11 +13,12 @@ import {
   Stack,
   TextField,
 } from "@mui/material";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { formatDate } from "@/shared/lib/format";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { ListPanel } from "@/shared/ui/ListPanel";
 import { SectionHeader } from "@/shared/ui/SectionHeader";
+import { RANGE_ORDER_MESSAGE } from "../dateRange";
 import { MeetingStateChip } from "../MeetingStateChip";
 import {
   IN_PROGRESS_LABELS,
@@ -43,11 +45,50 @@ interface MeetingLibraryProps {
   error?: string;
   query: string;
   stateFilter: StateFilter;
+  from: string;
+  to: string;
+  rangeUnordered: boolean;
   onQuery: (query: string) => void;
   onStateFilter: (filter: StateFilter) => void;
+  onFrom: (day: string) => void;
+  onTo: (day: string) => void;
+  onClear: () => void;
   onMeeting: (id: string) => void;
   selectedMeetingId: string;
   footer?: ReactNode;
+}
+
+interface DateFilterProps {
+  label: string;
+  day: string;
+  onDay: (day: string) => void;
+  error?: boolean;
+  helperText?: string;
+}
+
+// While a year is typed, Chrome reports it padded (`0002-11-06`) and then as an empty value
+// with `badInput` set, so only a four-digit year or a cleared field leaves the draft.
+function DateFilter({ label, day, onDay, error, helperText }: DateFilterProps) {
+  const [draft, setDraft] = useState(day);
+
+  useEffect(() => setDraft(day), [day]);
+
+  return (
+    <TextField
+      size="small"
+      type="date"
+      label={label}
+      value={draft}
+      onChange={(event) => {
+        const { value, validity } = event.target;
+        setDraft(value);
+        if (value === "" ? !validity.badInput : !value.startsWith("0")) onDay(value);
+      }}
+      error={error}
+      helperText={helperText}
+      slotProps={{ inputLabel: { shrink: true } }}
+    />
+  );
 }
 
 export function MeetingLibrary({
@@ -57,14 +98,20 @@ export function MeetingLibrary({
   error,
   query,
   stateFilter,
+  from,
+  to,
+  rangeUnordered,
   onQuery,
   onStateFilter,
+  onFrom,
+  onTo,
+  onClear,
   onMeeting,
   selectedMeetingId,
   footer,
 }: MeetingLibraryProps) {
   const visible = meetings.filter((meeting) => matchesStateFilter(meeting, stateFilter));
-  const filtered = query.trim() !== "" || stateFilter !== "all";
+  const filtered = query.trim() !== "" || stateFilter !== "all" || from !== "" || to !== "";
 
   const chooseState = (value: string) => {
     const option = STATE_OPTIONS.find((item) => item.value === value);
@@ -76,7 +123,7 @@ export function MeetingLibrary({
       <SectionHeader
         title={title}
         actions={
-          <>
+          <Stack direction="row" sx={{ gap: 1, flexWrap: "wrap" }}>
             <TextField
               size="small"
               placeholder="Filter by name"
@@ -101,20 +148,29 @@ export function MeetingLibrary({
                 ))}
               </Select>
             </FormControl>
-          </>
+            <DateFilter label="From" day={from} onDay={onFrom} />
+            <DateFilter
+              label="To"
+              day={to}
+              onDay={onTo}
+              error={rangeUnordered}
+              helperText={rangeUnordered ? RANGE_ORDER_MESSAGE : undefined}
+            />
+          </Stack>
         }
       />
 
       {error && <Alert severity="error">{error}</Alert>}
       {loading && <CircularProgress aria-label="Loading meetings" sx={{ alignSelf: "center" }} />}
-      {!loading && !error && visible.length === 0 && (
+      {!loading && !error && !rangeUnordered && visible.length === 0 && (
         <EmptyState
           title={filtered ? "No meetings match these filters" : "No meetings yet"}
           hint={
             filtered
-              ? "Try another name or state."
+              ? "Try another name, state or dates."
               : "Upload a recording in a workspace to see it here."
           }
+          action={filtered && <Button onClick={onClear}>Clear filters</Button>}
         />
       )}
       {visible.length > 0 && (

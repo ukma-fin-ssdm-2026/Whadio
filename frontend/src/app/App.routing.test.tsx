@@ -1197,6 +1197,58 @@ describe.for(["/meetings", "/workspaces/workspace"])("the filters of %s", (path)
     expect(await screen.findByRole("combobox")).toHaveTextContent("All states");
   });
 
+  test.for(["From", "To"])("a malformed %s date in the link is left empty", async (label) => {
+    // Act
+    open(`${path}?${label.toLowerCase()}=garbage`);
+
+    // Assert
+    expect(await screen.findByLabelText(label)).toHaveValue("");
+  });
+
+  test("a deep link fills in the dates", async () => {
+    // Act
+    open(`${path}?from=2026-10-05&to=2026-10-31`);
+
+    // Assert
+    expect(await screen.findByLabelText("From")).toHaveValue("2026-10-05");
+    expect(screen.getByLabelText("To")).toHaveValue("2026-10-31");
+  });
+
+  test("a deep link asks the server for the range", async () => {
+    // Arrange
+    window.history.replaceState(null, "", `${path}?from=2026-10-05&to=2026-10-31`);
+    serveApi(true);
+    const ranges: (string | null)[][] = [];
+    server.use(
+      http.get("/api/v1/workspaces/workspace/meetings", ({ request }) => {
+        const { searchParams } = new URL(request.url);
+        ranges.push([searchParams.get("recorded_from"), searchParams.get("recorded_to")]);
+        return HttpResponse.json(page([meetingSummary({ name: "Lost call" })]));
+      }),
+    );
+
+    // Act
+    render(<App />);
+    await screen.findByText("Lost call");
+
+    // Assert
+    expect(ranges).toEqual([
+      [new Date(2026, 9, 5).toISOString(), new Date(2026, 10, 1).toISOString()],
+    ]);
+  });
+
+  test("choosing dates reaches the URL", async () => {
+    // Arrange
+    const { user } = open(path);
+
+    // Act
+    await user.type(await screen.findByLabelText("From"), "2026-10-05");
+    await user.type(screen.getByLabelText("To"), "2026-10-31");
+
+    // Assert
+    await waitFor(() => expect(currentPath()).toBe(`${path}?from=2026-10-05&to=2026-10-31`));
+  });
+
   test("typing reaches the URL once it settles", async () => {
     // Arrange
     const { user } = open(path);
@@ -1386,6 +1438,20 @@ describe("the folder of the workspace library", () => {
 
     // Assert
     expect(folders).toEqual(["folder"]);
+  });
+
+  test("clearing the filters drops the dates and keeps the folder", async () => {
+    // Arrange
+    const { user } = open("/workspaces/workspace?folder=folder&from=2026-10-05&to=2026-10-31");
+    server.use(
+      http.get("/api/v1/workspaces/workspace/meetings", () => HttpResponse.json(page([]))),
+    );
+
+    // Act
+    await user.click(await screen.findByRole("button", { name: "Clear filters" }));
+
+    // Assert
+    await waitFor(() => expect(currentPath()).toBe("/workspaces/workspace?folder=folder"));
   });
 
   test("a link to a folder that no longer exists drops it from the URL", async () => {

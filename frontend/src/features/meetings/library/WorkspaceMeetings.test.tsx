@@ -48,6 +48,8 @@ const twoPages: MeetingList = (search) =>
 
 function Library({ onMeeting = () => {} }: { onMeeting?: (id: string) => void }) {
   const [name, setName] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [folderId, setFolderId] = useState<string | null>(null);
   return (
     <WorkspaceMeetings
@@ -59,8 +61,17 @@ function Library({ onMeeting = () => {} }: { onMeeting?: (id: string) => void })
       onFolder={setFolderId}
       name={name}
       stateFilter="all"
+      from={from}
+      to={to}
       onName={setName}
       onStateFilter={() => {}}
+      onFrom={setFrom}
+      onTo={setTo}
+      onClear={() => {
+        setName("");
+        setFrom("");
+        setTo("");
+      }}
     />
   );
 }
@@ -163,6 +174,74 @@ test("a filter the server matches nothing for says so", async () => {
 
   // Assert
   expect(await screen.findByText("No meetings match these filters")).toBeInTheDocument();
+});
+
+test("the date range reaches the server in local time with the end day included", async () => {
+  // Arrange
+  const searches = serveMeetings(() => page([FIRST]));
+  const { user } = renderMeetings();
+  await screen.findByText("Newest sync");
+
+  // Act
+  await user.type(screen.getByLabelText("From"), "2026-10-05");
+  await user.type(screen.getByLabelText("To"), "2026-10-31");
+
+  // Assert
+  await expect
+    .poll(() => searches.at(-1))
+    .toBe(
+      `?${new URLSearchParams({
+        limit: "100",
+        recorded_from: new Date(2026, 9, 5).toISOString(),
+        recorded_to: new Date(2026, 10, 1).toISOString(),
+      })}`,
+    );
+});
+
+test("an end before the start is refused and no further request is sent", async () => {
+  // Arrange
+  const searches = serveMeetings(() => page([FIRST]));
+  const { user } = renderMeetings();
+  await screen.findByText("Newest sync");
+  await user.type(screen.getByLabelText("From"), "2026-10-05");
+  await expect.poll(() => searches.length).toBe(2);
+
+  // Act
+  await user.type(screen.getByLabelText("To"), "2026-10-04");
+
+  // Assert
+  expect(await screen.findByText("End date is before the start date")).toBeInTheDocument();
+  expect(searches).toHaveLength(2);
+});
+
+test("an end before the start hides the loaded meetings", async () => {
+  // Arrange
+  serveMeetings(() => page([FIRST]));
+  const { user } = renderMeetings();
+  await screen.findByText("Newest sync");
+  await user.type(screen.getByLabelText("From"), "2026-10-05");
+
+  // Act
+  await user.type(screen.getByLabelText("To"), "2026-10-04");
+
+  // Assert
+  await waitFor(() => expect(screen.queryByText("Newest sync")).not.toBeInTheDocument());
+});
+
+test("an end before the start hides Load more", async () => {
+  // Arrange
+  serveMeetings(twoPages);
+  const { user } = renderMeetings();
+  await screen.findByRole("button", { name: "Load more" });
+  await user.type(screen.getByLabelText("From"), "2026-10-05");
+
+  // Act
+  await user.type(screen.getByLabelText("To"), "2026-10-04");
+
+  // Assert
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument(),
+  );
 });
 
 test("a workspace with no meetings says so", async () => {

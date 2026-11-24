@@ -15,6 +15,7 @@ import type {
   Schemas,
 } from "@/shared/api/types";
 import { expectNoContent, unwrap } from "@/shared/api/unwrap";
+import type { RecordedRange } from "../dateRange";
 import { isInProgress, type Meeting, mapMeeting } from "../model";
 import { detailKey, foldersKey, workspaceListsKey } from "./keys";
 
@@ -40,6 +41,7 @@ function fetchMeetingPage(
   workspaceId: string,
   name: string,
   folderId: string | null,
+  range: RecordedRange,
   cursor: string,
   signal: AbortSignal,
 ) {
@@ -52,6 +54,8 @@ function fetchMeetingPage(
           cursor: cursor || null,
           folder_id: folderId,
           name: name || null,
+          recorded_from: range.recordedFrom ?? null,
+          recorded_to: range.recordedTo ?? null,
         },
       },
       signal,
@@ -102,11 +106,16 @@ const pollWhileInProgress = (items: Pick<Schemas["MeetingSummary"], "processing_
   items.some((item) => isInProgress(item.processing_state)) ? POLL_INTERVAL_MS : false;
 
 export const meetingQueries = {
-  list: (workspaceId: string, name = "", folderId: string | null = null) =>
+  list: (
+    workspaceId: string,
+    name = "",
+    folderId: string | null = null,
+    range: RecordedRange = {},
+  ) =>
     infiniteQueryOptions({
-      queryKey: [...workspaceListsKey(workspaceId), "pages", { name, folderId }],
+      queryKey: [...workspaceListsKey(workspaceId), "pages", { name, folderId, ...range }],
       queryFn: ({ pageParam, signal }) =>
-        fetchMeetingPage(workspaceId, name, folderId, pageParam, signal),
+        fetchMeetingPage(workspaceId, name, folderId, range, pageParam, signal),
       initialPageParam: FIRST_PAGE,
       getNextPageParam: ({ pagination }) => (pagination.has_more ? pagination.next_cursor : null),
       refetchInterval: ({ state }) =>
@@ -114,10 +123,10 @@ export const meetingQueries = {
       select: ({ pages }) => pages.flatMap((page) => page.items.map(mapMeeting)),
     }),
   // useQueries has no infinite mode, so the views spanning workspaces read one page of each.
-  latest: (workspaceId: string, name = "") =>
+  latest: (workspaceId: string, name = "", range: RecordedRange = {}) =>
     queryOptions({
-      queryKey: [...workspaceListsKey(workspaceId), "latest", { name }],
-      queryFn: ({ signal }) => fetchMeetingPage(workspaceId, name, null, FIRST_PAGE, signal),
+      queryKey: [...workspaceListsKey(workspaceId), "latest", { name, ...range }],
+      queryFn: ({ signal }) => fetchMeetingPage(workspaceId, name, null, range, FIRST_PAGE, signal),
       refetchInterval: ({ state }) => pollWhileInProgress(state.data?.items ?? []),
     }),
   detail: (meetingId: string) =>
