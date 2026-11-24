@@ -13,7 +13,7 @@ import {
   Stack,
   TextField,
 } from "@mui/material";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { formatDate } from "@/shared/lib/format";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { ListPanel } from "@/shared/ui/ListPanel";
@@ -58,6 +58,39 @@ interface MeetingLibraryProps {
   footer?: ReactNode;
 }
 
+interface DateFilterProps {
+  label: string;
+  day: string;
+  onDay: (day: string) => void;
+  error?: boolean;
+  helperText?: string;
+}
+
+// While a year is typed, Chrome reports it padded (`0002-11-06`) and then as an empty value
+// with `badInput` set, so only a four-digit year or a cleared field leaves the draft.
+function DateFilter({ label, day, onDay, error, helperText }: DateFilterProps) {
+  const [draft, setDraft] = useState(day);
+
+  useEffect(() => setDraft(day), [day]);
+
+  return (
+    <TextField
+      size="small"
+      type="date"
+      label={label}
+      value={draft}
+      onChange={(event) => {
+        const { value, validity } = event.target;
+        setDraft(value);
+        if (value === "" ? !validity.badInput : !value.startsWith("0")) onDay(value);
+      }}
+      error={error}
+      helperText={helperText}
+      slotProps={{ inputLabel: { shrink: true } }}
+    />
+  );
+}
+
 export function MeetingLibrary({
   title,
   meetings,
@@ -90,7 +123,7 @@ export function MeetingLibrary({
       <SectionHeader
         title={title}
         actions={
-          <>
+          <Stack direction="row" sx={{ gap: 1, flexWrap: "wrap" }}>
             <TextField
               size="small"
               placeholder="Filter by name"
@@ -115,25 +148,15 @@ export function MeetingLibrary({
                 ))}
               </Select>
             </FormControl>
-            <TextField
-              size="small"
-              type="date"
-              label="From"
-              value={from}
-              onChange={(event) => onFrom(event.target.value)}
-              slotProps={{ inputLabel: { shrink: true } }}
-            />
-            <TextField
-              size="small"
-              type="date"
+            <DateFilter label="From" day={from} onDay={onFrom} />
+            <DateFilter
               label="To"
-              value={to}
-              onChange={(event) => onTo(event.target.value)}
+              day={to}
+              onDay={onTo}
               error={rangeUnordered}
               helperText={rangeUnordered ? RANGE_ORDER_MESSAGE : undefined}
-              slotProps={{ inputLabel: { shrink: true } }}
             />
-          </>
+          </Stack>
         }
       />
 
