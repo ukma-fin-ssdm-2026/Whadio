@@ -214,6 +214,36 @@ test("an end before the start is refused and no further request is sent", async 
   expect(searches).toHaveLength(2);
 });
 
+test("an end before the start hides the loaded meetings", async () => {
+  // Arrange
+  serveMeetings(() => page([FIRST]));
+  const { user } = renderMeetings();
+  await screen.findByText("Newest sync");
+  await user.type(screen.getByLabelText("From"), "2026-10-05");
+
+  // Act
+  await user.type(screen.getByLabelText("To"), "2026-10-04");
+
+  // Assert
+  await waitFor(() => expect(screen.queryByText("Newest sync")).not.toBeInTheDocument());
+});
+
+test("an end before the start hides Load more", async () => {
+  // Arrange
+  serveMeetings(twoPages);
+  const { user } = renderMeetings();
+  await screen.findByRole("button", { name: "Load more" });
+  await user.type(screen.getByLabelText("From"), "2026-10-05");
+
+  // Act
+  await user.type(screen.getByLabelText("To"), "2026-10-04");
+
+  // Assert
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument(),
+  );
+});
+
 test("a workspace with no meetings says so", async () => {
   // Arrange
   serveMeetings(() => page([]));

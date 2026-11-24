@@ -1197,6 +1197,14 @@ describe.for(["/meetings", "/workspaces/workspace"])("the filters of %s", (path)
     expect(await screen.findByRole("combobox")).toHaveTextContent("All states");
   });
 
+  test.for(["From", "To"])("a malformed %s date in the link is left empty", async (label) => {
+    // Act
+    open(`${path}?${label.toLowerCase()}=garbage`);
+
+    // Assert
+    expect(await screen.findByLabelText(label)).toHaveValue("");
+  });
+
   test("a deep link fills in the dates", async () => {
     // Act
     open(`${path}?from=2026-10-05&to=2026-10-31`);
@@ -1430,6 +1438,20 @@ describe("the folder of the workspace library", () => {
 
     // Assert
     expect(folders).toEqual(["folder"]);
+  });
+
+  test("clearing the filters drops the dates and keeps the folder", async () => {
+    // Arrange
+    const { user } = open("/workspaces/workspace?folder=folder&from=2026-10-05&to=2026-10-31");
+    server.use(
+      http.get("/api/v1/workspaces/workspace/meetings", () => HttpResponse.json(page([]))),
+    );
+
+    // Act
+    await user.click(await screen.findByRole("button", { name: "Clear filters" }));
+
+    // Assert
+    await waitFor(() => expect(currentPath()).toBe("/workspaces/workspace?folder=folder"));
   });
 
   test("a link to a folder that no longer exists drops it from the URL", async () => {

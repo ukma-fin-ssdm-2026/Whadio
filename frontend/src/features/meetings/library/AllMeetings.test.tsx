@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { expect, test } from "vitest";
 import { errorBody, meetingSummary, page } from "@/shared/testing/fixtures";
@@ -163,6 +163,19 @@ test("an end before the start is refused and nothing is requested", async () => 
   // Assert
   expect(await screen.findByText("End date is before the start date")).toBeInTheDocument();
   expect(requests).toEqual([]);
+});
+
+test("an end before the start hides the loaded meetings", async () => {
+  // Arrange
+  serveWorkspaces();
+  const { user } = renderAll({ from: "2026-10-05", to: "" });
+  await screen.findByText("Alpha retro");
+
+  // Act
+  await user.type(screen.getByLabelText("To"), "2026-10-04");
+
+  // Assert
+  await waitFor(() => expect(screen.queryByText("Alpha retro")).not.toBeInTheDocument());
 });
 
 test("a range that matches nothing says so and clearing the filters brings the list back", async () => {
