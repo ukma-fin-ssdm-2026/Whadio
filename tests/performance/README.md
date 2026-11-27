@@ -16,7 +16,7 @@ from the result. Use a dedicated local account and non-sensitive seed data.
 
 ## Prepare Whadio
 
-For the bundled database, use the PostgreSQL host and pool settings from `.env.example`.
+For the bundled database, use the PostgreSQL host from `.env.example` and the application pool defaults.
 
 From the repository root, start the infrastructure, apply migrations and create a browser account:
 
@@ -42,11 +42,12 @@ $env:WHADIO_EMAIL = "performance@whadio.dev"
 $env:WHADIO_PASSWORD = [System.Net.NetworkCredential]::new(
   "", (Read-Host "Whadio password" -AsSecureString)
 ).Password
-$scriptDir = (Resolve-Path ".\tests\performance").Path
+$scriptPath = (Resolve-Path ".\tests\performance\test_lists.js" -ErrorAction Stop).Path
+$scriptDir = Split-Path -Parent $scriptPath
 $outputDir = (New-Item -ItemType Directory -Path (Join-Path $env:TEMP "whadio-perf-$(Get-Date -Format yyyyMMdd-HHmmss)")).FullName
 
 $env:BASE_URL = "http://127.0.0.1:3000"
-k6 run --out "json=$outputDir/windows.json" "$scriptDir/test_lists.js"
+k6 run --out "json=$outputDir/windows.json" "$scriptPath"
 
 docker run --rm `
   --add-host host.docker.internal:host-gateway `
@@ -59,6 +60,9 @@ docker run --rm `
 
 Remove-Item Env:WHADIO_PASSWORD, Env:BASE_URL
 ```
+
+`Resolve-Path` reports a missing script in PowerShell before k6 starts.
+`--add-host` supplies `host.docker.internal` on Linux Docker Engine so k6 can reach the host API.
 
 ## Classify failed requests
 
