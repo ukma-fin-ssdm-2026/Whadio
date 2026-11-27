@@ -1,6 +1,7 @@
 from asyncio import Runner, SelectorEventLoop
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
@@ -12,6 +13,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from conftest import refused_fields
 
+from . import database
 from .database import ConnectionSettings, Database, DatabaseSettings, MigrationSettings
 
 
@@ -42,6 +44,65 @@ def test_application_uses_unprivileged_role() -> None:
     username = settings.application_url().username
     # Assert
     assert username == "whadio_app"
+
+
+def test_database_applies_pool_limits_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    monkeypatch.setenv("WHADIO_DB_APP_PASSWORD", "test-secret")
+    monkeypatch.setenv("WHADIO_DB_POOL_SIZE", "8")
+    monkeypatch.setenv("WHADIO_DB_MAX_OVERFLOW", "2")
+    settings = DatabaseSettings.model_validate({})
+
+    # Act
+    with patch.object(database, "create_async_engine") as create_engine:
+        Database(settings)
+
+    # Assert
+    create_engine.assert_called_once_with(
+        settings.application_url(),
+        pool_size=8,
+        max_overflow=2,
+        pool_pre_ping=True,
+        hide_parameters=True,
+        connect_args={"connect_timeout": 10},
+    )
+
+
+def test_database_pool_defaults_to_15_connections_without_overflow(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Arrange
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("WHADIO_DB_POOL_SIZE", raising=False)
+    monkeypatch.delenv("WHADIO_DB_MAX_OVERFLOW", raising=False)
+
+    # Act
+    settings = DatabaseSettings(app_password=SecretStr("test-secret"))
+
+    # Assert
+    assert (settings.pool_size, settings.max_overflow) == (15, 0)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "refused"),
+    [
+        pytest.param("pool_size", 0, {"pool_size"}, id="pool-size-below-min"),
+        pytest.param("pool_size", 1, set[str](), id="pool-size-min"),
+        pytest.param("max_overflow", -1, {"max_overflow"}, id="overflow-below-min"),
+        pytest.param("max_overflow", 0, set[str](), id="overflow-min"),
+    ],
+)
+def test_database_pool_limits_reject_unbounded_values(
+    field: str, value: int, refused: set[str]
+) -> None:
+    # Arrange
+    settings = {"app_password": uuid4().hex, "pool_size": 15, "max_overflow": 0, field: value}
+
+    # Act
+    found = refused_fields(DatabaseSettings, settings)
+
+    # Assert
+    assert found == refused
 
 
 def test_migrations_use_owner_role() -> None:
