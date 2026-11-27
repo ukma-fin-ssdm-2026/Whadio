@@ -96,7 +96,7 @@ def test_database_pool_limits_reject_unbounded_values(
     field: str, value: int, refused: set[str]
 ) -> None:
     # Arrange
-    settings = {"app_password": "test-secret", "pool_size": 15, "max_overflow": 0, field: value}
+    settings = {"app_password": uuid4().hex, "pool_size": 15, "max_overflow": 0, field: value}
 
     # Act
     found = refused_fields(DatabaseSettings, settings)
