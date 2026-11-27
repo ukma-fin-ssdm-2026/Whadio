@@ -55,11 +55,16 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
               severity={notification.severity}
               variant="filled"
               onClose={close}
+              sx={{
+                alignItems: "center",
+                "& .MuiAlert-icon, & .MuiAlert-message, & .MuiAlert-action": { paddingBlock: 0 },
+              }}
               action={
                 notification.action && (
                   <Button
                     color="inherit"
                     size="small"
+                    sx={{ lineHeight: "inherit" }}
                     onClick={() => {
                       setOpen(false);
                       notification.action?.onClick();

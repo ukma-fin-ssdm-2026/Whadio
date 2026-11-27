@@ -3,7 +3,7 @@
   "info": {
     "title": "Whadio API",
     "description": "Whadio records Google Meet calls from the browser, transcribes them with speaker labels and\nwrites notes, inside workspaces with roles, restrictions and sharing.\n\nSign-in, workspaces, meeting content, folders, glossary, revisions, restrictions and shares are\nstored in PostgreSQL. Requests need a stored, unexpired session; MCP needs a stored personal key.\nAn upload is stored in object storage and queued for transcription and notes, which the workers\nrun.\n\nRegenerating notes, like an upload, returns `503 INTEGRATION_UNAVAILABLE` on a server without a\nbroker or object storage. A share access request reserves an email to the\nshare's creator with the request; the scheduler sends it when an SMTP relay is configured. The API\ncontract is in `docs/api/api-design.md`.\n\n## Conventions\n- **Errors:** every 4xx and 5xx body is `{\"error\": {\"code\", \"message\", \"details\",\n  \"request_id\"}}`. Branch on `code`; `request_id` equals the `X-Request-ID` response header.\n- **Lists:** `limit` (1-100, default 20) and `cursor`; responses are\n  `{\"items\": [...], \"pagination\": {\"limit\", \"next_cursor\", \"has_more\"}}`.\n- **Visibility:** a resource the caller cannot see is `404`, never `403`, so its existence does\n  not leak. `403` means the caller can see it but their role does not allow the action.\n- **Time:** ISO 8601 with an offset; returned in UTC.",
-    "version": "0.18.0"
+    "version": "0.23.0"
   },
   "paths": {
     "/api/v1/invitations/{invitation_id}/preview": {
@@ -2189,7 +2189,7 @@
           "meetings"
         ],
         "summary": "Upload a recording",
-        "description": "Any member. Multipart with the audio `file`, an optional `folder_id` and `name`. Supported formats: WAV, MP3, AAC, FLAC, Ogg, WebM or MP4/M4A. The server decodes the file to check, whatever its name or declared type; any other file is refused and creates no meeting. Without `name`, the meeting is named after its date and time until it is renamed. The meeting is queued for processing at once; its speakers will be labelled `Speaker 1`, `Speaker 2` and so on.",
+        "description": "Any member. Multipart with the audio `file` and optional fields `folder_id`, `name`, and `preset`. Omit `preset` to use the workspace default for the first notes. Supported formats: WAV, MP3, AAC, FLAC, Ogg, WebM or MP4/M4A. The server decodes the file to check, whatever its name or declared type; any other file is refused and creates no meeting. Without `name`, the meeting is named after its date and time until it is renamed. The meeting is queued for processing at once; its speakers will be labelled `Speaker 1`, `Speaker 2` and so on.",
         "operationId": "upload_recording_api_v1_workspaces__workspace_id__meetings_post",
         "security": [
           {
@@ -2297,7 +2297,7 @@
             }
           },
           "422": {
-            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each; `folder_id` must be a folder of this workspace",
+            "description": "`VALIDATION_ERROR`: a parameter or field is invalid; `details` names each; `folder_id` must be a folder of this workspace and `preset` must appear at most once and be `summary`, `detailed`, or `interview`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2481,7 +2481,7 @@
           "meetings"
         ],
         "summary": "Rename or move a meeting",
-        "description": "Any member who can read the meeting. Renaming clears `name_is_generated`. Moving keeps the recording, transcript and notes; only folders of the same workspace are accepted, and later notes use the new folder as context. `recorded_at` cannot be changed.",
+        "description": "Any member who can read the meeting. Renaming clears `name_is_generated`. Moving keeps the recording, transcript and notes; only folders of the same workspace are accepted, and later notes use the new folder as context. Give `expected_folder_id` and `expected_folder_revision_id` to refuse the move if another member moved the meeting since it was read. `recorded_at` cannot be changed.",
         "operationId": "update_meeting_api_v1_meetings__meeting_id__patch",
         "security": [
           {
@@ -2548,6 +2548,16 @@
           },
           "404": {
             "description": "`NOT_FOUND`: no such meeting, or the caller cannot read it (restricted meetings are reported as missing, never as forbidden)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`MEETING_MOVE_CONFLICT`: the meeting no longer has the expected folder placement",
             "content": {
               "application/json": {
                 "schema": {
@@ -4456,7 +4466,7 @@
           "access"
         ],
         "summary": "List Shares",
-        "description": "List shares of a meeting the caller can read, newest first.",
+        "description": "List the caller's own shares of a meeting they can read, newest first.",
         "operationId": "list_shares_api_v1_meetings__meeting_id__shares_get",
         "security": [
           {
@@ -6806,6 +6816,17 @@
             ],
             "title": "Name",
             "description": "Meeting name"
+          },
+          "preset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Preset"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Preset for the first notes; omit to use the workspace default"
           }
         },
         "type": "object",
@@ -7041,6 +7062,7 @@
           "FOLDER_EXISTS",
           "TERM_EXISTS",
           "STALE_REVISION",
+          "MEETING_MOVE_CONFLICT",
           "LINK_INVALID",
           "ACCESS_REQUEST_EXISTS",
           "ALREADY_HAS_ACCESS",
@@ -7872,6 +7894,12 @@
               "e8f7d6c5-b4a3-4291-8f7e-6d5c4b3a2918"
             ]
           },
+          "folder_revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Folder Revision Id",
+            "description": "Changes whenever the meeting enters a folder; use it for conditional moves"
+          },
           "name": {
             "type": "string",
             "title": "Name",
@@ -7981,6 +8009,7 @@
           "id",
           "workspace_id",
           "folder_id",
+          "folder_revision_id",
           "name",
           "name_is_generated",
           "recorded_at",
@@ -8024,6 +8053,12 @@
             "examples": [
               "e8f7d6c5-b4a3-4291-8f7e-6d5c4b3a2918"
             ]
+          },
+          "folder_revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Folder Revision Id",
+            "description": "Changes whenever the meeting enters a folder; use it for conditional moves"
           },
           "name": {
             "type": "string",
@@ -8078,6 +8113,7 @@
           "id",
           "workspace_id",
           "folder_id",
+          "folder_revision_id",
           "name",
           "name_is_generated",
           "recorded_at",
@@ -8121,6 +8157,32 @@
             ],
             "title": "Folder Id",
             "description": "Folder of the same workspace to move the meeting to"
+          },
+          "expected_folder_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Folder Id",
+            "description": "Move only if the meeting is still in this folder"
+          },
+          "expected_folder_revision_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Folder Revision Id",
+            "description": "Move only if the meeting still has this folder placement revision"
           }
         },
         "additionalProperties": false,
@@ -9216,6 +9278,12 @@
             "title": "Revoked At",
             "description": "When access ended"
           },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "When the share was created"
+          },
           "link": {
             "type": "string",
             "title": "Link",
@@ -9228,6 +9296,7 @@
           "redact_speaker_names",
           "recipient_user_id",
           "revoked_at",
+          "created_at",
           "link"
         ],
         "title": "ShareCreated"
@@ -9283,6 +9352,12 @@
             ],
             "title": "Revoked At",
             "description": "When access ended"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "When the share was created"
           }
         },
         "type": "object",
@@ -9290,7 +9365,8 @@
           "id",
           "redact_speaker_names",
           "recipient_user_id",
-          "revoked_at"
+          "revoked_at",
+          "created_at"
         ],
         "title": "ShareRead"
       },

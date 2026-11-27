@@ -31,6 +31,7 @@ from .models import Folder, GlossaryTerm, Meeting, Note
 from .repositories import FolderRepository, MeetingRepository
 from .services import (
     FolderService,
+    MeetingChanges,
     MeetingService,
     RecordingInput,
     TermUpdate,
@@ -605,7 +606,9 @@ def test_meeting_cannot_move_to_an_unknown_folder(async_database: AsyncDatabase)
     # Arrange
     async def scenario(session: AsyncSession) -> Failure | None:
         unit = await team(session)
-        return await refusal(unit.service.update(unit.owner, unit.meeting, NOW, folder_id=uuid4()))
+        return await refusal(
+            unit.service.update(unit.owner, unit.meeting, NOW, MeetingChanges(folder_id=uuid4()))
+        )
 
     # Act
     failure = async_database.run(scenario)

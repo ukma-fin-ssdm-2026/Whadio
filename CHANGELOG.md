@@ -4,6 +4,36 @@ All notable changes to Whadio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.0] - 2026-11-22
+
+### Added
+
+- Let members choose a preset when uploading ([#421](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/421))
+
+## [0.22.0] - 2026-11-22
+
+### Added
+
+- Choose the preset for uploaded meetings ([#420](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/420))
+
+## [0.21.0] - 2026-11-22
+
+### Added
+
+- Request, approve and read shared meetings from the web app ([#368](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/368))
+
+## [0.20.0] - 2026-11-18
+
+### Added
+
+- Add undo to meeting move notice ([#384](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/384))
+
+## [0.19.0] - 2026-11-18
+
+### Added
+
+- Create, list and revoke meeting shares from the web app ([#367](https://github.com/ukma-fin-ssdm-2026/Whadio/pull/367))
+
 ## [0.18.0] - 2026-11-18
 
 ### Added

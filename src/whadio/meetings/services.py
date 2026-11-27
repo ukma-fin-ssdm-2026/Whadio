@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from ..access_policy.contracts import MeetingScope
 from ..access_policy.services import ContentPath, IMeetingPolicy
-from ..accounts.enums import WorkspaceRole
+from ..accounts.enums import NotesTemplate, WorkspaceRole
 from ..accounts.services import IWorkspaceMembership
 from ..audit.contracts import ContentEvent, IContentAuditWriter
 from ..audit.enums import AuditAction
@@ -55,6 +55,14 @@ class TermUpdate:
 
 
 @dataclass(frozen=True)
+class MeetingChanges:
+    name: str | None = None
+    folder_id: UUID | None = None
+    expected_folder_id: UUID | None = None
+    expected_folder_revision_id: UUID | None = None
+
+
+@dataclass(frozen=True)
 class RecordingInput:
     # None only for an extension capture, whose recording is attached once it is assembled.
     storage_key: str | None
@@ -64,6 +72,7 @@ class RecordingInput:
     name: str | None = None
     folder_id: UUID | None = None
     consent_confirmed_at: datetime | None = None
+    initial_notes_template: NotesTemplate | None = None
 
 
 class IRecordingIngestion(Protocol):
@@ -115,12 +124,14 @@ class MeetingService:
         meeting = Meeting(
             meeting_id=uuid4(),
             folder_id=folder.folder_id,
+            folder_revision_id=uuid4(),
             created_by_user_id=actor_id,
             name=self._name(recording.name)
             if recording.name is not None
             else recording.recorded_at.isoformat(),
             name_is_generated=recording.name is None,
             source_type=recording.source,
+            initial_notes_template=recording.initial_notes_template,
             recording_status=RecordingStatus.COMPLETE,
             processing_state=ProcessingState.RECORDING
             if recording.storage_key is None
@@ -175,23 +186,32 @@ class MeetingService:
         actor_id: UUID,
         meeting_id: UUID,
         now: datetime,
-        *,
-        name: str | None = None,
-        folder_id: UUID | None = None,
+        changes: MeetingChanges | None = None,
     ) -> Meeting:
-        if name is None and folder_id is None:
+        if changes is None or (changes.name is None and changes.folder_id is None):
             raise UseCaseError(Failure.VALIDATION_ERROR)
         scope = await self._authorize(actor_id, meeting_id, lock=True)
         meeting = await self._repository.get(meeting_id)
-        if folder_id is not None and folder_id != meeting.folder_id:
+        if (
+            changes.expected_folder_id is not None
+            and meeting.folder_id != changes.expected_folder_id
+        ):
+            raise UseCaseError(Failure.MEETING_MOVE_CONFLICT)
+        if (
+            changes.expected_folder_revision_id is not None
+            and meeting.folder_revision_id != changes.expected_folder_revision_id
+        ):
+            raise UseCaseError(Failure.MEETING_MOVE_CONFLICT)
+        if changes.folder_id is not None and changes.folder_id != meeting.folder_id:
             try:
-                await self._repository.folder(scope.workspace_id, folder_id)
+                await self._repository.folder(scope.workspace_id, changes.folder_id)
             except UseCaseError as error:
                 if error.code == Failure.NOT_FOUND:
                     raise UseCaseError(Failure.VALIDATION_ERROR) from None
                 raise
             old_folder_id = meeting.folder_id
-            meeting.folder_id = folder_id
+            meeting.folder_id = changes.folder_id
+            meeting.folder_revision_id = uuid4()
             await self._repository.save(meeting)
             await self._audit.write(
                 ContentEvent(
@@ -201,11 +221,11 @@ class MeetingService:
                     AuditAction.MEETING_MOVED,
                     now,
                     from_folder_id=old_folder_id,
-                    to_folder_id=folder_id,
+                    to_folder_id=changes.folder_id,
                 )
             )
-        if name is not None:
-            meeting.name = self._name(name)
+        if changes.name is not None:
+            meeting.name = self._name(changes.name)
             meeting.name_is_generated = False
             await self._repository.save(meeting)
             await self._audit.write(

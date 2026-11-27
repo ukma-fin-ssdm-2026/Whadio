@@ -56,6 +56,7 @@ class Meeting(Base):
 
     meeting_id: Mapped[UUID] = MappedColumn[UUID](primary_key=True, default=uuid4)
     folder_id: Mapped[UUID] = MappedColumn[UUID](ForeignKey("folder.folder_id", ondelete="CASCADE"))
+    folder_revision_id: Mapped[UUID] = MappedColumn[UUID](server_default=func.gen_random_uuid())
     created_by_user_id: Mapped[UUID] = MappedColumn[UUID](
         ForeignKey("user.user_id", ondelete="RESTRICT")
     )
@@ -72,6 +73,9 @@ class Meeting(Base):
     )
     failure_reason: Mapped[ProcessingFailure | None] = MappedColumn[ProcessingFailure | None](
         enum_type(ProcessingFailure, "processing_failure"),
+    )
+    initial_notes_template: Mapped[NotesTemplate | None] = MappedColumn[NotesTemplate | None](
+        enum_type(NotesTemplate, "initial_notes_template")
     )
     storage_path: Mapped[str | None] = MappedColumn[str | None](Text)
     duration_seconds: Mapped[int | None] = MappedColumn[int | None]()

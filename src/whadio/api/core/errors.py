@@ -27,6 +27,7 @@ class ErrorCode(StrEnum):
     FOLDER_EXISTS = "FOLDER_EXISTS"
     TERM_EXISTS = "TERM_EXISTS"
     STALE_REVISION = "STALE_REVISION"
+    MEETING_MOVE_CONFLICT = "MEETING_MOVE_CONFLICT"
     LINK_INVALID = "LINK_INVALID"
     ACCESS_REQUEST_EXISTS = "ACCESS_REQUEST_EXISTS"
     ALREADY_HAS_ACCESS = "ALREADY_HAS_ACCESS"
@@ -163,6 +164,7 @@ _FAILURE_MESSAGES: Final[Mapping[Failure, str]] = {
     Failure.TERM_EXISTS: "This glossary term already exists",
     Failure.NOT_TRANSCRIBED: "The meeting has not been transcribed yet",
     Failure.STALE_REVISION: "The transcript changed since you loaded it",
+    Failure.MEETING_MOVE_CONFLICT: "The meeting was moved again; reload and try again",
     Failure.LINK_INVALID: "The link is invalid or has expired",
     Failure.ACCESS_REQUEST_EXISTS: "You have already requested access",
     Failure.ALREADY_HAS_ACCESS: "You already have access",

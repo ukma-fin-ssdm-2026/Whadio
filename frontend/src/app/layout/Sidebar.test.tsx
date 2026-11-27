@@ -26,7 +26,7 @@ async function renderSidebar(path = "/", changes: Partial<ComponentProps<typeof 
 const currentItems = (links: HTMLElement[]) =>
   links.filter((item) => item.ariaCurrent === "page").map((item) => item.textContent);
 
-test("navigation offers Home, Meetings and each workspace", async () => {
+test("navigation offers Home, Meetings, shared meetings and each workspace", async () => {
   // Arrange
   const { nav } = await renderSidebar();
 
@@ -34,7 +34,7 @@ test("navigation offers Home, Meetings and each workspace", async () => {
   const items = nav.getAllByRole("link").map((item) => item.textContent);
 
   // Assert
-  expect(items).toEqual(["Home", "Meetings", "AI assistant", "Alpha", "Beta"]);
+  expect(items).toEqual(["Home", "Meetings", "Shared with me", "AI assistant", "Alpha", "Beta"]);
 });
 
 test.for([

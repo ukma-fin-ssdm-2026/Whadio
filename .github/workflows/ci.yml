@@ -19,6 +19,59 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  changes:
+    name: Detect code changes
+    # GitHub-hosted: deciding what to run must not take one of the course's shared runners.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The pull request's merge base or the last commit CI tested on `main`, to diff against.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Decide whether anything but documentation changed
+        id: classify
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          # Not the push's `before`: a newer push cancels a pending run on `main` before any of its
+          # jobs, and a failed run may not have run them, so a push counts every commit since the
+          # last green run.
+          LAST_TESTED_COMMIT: >-
+            first(.workflow_runs[]
+            | select(.id != (env.GITHUB_RUN_ID | tonumber))
+            | select(.event == "push" or .event == "workflow_dispatch")
+            | select(.conclusion == "success")
+            ).head_sha
+        run: |
+          # Whenever the changed files are unknown, everything runs.
+          code=true
+          range=""
+          case "$EVENT" in
+            pull_request) range="$PR_BASE...$PR_HEAD" ;;
+            push)
+              tested="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&status=completed&per_page=100" --jq "$LAST_TESTED_COMMIT")" || tested=""
+              if [ -n "$tested" ] && git merge-base --is-ancestor "$tested" "$GITHUB_SHA"; then
+                range="$tested..$GITHUB_SHA"
+              fi
+              ;;
+          esac
+          echo "range=${range:-none}"
+          changed="$RUNNER_TEMP/changed-files"
+          if [ -n "$range" ] && git -c core.quotePath=false diff --name-only --no-renames "$range" > "$changed"; then
+            code="$(python3 -I .github/scripts/code_changes.py < "$changed")" || code=true
+          fi
+          echo "code=$code" | tee -a "$GITHUB_OUTPUT"
+
   static:
     name: Static checks and audit
     runs-on: [self-hosted, linux]
@@ -79,6 +132,8 @@ jobs:
 
   frontend:
     name: Frontend
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -118,6 +173,8 @@ jobs:
 
   backend:
     name: Backend tests and coverage
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -195,7 +252,8 @@ jobs:
 
   reliability:
     name: Reliability tests
-    if: github.event_name != 'pull_request'
+    needs: changes
+    if: github.event_name != 'pull_request' && needs.changes.outputs.code == 'true'
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -227,6 +285,8 @@ jobs:
 
   image:
     name: Worker image
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -244,24 +304,37 @@ jobs:
 
   ci-passed:
     name: CI passed
-    needs: [static, frontend, backend, reliability, image]
+    needs: [changes, static, frontend, backend, reliability, image]
     # This is the required check: GitHub counts a skipped job as passed, so it must never skip.
     if: always()
     runs-on: [self-hosted, linux]
     steps:
-      - name: Require every job to have succeeded
+      - name: Require every job to have succeeded, or to have been skipped by design
         env:
-          RESULTS: ${{ join(needs.*.result, ' ') }}
-          RELIABILITY_SKIPPED_BY_DESIGN: ${{ github.event_name == 'pull_request' && needs.reliability.result == 'skipped' }}
+          CHANGES: ${{ needs.changes.result }}
+          STATIC: ${{ needs.static.result }}
+          FRONTEND: ${{ needs.frontend.result }}
+          BACKEND: ${{ needs.backend.result }}
+          RELIABILITY: ${{ needs.reliability.result }}
+          IMAGE: ${{ needs.image.result }}
+          # A change to documentation alone skips the jobs that build and test code.
+          CODE: ${{ needs.changes.outputs.code != 'false' }}
+          RELIABILITY_RUNS: ${{ needs.changes.outputs.code != 'false' && github.event_name != 'pull_request' }}
         run: |
-          echo "$RESULTS"
-          # Pull requests skip the reliability tests: drop that one skip, so any other still fails.
-          if [ "$RELIABILITY_SKIPPED_BY_DESIGN" = true ]; then
-            RESULTS="${RESULTS/skipped/}"
-          fi
-          for result in $RESULTS; do
-            [ "$result" = success ] || exit 1
-          done
+          failed=0
+          expect() {
+            local job="$1" result="$2" runs="$3" expected=skipped
+            [ "$runs" = true ] && expected=success
+            echo "$job: $result, expected $expected"
+            [ "$result" = "$expected" ] || failed=1
+          }
+          expect "Detect code changes" "$CHANGES" true
+          expect "Static checks and audit" "$STATIC" true
+          expect "Frontend" "$FRONTEND" "$CODE"
+          expect "Backend tests and coverage" "$BACKEND" "$CODE"
+          expect "Reliability tests" "$RELIABILITY" "$RELIABILITY_RUNS"
+          expect "Worker image" "$IMAGE" "$CODE"
+          exit "$failed"
 
   deploy:
     name: Deploy to GitHub Pages

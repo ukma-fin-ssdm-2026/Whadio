@@ -59,7 +59,8 @@ The Testing Strategist owns the scope, targets, exceptions and interpretation of
 Integration Lead implements and maintains the jobs, caches, services and artifacts that enforce
 them. Cheap static checks run on every commit and fast unit tests on every push; CI runs all static
 checks, audits, API lint and the fast suite on every pull request, and adds the integration and
-reliability tests on `main`, after the merge. CI publishes JUnit and coverage artifacts and fails on
+reliability tests on `main`, after the merge; a change to documentation alone gets only the static
+checks, audits and API lint. CI publishes JUnit and coverage artifacts and fails on
 `main` when the agreed coverage floors regress. System, performance and model suites run before a
 release and on relevant changes; an expensive run leaves the pull-request gate only for the run on
 `main`, and a defect that only it catches turns `main` red and is fixed or reverted. A failing gate is fixed, or its policy is changed transparently in a reviewed PR; checks are

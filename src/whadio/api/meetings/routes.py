@@ -3,16 +3,16 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Body, File, Form, Query, Response, UploadFile
+from fastapi import APIRouter, Body, File, Form, Query, Request, Response, UploadFile
 from pydantic import Field
 
 from ...accounts.enums import NotesTemplate
 from ...meetings.enums import MeetingSource
-from ...meetings.services import RecordingInput
+from ...meetings.services import MeetingChanges, RecordingInput
 from ...shared.errors import Failure, UseCaseError
 from ...shared.pagination import ListCursor
 from ..accounts.auth import BrowserUser, CaptureUser
-from ..accounts.schemas import WorkspaceId
+from ..accounts.schemas import Preset, WorkspaceId
 from ..composition import Meetings, Persistence, Processing, Recordings, UploadGuard
 from ..core.errors import (
     DOC_INVALID,
@@ -20,6 +20,7 @@ from ..core.errors import (
     DOC_UNAUTHENTICATED,
     ApiError,
     ErrorCode,
+    ErrorDetail,
     error_responses,
 )
 from ..core.pagination import list_page, list_window
@@ -101,8 +102,9 @@ async def list_meetings(
     tags=["meetings"],
     summary="Upload a recording",
     description=(
-        "Any member. Multipart with the audio `file`, an optional `folder_id` and "
-        f"`name`. Supported formats: {SUPPORTED_FORMATS}. The server decodes the file to "
+        "Any member. Multipart with the audio `file` and optional fields `folder_id`, `name`, and "
+        "`preset`. Omit `preset` to use the workspace default for the first notes. "
+        f"Supported formats: {SUPPORTED_FORMATS}. The server decodes the file to "
         "check, whatever its name or declared type; any other file is refused and creates no "
         "meeting. Without `name`, the meeting is named after its date and time until it is "
         "renamed. The meeting is queued for processing at once; its speakers will be "
@@ -120,7 +122,8 @@ async def list_meetings(
                 "or the multipart request exceeds 501 MiB",
                 415: f"`{ErrorCode.UNSUPPORTED_MEDIA_TYPE}`: the content is not a supported "
                 "audio format",
-                422: f"{DOC_INVALID}; `folder_id` must be a folder of this workspace",
+                422: f"{DOC_INVALID}; `folder_id` must be a folder of this workspace and "
+                "`preset` must appear at most once and be `summary`, `detailed`, or `interview`",
             }
         ),
     },
@@ -134,17 +137,31 @@ async def upload_recording(
     processing: Processing,
     recordings: Recordings,
     upload_guard: UploadGuard,
+    request: Request,
     response: Response,
     folder_id: Annotated[
         UUID | None, Form(description="Destination folder; the default folder when omitted")
     ] = None,
     name: Annotated[MeetingName | None, Form(description="Meeting name")] = None,
+    preset: Annotated[
+        Preset | None,
+        Form(description="Preset for the first notes; omit to use the workspace default"),
+    ] = None,
 ) -> MeetingRead:
     folders = await service.folders(user.id, workspace_id)
     if folder_id is not None and folder_id not in {item.folder_id for item in folders}:
         raise UseCaseError(Failure.VALIDATION_ERROR)
     if name is not None and not name.strip():
         raise UseCaseError(Failure.VALIDATION_ERROR)
+    # FastAPI treats an empty field as omitted and takes the last of repeated scalar fields.
+    preset_parts = (await request.form()).getlist("preset")
+    if len(preset_parts) > 1 or (preset_parts and preset is None):
+        raise ApiError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Request contains invalid fields",
+            [ErrorDetail(field="preset", message="Send one of summary, detailed, or interview")],
+        )
     try:
         await _validate_upload(file)
         now = datetime.now(UTC)
@@ -154,7 +171,14 @@ async def upload_recording(
         meeting = await persistence.ingest(
             user.id,
             workspace_id,
-            RecordingInput(key, now, MeetingSource.UPLOAD, name=name, folder_id=folder_id),
+            RecordingInput(
+                key,
+                now,
+                MeetingSource.UPLOAD,
+                name=name,
+                folder_id=folder_id,
+                initial_notes_template=None if preset is None else NotesTemplate(preset.value),
+            ),
             now,
         )
         await processing.queue_transcription(meeting.meeting_id)
@@ -230,7 +254,9 @@ async def get_meeting(meeting_id: MeetingId, user: BrowserUser, service: Meeting
     summary="Rename or move a meeting",
     description="Any member who can read the meeting. Renaming clears `name_is_generated`. "
     "Moving keeps the recording, transcript and notes; only folders of the same workspace "
-    "are accepted, and later notes use the new folder as context. `recorded_at` "
+    "are accepted, and later notes use the new folder as context. Give `expected_folder_id` and "
+    "`expected_folder_revision_id` to refuse the move if another member moved the meeting since "
+    "it was read. `recorded_at` "
     "cannot be changed.",
     response_description="The updated meeting",
     responses=error_responses(
@@ -238,6 +264,10 @@ async def get_meeting(meeting_id: MeetingId, user: BrowserUser, service: Meeting
             400: DOC_MALFORMED,
             401: DOC_UNAUTHENTICATED,
             404: _MEETING_NOT_FOUND,
+            409: (
+                f"`{ErrorCode.MEETING_MOVE_CONFLICT}`: the meeting no longer has the "
+                "expected folder placement"
+            ),
             422: f"{DOC_INVALID}; `folder_id` must be a folder of the meeting's workspace",
         }
     ),
@@ -246,7 +276,15 @@ async def update_meeting(
     meeting_id: MeetingId, payload: MeetingUpdate, user: BrowserUser, service: Meetings
 ) -> MeetingRead:
     await service.update(
-        user.id, meeting_id, datetime.now(UTC), name=payload.name, folder_id=payload.folder_id
+        user.id,
+        meeting_id,
+        datetime.now(UTC),
+        MeetingChanges(
+            payload.name,
+            payload.folder_id,
+            payload.expected_folder_id,
+            payload.expected_folder_revision_id,
+        ),
     )
     return await get_meeting(meeting_id, user, service)
 

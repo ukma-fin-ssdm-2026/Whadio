@@ -70,7 +70,7 @@ from ..meetings.processing import IMeetingProcessing
 from ..meetings.recordings import RecordingObjects
 from ..meetings.repositories import MeetingRepository
 from ..meetings.retention import IRetentionMeetings, RetentionMeetings
-from ..meetings.services import MeetingService, RecordingInput, TranscriptEdit
+from ..meetings.services import MeetingChanges, MeetingService, RecordingInput, TranscriptEdit
 from ..notifications.fakes import InMemoryNotificationOutbox
 from ..notifications.models import NotificationOutbox
 from ..notifications.repositories import NotificationOutboxRepository, notice_payload
@@ -306,7 +306,9 @@ def test_move_rejects_folder_from_another_workspace(database_settings: DatabaseS
             await unit.session.flush()
             # Act
             with pytest.raises(UseCaseError) as failure:
-                await unit.meetings.update(unit.owner, unit.meeting, now, folder_id=folder)
+                await unit.meetings.update(
+                    unit.owner, unit.meeting, now, MeetingChanges(folder_id=folder)
+                )
             # Assert
             assert failure.value.code == Failure.VALIDATION_ERROR
 
@@ -1489,7 +1491,12 @@ def test_replayed_processing_result_reserves_no_second_notice(
 
 async def _failed_update(unit: Unit) -> None:
     async with unit.session.begin_nested():
-        await unit.meetings.update(unit.member, unit.meeting, datetime.now(UTC), name="changed")
+        await unit.meetings.update(
+            unit.member,
+            unit.meeting,
+            datetime.now(UTC),
+            MeetingChanges(name="changed"),
+        )
         raise UseCaseError(Failure.INTEGRATION_UNAVAILABLE)
 
 
@@ -1526,7 +1533,10 @@ def test_audit_failure_rolls_back_meeting_change(
             with pytest.raises(UseCaseError) as failure:
                 async with unit.session.begin_nested():
                     await service.update(
-                        unit.member, unit.meeting, datetime.now(UTC), name="changed"
+                        unit.member,
+                        unit.meeting,
+                        datetime.now(UTC),
+                        MeetingChanges(name="changed"),
                     )
             meeting = await repository.get(unit.meeting, lock=True)
             # Assert
@@ -1776,6 +1786,81 @@ def test_upload_decodes_audio_before_creating_meeting(
                     len(storage.objects),
                     "Location" in response.headers,
                 ) == ((201, 1, 1, True) if valid else (415, 0, 0, False))
+        finally:
+            await _clean_uploads(database_settings, storage)
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+@pytest.mark.parametrize(
+    ("preset", "template"),
+    [("interview", NotesTemplate.INTERVIEW), (None, None)],
+)
+def test_upload_stores_only_an_explicit_notes_preset(
+    database_settings: DatabaseSettings, preset: str | None, template: NotesTemplate | None
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        storage, processing = InMemoryObjectStorage(), ProcessingFixture()
+        try:
+            async with (
+                unit_fixture(database_settings) as unit,
+                client_fixture(unit, unit.member, processing, storage) as client,
+            ):
+                # Act
+                response = await client.post(
+                    f"/api/v1/workspaces/{unit.workspace}/meetings",
+                    data={"preset": preset} if preset is not None else None,
+                    files={"file": ("audio.wav", _wav())},
+                )
+                meeting_id = MeetingRead.model_validate_json(response.content).id
+                stored = await unit.session.scalar(
+                    select(Meeting.initial_notes_template).where(Meeting.meeting_id == meeting_id)
+                )
+                # Assert
+                assert (response.status_code, stored) == (201, template)
+        finally:
+            await _clean_uploads(database_settings, storage)
+
+    asyncio.run(scenario(), loop_factory=asyncio.SelectorEventLoop)
+
+
+@pytest.mark.parametrize(
+    "presets",
+    [
+        pytest.param(["custom"], id="unknown"),
+        pytest.param([""], id="empty"),
+        pytest.param(["custom", "interview"], id="repeated"),
+    ],
+)
+def test_upload_refuses_an_invalid_notes_preset_before_creating_a_meeting(
+    database_settings: DatabaseSettings, presets: list[str]
+) -> None:
+    # Arrange
+    async def scenario() -> None:
+        storage, processing = InMemoryObjectStorage(), ProcessingFixture()
+        try:
+            async with (
+                unit_fixture(database_settings) as unit,
+                client_fixture(unit, unit.member, processing, storage) as client,
+            ):
+                # Act
+                response = await client.post(
+                    f"/api/v1/workspaces/{unit.workspace}/meetings",
+                    data={"preset": presets},
+                    files={"file": ("audio.wav", _wav())},
+                )
+                error = ErrorResponse.model_validate_json(response.content).error
+                meetings = await MeetingRepository(unit.session).workspace_meetings(unit.workspace)
+                # Assert
+                assert (
+                    response.status_code,
+                    error.code,
+                    [detail.field for detail in error.details],
+                    meetings,
+                    storage.uploaded,
+                    processing.transcriptions,
+                ) == (422, ErrorCode.VALIDATION_ERROR, ["preset"], [unit.meeting], [], [])
         finally:
             await _clean_uploads(database_settings, storage)
 

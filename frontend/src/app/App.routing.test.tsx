@@ -404,25 +404,197 @@ test("a failed workspace list keeps the address", async () => {
   expect(currentPath()).toBe(MEETING_LINK);
 });
 
+describe("share links", () => {
+  const SHARE_ID = "11111111-1111-4111-8111-111111111111";
+  const SHARE_LINK = `/shares/${SHARE_ID}#token=shared-secret`;
+
+  test("a signed-out recipient is asked to sign in", async () => {
+    // Act
+    open(SHARE_LINK, false);
+
+    // Assert
+    expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
+  });
+
+  test("a recipient signs in on the share page and requests access", async () => {
+    // Arrange
+    const bodies: unknown[] = [];
+    server.use(
+      http.post("/api/v1/shares/:shareId/access-requests", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(
+          {
+            id: "request",
+            requester_user_id: "member",
+            name: "Demo Member",
+            email: "member@example.com",
+            status: "pending",
+          },
+          { status: 201 },
+        );
+      }),
+    );
+    const { user } = open(SHARE_LINK, false);
+    await user.click(await screen.findByRole("button", { name: "Sign in" }));
+    await signIn(user);
+
+    // Act
+    await user.click(await screen.findByRole("button", { name: "Request access" }));
+
+    // Assert
+    await waitFor(() => expect(bodies).toEqual([{ token: "shared-secret" }]));
+  });
+
+  test("the sign-in form on a share link offers no registration", async () => {
+    // Arrange
+    const { user } = open(SHARE_LINK, false);
+
+    // Act
+    await user.click(await screen.findByRole("button", { name: "Sign in" }));
+    await screen.findByLabelText(SIGN_IN_FORM);
+
+    // Assert
+    expect(screen.queryByText(/create account|register|sign up/i)).not.toBeInTheDocument();
+  });
+
+  test("a refused request brings the sign-in form back", async () => {
+    // Arrange
+    server.use(http.post("/api/v1/shares/:shareId/access-requests", expired));
+    const { user } = open(SHARE_LINK);
+
+    // Act
+    await user.click(await screen.findByRole("button", { name: "Request access" }));
+
+    // Assert
+    expect(await screen.findByLabelText(SIGN_IN_FORM)).toBeInTheDocument();
+  });
+
+  test("switching account signs the current one out", async () => {
+    // Arrange
+    let signedOut = false;
+    server.use(
+      http.delete("/api/v1/sessions/current", () => {
+        signedOut = true;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    const { user } = open(SHARE_LINK);
+
+    // Act
+    await user.click(await screen.findByRole("button", { name: "Use a different account" }));
+    await screen.findByLabelText(SIGN_IN_FORM);
+
+    // Assert
+    expect(signedOut).toBe(true);
+  });
+
+  test("switching account shows the sign-in form", async () => {
+    // Arrange
+    server.use(
+      http.delete("/api/v1/sessions/current", () => new HttpResponse(null, { status: 204 })),
+    );
+    const { user } = open(SHARE_LINK);
+
+    // Act
+    await user.click(await screen.findByRole("button", { name: "Use a different account" }));
+
+    // Assert
+    expect(await screen.findByLabelText(SIGN_IN_FORM)).toBeInTheDocument();
+  });
+
+  test("a bound recipient opens the shared meeting", async () => {
+    // Arrange
+    server.use(
+      http.post("/api/v1/shares/:shareId/access-requests", () =>
+        HttpResponse.json(errorBody("ALREADY_HAS_ACCESS", "You already have access"), {
+          status: 409,
+        }),
+      ),
+      http.get("/api/v1/users/me/shares", () =>
+        HttpResponse.json(
+          page([
+            {
+              id: SHARE_ID,
+              redact_speaker_names: false,
+              recipient_user_id: "member",
+              revoked_at: null,
+              created_at: "2026-11-10T09:00:00Z",
+            },
+          ]),
+        ),
+      ),
+    );
+    const { user } = open(SHARE_LINK);
+    await user.click(await screen.findByRole("button", { name: "Request access" }));
+
+    // Act
+    await user.click(await screen.findByRole("button", { name: "Open the shared meeting" }));
+
+    // Assert
+    await waitFor(() => expect(currentPath()).toBe(`/shared/${SHARE_ID}`));
+  });
+
+  test("Requests in the share dialog opens that share's requests page", async () => {
+    // Arrange
+    server.use(
+      http.get("/api/v1/meetings/meeting/shares", () =>
+        HttpResponse.json(
+          page([
+            {
+              id: SHARE_ID,
+              redact_speaker_names: false,
+              recipient_user_id: null,
+              revoked_at: null,
+              created_at: "2026-11-10T09:00:00Z",
+            },
+          ]),
+        ),
+      ),
+      http.get(`/api/v1/shares/${SHARE_ID}/access-requests`, () => HttpResponse.json(page([]))),
+    );
+    const { user } = open(MEETING_LINK);
+    await user.click(await screen.findByRole("button", { name: "Meeting actions" }));
+    await user.click(screen.getByRole("menuitem", { name: /Share/ }));
+
+    // Act
+    await user.click(await screen.findByRole("button", { name: /^Requests for share/ }));
+
+    // Assert
+    await waitFor(() => expect(currentPath()).toBe(`/shares/${SHARE_ID}/access-requests`));
+  });
+
+  test("a share link shows no token", async () => {
+    // Act
+    open(SHARE_LINK, false);
+    await screen.findByRole("heading", { name: "A meeting was shared with you" });
+
+    // Assert
+    expect(document.body).not.toHaveTextContent("shared-secret");
+  });
+
+  test("the emailed requests link opens the requests page when signed in", async () => {
+    // Arrange
+    server.use(http.get("/api/v1/shares/share/access-requests", () => HttpResponse.json(page([]))));
+
+    // Act
+    open("/shares/share/access-requests");
+
+    // Assert
+    expect(await screen.findByRole("heading", { name: "Access requests" })).toBeInTheDocument();
+  });
+
+  test("the emailed requests link asks a signed-out creator to sign in", async () => {
+    // Act
+    open("/shares/share/access-requests", false);
+
+    // Assert
+    await waitFor(() =>
+      expect(currentPath()).toBe("/sign-in?redirect=%2Fshares%2Fshare%2Faccess-requests"),
+    );
+  });
+});
+
 describe("the not-found page", () => {
-  const EMAILED_LINKS = ["/shares/share/access-requests"];
-
-  test.for(EMAILED_LINKS)("answers %s when signed out", async (path) => {
-    // Act
-    open(path, false);
-
-    // Assert
-    expect(await screen.findByRole("heading", { name: "Page not found" })).toBeInTheDocument();
-  });
-
-  test.for(EMAILED_LINKS)("answers %s when signed in", async (path) => {
-    // Act
-    open(path);
-
-    // Assert
-    expect(await screen.findByRole("heading", { name: "Page not found" })).toBeInTheDocument();
-  });
-
   test("shows no token from the link", async () => {
     // Act
     open("/invitations/invitation#token=emailed-secret", false);
@@ -492,6 +664,7 @@ test("a created workspace appears and opens with an empty meeting list", async (
   server.use(
     http.post("/api/v1/workspaces", () => HttpResponse.json(created, { status: 201 })),
     http.get("/api/v1/workspaces/research/meetings", () => HttpResponse.json(page([]))),
+    http.get("/api/v1/workspaces/research/folders", () => HttpResponse.json(page([]))),
   );
   const { user } = open("/");
   await user.click(await screen.findByRole("button", { name: "Create workspace" }));

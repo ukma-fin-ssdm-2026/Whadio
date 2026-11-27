@@ -82,6 +82,9 @@ The model covers the data required for these key project functions:
 - One `MEETING` has zero or one `TRANSCRIPT`; one transcript has one or more `TRANSCRIPT_REVISION` rows.
 - One `TRANSCRIPT_REVISION` has many `TRANSCRIPT_SEGMENT` rows.
 - One `TRANSCRIPT_REVISION` has many `SPEAKER` rows; each segment may reference one speaker label from the same revision.
+- A meeting's `folder_revision_id` changes every time it enters a folder, including folder deletion
+  and restoration. Conditional moves compare it while holding the meeting row lock so an old Undo
+  cannot apply after any later move, even when the meeting returns to the same folder.
 - One `WORKSPACE` has many `GLOSSARY_TERM` rows.
 - One `MEETING` can produce many `NOTE` rows, for example from different presets or regenerations.
 - One `NOTE` can reference many context meetings through `NOTE_CONTEXT_MEETING`.
@@ -130,6 +133,8 @@ The model covers the data required for these key project functions:
   meeting. Remove the departing member's grants and membership in the same transaction.
 - The context set of a meeting's notes is drawn from the other meetings of its folder that have a
   transcript, whatever their `processing_state`.
+- The implementation-only `MEETING.initial_notes_template` stores an explicit upload preset for
+  the first notes. A null value defers to the workspace default.
 - A restricted meeting must not be used as cross-meeting context for another meeting's notes.
 - External shares are read-only, require a signed-in recipient, can be revoked, and must store only `token_hash`, never a raw share token.
 - An external share grants access only to its `recipient_user_id`. While it is null, opening the link only creates a `SHARE_ACCESS_REQUEST`; approving a request sets `recipient_user_id` to the requester.
@@ -252,3 +257,5 @@ These fields should drive the next threat-analysis step, especially for access c
 This document and the accompanying data model diagram were prepared and revised with the assistance of Codex (GPT-5.5) and Claude Code (Claude Opus 5.5) and discussed in the working session of 2026-09-26. Reviewed by the author and the team before committing.
 
 The audit rules for member role changes and removal (#184) were added with Claude Code and reviewed by the author.
+
+OpenAI Codex documented the stored upload preset (#362).
