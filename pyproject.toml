@@ -47,7 +47,7 @@ asr = [
     "lingua-language-detector>=2.2",
     "numpy>=2.5",
     "onnx-asr[hub]>=0.12",
-    "pyannote-audio==4.0.7",
+    "pyannote-audio==4.1.1",
 ]
 
 [build-system]
