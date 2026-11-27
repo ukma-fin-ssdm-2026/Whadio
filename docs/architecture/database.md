@@ -210,9 +210,8 @@ can try `::1` first and wait for a connection timeout before trying the publishe
 
 The application pool opens connections as needed. `WHADIO_DB_POOL_SIZE` controls how many
 connections it retains per runtime and `WHADIO_DB_MAX_OVERFLOW` controls how many temporary
-connections it can open beyond that. The development template retains up to 15 connections
-and allows zero overflow, keeping the same cap as the application defaults of five retained
-and ten temporary connections. Migrations use a separate connection.
+connections it can open beyond that. The defaults in `DatabaseSettings` keep the full pool
+capacity available for reuse. Migrations use a separate connection.
 
 From the repository root, with the intended database selected:
 

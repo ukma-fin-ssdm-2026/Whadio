@@ -55,9 +55,9 @@ class ConnectionSettings(BaseSettings):
 
 class DatabaseSettings(ConnectionSettings):
     app_password: SecretStr = Field(description="Password for the whadio_app role.")
-    pool_size: int = Field(default=5, ge=1, description="Connections to retain per runtime.")
+    pool_size: int = Field(default=15, ge=1, description="Connections to retain per runtime.")
     max_overflow: int = Field(
-        default=10, ge=0, description="Temporary connections allowed beyond the database pool size."
+        default=0, ge=0, description="Temporary connections allowed beyond the database pool size."
     )
 
     def application_url(self) -> URL:
